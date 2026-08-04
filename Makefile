@@ -1,18 +1,30 @@
 EMACS ?= emacs
 LOAD_PATH = -L . -L ../emacs-box
-SOURCES = etaf-view.el etaf-component.el etaf-renderer.el etaf.el
+SOURCES = etaf-view.el etaf-component.el etaf-reactive.el etaf-context.el etaf-resource.el etaf-data.el etaf-renderer.el etaf-runtime.el etaf-behavior.el etaf-actions.el etaf-events.el etaf.el etaf-ui.el etaf-playground.el
+TESTS = tests/etaf-tests.el tests/etaf-resource-tests.el tests/etaf-data-tests.el tests/etaf-ui-tests.el tests/etaf-playground-tests.el
 
-.PHONY: test compile check clean
+.PHONY: test compile load checkdoc docs-check check clean
 
-test:
-	$(EMACS) -Q --batch $(LOAD_PATH) -l tests/etaf-tests.el \
+test: compile
+	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" -l tests/etaf-tests.el -l tests/etaf-resource-tests.el -l tests/etaf-data-tests.el -l tests/etaf-ui-tests.el -l tests/etaf-playground-tests.el \
 		-f ert-run-tests-batch-and-exit
 
-compile:
+compile: clean
 	$(EMACS) -Q --batch $(LOAD_PATH) \
-		--eval "(dolist (file '(\"etaf-view.el\" \"etaf-component.el\" \"etaf-renderer.el\" \"etaf.el\")) (byte-compile-file file))"
+		--eval "(load-file \"etaf.el\")" \
+		--eval "(dolist (file '(\"etaf-view.el\" \"etaf-component.el\" \"etaf-reactive.el\" \"etaf-context.el\" \"etaf-resource.el\" \"etaf-data.el\" \"etaf-renderer.el\" \"etaf-runtime.el\" \"etaf-behavior.el\" \"etaf-actions.el\" \"etaf-events.el\" \"etaf.el\" \"etaf-ui.el\" \"etaf-playground.el\")) (byte-compile-file file))"
 
-check: compile test
+load: compile
+	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" --eval "(require 'etaf)" --eval "(princ \"ETAF load OK\\n\")"
+
+docs-check:
+	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" -l tests/etaf-docs-tests.el \
+		-f ert-run-tests-batch-and-exit
+
+checkdoc:
+	$(EMACS) -Q --batch --eval '(progn (require (quote checkdoc)) (dolist (file (directory-files "." t)) (when (string-suffix-p ".el" file) (checkdoc-file file))))'
+
+check: checkdoc compile test docs-check
 
 clean:
 	rm -f *.elc tests/*.elc

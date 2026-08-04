@@ -1,29 +1,31 @@
 # ETAF
 
-ETAF is the text-application framework built above the independent Ebox layout and rendering engine.
+ETAF is a small text-application framework built above the independent [Ebox](../emacs-box) layout and rendering engine.
 
-The public model is intentionally small:
+Its complete public model is:
 
-- `View` describes Hosts and Component calls.
-- `Component` turns props into a View.
-- `Ebox` measures, lays out, paints, and publishes the result.
+```text
+Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
+```
 
-Every structural form uses one shape:
+Every visible structure uses one form:
 
 ```elisp
 (name :property value ... child ...)
 ```
 
-Properties come first and children come last. Property values are ordinary Elisp expressions. `expr` is the only executable child bridge:
+The only child computation bridge is `expr :value`; attribute values are ordinary Elisp expressions.
 
 ```elisp
 (etaf-view
  (column
   (text :face 'bold "Hello")
-  (text (expr :value (if ready "Ready" "Waiting")))))
+  (text
+   :color "#687386"
+   (expr :value (if ready "Ready" "Waiting")))))
 ```
 
-Define a stateless Component with `:view`:
+Define a Component:
 
 ```elisp
 (etaf-define-component status-label (&key label)
@@ -33,13 +35,18 @@ Define a stateless Component with `:view`:
 
 (etaf-mount
  "*etaf-demo*"
- (etaf-view
-  (status-label :label "Connected")))
+ (etaf-view (status-label :label "Connected")))
 ```
 
-`etaf-view` is the sole public View construction entry. View forms and Component `:view` forms do not use quote. Quote remains ordinary Elisp data syntax, for example `'bold` as a face symbol. A Renderable returned by ordinary Elisp must be constructed with an unquoted `(etaf-view ...)` inside `expr`.
+`etaf-view` is the single public View constructor. Structural forms do not use quote; quote remains ordinary Elisp data syntax, such as `'bold`. A View returned from ordinary Elisp is explicitly constructed with `(etaf-view ...)` inside `expr`.
 
-## Development checkout
+## Documentation
+
+- [Architecture](docs/architecture.en.md) · [中文架构](docs/architecture.zh.md)
+- [User guide](docs/user-guide.en.md) · [中文用户指南](docs/user-guide.zh.md)
+- [Implementation plan](docs/implementation-plan.en.md) · [中文实施计划](docs/implementation-plan.zh.md)
+
+## Load and verify
 
 During development, load the sibling Ebox checkout before ETAF:
 
@@ -49,16 +56,10 @@ During development, load the sibling Ebox checkout before ETAF:
 (require 'etaf)
 ```
 
-The package metadata declares Ebox `1.0.1` as the runtime dependency. ETAF never calls Ebox private functions.
-
-## Scope of this first slice
-
-The repository currently establishes and tests the P0 grammar, `etaf-view`, `expr`, stateless `:view` Components, core Hosts (`text`, `fragment`, `container`, `row`, `column`, `stack`, `flex`, and `spacer`), and the Ebox mount bridge. Stateful `:setup`, slots, styles, Context, Behaviors, events, actions, data, and incremental Component reconciliation are subsequent implementation milestones; unsupported clauses fail explicitly.
-
-Run the focused checks with:
+Run the complete local gate:
 
 ```sh
 make check EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs
 ```
 
-The target architecture and the sequenced implementation work are documented in [`docs/architecture.en.md`](docs/architecture.en.md) and [`docs/implementation-plan.en.md`](docs/implementation-plan.en.md). Chinese versions are kept beside them.
+The gate byte-compiles the implementation, runs the core/Data/Resource/UI/Playground tests, and checks documentation/API boundaries. `etaf-ui` and `etaf-playground` are optional modules and are not loaded by the core facade.

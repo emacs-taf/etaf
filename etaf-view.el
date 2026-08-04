@@ -33,17 +33,37 @@
 
 (cl-defstruct (etaf--component-spec
                (:constructor etaf--component-spec-create))
-  "Internal definition of one stateless Component."
+  "Internal definition of one ETAF Component."
   name
   props
-  render)
+  render
+  setup
+  styles)
 
 (cl-defstruct (etaf--component-call
                (:constructor etaf--component-call-create))
   "Internal Component invocation retained until rendering."
   spec
   props
+  slots)
+
+(cl-defstruct (etaf--slot-input
+               (:constructor etaf--slot-input-create))
+  "Call-site contribution to a named Component slot."
+  name
   children)
+
+(cl-defstruct (etaf--slot-projection
+               (:constructor etaf--slot-projection-create))
+  "A Component View request for one slot and its fallback children."
+  name
+  fallback)
+
+(cl-defstruct (etaf--raw-ebox
+               (:constructor etaf--raw-ebox-create))
+  "Explicit escape carrying an already-built public Ebox node."
+  thunk
+  key-thunk)
 
 (defconst etaf--host-names
   '(text fragment container row column stack flex spacer)
@@ -68,6 +88,15 @@ this list merely to make a demo convenient.")
 
 (defvar etaf--view-registry (make-hash-table :test #'eq)
   "Registry of Hosts and Components used by structural View calls.")
+
+(defvar etaf--current-component-props nil
+  "Dynamic props of the Component currently being evaluated.")
+
+(defvar etaf--current-component-slots nil
+  "Dynamic slots of the Component currently being evaluated.")
+
+(defvar etaf--current-component-instance nil
+  "Dynamic Component instance currently being evaluated.")
 
 (defun etaf--syntax-error (format-string &rest arguments)
   "Signal a View syntax error formatted from FORMAT-STRING and ARGUMENTS."
@@ -107,7 +136,11 @@ form, or core Host.  A collision receives a semantic `-view' alias."
   (let ((existing (gethash name etaf--view-registry)))
     (when (eq existing etaf--host-marker)
       (etaf--component-error
-       "Component %S conflicts with a core Host" name)))
+       "Component %S conflicts with a core Host" name))
+    (when (and existing (not (eq existing etaf--host-marker))
+               (not (eq existing spec)))
+      (etaf--component-error
+       "Component %S is already registered" name)))
   (puthash name spec etaf--view-registry)
   (when-let ((alias (etaf--component-alias name)))
     (let ((existing (gethash alias etaf--view-registry)))
@@ -157,6 +190,41 @@ form, or core Host.  A collision receives a semantic `-view' alias."
         (setq copy (append copy (list key value)))))
     copy))
 
+(defun etaf--resolve-property-value (value)
+  "Resolve one lazily compiled property VALUE."
+  (if (etaf--expr-p value)
+      (etaf--resolve-property-value (funcall (etaf--expr-thunk value)))
+    value))
+
+(defun etaf--resolve-property-plist (props)
+  "Resolve all lazy values in PROPS while preserving its keys."
+  (let ((copy nil)
+        (tail props))
+    (while tail
+      (setq copy (append copy
+                         (list (pop tail)
+                               (etaf--resolve-property-value (pop tail))))))
+    copy))
+
+(defun etaf--compile-property-value (form)
+  "Compile property FORM as a constant or a render-time thunk."
+  (if (or (null form) (numberp form) (stringp form) (characterp form)
+          (keywordp form) (eq form t)
+          (and (consp form) (memq (car form) '(quote function))))
+      form
+    `(etaf--expr-create :thunk (lambda () ,form))))
+
+(defun etaf--compile-property-plist (props)
+  "Compile alternating property FORMS in PROPS into a generated property list."
+  (let (compiled)
+    (while props
+      (let ((key (pop props))
+            (value (pop props)))
+        (setq compiled
+              (append compiled
+                      (list key (etaf--compile-property-value value))))))
+    compiled))
+
 (defun etaf--validate-key (key)
   "Validate a Host identity KEY and return it."
   (unless (or (null key) (symbolp key) (stringp key)
@@ -199,13 +267,58 @@ the generated code."
 `expr' intentionally has one property, `:value', and no children."
   (let ((parts (etaf--parse-attributes-and-children items)))
     (when (cdr parts)
-      (etaf--syntax-error "expr accepts :value and no children"))
+      (etaf--syntax-error "Expr accepts :value and no children"))
     (let ((props (car parts)))
       (unless (and (= (length props) 2)
                    (eq (car props) :value))
         (etaf--syntax-error
-         "expr accepts exactly one attribute: :value"))
+         "Expr accepts exactly one attribute: :value"))
       (cadr props))))
+
+(defun etaf--constant-slot-name (form)
+  "Return the static slot symbol represented by FORM, or signal an error."
+  (unless (and (consp form)
+               (eq (car form) 'quote)
+               (null (cddr form)))
+    (etaf--syntax-error
+     "Slot names must be quoted stable symbols: %S" form))
+  (let ((name (cadr form)))
+    (unless (and (symbolp name) (not (keywordp name))
+                 (not (memq name '(nil t))))
+      (etaf--syntax-error
+       "Slot names must be stable non-keyword symbols: %S" form))
+    name))
+
+(defun etaf--compile-slot-form (items slot-mode)
+  "Compile a slot form with ITEMS according to SLOT-MODE.
+
+SLOT-MODE is `:projection' while compiling a Component's own View and
+`:input' while compiling the children supplied to a Component call.  An
+input slot must have an explicit `:name'; ordinary trailing children already
+belong to the anonymous `default' slot."
+  (let* ((parts (etaf--parse-attributes-and-children items))
+         (props (car parts))
+         (children (cdr parts))
+         (name-supplied-p (plist-member props :name))
+         (name (if name-supplied-p
+                   (etaf--constant-slot-name (plist-get props :name))
+                 'default)))
+    (unless (or (null props)
+                (and (= (length props) 2) (eq (car props) :name)))
+      (etaf--syntax-error "Slot accepts only the optional :name attribute"))
+    (when (and (eq slot-mode :input) (not name-supplied-p))
+      (etaf--syntax-error
+       "A named slot input requires :name; ordinary children fill default"))
+    (let ((compiled (mapcar (lambda (child)
+                              (etaf--compile-child-form child slot-mode))
+                            children)))
+      (if (eq slot-mode :projection)
+          `(etaf--slot-projection-create
+            :name ',name
+            :fallback (list ,@compiled))
+        `(etaf--slot-input-create
+          :name ',name
+          :children (list ,@compiled))))))
 
 (defun etaf--ordinary-expression-head-p (head)
   "Return non-nil when HEAD denotes ordinary Elisp computation."
@@ -218,18 +331,24 @@ the generated code."
   `(etaf--expr-create
     :thunk (lambda () ,(etaf--parse-expr-form items))))
 
-(defun etaf--compile-child-form (form)
-  "Compile structural child FORM into code returning a View value."
+(defun etaf--compile-child-form (form &optional slot-mode)
+  "Compile structural child FORM into code returning a View value.
+
+SLOT-MODE distinguishes Component-owned projections from call-site inputs."
   (cond
    ((null form) nil)
    ((stringp form) `(quote ,form))
    ((and (consp form) (eq (car form) 'expr))
     (etaf--compile-expr-form (cdr form)))
+   ((and (consp form) (eq (car form) 'slot))
+    (etaf--compile-slot-form (cdr form) slot-mode))
+   ((and (consp form) (eq (car form) 'raw-ebox))
+    (etaf--compile-view-form form slot-mode))
    ((and (consp form) (symbolp (car form)))
     (when (etaf--ordinary-expression-head-p (car form))
       (etaf--syntax-error
        "Elisp expression %S must be inside (expr :value ...)" (car form)))
-    (etaf--compile-view-form form))
+    (etaf--compile-view-form form slot-mode))
    ((consp form)
     (etaf--syntax-error "Invalid View child form: %S" form))
    (t
@@ -237,8 +356,10 @@ the generated code."
      "View children must be strings, nil, View forms, or expr results: %S"
      form))))
 
-(defun etaf--compile-view-form (form)
-  "Compile one structural View FORM into runtime construction code."
+(defun etaf--compile-view-form (form &optional slot-mode)
+  "Compile one structural View FORM into runtime construction code.
+
+SLOT-MODE distinguishes Component-owned projections from call-site inputs."
   (cond
    ((null form) nil)
    ((stringp form) `(quote ,form))
@@ -247,18 +368,39 @@ the generated code."
    ((eq (car form) 'expr)
     (etaf--compile-expr-form (cdr form)))
    ((eq (car form) 'slot)
-    (etaf--syntax-error
-     "slot is not implemented in the P0 package; use ordinary children for now"))
+    ;; A render closure returned from `:setup' invokes `etaf-view' later than
+    ;; the Component definition macro, so the public macro defaults to
+    ;; projection mode.  An unowned projection simply uses its fallback.
+    (etaf--compile-slot-form (cdr form) slot-mode))
    ((eq (car form) 'raw-ebox)
-    (etaf--syntax-error
-     "raw-ebox is not implemented in the P0 package"))
+    (let ((parts (etaf--parse-attributes-and-children (cdr form))))
+      (when (cdr parts)
+        (etaf--syntax-error "Raw-ebox accepts :value, optional :key, and no children"))
+      (let ((props (car parts)))
+        (unless (and (plist-member props :value)
+                     (cl-every #'keywordp (cl-loop for (key _value) on props by #'cddr collect key)))
+          (etaf--syntax-error "Raw-ebox requires :value"))
+        (let ((allowed '(:value :key)))
+          (dolist (key (cl-loop for (key _value) on props by #'cddr collect key))
+            (unless (memq key allowed)
+              (etaf--syntax-error "Raw-ebox does not accept %S" key)))
+          `(etaf--raw-ebox-create
+            :thunk (lambda () ,(plist-get props :value))
+            :key-thunk ,(when (plist-member props :key)
+                          `(lambda () ,(plist-get props :key))))))))
    (t
     (let* ((parts (etaf--parse-attributes-and-children (cdr form)))
            (props (car parts))
-           (children (cdr parts)))
+           (children (cdr parts))
+           (host-view-p (eq (gethash (car form) etaf--view-registry)
+                            etaf--host-marker))
+           (child-slot-mode (if host-view-p slot-mode :input)))
       `(etaf--view-call ',(car form)
-                        (list ,@props)
-                        (list ,@(mapcar #'etaf--compile-child-form children)))))))
+                        (list ,@(etaf--compile-property-plist props))
+                        (list ,@(mapcar (lambda (child)
+                                          (etaf--compile-child-form
+                                           child child-slot-mode))
+                                        children)))))))
 
 ;;;###autoload
 (defmacro etaf-view (form)
@@ -272,7 +414,7 @@ Properties must come first and children must come last.  Property values are
 ordinary Elisp expressions.  `expr' is the only computation bridge in the
 child region and accepts only `:value'."
   (declare (indent 1) (debug (form)))
-  (etaf--compile-view-form form))
+  (etaf--compile-view-form form :projection))
 
 (defun etaf--component-prop-key (name)
   "Return the keyword used to pass Component prop NAME."
@@ -282,8 +424,9 @@ child region and accepts only `:value'."
 
 (defun etaf--validate-component-props (spec props)
   "Validate Component SPEC against evaluated property PLIST PROPS."
-  (let ((allowed (mapcar #'etaf--component-prop-key
-                         (etaf--component-spec-props spec)))
+  (let ((allowed (append '(:key)
+                         (mapcar #'etaf--component-prop-key
+                                 (etaf--component-spec-props spec))))
         (tail (etaf--validate-property-plist props)))
     (while tail
       (let ((key (pop tail)))
@@ -303,46 +446,38 @@ child region and accepts only `:value'."
     (cond
      ((eq entry etaf--host-marker)
       (when (plist-member props :key)
-        (etaf--validate-key (plist-get props :key)))
+        (etaf--validate-key
+         (etaf--resolve-property-value (plist-get props :key))))
       (etaf--view-node-create
        :name (etaf--canonical-host-name name)
        :props props
        :children children))
      ((etaf--component-spec-p entry)
       (etaf--validate-component-props entry props)
-      (etaf--component-call-create
-       :spec entry
-       :props props
-       :children children))
+      (let (default-children named-slots)
+        (dolist (child children)
+          (if (etaf--slot-input-p child)
+              (progn
+                (when (assq (etaf--slot-input-name child) named-slots)
+                  (etaf--component-error
+                   "Duplicate Component slot %S" (etaf--slot-input-name child)))
+                (push (cons (etaf--slot-input-name child)
+                            (etaf--slot-input-children child))
+                      named-slots))
+            (push child default-children)))
+        (setq default-children (nreverse default-children)
+              named-slots (nreverse named-slots))
+        (when (and default-children (assq 'default named-slots))
+          (etaf--component-error
+           "Component default slot has both children and an explicit input"))
+        (etaf--component-call-create
+         :spec entry
+         :props props
+         :slots (if default-children
+                    (cons (cons 'default default-children) named-slots)
+                  named-slots))))
      (t
       (etaf--component-error "Unknown ETAF Host or Component: %S" name)))))
-
-(defun etaf--resolve-value (value)
-  "Resolve VALUE to a flat list of string or View leaves.
-
-This is deliberately a value normalizer, not an evaluator.  Only `expr'
-thunks are executed; a quoted list returned by an expression is treated as a
-sequence and each member must already be a valid View value."
-  (cond
-   ((null value) nil)
-   ((or (stringp value)
-        (etaf--view-node-p value))
-    (list value))
-   ((etaf--expr-p value)
-    (etaf--resolve-value (funcall (etaf--expr-thunk value))))
-   ((etaf--component-call-p value)
-    (etaf--resolve-value
-     (funcall (etaf--component-spec-render
-               (etaf--component-call-spec value))
-              (etaf--component-call-props value)
-              (etaf--component-call-children value))))
-   ((proper-list-p value)
-    (cl-mapcan #'etaf--resolve-value value))
-   (t
-    (signal 'etaf-view-error
-            (list (format
-                   "View values must be strings, nil, Views, or sequences: %S"
-                   value))))))
 
 (provide 'etaf-view)
 
