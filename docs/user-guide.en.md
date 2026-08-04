@@ -4,7 +4,7 @@ ETAF builds text applications from one small vocabulary: `View`, `Component`, pr
 
 ## 1. Install and load
 
-ETAF depends on the independent Ebox package. During development, put both checkouts on `load-path` and load the one public ETAF entry:
+ETAF depends on the independent Ebox package. During development, put the core checkouts on `load-path` and load the one public ETAF entry:
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/emacs-box")
@@ -12,7 +12,7 @@ ETAF depends on the independent Ebox package. During development, put both check
 (require 'etaf)
 ```
 
-The package entry loads the core View, Component, Runtime, reactive, Context, Data, Resource, event, Behavior, and Action APIs. `etaf-ui` and the Playgrounds are optional modules; loading `etaf` does not load them.
+The package entry loads the core View, Component, Runtime, reactive, Context, Data, Resource, event, Behavior, and Action APIs. `etaf-ui`, `etaf-sqlite`, and the two Playgrounds are independent optional packages; loading `etaf` does not load them.
 
 ## 2. The first View
 
@@ -93,6 +93,25 @@ Quote has one ordinary Elisp meaning:
 - Use `(etaf-view ...)` inside an expression when the expression must construct a View.
 
 For example, `'bold` is the face symbol, while `'(text "data")` is only data and will not render. A dynamic View must be written as `(etaf-view (text "data"))`.
+
+The core `grid` Host is the two-dimensional layout choice:
+
+```elisp
+(etaf-mount
+ "*etaf-grid*"
+ (etaf-view
+  (grid
+   :width '(640)
+   :grid-template-columns '((200) 1fr)
+   :grid-template-rows '(1 1)
+   :gap '(1 (12))
+   (text :face 'bold "Name")
+   (text "Value")
+   (text "Ada")
+   (text "Lovelace"))))
+```
+
+Use `auto`, `(fr FACTOR)`, symbols such as `1fr`, `(minmax MIN MAX)`, and `(repeat COUNT TRACK)` in track templates. `:grid-auto-columns` and `:grid-auto-rows` size implicit tracks; `:grid-auto-flow` accepts `row` or `column`. Children may use `:grid-column`, `:grid-row`, `:grid-column-span`, and `:grid-row-span`; Ebox performs measurement, placement, and item/content alignment. The optional native backend falls back to the Elisp Ebox renderer for Grid trees.
 
 ## 4. Define a Component
 
@@ -433,6 +452,29 @@ DataGrid requires `:row-key` to return a non-nil stable scalar for every row. It
 
 Storage is not tied to SQLite. A PostgreSQL, REST, file, or ORM integration should expose a concrete Data Source with the same contract. Such an integration is optional and does not change the ETAF user model.
 
+The independent `etaf-sqlite` package is the first concrete storage source:
+
+```elisp
+(require 'etaf-sqlite)
+
+(let* ((table (etaf-sqlite-table
+               'tasks
+               (list (etaf-sqlite-column :id "id"
+                                         :type 'integer :primary t)
+                     (etaf-sqlite-column :title "title" :type 'text))
+               :id))
+       (database (etaf-sqlite-database "tasks.sqlite" table))
+       (source (etaf-sqlite-source database)))
+  (etaf-sqlite-initialize database)
+  (let ((controller (etaf-data-controller source :auto-load t)))
+    (etaf-data-mutate controller 'insert
+                       '(:id 1 :title "Write the guide."))
+    (message "%S" (etaf-value (etaf-data-items controller)))
+    (etaf-data-stop controller)))
+```
+
+This package uses Emacs' built-in SQLite support and deliberately does not add an ORM layer. Other storage packages should implement `etaf-data-source` directly.
+
 ## 11. Resource and raw Ebox
 
 Use a Resource for a Scope-owned synchronous loader:
@@ -475,9 +517,9 @@ The only low-level escape is `raw-ebox`:
 
 Use it only when the normal Host and Component lowering path cannot express a real Ebox requirement. The returned Node is opaque to ETAF semantics.
 
-## 12. Playground
+## 12. Playgrounds
 
-The optional core playground is a complete ETAF application example:
+The independent ETAF playground is a complete ETAF application example:
 
 ```elisp
 (require 'etaf-playground)
@@ -491,6 +533,15 @@ The core playground depends only on ETAF. To include the official catalog:
 ```
 
 `etaf-playground-close` unmounts and kills the default playground buffer. It is independent of `ebox-playground`; neither package is loaded by core ETAF.
+
+The independent Ebox playground demonstrates the lower-level layout contract:
+
+```elisp
+(require 'ebox-playground)
+(ebox-playground-open)
+```
+
+It depends only on Ebox. Use it when inspecting Ebox boxes and Grid layout; use `etaf-playground` when inspecting Components, Runtime, Data, and the official catalog.
 
 ## 13. Public API map
 
@@ -508,7 +559,7 @@ The core playground depends only on ETAF. To include the official catalog:
 | Data | `etaf-data-source`, `etaf-data-controller`, `etaf-data-memory-source`, `etaf-data-*` | Query, paginate, mutate, select, and stop data |
 | Resource | `etaf-resource`, `etaf-resource-result`, `etaf-error-boundary-run` | Own loader state and cleanup |
 | Official UI | `require 'etaf-ui`, `etaf-button`, `etaf-checkbox`, `etaf-label`, `etaf-panel`, `etaf-data-grid` | Use ready-made Components |
-| Playground | `etaf-playground-open`, `etaf-playground-open-ui`, `etaf-playground-close` | Explore the framework interactively |
+| Playground | `etaf-playground-open`, `etaf-playground-open-ui`, `etaf-playground-close`, `ebox-playground-open`, `ebox-playground-close` | Explore the corresponding layer interactively |
 
 Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, `etaf-ref`, and event callbacks at first. The remaining APIs are additive capabilities, not prerequisites for understanding the core grammar.
 

@@ -46,6 +46,17 @@ Define a Component:
 - [User guide](docs/user-guide.en.md) · [中文用户指南](docs/user-guide.zh.md)
 - [Implementation plan](docs/implementation-plan.en.md) · [中文实施计划](docs/implementation-plan.zh.md)
 
+## Independent packages
+
+| Package | Role |
+| --- | --- |
+| [`etaf-ui`](../etaf-ui/README.md) | Official Component catalog: Button, Checkbox, Label, Panel, and DataGrid. |
+| [`etaf-sqlite`](../etaf-sqlite/README.md) | Concrete SQLite Data Source; the Data Controller remains in ETAF core. |
+| [`etaf-playground`](../etaf-playground/README.md) | ETAF examples, with the UI catalog loaded only when requested. |
+| [`ebox-playground`](../ebox-playground/README.md) | Ebox-only layout examples, independent from ETAF. |
+
+There is no separate `etaf-data` install: Data is a core ETAF capability. There is no generic `etaf-adapters` package: other databases, services, files, or ORMs should provide concrete Data Source packages with explicit names.
+
 ## Load and verify
 
 During development, load the sibling Ebox checkout before ETAF:
@@ -62,4 +73,4 @@ Run the complete local gate:
 make check EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs
 ```
 
-The gate byte-compiles the implementation, runs the core/Data/Resource/UI/Playground tests, and checks documentation/API boundaries. `etaf-ui` and `etaf-playground` are optional modules and are not loaded by the core facade.
+The core gate byte-compiles the implementation, runs the core/Data/Resource tests, and checks documentation/API boundaries. Run `make check` in the sibling `etaf-ui`, `etaf-sqlite`, `etaf-playground`, and `ebox-playground` repositories for their independent gates; none is loaded by the core facade.

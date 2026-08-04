@@ -214,7 +214,7 @@ children 只是匿名/默认 slot 的便捷写法，不是第二套内容模型�
 ETAF core 只提供最小且无样式的 Host：
 
 ```text
-text · fragment · container · row · column · stack · flex · spacer
+text · fragment · container · row · column · stack · flex · grid · spacer
 ```
 
 | Host | 作者看到的含义 | lowering 方向 |
@@ -226,9 +226,12 @@ text · fragment · container · row · column · stack · flex · spacer
 | `column` | 垂直排列子节点 | Ebox column layout |
 | `stack` | 结构性的组合容器 | Ebox container 路径 |
 | `flex` | 通过 flex 分配空间 | Ebox flex layout |
+| `grid` | 二维轨道、放置和跨度 | Ebox Grid formatting context |
 | `spacer` | 有意表达的空几何 | Ebox spacer |
 
 字符串是最小的文本 View，会降低为 Ebox content。text 中兼容的嵌套 text 会成为带 text properties 的 inline run；非文本子节点则回到普通布局 lowering。因此 Text、View Host、Component 和 Ebox Node 是连续的表示层，而不是三棵相互竞争的树。
+
+`grid` 复用 Ebox 的公共二维布局契约，支持轨道模板、`auto`/分数/`minmax` 轨道、间距、行列放置、跨度、自动流向和 item 对齐。轨道测量和放置由 Ebox 负责；ETAF 只把 `grid` Host 映射到这个节点。Ebox 的可选 native reflow 后端不参与正确性保证；如果该后端不支持 Grid，Grid 树会使用普通 Ebox 渲染器。
 
 ETAF 的 Renderer 是唯一调用 Ebox 的框架模块，并且只使用 Ebox 公共构造器、属性读取器、Host 引用查询和发布 API。Ebox 不理解 Component、slot、Action、Context、Behavior 或 Data。
 
@@ -398,13 +401,18 @@ etaf → ebox
 etaf-ui → etaf
   └── 官方 Button、Checkbox、Label、Panel、DataGrid 等 Component
 
+etaf-sqlite → etaf
+  └── 类型化 SQLite Data Source
+
 etaf-playground → etaf
   └── 展示官方 Component 时可选依赖 etaf-ui
 ```
 
 `etaf-ui` 是官方现成 Component 目录。用户只需要理解 Component；文件只是维护者边界。Controls、Widgets 和 DataGrid 不是平行的 Runtime 类型，DataGrid 只是由同一套 View、props、slot、事件和 Data 契约构成的复合 Component。
 
-新的 `etaf-playground` 只使用 ETAF 公共 API，不调用 Ebox 私有 API，也不依赖 `ebox-playground`。现有的 `ebox-playground` 只使用 Ebox 公共 API，不加载 ETAF。Core 包不会自动加载任一 Playground。
+`etaf-sqlite` 是具体的数据源包，负责 schema 声明、标识符校验、连接、分页和 mutation；`etaf-data` 仍然属于 ETAF core。PostgreSQL、REST、文件和 ORM 集成可以在独立包中实现同一个 source capability，不增加 `etaf-adapters` 概念。
+
+`ebox-playground`、`etaf-playground`、`etaf-ui` 和 `etaf-sqlite` 都是可以独立加载的同级包。`ebox-playground` 只使用 Ebox 公共 API，不加载 ETAF；`etaf-playground` 使用 ETAF 公共 API，并且只在展示官方组件时可选加载 `etaf-ui`，不依赖 `ebox-playground`。核心包不会自动加载任何可选包。
 
 可选存储集成应使用具体名称，例如 SQLite 或 PostgreSQL source。通用 adapter 包无法拥有稳定的行为，只会增加用户需要记忆的名称，因此不属于公共模型。
 

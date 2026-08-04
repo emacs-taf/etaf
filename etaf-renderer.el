@@ -346,7 +346,7 @@ the ordinary layout lowering path instead."
        (list (apply #'ebox-spacer props)))
       ('fragment
        (etaf--render-value-list children (append path (list :fragment))))
-      ((or 'row 'column 'container 'stack 'flex)
+      ((or 'row 'column 'container 'stack 'flex 'grid)
        (let ((nodes nil)
              (index 0))
          (dolist (child children)
@@ -373,6 +373,8 @@ the ordinary layout lowering path instead."
       (ebox-build (append (list 'column) props nodes))))
    ((eq name 'flex)
     (apply #'ebox-flex (append props nodes)))
+   ((eq name 'grid)
+    (apply #'ebox-grid (append props nodes)))
    (t
     (signal 'etaf-renderer-error
             (list (format "Not a layout Host: %S" name))))))

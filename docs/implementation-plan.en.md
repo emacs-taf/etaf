@@ -12,7 +12,7 @@ A milestone is complete only when:
 4. The implementation has a paired English/Chinese documentation update when the public contract changes.
 5. A failed candidate does not corrupt the last committed Runtime or buffer.
 
-The repository is complete for the agreed unified architecture when the mandatory milestones below are green. More official Components, concrete storage sources, richer Ebox layouts, and asynchronous integrations are additive work; they must reuse the frozen contracts instead of widening the core vocabulary.
+The repository is complete for the agreed unified architecture when the mandatory milestones below are green. The first official UI catalog, Grid layout, SQLite source, and two independent Playgrounds are delivered as sibling packages; future Components, storage sources, and asynchronous integrations are additive work and must reuse the frozen contracts instead of widening the core vocabulary.
 
 ## 2. Milestone status
 
@@ -22,8 +22,8 @@ The repository is complete for the agreed unified architecture when the mandator
 | P1 Components | `:view`, `:setup`, props, default/named slots, retained instances, lifecycle, `:key`, raw Ebox escape | Component, slot, mount, prop-update, raw-node, and rollback tests |
 | P2 Runtime | refs, computed, effects, watches, Scope cleanup, Context, Theme, Behaviors, events, focus, Actions | Mounted event/focus tests, reactive failure rollback, cleanup tests |
 | P3 presentation | scoped styles, selector matching, Theme precedence, inline text runs, Resource and error boundary | Style, Theme, text-surface, Resource, and error tests |
-| P4 application layer | core Data Controller, memory source, selection, mutation, official UI catalog, DataGrid, ETAF Playground | Data, UI, DataGrid, playground, load-boundary, and static-scan tests |
-| Quality gates | independent package entry, warning-free byte compilation, complete test command, documentation contract | `make check`, `make load`, and `docs-check` |
+| P4 application layer | core Data Controller, memory source, selection, mutation, Grid Host, official UI catalog, DataGrid, SQLite source, and two independent Playgrounds | Core Data/Grid tests plus the four sibling-package `make check` gates |
+| Quality gates | independent package entries, warning-free byte compilation, checkdoc, public API tests, and documentation contracts | Core `make check` plus `etaf-ui`, `etaf-sqlite`, `etaf-playground`, and `ebox-playground` checks |
 
 ## 3. Ownership map
 
@@ -40,8 +40,10 @@ The repository is complete for the agreed unified architecture when the mandator
 | `etaf-actions.el` | named Action registry and Runtime dispatch | View construction or presentation |
 | `etaf-resource.el` | Scope-owned synchronous loader state and error boundary | a second async/task object model |
 | `etaf-data.el` | source capability contract, controller state, pagination, mutation, selection | database-specific code or storage assumptions |
-| `etaf-ui.el` | one official Component catalog, including compound DataGrid | a second Control/Widget/Component taxonomy |
-| `etaf-playground.el` | public-API-only ETAF examples and optional preview entry points | Ebox private APIs or `ebox-playground` dependency |
+| sibling `etaf-ui/etaf-ui.el` | one official Component catalog, including compound DataGrid | a second Control/Widget/Component taxonomy |
+| sibling `etaf-playground/etaf-playground.el` | public-API-only ETAF examples and optional catalog entry points | Ebox private APIs or `ebox-playground` dependency |
+| sibling `etaf-sqlite/etaf-sqlite.el` | typed SQLite Data Source and transaction boundary | Data Controller state or a generic ORM layer |
+| sibling `ebox-playground/ebox-playground.el` | public Ebox layout examples | ETAF APIs or Ebox private APIs |
 | `etaf.el` | one core facade and local package load-path preference | loading optional UI or Playground modules |
 
 Do not split a file merely to create a shorter name. Split only when a stable responsibility, lifecycle, external boundary, or release boundary moves with the code.
@@ -55,7 +57,7 @@ Do not split a file merely to create a shorter name. Split only when a stable re
 - Attribute values are ordinary Elisp expressions.
 - The only child computation bridge is `(expr :value ELISP-EXPRESSION)`.
 - A dynamic View returned by Elisp is constructed with `(etaf-view ...)` inside `expr`; quoted structural data is never executed.
-- Core Hosts are `text`, `fragment`, `container`, `row`, `column`, `stack`, `flex`, and `spacer`.
+- Core Hosts are `text`, `fragment`, `container`, `row`, `column`, `stack`, `flex`, `grid`, and `spacer`.
 - `raw-ebox` accepts only `:value` and optional `:key` and remains opaque to ETAF semantics.
 
 ### 4.2 Component and slots

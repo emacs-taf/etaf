@@ -4,7 +4,7 @@ ETAF 使用一套很小的词汇构建文本应用：`View`、`Component`、prop
 
 ## 1. 安装与加载
 
-ETAF 依赖独立的 Ebox 包。开发时把两个检出目录放入 `load-path`，然后只加载 ETAF 的公共入口：
+ETAF 依赖独立的 Ebox 包。开发时把核心检出目录放入 `load-path`，然后只加载 ETAF 的公共入口：
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/emacs-box")
@@ -12,7 +12,7 @@ ETAF 依赖独立的 Ebox 包。开发时把两个检出目录放入 `load-path`
 (require 'etaf)
 ```
 
-这个入口会加载核心 View、Component、Runtime、reactive、Context、Data、Resource、事件、Behavior 和 Action API。`etaf-ui` 与两个 Playground 都是可选模块；加载 `etaf` 不会自动加载它们。
+这个入口会加载核心 View、Component、Runtime、reactive、Context、Data、Resource、事件、Behavior 和 Action API。`etaf-ui`、`etaf-sqlite` 和两个 Playground 都是独立的可选包；加载 `etaf` 不会自动加载它们。
 
 ## 2. 第一个 View
 
@@ -93,6 +93,25 @@ quote 只有普通 Elisp 的含义：
 - Elisp 表达式需要构造 View 时，在其中使用 `(etaf-view ...)`。
 
 例如 `'bold` 是 face symbol，而 `'(text "data")` 只是数据，不会渲染。动态 View 必须写成 `(etaf-view (text "data"))`。
+
+核心 `grid` Host 用于二维布局：
+
+```elisp
+(etaf-mount
+ "*etaf-grid*"
+ (etaf-view
+  (grid
+   :width '(640)
+   :grid-template-columns '((200) 1fr)
+   :grid-template-rows '(1 1)
+   :gap '(1 (12))
+   (text :face 'bold "Name")
+   (text "Value")
+   (text "Ada")
+   (text "Lovelace"))))
+```
+
+轨道模板支持 `auto`、`(fr FACTOR)`、`1fr` 等符号、`(minmax MIN MAX)` 和 `(repeat COUNT TRACK)`。`:grid-auto-columns` 与 `:grid-auto-rows` 负责隐式轨道尺寸；`:grid-auto-flow` 支持 `row` 或 `column`。子节点可以使用 `:grid-column`、`:grid-row`、`:grid-column-span` 和 `:grid-row-span`；测量、放置以及 item/content 对齐由 Ebox 完成。可选 native backend 不支持 Grid 时会回退到 Elisp Ebox renderer。
 
 ## 4. 定义 Component
 
@@ -433,6 +452,29 @@ DataGrid 要求 `:row-key` 对每一行返回非 nil 的稳定标量。它通过
 
 存储不绑定 SQLite。PostgreSQL、REST、文件或 ORM 集成都应该提供同样契约的具体 Data Source；它们是可选集成，不改变 ETAF 的用户模型。
 
+独立的 `etaf-sqlite` 包是第一个具体存储 source：
+
+```elisp
+(require 'etaf-sqlite)
+
+(let* ((table (etaf-sqlite-table
+               'tasks
+               (list (etaf-sqlite-column :id "id"
+                                         :type 'integer :primary t)
+                     (etaf-sqlite-column :title "title" :type 'text))
+               :id))
+       (database (etaf-sqlite-database "tasks.sqlite" table))
+       (source (etaf-sqlite-source database)))
+  (etaf-sqlite-initialize database)
+  (let ((controller (etaf-data-controller source :auto-load t)))
+    (etaf-data-mutate controller 'insert
+                       '(:id 1 :title "Write the guide."))
+    (message "%S" (etaf-value (etaf-data-items controller)))
+    (etaf-data-stop controller)))
+```
+
+这个包使用 Emacs 内置 SQLite 能力，有意不增加 ORM 层。其他存储包应直接实现 `etaf-data-source`。
+
 ## 11. Resource 与 raw Ebox
 
 Resource 是 Scope 所有的同步 loader：
@@ -475,9 +517,9 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
 
 只有普通 Host 和 Component lowering 无法表达真实 Ebox 需求时才使用它；返回的 Node 对 ETAF 语义保持 opaque。
 
-## 12. Playground
+## 12. Playgrounds
 
-可选的 core Playground 是一个完整的 ETAF 应用示例：
+独立的 ETAF Playground 是一个完整的 ETAF 应用示例：
 
 ```elisp
 (require 'etaf-playground)
@@ -491,6 +533,15 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
 ```
 
 `etaf-playground-close` 会卸载并删除默认 Playground buffer。它与 `ebox-playground` 独立，核心 ETAF 不会自动加载任一 Playground。
+
+独立的 Ebox Playground 用来展示底层布局契约：
+
+```elisp
+(require 'ebox-playground)
+(ebox-playground-open)
+```
+
+它只依赖 Ebox。检查 Ebox Box 和 Grid 布局时使用它；检查 Component、Runtime、Data 和官方目录时使用 `etaf-playground`。
 
 ## 13. 公共 API 速查
 
@@ -508,7 +559,7 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
 | Data | `etaf-data-source`、`etaf-data-controller`、`etaf-data-memory-source`、`etaf-data-*` | 查询、分页、变更、选择和停止数据 |
 | Resource | `etaf-resource`、`etaf-resource-result`、`etaf-error-boundary-run` | 管理 loader 状态和 cleanup |
 | 官方 UI | `require 'etaf-ui`、`etaf-button`、`etaf-checkbox`、`etaf-label`、`etaf-panel`、`etaf-data-grid` | 使用现成 Component |
-| Playground | `etaf-playground-open`、`etaf-playground-open-ui`、`etaf-playground-close` | 探索框架 |
+| Playground | `etaf-playground-open`、`etaf-playground-open-ui`、`etaf-playground-close`、`ebox-playground-open`、`ebox-playground-close` | 探索对应层 |
 
 大多数应用一开始只需要 `etaf-view`、`etaf-mount`、`etaf-define-component`、`etaf-ref` 和事件 callback。其余 API 都是可选能力，不是理解核心语法的前置条件。
 

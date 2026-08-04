@@ -12,7 +12,7 @@
 4. 公共契约发生变化时，同步更新中英文文档。
 5. 候选渲染失败时，不破坏上一次已经提交的 Runtime 或 buffer。
 
-当下面的强制里程碑全部通过时，统一架构的实施完成。更多官方 Component、具体存储 source、更丰富的 Ebox 布局和异步集成都是增量工作，必须复用已经冻结的契约，不能扩大 core 词汇。
+当下面的强制里程碑全部通过时，统一架构的实施完成。第一版官方 UI 目录、Grid 布局、SQLite source 和两个独立 Playground 已作为同级包交付；未来的 Component、数据源和异步集成都是增量工作，必须复用已经冻结的契约，不能扩大 core 词汇。
 
 ## 2. 里程碑状态
 
@@ -22,8 +22,8 @@
 | P1 Component | `:view`、`:setup`、props、默认/命名 slot、retained instance、生命周期、`:key`、raw Ebox 出口 | Component、slot、mount、prop 更新、raw node、rollback 测试 |
 | P2 Runtime | ref、computed、effect、watch、Scope cleanup、Context、Theme、Behavior、事件、focus、Action | 挂载事件/focus、响应式失败回滚和 cleanup 测试 |
 | P3 presentation | 作用域样式、selector、Theme 优先级、inline text runs、Resource 和 error boundary | 样式、Theme、文本 surface、Resource、error 测试 |
-| P4 application | core Data Controller、memory source、selection、mutation、官方 UI 目录、DataGrid、ETAF Playground | Data、UI、DataGrid、Playground、加载边界和静态扫描测试 |
-| Quality gates | 独立包入口、无 warning 编译、完整测试命令、文档契约 | `make check`、`make load`、`docs-check` |
+| P4 application | core Data Controller、memory source、selection、mutation、Grid Host、官方 UI 目录、DataGrid、SQLite source 和两个独立 Playground | core Data/Grid 测试以及四个同级包的 `make check` |
+| Quality gates | 独立包入口、无 warning 编译、checkdoc、公共 API 测试和文档契约 | core `make check` 加 `etaf-ui`、`etaf-sqlite`、`etaf-playground`、`ebox-playground` 的检查 |
 
 ## 3. 职责地图
 
@@ -40,8 +40,10 @@
 | `etaf-actions.el` | 命名 Action 注册表和 Runtime dispatch | View 构造或 presentation |
 | `etaf-resource.el` | Scope 所有的同步 loader 状态和 error boundary | 第二套异步/task 对象模型 |
 | `etaf-data.el` | source capability、controller 状态、分页、mutation、selection | 数据库专用代码或存储假设 |
-| `etaf-ui.el` | 一个官方 Component 目录，包括复合 DataGrid | 第二套 Control/Widget/Component 分类 |
-| `etaf-playground.el` | 只使用公共 API 的 ETAF 示例和可选预览入口 | Ebox 私有 API 或 `ebox-playground` 依赖 |
+| 同级 `etaf-ui/etaf-ui.el` | 一个官方 Component 目录，包括复合 DataGrid | 第二套 Control/Widget/Component 分类 |
+| 同级 `etaf-playground/etaf-playground.el` | 只使用公共 API 的 ETAF 示例和可选目录入口 | Ebox 私有 API 或 `ebox-playground` 依赖 |
+| 同级 `etaf-sqlite/etaf-sqlite.el` | 类型化 SQLite Data Source 和事务边界 | Data Controller 状态或通用 ORM 层 |
+| 同级 `ebox-playground/ebox-playground.el` | 只使用公共 Ebox API 的布局示例 | ETAF API 或 Ebox 私有 API |
 | `etaf.el` | 一个 core facade 和本地包路径优先级 | 自动加载可选 UI 或 Playground |
 
 不要为了获得更短的文件名而拆文件。只有稳定职责、生命周期、外部边界或发行边界发生转移时才拆分。
@@ -55,7 +57,7 @@
 - 属性值是普通 Elisp 表达式。
 - 唯一的子节点计算桥接是 `(expr :value ELISP-EXPRESSION)`。
 - Elisp 返回动态 View 时，在 `expr` 中用 `(etaf-view ...)` 构造；被 quote 的结构数据永远不会被执行。
-- Core Host 是 `text`、`fragment`、`container`、`row`、`column`、`stack`、`flex` 和 `spacer`。
+- Core Host 是 `text`、`fragment`、`container`、`row`、`column`、`stack`、`flex`、`grid` 和 `spacer`。
 - `raw-ebox` 只接受 `:value` 和可选 `:key`，并且对 ETAF 语义保持 opaque。
 
 ### 4.2 Component 与 slot
@@ -131,8 +133,8 @@
 | --- | --- | --- |
 | 外部异步数据 | 具体 source 定义 callback、generation、取消和 error owner | 放在具体 source 包，或增加窄化的 Data capability；不要增加通用 task 层级 |
 | 更多 UI Component | 既有 props/children/slot/event/Behavior 契约 | 在 `etaf-ui` 增加普通 Component，并通过 Runtime 测试 |
-| 数据库 source | 已冻结的 `etaf-data-source` capability plist | 使用具体 SQLite/PostgreSQL source 包，保持存储在 core 外 |
-| 更丰富布局 | 完整的 Ebox measurement/layout/publication 契约 | 先扩展 Ebox，再通过 Host 或 Component 暴露 |
+| 数据库 source | 已冻结的 `etaf-data-source` capability plist | `etaf-sqlite` 已交付；只有真实用例才增加具体 PostgreSQL/REST/文件/ORM source 包 |
+| 更丰富布局 | 完整的 Ebox measurement/layout/publication 契约 | Grid 已交付；未来先扩展 Ebox，再通过 Host 或 Component 暴露 |
 | Playground 可视化工具 | 公共 inspection 和 reporting API | 扩展 `etaf-playground`，不与 Ebox Playground 耦合 |
 
 每个扩展都必须配套测试和文档。如果确实需要新的公共名词，先更新 `architecture.en.md` 与 `architecture.zh.md`，再更新本文和用户指南。

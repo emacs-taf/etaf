@@ -243,6 +243,18 @@
           (etaf-test--render-text
            (etaf-view (column (text "A") (text "B")))))))
 
+(ert-deftest etaf-view-grid-lowers-to-ebox-grid ()
+  "Lower the Grid Host through Ebox's two-dimensional layout node."
+  (let ((node (etaf-render
+               (etaf-view
+                (grid
+                 :grid-template-columns '((20) (20))
+                 (text "A")
+                 (text "B"))))))
+    (should (eq (plist-get node :ebox-type) 'grid))
+    (should (string-match-p "A" (substring-no-properties (ebox-render node))))
+    (should (string-match-p "B" (substring-no-properties (ebox-render node))))))
+
 (ert-deftest etaf-view-prefixed-host-alias-lowers-to-canonical-host ()
   "Resolve an explicit `etaf-' Host spelling to its core Host name."
   (should

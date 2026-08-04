@@ -215,7 +215,7 @@ Inside a Component, `slot` projects content. In a Component call's child region,
 ETAF core intentionally provides only minimal, unstyled Hosts:
 
 ```text
-text · fragment · container · row · column · stack · flex · spacer
+text · fragment · container · row · column · stack · flex · grid · spacer
 ```
 
 | Host | Meaning | Lowering direction |
@@ -227,9 +227,12 @@ text · fragment · container · row · column · stack · flex · spacer
 | `column` | Vertical children | Ebox column layout |
 | `stack` | A structural composition container | Ebox container path |
 | `flex` | Flex-distributed children | Ebox flex layout |
+| `grid` | Two-dimensional tracks, placement, and spans | Ebox Grid formatting context |
 | `spacer` | Intentional empty geometry | Ebox spacer |
 
 Strings are the smallest text View and lower to Ebox content. Nested `text` Views in a text-compatible position become propertized inline runs; a non-text child falls back to normal layout lowering. Text, View Hosts, Components, and Ebox Nodes are therefore successive representations, not competing element classes.
+
+`grid` reuses Ebox's public two-dimensional layout contract. Its properties include track templates, `auto`/fractional/`minmax` tracks, gaps, row/column placement, spans, auto-flow, and item alignment. Ebox owns track measurement and placement; ETAF only maps the `grid` Host into that node. Ebox's optional native reflow backend is not required for correctness; a Grid tree uses the ordinary Ebox renderer when that backend does not support the node.
 
 ETAF's Renderer is the only framework module that calls Ebox. It uses Ebox public constructors, property readers, host-reference queries, and publication APIs. Ebox does not know about Components, slots, Actions, Context, Behaviors, or Data.
 
@@ -399,13 +402,18 @@ etaf → ebox
 etaf-ui → etaf
   └── official Button, Checkbox, Label, Panel, DataGrid, ... Components
 
+etaf-sqlite → etaf
+  └── typed SQLite Data Source
+
 etaf-playground → etaf
   └── optionally etaf-ui for catalog examples
 ```
 
 `etaf-ui` is the official ready-made Component catalog. Its public user concept is Component; files are maintainer boundaries. Controls, Widgets, and DataGrid are not parallel runtime types, and DataGrid is simply a compound Component built from the same View, props, slots, events, and Data contracts.
 
-The new `etaf-playground` uses ETAF public APIs and does not call Ebox private APIs or depend on `ebox-playground`. The existing `ebox-playground` uses Ebox public APIs only and does not load ETAF. Core packages do not load either Playground automatically.
+`etaf-sqlite` is a concrete source package. It owns schema declarations, identifier validation, connections, pagination, and mutations; `etaf-data` remains part of ETAF core. PostgreSQL, REST, file, and ORM integrations may implement the same source capability in separate packages without adding an `etaf-adapters` concept.
+
+`ebox-playground`, `etaf-playground`, `etaf-ui`, and `etaf-sqlite` are independently loadable sibling packages. `ebox-playground` uses only Ebox public APIs and never loads ETAF. `etaf-playground` uses ETAF public APIs and optionally loads `etaf-ui`; it never depends on `ebox-playground`. Core packages do not load any optional package automatically.
 
 Optional storage integrations should use explicit package names such as a concrete SQLite or PostgreSQL source. A generic adapter package would add a name without owning a stable behavior, so it is not part of the public model.
 

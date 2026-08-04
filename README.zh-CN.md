@@ -46,6 +46,17 @@ Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
 - [English User Guide](docs/user-guide.en.md) · [中文用户指南](docs/user-guide.zh.md)
 - [English Implementation Plan](docs/implementation-plan.en.md) · [中文实施计划](docs/implementation-plan.zh.md)
 
+## 独立包
+
+| 包 | 职责 |
+| --- | --- |
+| [`etaf-ui`](../etaf-ui/README.md) | 官方 Component 目录：Button、Checkbox、Label、Panel 和 DataGrid。 |
+| [`etaf-sqlite`](../etaf-sqlite/README.md) | 具体 SQLite Data Source；Data Controller 仍属于 ETAF core。 |
+| [`etaf-playground`](../etaf-playground/README.md) | ETAF 示例；只有请求官方目录示例时才加载 UI 包。 |
+| [`ebox-playground`](../ebox-playground/README.md) | 只使用 Ebox 的布局示例，与 ETAF 独立。 |
+
+没有单独需要安装的 `etaf-data`：Data 是 ETAF 核心能力。也没有笼统的 `etaf-adapters` 包：其他数据库、服务、文件或 ORM 应使用明确名称的具体 Data Source 包实现同一契约。
+
 ## 加载与验证
 
 开发时先把同级 Ebox 检出目录加入 `load-path`：
@@ -62,4 +73,4 @@ Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
 make check EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs
 ```
 
-门禁会编译实现、运行 core/Data/Resource/UI/Playground 测试，并检查文档和 API 边界。`etaf-ui` 与 `etaf-playground` 是可选模块，不会被 core facade 自动加载。
+核心门禁会编译实现、运行 core/Data/Resource 测试，并检查文档和 API 边界。还应在同级 `etaf-ui`、`etaf-sqlite`、`etaf-playground` 和 `ebox-playground` 仓库分别运行 `make check`；它们都不会被 core facade 自动加载。
