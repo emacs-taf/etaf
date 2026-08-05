@@ -519,6 +519,16 @@ Use it only when the normal Host and Component lowering path cannot express a re
 
 ## 12. Playgrounds
 
+For small copyable core patterns, load one of the executable applications in `examples/`:
+
+```elisp
+(add-to-list 'load-path "/path/to/github/etaf/examples")
+(require 'etaf-counter-example)
+(etaf-counter-example-open)
+```
+
+The counter example demonstrates retained state, computed values, Events, Actions, and focusable Hosts. `etaf-data-example-open` demonstrates mounted Data loading, query, selection, mutation, and explicit controller disposal. `etaf-resource-example-open` demonstrates deferred Resource loading, visible error state, reload cleanup, and Scope disposal. See [`examples/README.md`](../examples/README.md) for the ownership rules each example is designed to teach.
+
 The independent ETAF playground is a complete ETAF application example:
 
 ```elisp

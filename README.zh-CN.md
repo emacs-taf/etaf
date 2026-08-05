@@ -40,11 +40,22 @@ Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
 
 `etaf-view` 是唯一的公共 View 构造入口。结构 form 不使用 quote；quote 仍然是普通 Elisp 数据语法，例如 `'bold`。普通 Elisp 返回 View 时，必须在 `expr` 中显式使用 `(etaf-view ...)` 构造它。
 
+## 可执行示例
+
+[`examples/`](examples/README.zh-CN.md) 目录包含三个只依赖 core 的最佳实践应用：保留式状态与 Action、Data Controller 所有权，以及 Resource 错误/清理 lifecycle。`make check` 会编译它们，并通过已挂载的公开事件路径驱动交互。
+
+```elisp
+(add-to-list 'load-path "/path/to/github/etaf/examples")
+(require 'etaf-counter-example)
+(etaf-counter-example-open)
+```
+
 ## 文档
 
 - [English Architecture](docs/architecture.en.md) · [中文架构](docs/architecture.zh.md)
 - [English User Guide](docs/user-guide.en.md) · [中文用户指南](docs/user-guide.zh.md)
 - [English Implementation Plan](docs/implementation-plan.en.md) · [中文实施计划](docs/implementation-plan.zh.md)
+- [English Best-practice Examples](examples/README.md) · [中文示例](examples/README.zh-CN.md)
 
 ## 独立包
 

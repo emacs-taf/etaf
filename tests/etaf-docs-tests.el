@@ -51,23 +51,32 @@
   "Keep the public architecture, guide, and plan in both languages."
   (dolist (file '("README.md"
                   "README.zh-CN.md"
+                  "DESIGN.md"
+                  "DESIGN.zh-CN.md"
+                  "examples/README.md"
+                  "examples/README.zh-CN.md"
                   "docs/architecture.en.md"
                   "docs/architecture.zh.md"
                   "docs/user-guide.en.md"
                   "docs/user-guide.zh.md"
                   "docs/implementation-plan.en.md"
-                  "docs/implementation-plan.zh.md"))
+                  "docs/implementation-plan.zh.md"
+                  "postmortem/2026-08-05-executable-core-examples.en.md"
+                  "postmortem/2026-08-05-executable-core-examples.zh.md"))
     (should (file-exists-p (expand-file-name file etaf-docs-test--root)))))
 
 (ert-deftest etaf-docs-user-surface-has-one-current-vocabulary ()
   "Reject old public entry names and stale View examples in user docs."
   (dolist (file '("README.md" "README.zh-CN.md"
+                  "examples/README.md" "examples/README.zh-CN.md"
                   "docs/architecture.en.md" "docs/architecture.zh.md"
                   "docs/user-guide.en.md" "docs/user-guide.zh.md"
                   "docs/implementation-plan.en.md"
                   "docs/implementation-plan.zh.md"))
     (let ((contents (etaf-docs-test--read file)))
-      (should-not (string-match-p "etaf-template\|etaf-create-app" contents))
+      (should-not
+       (string-match-p
+        (regexp-opt '("etaf-template" "etaf-create-app")) contents))
       (should-not (string-match-p "(text \"[^\"]+\" :" contents))))
   (let ((guide (etaf-docs-test--read "docs/user-guide.en.md")))
     (dolist (token '("etaf-view" "etaf-mount" "etaf-define-component"
@@ -77,6 +86,7 @@
 (ert-deftest etaf-docs-elisp-examples-are-readable ()
   "Keep fenced Elisp examples syntactically readable by Emacs."
   (dolist (file '("README.md" "README.zh-CN.md"
+                  "examples/README.md" "examples/README.zh-CN.md"
                   "docs/architecture.en.md" "docs/architecture.zh.md"
                   "docs/user-guide.en.md" "docs/user-guide.zh.md"
                   "docs/implementation-plan.en.md"
@@ -87,9 +97,25 @@
 
 (ert-deftest etaf-source-uses-only-public-ebox-names ()
   "Keep the ETAF implementation independent of Ebox private functions."
-  (dolist (file (directory-files etaf-docs-test--root t "\\.el\\'"))
+  (dolist (file
+           (append
+            (directory-files etaf-docs-test--root t "\\.el\\'")
+            (directory-files
+             (expand-file-name "examples" etaf-docs-test--root)
+             t "\\.el\\'")))
     (with-temp-buffer
       (insert-file-contents file)
       (should-not (re-search-forward "ebox--" nil t)))))
+
+(ert-deftest etaf-examples-use-only-public-etaf-names ()
+  "Keep executable examples on the public ETAF contract."
+  (dolist (file
+           (directory-files
+            (expand-file-name "examples" etaf-docs-test--root)
+            t "\\.el\\'"))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (should-not
+       (re-search-forward (regexp-opt '("etaf--" "ebox--")) nil t)))))
 
 ;;; etaf-docs-tests.el ends here

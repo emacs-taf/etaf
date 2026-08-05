@@ -40,11 +40,22 @@ Define a Component:
 
 `etaf-view` is the single public View constructor. Structural forms do not use quote; quote remains ordinary Elisp data syntax, such as `'bold`. A View returned from ordinary Elisp is explicitly constructed with `(etaf-view ...)` inside `expr`.
 
+## Executable examples
+
+The [`examples/`](examples/README.md) directory contains three core-only best-practice applications: retained state and Actions, Data Controller ownership, and Resource error/cleanup lifecycle. They are byte-compiled and driven through mounted public event paths by `make check`.
+
+```elisp
+(add-to-list 'load-path "/path/to/github/etaf/examples")
+(require 'etaf-counter-example)
+(etaf-counter-example-open)
+```
+
 ## Documentation
 
 - [Architecture](docs/architecture.en.md) · [中文架构](docs/architecture.zh.md)
 - [User guide](docs/user-guide.en.md) · [中文用户指南](docs/user-guide.zh.md)
 - [Implementation plan](docs/implementation-plan.en.md) · [中文实施计划](docs/implementation-plan.zh.md)
+- [Best-practice examples](examples/README.md) · [中文示例](examples/README.zh-CN.md)
 
 ## Independent packages
 

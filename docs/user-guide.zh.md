@@ -519,6 +519,16 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
 
 ## 12. Playgrounds
 
+如果需要小型、可复制的 core 模式，可以加载 `examples/` 中的可执行应用：
+
+```elisp
+(add-to-list 'load-path "/path/to/github/etaf/examples")
+(require 'etaf-counter-example)
+(etaf-counter-example-open)
+```
+
+计数器示例演示保留式状态、computed 值、Event、Action 和可聚焦 Host。`etaf-data-example-open` 演示 mounted 后的 Data 加载、查询、选择、变更和显式 controller 释放。`etaf-resource-example-open` 演示延迟 Resource 加载、可见错误状态、reload cleanup 与 Scope 释放。每个示例要教授的所有权规则见 [`examples/README.zh-CN.md`](../examples/README.zh-CN.md)。
+
 独立的 ETAF Playground 是一个完整的 ETAF 应用示例：
 
 ```elisp
