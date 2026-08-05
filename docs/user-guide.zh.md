@@ -7,7 +7,7 @@ ETAF 使用一套很小的词汇构建文本应用：`View`、`Component`、prop
 ETAF 依赖独立的 Ebox 包。开发时把核心检出目录放入 `load-path`，然后只加载 ETAF 的公共入口：
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/emacs-box")
+(add-to-list 'load-path "/path/to/github/ebox")
 (add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
 ```

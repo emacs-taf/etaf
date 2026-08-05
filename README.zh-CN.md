@@ -1,6 +1,6 @@
 # ETAF
 
-ETAF 是构建在独立 [Ebox](../emacs-box) 布局与渲染引擎之上的小型文本应用框架。
+ETAF 是构建在独立 [Ebox](../ebox) 布局与渲染引擎之上的小型文本应用框架。
 
 完整的公共模型是：
 
@@ -62,7 +62,7 @@ Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
 开发时先把同级 Ebox 检出目录加入 `load-path`：
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/emacs-box")
+(add-to-list 'load-path "/path/to/github/ebox")
 (add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
 ```

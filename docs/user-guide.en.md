@@ -7,7 +7,7 @@ ETAF builds text applications from one small vocabulary: `View`, `Component`, pr
 ETAF depends on the independent Ebox package. During development, put the core checkouts on `load-path` and load the one public ETAF entry:
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/emacs-box")
+(add-to-list 'load-path "/path/to/github/ebox")
 (add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
 ```

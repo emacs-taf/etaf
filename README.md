@@ -1,6 +1,6 @@
 # ETAF
 
-ETAF is a small text-application framework built above the independent [Ebox](../emacs-box) layout and rendering engine.
+ETAF is a small text-application framework built above the independent [Ebox](../ebox) layout and rendering engine.
 
 Its complete public model is:
 
@@ -62,7 +62,7 @@ There is no separate `etaf-data` install: Data is a core ETAF capability. There 
 During development, load the sibling Ebox checkout before ETAF:
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/emacs-box")
+(add-to-list 'load-path "/path/to/github/ebox")
 (add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
 ```
