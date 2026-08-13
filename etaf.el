@@ -4,7 +4,7 @@
 
 ;; Author: ETAF contributors
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "29.1") (ebox "1.0.1"))
+;; Package-Requires: ((emacs "29.1") (ebox "2.0.0"))
 ;; Keywords: ui, tools, convenience
 ;; URL: https://github.com/ginqi7/etaf
 

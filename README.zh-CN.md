@@ -70,6 +70,8 @@ Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
 
 ## 加载与验证
 
+ECSS 0.1.0 与 TP 1.0.0 是互相独立的包，安装顺序任意；两者都安装后再安装 Ebox 2.0.0，最后安装 ETAF。ETAF 只使用 Ebox 2.0 的公共渲染契约。
+
 开发时先把同级 Ebox 检出目录加入 `load-path`：
 
 ```elisp
