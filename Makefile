@@ -1,5 +1,5 @@
 EMACS ?= emacs
-LOAD_PATH = -L . -L examples -L ../ebox
+LOAD_PATH = -L . -L examples -L ../ebox -L ../tp -L ../ecss
 SOURCES = etaf-view.el etaf-component.el etaf-reactive.el etaf-context.el etaf-resource.el etaf-data.el etaf-renderer.el etaf-runtime.el etaf-behavior.el etaf-actions.el etaf-events.el etaf.el
 EXAMPLES = examples/etaf-counter-example.el examples/etaf-data-example.el examples/etaf-resource-example.el
 TESTS = tests/etaf-tests.el tests/etaf-resource-tests.el tests/etaf-data-tests.el tests/etaf-examples-tests.el

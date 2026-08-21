@@ -25,6 +25,7 @@
   test
   (version 0)
   subscribers
+  source-id
   name)
 
 (cl-defstruct (etaf-computed
@@ -35,6 +36,7 @@
   test
   (version 0)
   subscribers
+  source-id
   effect
   (dirty-p t)
   evaluated-p
@@ -63,14 +65,30 @@
   name
   (active-p t))
 
+(cl-defstruct (etaf-runtime-route
+               (:constructor etaf-runtime-route-create))
+  "Opaque Runtime route stored by reactive sources."
+  runtime-id mount-epoch scheduler)
+
 (defvar etaf--active-effect nil
   "The effect currently collecting dependencies.")
+
+(defvar etaf--source-id-counter 0)
+
+(defun etaf-reactive-source-id (source)
+  "Return stable integer id of reactive SOURCE."
+  (cond ((etaf-ref-p source) (etaf-ref-source-id source))
+        ((etaf-computed-p source) (etaf-computed-source-id source))
+        (t (signal 'wrong-type-argument (list 'etaf-reactive-source-p source)))))
 
 (defvar etaf--active-scope nil
   "The Scope that owns newly created effects and cleanups.")
 
 (defvar etaf--tracking-enabled-p t
   "Whether reactive reads may collect dependencies.")
+
+(defvar etaf--runtime-dependency-collector nil
+  "Runtime-local collector called for each reactive source read.")
 
 (defvar etaf--render-phase-p nil
   "Whether the current call is producing a View tree.")
@@ -80,6 +98,53 @@
 
 The function receives a zero-argument job and a phase symbol.  Outside a
 Runtime, watchers run synchronously.")
+
+(defvar etaf--dispatch-depth 0)
+(defvar etaf--dispatch-source-queue nil)
+(defvar etaf--dispatch-source-set (make-hash-table :test #'eq))
+(defvar etaf--dispatch-runtime-queue nil)
+(defvar etaf--dispatch-runtime-set (make-hash-table :test #'eq))
+(defvar etaf--dispatch-effect-set (make-hash-table :test #'eq))
+
+(defun etaf-reactive-enqueue-runtime-flush (runtime function)
+  "Queue FUNCTION once for RUNTIME after the outer reactive dispatch settles."
+  (unless (gethash runtime etaf--dispatch-runtime-set)
+    (puthash runtime function etaf--dispatch-runtime-set)
+    (setq etaf--dispatch-runtime-queue
+          (nconc etaf--dispatch-runtime-queue (list runtime)))))
+
+(defun etaf--dispatch-source-now (source)
+  "Notify SOURCE subscribers without opening another dispatch boundary."
+  (let ((subscribers (copy-hash-table (etaf--source-subscribers source))))
+    (maphash
+     (lambda (subscriber _)
+       (cond
+        ((etaf-runtime-route-p subscriber)
+         (funcall (etaf-runtime-route-scheduler subscriber)
+                  subscriber source))
+        ((etaf-effect-active-p subscriber)
+         (unless (gethash subscriber etaf--dispatch-effect-set)
+           (puthash subscriber t etaf--dispatch-effect-set)
+           (if-let ((scheduler (etaf-effect-scheduler subscriber)))
+               (funcall scheduler subscriber)
+             (etaf-reactive-effect-run subscriber))))))
+     subscribers)))
+
+(defun etaf--drain-dispatch ()
+  "Drain reactive sources and Runtime work to a stable outer fixed point."
+  (while (or etaf--dispatch-source-queue etaf--dispatch-runtime-queue)
+    (while etaf--dispatch-source-queue
+      (let ((source (pop etaf--dispatch-source-queue)))
+        (remhash source etaf--dispatch-source-set)
+        (etaf--dispatch-source-now source)))
+    ;; Detach this turn.  A lifecycle write may enqueue a source and the same
+    ;; Runtime again for the following turn without merging it into this one.
+    (let ((turn etaf--dispatch-runtime-queue))
+      (setq etaf--dispatch-runtime-queue nil)
+      (dolist (runtime turn)
+        (let ((function (gethash runtime etaf--dispatch-runtime-set)))
+          (remhash runtime etaf--dispatch-runtime-set)
+          (funcall function))))))
 
 (defun etaf--reactive-same-p (left right)
   "Return whether LEFT and RIGHT are equal under ETAF's shallow rule."
@@ -104,6 +169,9 @@ Runtime, watchers run synchronously.")
 
 (defun etaf--track-source (source)
   "Record SOURCE as a dependency of the active effect."
+  (when (and etaf--tracking-enabled-p etaf--runtime-dependency-collector
+             (null etaf--active-effect))
+    (funcall etaf--runtime-dependency-collector source))
   (when (and etaf--tracking-enabled-p etaf--active-effect
              (etaf-effect-active-p etaf--active-effect))
     (let ((subscribers (etaf--source-subscribers source)))
@@ -169,6 +237,7 @@ of the run."
       (etaf--clear-effect-deps effect)
       (let ((etaf--active-effect effect)
             (etaf--active-scope (etaf-effect-owner-scope effect))
+            (etaf--runtime-dependency-collector nil)
             (etaf--tracking-enabled-p t)
             (etaf--render-phase-p (or rendering etaf--render-phase-p)))
         (setf (etaf-effect-running-p effect) t)
@@ -186,14 +255,18 @@ of the run."
 
 (defun etaf--dispatch-source (source)
   "Notify every current subscriber of SOURCE once."
-  (let ((subscribers (copy-hash-table (etaf--source-subscribers source))))
-    (maphash
-     (lambda (effect _)
-       (when (etaf-effect-active-p effect)
-         (if-let ((scheduler (etaf-effect-scheduler effect)))
-             (funcall scheduler effect)
-           (etaf-reactive-effect-run effect))))
-     subscribers)))
+  (unless (gethash source etaf--dispatch-source-set)
+    (puthash source t etaf--dispatch-source-set)
+    (setq etaf--dispatch-source-queue
+          (nconc etaf--dispatch-source-queue (list source))))
+  (when (zerop etaf--dispatch-depth)
+    (let ((etaf--dispatch-depth 1))
+      (unwind-protect (etaf--drain-dispatch)
+        (setq etaf--dispatch-source-queue nil
+              etaf--dispatch-runtime-queue nil)
+        (clrhash etaf--dispatch-source-set)
+        (clrhash etaf--dispatch-runtime-set)
+        (clrhash etaf--dispatch-effect-set)))))
 
 ;;;###autoload
 (cl-defun etaf-ref (initial-value &key test name)
@@ -205,6 +278,7 @@ TEST optionally compares old and new values.  NAME is used in diagnostics."
   (etaf--ref-create :value initial-value
                     :test test
                     :subscribers (make-hash-table :test #'eq)
+                    :source-id (cl-incf etaf--source-id-counter)
                     :name name))
 
 (defun etaf--computed-value (computed)
@@ -241,7 +315,8 @@ computed value."
     (signal 'wrong-type-argument (list 'functionp test)))
   (let ((computed (etaf--computed-create
                    :getter getter :test test :name name
-                   :subscribers (make-hash-table :test #'eq))))
+                   :subscribers (make-hash-table :test #'eq)
+                   :source-id (cl-incf etaf--source-id-counter))))
     (setf (etaf-computed-effect computed)
           (etaf-reactive-effect-create
            getter

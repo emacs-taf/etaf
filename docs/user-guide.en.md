@@ -58,6 +58,8 @@ Mount it into an Emacs buffer:
 
 Use `etaf-mount` whenever a View contains a stateful Component, reactive data, events, or lifecycle.
 
+The current core has no direct `.etaf` loader. `etaf-define-component` is the structure/style/behavior unit: use its View for structure, `:styles` for static presentation, and `:setup` for retained state, Actions, and lifecycle. A future `.etaf` SFC belongs to a compiler layer that emits this same Component contract; it is not a second Runtime entry point.
+
 ## 3. Properties and children
 
 Attribute values are ordinary Elisp expressions. They do not need an extra `expr` wrapper:
@@ -266,6 +268,14 @@ Precedence is fixed:
 explicit Host properties > Component :styles > inherited Theme defaults
 ```
 
+Within one Component style scope, the first matching declaration fills an
+unspecified Host property; later rules do not overwrite that resolved default.
+A non-nil Host property remains protected, and a nil Host property is treated
+as omitted and may receive the Component or Theme default. Use explicit Host
+props or distinct properties when a variant needs a deliberate override.
+
+Styles are scoped to the Component that authored a View node. A parent rule does not enter a nested Component's internals; content supplied through a caller slot keeps the caller scope, while a Component's own slot fallback keeps the child scope.
+
 Theme is a Context convenience, not another runtime object:
 
 ```elisp
@@ -339,7 +349,7 @@ For a reusable installer, reserve `:install` for the cleanup-producing part of t
                            (message "Behavior removed")))))))
 ```
 
-The installer can call `etaf-current-behavior-context` when it needs the current Runtime or Host path. Replacing the Behavior runs the old cleanup before the new state becomes current.
+The installer can call `etaf-current-behavior-context` when it needs the current Runtime or Host path. Replacing the Behavior runs the old cleanup before the new state becomes current. Behavior equality keeps function and reactive-value identity with `eq`; a newly-created installer closure is therefore a deliberate replacement, not an accidental reuse. The replacement is staged under the mounted resource registry and becomes authoritative only when its generation commits.
 
 Focus and hit testing are Runtime operations:
 
@@ -350,6 +360,8 @@ Focus and hit testing are Runtime operations:
 ```
 
 `etaf-host-ref-bounds` and `etaf-host-ref-position` expose the public Ebox hit-test boundary. `etaf-dispatch-event` accepts an optional payload flag when the callback needs one argument.
+
+Mounted buffers enable `etaf-input-mode` automatically. `TAB` focuses the next Host, `Shift-TAB`/backtab focuses the previous Host, `RET` activates the focused Host, and `mouse-1` activates the Host at the click position. Focus ordering sorts numeric `:tab-index` first and uses live buffer position as the stable tie-breaker; moving focus also moves point to that Host. Unmounting disables the input mode.
 
 ## 9. Context / Provide / Inject
 
@@ -563,7 +575,7 @@ It depends only on Ebox. Use it when inspecting Ebox boxes and Grid layout; use 
 | Reactive effects | `etaf-watch`, `etaf-watch-effect`, `etaf-effect-scope`, `etaf-scope-run` | Observe state or synchronize external resources |
 | Lifecycle | `etaf-on-mounted`, `etaf-on-updated`, `etaf-on-unmounted` | Attach Component lifecycle work |
 | Context | `etaf-provide`, `etaf-inject`, `etaf-theme-provide` | Share ambient dependencies through depth |
-| Events and focus | `etaf-dispatch-event`, `etaf-activate`, `etaf-focus`, `etaf-focus-next` | Enter interactive Runtime behavior |
+| Events and focus | `etaf-dispatch-event`, `etaf-activate`, `etaf-focus`, `etaf-focus-next`, `etaf-focus-previous`, `etaf-input-mode` | Enter interactive Runtime behavior |
 | Actions | `etaf-action-define`, `etaf-dispatch` | Name and reuse business mutations |
 | Behaviors | `etaf-behavior-create`, `etaf-define-behavior`, `etaf-current-behavior-context`, `etaf-focusable`, `etaf-toggleable` | Reuse non-visual interaction bundles |
 | Data | `etaf-data-source`, `etaf-data-controller`, `etaf-data-memory-source`, `etaf-data-*` | Query, paginate, mutate, select, and stop data |
@@ -583,3 +595,9 @@ Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, 
 - Keep writes out of rendering; use an event, Action, watch callback, or Effect.
 - Use `etaf-ui` Components for product controls; core Hosts are the structural foundation.
 - Stop a Data Controller and unmount a Runtime when their owner is no longer needed.
+
+For retained updates, keep the application pair declarative: `.etaf` contains
+the static shell and the same-basename `.el` companion owns state, Components,
+and actions. Reactive writes are batched into one generation publication;
+failed publication is retryable, and a non-converging effect is reported rather
+than allowed to keep the UI busy.

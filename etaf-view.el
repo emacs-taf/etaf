@@ -23,12 +23,14 @@
                (:constructor etaf--view-node-create))
   "Internal normalized description of one Host View."
   name
+  token
   props
   children)
 
 (cl-defstruct (etaf--expr
                (:constructor etaf--expr-create))
   "Internal executable child expression."
+  token
   thunk)
 
 (cl-defstruct (etaf--component-spec
@@ -57,11 +59,13 @@
                (:constructor etaf--slot-projection-create))
   "A Component View request for one slot and its fallback children."
   name
+  token
   fallback)
 
 (cl-defstruct (etaf--raw-ebox
                (:constructor etaf--raw-ebox-create))
   "Explicit escape carrying an already-built public Ebox node."
+  token
   thunk
   key-thunk)
 
@@ -313,9 +317,11 @@ belong to the anonymous `default' slot."
                               (etaf--compile-child-form child slot-mode))
                             children)))
       (if (eq slot-mode :projection)
-          `(etaf--slot-projection-create
-            :name ',name
-            :fallback (list ,@compiled))
+          (let ((token (gensym "etaf-slot-site-")))
+            `(etaf--slot-projection-create
+              :name ',name
+              :token ',token
+              :fallback (list ,@compiled)))
         `(etaf--slot-input-create
           :name ',name
           :children (list ,@compiled))))))
@@ -328,8 +334,10 @@ belong to the anonymous `default' slot."
 
 (defun etaf--compile-expr-form (items)
   "Compile an `expr' form with ITEMS into an executable View value."
-  `(etaf--expr-create
-    :thunk (lambda () ,(etaf--parse-expr-form items))))
+  (let ((token (gensym "etaf-expr-site-")))
+    `(etaf--expr-create
+    :token ',token
+    :thunk (lambda () ,(etaf--parse-expr-form items)))))
 
 (defun etaf--compile-child-form (form &optional slot-mode)
   "Compile structural child FORM into code returning a View value.
@@ -380,11 +388,13 @@ SLOT-MODE distinguishes Component-owned projections from call-site inputs."
         (unless (and (plist-member props :value)
                      (cl-every #'keywordp (cl-loop for (key _value) on props by #'cddr collect key)))
           (etaf--syntax-error "Raw-ebox requires :value"))
-        (let ((allowed '(:value :key)))
+        (let ((allowed '(:value :key))
+              (token (gensym "etaf-raw-site-")))
           (dolist (key (cl-loop for (key _value) on props by #'cddr collect key))
             (unless (memq key allowed)
               (etaf--syntax-error "Raw-ebox does not accept %S" key)))
           `(etaf--raw-ebox-create
+            :token ',token
             :thunk (lambda () ,(plist-get props :value))
             :key-thunk ,(when (plist-member props :key)
                           `(lambda () ,(plist-get props :key))))))))
@@ -395,12 +405,15 @@ SLOT-MODE distinguishes Component-owned projections from call-site inputs."
            (host-view-p (eq (gethash (car form) etaf--view-registry)
                             etaf--host-marker))
            (child-slot-mode (if host-view-p slot-mode :input)))
-      `(etaf--view-call ',(car form)
-                        (list ,@(etaf--compile-property-plist props))
-                        (list ,@(mapcar (lambda (child)
-                                          (etaf--compile-child-form
-                                           child child-slot-mode))
-                                        children)))))))
+      (let ((token (and (memq (car form) '(fragment etaf-fragment))
+                        (gensym "etaf-fragment-site-"))))
+        `(etaf--view-call ',(car form)
+                          (list ,@(etaf--compile-property-plist props))
+                          (list ,@(mapcar (lambda (child)
+                                            (etaf--compile-child-form
+                                             child child-slot-mode))
+                                          children))
+                          ,(and token `',token)))))))
 
 ;;;###autoload
 (defmacro etaf-view (form)
@@ -437,8 +450,8 @@ child region and accepts only `:value'."
            key (etaf--component-spec-name spec)))))
     props))
 
-(defun etaf--view-call (name props children)
-  "Construct a Host or Component named NAME from PROPS and CHILDREN."
+(defun etaf--view-call (name props children &optional token)
+  "Construct NAME from PROPS and CHILDREN, retaining optional site TOKEN."
   (unless (symbolp name)
     (etaf--syntax-error "View name must be a symbol: %S" name))
   (setq props (etaf--validate-property-plist props))
@@ -450,6 +463,7 @@ child region and accepts only `:value'."
          (etaf--resolve-property-value (plist-get props :key))))
       (etaf--view-node-create
        :name (etaf--canonical-host-name name)
+       :token token
        :props props
        :children children))
      ((etaf--component-spec-p entry)

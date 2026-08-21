@@ -14,9 +14,23 @@
 (require 'cl-lib)
 (require 'ebox)
 (require 'etaf-view)
+(require 'etaf-component)
 (require 'etaf-context)
 
 (declare-function etaf--runtime-render-component "etaf-runtime" (runtime call path))
+
+(defvar etaf--rendered-range-container-nodes nil
+  "Candidate-local Ebox nodes whose layout directly contains a Range.")
+(declare-function etaf--runtime-render-child-range "etaf-runtime" (runtime expr path))
+(declare-function etaf--runtime-render-slot-range
+                  "etaf-runtime" (runtime projection path))
+(declare-function etaf--runtime-register-semantic-host "etaf-runtime" (runtime name props backend-props path))
+(declare-function etaf--runtime-finish-semantic-host
+                  "etaf-runtime" (runtime semantic-id &optional content content-parts))
+(declare-function etaf--runtime-render-inline-content
+                  "etaf-runtime" (runtime host-id values path &optional surface))
+(declare-function etaf--runtime-call-with-component-env
+                  "etaf-runtime" (runtime component-id function))
 (declare-function etaf--runtime-behavior-node "etaf-runtime" (runtime node path))
 (declare-function etaf--runtime-register-host "etaf-runtime" (runtime props path))
 (declare-function etaf-theme-defaults "etaf-context" (&optional default))
@@ -34,6 +48,15 @@
 
 (defvar etaf--render-style-stack nil
   "Component style scopes active during View lowering.")
+
+(defvar etaf--render-parent-style-stack nil
+  "Style scopes belonging to the caller of the current Component.")
+
+(defvar etaf--current-semantic-parent-id 0
+  "Semantic parent receiving Hosts during mounted lowering.")
+
+(defvar etaf--rendering-range-p nil
+  "Non-nil while eagerly lowering descendants of one Range item Host.")
 
 (defun etaf--event-property-p (property)
   "Return non-nil when PROPERTY is an ETAF event callback property."
@@ -94,7 +117,9 @@ represented as ordinary static data until this final lowering step; they do
 not create another visual node category."
   (if (null styles)
       node
-    (let ((props (copy-sequence (etaf--view-node-props node))))
+    (let ((props (copy-sequence
+                  (etaf--resolve-property-plist
+                   (etaf--view-node-props node)))))
       (dolist (rule (cdr styles))
         (when (and (consp rule) (stringp (car rule))
                    (etaf--style-selector-match-p (car rule) node root-p))
@@ -109,28 +134,43 @@ not create another visual node category."
                 (setq value (if (and (consp value) (eq (car value) 'quote))
                                 (cadr value)
                               value))
-                (unless (plist-member props key)
-                  (setq props (append props (list key value)))))))))
+                (unless (plist-get props key)
+                  (setq props (etaf--merge-property props key value))))))))
       (etaf--view-node-create
        :name (etaf--view-node-name node)
+       :token (etaf--view-node-token node)
        :props props
        :children (etaf--view-node-children node)))))
 
 (defun etaf--apply-theme-defaults (node)
-  "Apply inherited Theme defaults to NODE without overriding props."
+  "Apply known inherited Theme defaults to NODE without overriding props.
+Unknown Theme keys remain readable through `etaf-theme-value' but are design
+tokens, not Ebox Host properties, and therefore are not materialized here."
   (let ((defaults (etaf-theme-defaults)))
     (if (null defaults)
         node
-      (let ((props (copy-sequence (etaf--view-node-props node))))
+      (let ((props (copy-sequence
+                    (etaf--resolve-property-plist
+                     (etaf--view-node-props node)))))
         (while defaults
           (let ((key (pop defaults))
                 (value (pop defaults)))
-            (unless (plist-member props key)
-              (setq props (append props (list key value))))))
+            (when (and (etaf--theme-ebox-property-p key)
+                       (not (plist-get props key)))
+              (setq props (etaf--merge-property props key value)))))
         (etaf--view-node-create
          :name (etaf--view-node-name node)
+         :token (etaf--view-node-token node)
          :props props
          :children (etaf--view-node-children node))))))
+
+(defun etaf--theme-ebox-property-p (key)
+  "Return non-nil when Theme KEY is a known Ebox property.
+The public `ebox-property-rules' table is the shared property vocabulary;
+custom Theme tokens remain Context data and are never copied onto Hosts."
+  (and (keywordp key)
+       (boundp 'ebox-property-rules)
+       (assq key ebox-property-rules)))
 
 (defun etaf--inline-text-surface-properties (props)
   "Return text properties represented by inline text PROPS."
@@ -144,6 +184,13 @@ not create another visual node category."
       (setq surface (append surface
                              (list 'background (plist-get props :bgcolor)))))
     surface))
+
+(defun etaf--apply-inline-surface-properties (content surface)
+  "Return CONTENT with resolved inline SURFACE properties applied."
+  (let ((result (copy-sequence content)))
+    (when (and surface (not (zerop (length result))))
+      (add-text-properties 0 (length result) surface result))
+    result))
 
 (defun etaf--inline-text-content (value)
   "Return `(SUCCESS . STRING)' for inline-compatible text VALUE.
@@ -185,6 +232,18 @@ the ordinary layout lowering path instead."
           (_ (setq valid-p nil))))
       (cons valid-p (and valid-p result))))
    (t (cons nil nil))))
+
+(defun etaf--inline-text-structural-p (value)
+  "Return non-nil when VALUE can be owned by mounted inline effects."
+  (cond
+   ((or (null value) (stringp value) (etaf--expr-p value)) t)
+   ((etaf--view-node-p value)
+    (and (eq (etaf--view-node-name value) 'text)
+         (cl-every #'etaf--inline-text-structural-p
+                   (etaf--view-node-children value))))
+   ((proper-list-p value)
+    (cl-every #'etaf--inline-text-structural-p value))
+   (t nil)))
 
 (defun etaf--ebox-properties (props path)
   "Translate ETAF PROPS at PATH into Ebox's public property list."
@@ -237,13 +296,50 @@ the ordinary layout lowering path instead."
 
 (defun etaf--render-slot-projection (projection path)
   "Render PROJECTION at PATH using the active Component slot collection."
+  (setq etaf--raw-slot-read-p t)
   (let* ((name (etaf--slot-projection-name projection))
          (slots etaf--current-component-slots)
          (entry (assq name slots))
+         (content (and entry (cdr entry)))
+         (children (if (etaf--slot-content-p content)
+                       (etaf--slot-content-children content)
+                     content))
+         (owner-id (and (etaf--slot-content-p content)
+                        (etaf--slot-content-owner-component-id content)))
          (fallback (etaf--slot-projection-fallback projection)))
-    (etaf--render-value-list
-     (if entry (cdr entry) fallback)
-     (append path (list :slot name)))))
+    (let ((etaf--render-style-stack
+           (if entry
+               etaf--render-parent-style-stack
+             etaf--render-style-stack)))
+      (let ((render (lambda ()
+                      (etaf--render-value-list
+                       (if entry children fallback)
+                       (append path (list :slot name))))))
+        (if (and entry etaf--render-runtime)
+            (etaf--runtime-call-with-component-env
+             etaf--render-runtime owner-id render)
+          (funcall render))))))
+
+(defun etaf--slot-projection-range-compatible-p (projection)
+  "Return whether mounted PROJECTION can use the current slot Range slice."
+  (let* ((entry (assq (etaf--slot-projection-name projection)
+                      etaf--current-component-slots))
+         (content (and entry (cdr entry)))
+         (values (if entry
+                     (if (etaf--slot-content-p content)
+                         (etaf--slot-content-children content)
+                       content)
+                   (etaf--slot-projection-fallback projection))))
+    (cl-labels
+        ((valid
+          (value)
+          (cond ((or (null value) (stringp value) (etaf--expr-p value)) t)
+                ((etaf--view-node-p value)
+                 (and (not (eq (etaf--view-node-name value) 'fragment))
+                      (cl-every #'valid (etaf--view-node-children value))))
+                ((proper-list-p value) (cl-every #'valid value))
+                (t nil))))
+      (valid values))))
 
 (defun etaf--render-component-call-pure (call path)
   "Render stateless CALL at PATH without a retained Runtime."
@@ -256,11 +352,11 @@ the ordinary layout lowering path instead."
            (etaf--component-call-props call))
           (etaf--current-component-slots
            (etaf--component-call-slots call)))
-      (let ((etaf--render-style-stack
-             (cons (cons (etaf--component-spec-styles spec)
+      (let ((etaf--render-parent-style-stack etaf--render-style-stack)
+            (etaf--render-style-stack
+             (list (cons (etaf--component-spec-styles spec)
                          (append path (list :component
-                                            (etaf--component-spec-name spec))))
-                   etaf--render-style-stack)))
+                                            (etaf--component-spec-name spec)))))))
         (etaf--render-value-list
          (funcall render
                   (etaf--component-call-props call)
@@ -278,13 +374,24 @@ the ordinary layout lowering path instead."
                                path)
              append
              (cond
-              ((stringp item) (list (ebox-create :content item)))
+              ((stringp item)
+               (when etaf--render-runtime
+                 (let ((semantic-id
+                        (etaf--runtime-register-semantic-host
+                         etaf--render-runtime 'text nil nil item-path)))
+                   (etaf--runtime-finish-semantic-host
+                    etaf--render-runtime semantic-id item)))
+               (list (ebox-create :content item)))
               ((etaf--view-node-p item)
                (etaf--render-node item item-path))
               ((etaf--component-call-p item)
                (if etaf--render-runtime
-                   (list (etaf--runtime-render-component
-                          etaf--render-runtime item item-path))
+                   (let ((result (etaf--runtime-render-component
+                                  etaf--render-runtime item item-path)))
+                     (if (and (consp result)
+                              (eq (car result) 'component-output-range))
+                         (cdr result)
+                       (list result)))
                  (etaf--render-component-call-pure item item-path)))
               ((etaf--slot-projection-p item)
                (etaf--render-slot-projection item item-path))
@@ -328,41 +435,115 @@ the ordinary layout lowering path instead."
       (etaf--runtime-register-host etaf--render-runtime raw-props path))
     (pcase name
       ('text
-       (let* ((flat (cl-mapcan #'etaf--flatten-view-value children))
+       (let* ((semantic-id
+              (and etaf--render-runtime
+                    (etaf--runtime-register-semantic-host
+                     etaf--render-runtime name raw-props props path)))
               (child-path (append path (list :text)))
-              (inline (etaf--inline-text-content flat))
+              (runtime-inline
+               (and semantic-id
+                    (etaf--inline-text-structural-p children)
+                    (etaf--runtime-render-inline-content
+                     etaf--render-runtime semantic-id children child-path)))
+              (flat (unless runtime-inline
+                      (cl-mapcan #'etaf--flatten-view-value children)))
+              (inline (if runtime-inline
+                          (cons t (car runtime-inline))
+                        (etaf--inline-text-content flat)))
               (rendered (unless (car inline)
-                          (etaf--render-value-list flat child-path))))
+                          (let ((etaf--current-semantic-parent-id
+                                 (or semantic-id
+                                     etaf--current-semantic-parent-id)))
+                            (etaf--render-value-list flat child-path)))))
+         (when semantic-id
+           (etaf--runtime-finish-semantic-host
+           etaf--render-runtime semantic-id
+            (and (car inline) (cdr inline))
+            (and runtime-inline (cadr runtime-inline))))
          (if (car inline)
-             (list (apply #'ebox-create
-                          :content (cdr inline)
-                          props))
-           (list (ebox-build
-                  (append (list 'row) props rendered))))))
+             (list (apply #'ebox-create :content (cdr inline) props))
+           (list (ebox-build (append (list 'row) props rendered))))))
       ('spacer
        (when children
          (signal 'etaf-renderer-error
                  (list "spacer cannot have children")))
+       (when etaf--render-runtime
+         (let ((semantic-id (etaf--runtime-register-semantic-host
+                             etaf--render-runtime name raw-props props path)))
+           (etaf--runtime-finish-semantic-host
+            etaf--render-runtime semantic-id)))
        (list (apply #'ebox-spacer props)))
       ('fragment
        (etaf--render-value-list children (append path (list :fragment))))
       ((or 'row 'column 'container 'stack 'flex 'grid)
        (let ((nodes nil)
-             (index 0))
+             (index 0)
+             (range-child-p nil)
+             (semantic-id
+              (and etaf--render-runtime
+                   (etaf--runtime-register-semantic-host
+                    etaf--render-runtime name raw-props props path))))
          (dolist (child children)
            (setq nodes
                  (nconc nodes
-                        (etaf--render-value-list
-                         child (append path (list index)))))
+                        (let ((etaf--current-semantic-parent-id
+                               (or semantic-id
+                                   etaf--current-semantic-parent-id)))
+                          (if (and semantic-id (etaf--expr-p child)
+                                   (not etaf--rendering-range-p))
+                              (let ((result
+                                     (etaf--runtime-render-child-range
+                                      etaf--render-runtime child
+                                      (append path (list index)))))
+                                (when (eq (car result) 'range)
+                                  (setq range-child-p t))
+                                (cdr result))
+                            (if (and semantic-id
+                                     (etaf--view-node-p child)
+                                     (eq (etaf--view-node-name child) 'fragment)
+                                     (not etaf--rendering-range-p))
+                                (let ((result
+                                       (etaf--runtime-render-fragment-range
+                                        etaf--render-runtime child
+                                        (append path (list index)))))
+                                  (setq range-child-p t)
+                                  (cdr result))
+                              (if (and semantic-id
+                                       (etaf--raw-ebox-p child)
+                                       (not etaf--rendering-range-p))
+                                  (let ((result
+                                         (etaf--runtime-render-raw-range
+                                          etaf--render-runtime child
+                                          (append path (list index)))))
+                                    (setq range-child-p t)
+                                    (cdr result))
+                                (if (and semantic-id
+                                     (etaf--slot-projection-p child)
+                                     (etaf--slot-projection-range-compatible-p
+                                      child)
+                                     (not etaf--rendering-range-p))
+                                (let ((result
+                                       (etaf--runtime-render-slot-range
+                                        etaf--render-runtime child
+                                        (append path (list index)))))
+                                  (setq range-child-p t)
+                                  (cdr result))
+                                  (etaf--render-value-list
+                                   child (append path (list index))))))))))
            (cl-incf index))
-         (list (etaf--layout-node name props nodes))))
+         (when semantic-id
+           (etaf--runtime-finish-semantic-host
+            etaf--render-runtime semantic-id))
+         (list (etaf--layout-node name props nodes range-child-p))))
       (_
        (signal 'etaf-renderer-error
                (list (format "Unknown Host reached renderer: %S" name)))))))
 
-(defun etaf--layout-node (name props nodes)
-  "Build layout NAME with Ebox PROPS around child NODES."
-  (cond
+(defun etaf--layout-node (name props nodes &optional range-child-p)
+  "Build layout NAME with Ebox PROPS around child NODES.
+RANGE-CHILD-P records that NODES include nonvisual Range segments."
+  (let ((node
+         (cond
    ((eq name 'row)
     (if (null props)
         (apply #'ebox-row nodes)
@@ -376,8 +557,27 @@ the ordinary layout lowering path instead."
    ((eq name 'grid)
     (apply #'ebox-grid (append props nodes)))
    (t
-    (signal 'etaf-renderer-error
-            (list (format "Not a layout Host: %S" name))))))
+     (signal 'etaf-renderer-error
+             (list (format "Not a layout Host: %S" name)))))))
+    (when range-child-p
+      (push node etaf--rendered-range-container-nodes))
+    node))
+
+(defun etaf--lower-resolved-semantic-host
+    (name props content children range-child-p)
+  "Lower resolved NAME, PROPS, CONTENT, and CHILDREN through Renderer.
+RANGE-CHILD-P preserves the direct material Range parent."
+  (pcase name
+    ('text
+     (if children
+         (etaf--layout-node 'row props children range-child-p)
+       (apply #'ebox-create :content content props)))
+    ('spacer (apply #'ebox-spacer props))
+    ((or 'row 'column 'container 'stack 'flex 'grid)
+     (etaf--layout-node name props children range-child-p))
+    (_ (signal 'etaf-renderer-error
+               (list (format "Semantic Host requires Step4b lowering: %S"
+                             name))))))
 
 ;;;###autoload
 (defun etaf-render (view)

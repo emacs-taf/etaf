@@ -18,13 +18,27 @@
                (:constructor etaf--context-create))
   "One inherited Context frame owned by a Component instance."
   parent
+  owner-id
   (values (make-hash-table :test #'eq)))
 
 (defvar etaf--current-context nil
   "Context table of the Component currently being evaluated.")
 
+(defvar etaf--context-inject-recorder nil
+  "Candidate-local function recording Context provider reads.")
+
 (defconst etaf--context-missing (make-symbol "etaf-context-missing")
   "Unique sentinel used to distinguish an absent Context value.")
+
+(defun etaf-context-copy (context)
+  "Return an immutable candidate copy of CONTEXT's local frame."
+  (when context
+    (let ((values (make-hash-table :test #'eq)))
+      (maphash (lambda (key value) (puthash key value values))
+               (etaf-context-values context))
+      (etaf--context-create :parent (etaf-context-parent context)
+                            :owner-id (etaf-context-owner-id context)
+                            :values values))))
 
 (defun etaf--context-key (key)
   "Validate and normalize Context KEY."
@@ -52,16 +66,21 @@ can be distinguished from a missing dependency."
   (let ((key (etaf--context-key key))
         (context etaf--current-context)
         found
+        provider
         value)
     (while (and context (not found))
       (let ((candidate (gethash key (etaf-context-values context)
                                etaf--context-missing)))
         (unless (eq candidate etaf--context-missing)
           (setq value candidate
-                found t)))
+                found t
+                provider context)))
       (setq context (etaf-context-parent context)))
     (if found
-        value
+        (progn
+          (when etaf--context-inject-recorder
+            (funcall etaf--context-inject-recorder provider key))
+          value)
       (if (and required-p-supplied-p required-p)
           (signal 'etaf-context-error
                   (list (format "Missing ETAF Context dependency: %S" key)))

@@ -58,6 +58,8 @@ ETAF 依赖独立的 Ebox 包。开发时把核心检出目录放入 `load-path`
 
 View 含有状态型 Component、响应式数据、事件或生命周期时，使用 `etaf-mount`。
 
+当前 core 不直接加载 `.etaf`。`etaf-define-component` 是结构/样式/行为单元：用 View 定义结构，用 `:styles` 放静态 presentation，用 `:setup` 管理 retained state、Action 和生命周期。未来 `.etaf` SFC 属于把结果编译成同一套 Component 契约的 compiler layer，而不是第二个 Runtime 入口。
+
 ## 3. 属性与子节点
 
 属性值就是普通 Elisp 表达式，不需要额外的 `expr`：
@@ -266,6 +268,13 @@ Setup 对 retained instance 只执行一次，返回的 render 函数在更新�
 显式 Host 属性 > Component :styles > 继承的 Theme 默认值
 ```
 
+在同一个 Component 样式作用域内，第一条匹配声明会填充尚未指定的 Host
+属性；后续规则不会覆盖已经解析出的默认值。非 nil 的 Host 属性始终受
+保护，nil Host 属性按省略处理，可以接收 Component 或 Theme 默认值。若
+variant 需要明确覆盖，应使用显式 Host 属性或不同的属性键。
+
+样式作用域归属于创建 View node 的 Component。父组件规则不会进入嵌套 Component 的内部；调用者通过 slot 提供的内容保留 caller scope，Component 自己定义的 slot fallback 保留 child scope。
+
 Theme 是 Context 的便捷形式，不是另一个 Runtime 对象：
 
 ```elisp
@@ -339,7 +348,7 @@ Behavior 用来打包可复用的非视觉属性和 cleanup：
                            (message "Behavior removed")))))))
 ```
 
-Installer 需要 Runtime 或 Host path 时，可以调用 `etaf-current-behavior-context`。Behavior 被替换时，旧 cleanup 会在新状态成为当前状态前运行。
+Installer 需要 Runtime 或 Host path 时，可以调用 `etaf-current-behavior-context`。Behavior 被替换时，旧 cleanup 会在新状态成为当前状态前运行。Behavior equality 对 function 和 reactive value 使用 `eq`；因此新建的 installer closure 会被视为有意替换，而不是错误复用。替换状态先以 mounted resource registry 的 staged resource 保存，generation commit 后才成为 authority。
 
 Focus 和 hit testing 是 Runtime 操作：
 
@@ -350,6 +359,8 @@ Focus 和 hit testing 是 Runtime 操作：
 ```
 
 `etaf-host-ref-bounds` 和 `etaf-host-ref-position` 暴露公共的 Ebox hit-test 边界。`etaf-dispatch-event` 支持可选 payload 标记，用于给 callback 传入一个参数。
+
+挂载后的 buffer 会自动启用 `etaf-input-mode`：`TAB` 聚焦下一个 Host，`Shift-TAB`/backtab 聚焦上一个 Host，`RET` 激活当前焦点 Host，`mouse-1` 在点击位置激活 Host。焦点顺序先按数字 `:tab-index`，相同 index 再按 live buffer position 稳定排序；移动焦点也会移动 point。卸载时会禁用该输入 mode。
 
 ## 9. Context / Provide / Inject
 
@@ -563,7 +574,7 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
 | 响应式 effect | `etaf-watch`、`etaf-watch-effect`、`etaf-effect-scope`、`etaf-scope-run` | 观察状态或同步外部资源 |
 | 生命周期 | `etaf-on-mounted`、`etaf-on-updated`、`etaf-on-unmounted` | 绑定 Component 生命周期工作 |
 | Context | `etaf-provide`、`etaf-inject`、`etaf-theme-provide` | 跨层级共享依赖 |
-| 事件与 focus | `etaf-dispatch-event`、`etaf-activate`、`etaf-focus`、`etaf-focus-next` | 进入交互 Runtime |
+| 事件与 focus | `etaf-dispatch-event`、`etaf-activate`、`etaf-focus`、`etaf-focus-next`、`etaf-focus-previous`、`etaf-input-mode` | 进入交互 Runtime |
 | Action | `etaf-action-define`、`etaf-dispatch` | 命名和复用业务变更 |
 | Behavior | `etaf-behavior-create`、`etaf-define-behavior`、`etaf-current-behavior-context`、`etaf-focusable`、`etaf-toggleable` | 复用非视觉交互 bundle |
 | Data | `etaf-data-source`、`etaf-data-controller`、`etaf-data-memory-source`、`etaf-data-*` | 查询、分页、变更、选择和停止数据 |
@@ -583,3 +594,8 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
 - 不要在 render 中写状态；使用事件、Action、watch callback 或 Effect。
 - 产品级控件使用 `etaf-ui` Component；core Host 只是结构基础。
 - owner 不再需要时，停止 Data Controller 并卸载 Runtime。
+
+对于保留式更新，建议保持 pair 结构：`.etaf` 只放静态 shell，同名 `.el` companion
+负责 state、Component 和 action。响应式写入会合并为一次 generation publication；
+发布失败可以在同一旧状态上重试，non-converging effect 会报告错误，不会让界面
+持续占用事件循环。

@@ -108,6 +108,8 @@ ATTRIBUTE = :KEY VALUE
 
 它执行表达式，然后接受字符串、View、View 序列或 `nil`。它不创建 Ebox wrapper、identity、生命周期、watch 或 effect。`if`、`when`、`cond`、`let`、`mapcar`、`cl-loop` 等 Elisp 形式仍然只是 `:value` 中的普通 Elisp。
 
+当前 core 没有面向文件的 `.etaf` pair loader。`etaf-define-component` 才是结构/样式/行为单元：View 定义结构，`:styles` 负责 presentation，`:setup` 负责 retained state、事件和生命周期行为。未来的 `.etaf` SFC 属于把结果 lowering 到同一套公共 View/Component 契约的 compiler layer，而不是第二套 Runtime 语法。
+
 ## 4. Component
 
 公共定义宏只有三个关键字：
@@ -125,6 +127,8 @@ ATTRIBUTE = :KEY VALUE
 ```
 
 `:view` 和 `:setup` 互斥；`:styles` 可选且最多出现一次。Props 是唯一需要声明的业务输入；普通尾部子节点和命名 slot 会被规范化为 Component 的 slot 集合。
+
+Component definition 是当前结构/样式/行为边界：动态状态、Action callback 和生命周期工作放进 `:setup`，静态 presentation 放进 `:styles`。未来 `.etaf` SFC compiler 可以生成这些 definition，但 Runtime 不会直接加载 `.etaf` 文件。
 
 ### 4.1 无状态与状态型形式
 
@@ -341,6 +345,8 @@ key 使用稳定的普通 symbol。最近的祖先优先，缺失的 required ke
 
 显式 Host props 覆盖 Component styles，Component styles 覆盖 Theme defaults。
 
+样式所有权跟随创建每个 View node 的 Component。嵌套 Component 是样式边界：父规则不会穿透其内部。调用者提供的 slot 内容使用 caller scope，子组件自有的 fallback 内容保留在 child scope。
+
 ### 9.2 Data
 
 Data 是 ETAF core 能力，不是需要用户额外学习的第二套框架。Data Source 是一个小的 capability plist：
@@ -416,7 +422,27 @@ etaf-playground → etaf
 
 可选存储集成应使用具体名称，例如 SQLite 或 PostgreSQL source。通用 adapter 包无法拥有稳定的行为，只会增加用户需要记忆的名称，因此不属于公共模型。
 
-## 11. 拓展规则
+## 11. 保留式发布与 fixed-point 安全
+
+mounted Component、expr、slot、fragment、raw、inline 和 Root owner 都经过同一
+个外层 reactive dispatch。局部 owner 先生成 candidate generation 和 Ebox logical
+replacement；不相交 owner 会合并为一次 TP/Ebox publication。只有 Root owner
+可以进入 complete-root adapter。
+
+每次 Runtime flush 都记录 candidate-aware effect tuple：其中包含 generation id、
+effect→source 边和 source version，以及 candidate input/context/output facts 的
+immutable semantic-node stamp。重复 tuple 会报告有序的 effect/edge path；step
+bound 从 candidate nodes、dependency edges 和 source entries 推导，不再是任意
+固定倍率阈值。rollback 会丢弃本次 flush 的 stamp，因此同一个失败状态可以作为
+新的 transaction 重试。
+
+Behavior installer 使用 target-specific identity：reactive value 和 function 用
+`eq`，普通 scalar attribute 才使用 value equality。每个已安装 Behavior 都获得
+稳定的 `(mount-epoch resource-id)` 地址；generation membership 与 Runtime resource
+registry 决定当前 authority。失败 candidate 只移除 staged Behavior resource，并
+执行受 containment 保护的 cleanup。
+
+## 12. 拓展规则
 
 增加新能力前，优先选择最小的既有 owner：
 

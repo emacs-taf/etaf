@@ -18,6 +18,13 @@
   "Invalid ETAF Component definition"
   'etaf-view-error)
 
+(cl-defstruct (etaf--slot-content (:constructor etaf--slot-content-create))
+  "Internal caller ownership metadata for one slot entry."
+  owner-component-id children)
+
+(defvar etaf--raw-slot-read-p nil
+  "Set while a Component render uses public raw slot accessors.")
+
 (defun etaf--component-definition-error (format-string &rest arguments)
   "Signal a Component definition error from FORMAT-STRING and ARGUMENTS."
   (signal 'etaf-component-definition-error
@@ -63,21 +70,23 @@ The function is also useful to code that deliberately avoids that shorthand."
 
 (defun etaf-current-slots ()
   "Return the current Component's normalized slot alist."
-  etaf--current-component-slots)
+  (setq etaf--raw-slot-read-p t)
+  (mapcar (lambda (entry)
+            (cons (car entry)
+                  (if (etaf--slot-content-p (cdr entry))
+                      (etaf--slot-content-children (cdr entry))
+                    (cdr entry))))
+          etaf--current-component-slots))
 
 (defun etaf-current-slot (name &optional fallback)
   "Return the child list for slot NAME, or FALLBACK when it is absent."
+  (setq etaf--raw-slot-read-p t)
   (let ((entry (assq name etaf--current-component-slots)))
-    (if entry (cdr entry) fallback)))
-
-(defun etaf--component-prop-bindings (props)
-  "Return lexical bindings for stateless Component PROPS."
-  (mapcar (lambda (prop)
-            `(,prop
-              (etaf--resolve-property-value
-               (plist-get etaf--component-props
-                          ,(etaf--component-prop-key prop)))))
-          props))
+    (if entry
+        (if (etaf--slot-content-p (cdr entry))
+            (etaf--slot-content-children (cdr entry))
+          (cdr entry))
+      fallback)))
 
 (defun etaf--component-prop-symbol-macros (props)
   "Return symbol macros that read current Component PROPS."
@@ -183,7 +192,8 @@ forms do not use quote; ordinary Elisp belongs in `expr :value'."
                        (etaf--current-component-slots etaf--component-slots)
                        (etaf--current-component-instance
                         etaf--current-component-instance))
-                   (let ,(etaf--component-prop-bindings props)
+                   (cl-symbol-macrolet
+                       ,(etaf--component-prop-symbol-macros props)
                      ,(etaf--compile-view-form view-form :projection))))))
            (setup-lambda
             (when saw-setup

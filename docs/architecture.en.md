@@ -109,6 +109,8 @@ Attribute values do not need an `expr` wrapper. `expr` exists only because the c
 
 It evaluates the expression, then accepts a string, View, sequence, or `nil`. It creates no Ebox wrapper, identity, lifecycle, watcher, or effect. `if`, `when`, `cond`, `let`, `mapcar`, `cl-loop`, and other Elisp forms remain ordinary Elisp inside `:value`.
 
+The current core has no file-facing `.etaf` pair loader. `etaf-define-component` is the structure/style/behavior unit: its View defines structure, `:styles` owns presentation rules, and `:setup` owns retained state, events, and lifecycle behavior. A future `.etaf` single-file component format belongs in a compiler layer that lowers into this same public View and Component contract; it is not a second runtime grammar.
+
 ## 4. Components
 
 The public definition macro has exactly three keywords:
@@ -126,6 +128,8 @@ The public definition macro has exactly three keywords:
 ```
 
 `:view` and `:setup` are mutually exclusive. `:styles` is optional and may appear once. Props are the only declared business inputs; ordinary trailing children and named slots are normalized separately into the Component's slot collection.
+
+The Component definition is the current structure/style/behavior boundary. Keep dynamic state, Action callbacks, and lifecycle work in `:setup`; keep static presentation in `:styles`. A future `.etaf` SFC compiler may produce these definitions, but the Runtime does not load `.etaf` files directly.
 
 ### 4.1 Stateless and stateful forms
 
@@ -342,6 +346,8 @@ Keys are stable ordinary symbols. The nearest ancestor wins; a missing required 
 
 Explicit Host props override Component styles, and Component styles override Theme defaults.
 
+Style ownership follows the Component that authored each View node. A nested Component is a style boundary: parent rules do not penetrate its internals. Caller-provided slot content is rendered with the caller scope, while a child's own fallback content remains in the child scope.
+
 ### 9.2 Data
 
 Data is a core ETAF capability, not a second framework package. A Data Source is a small capability plist:
@@ -417,7 +423,30 @@ etaf-playground → etaf
 
 Optional storage integrations should use explicit package names such as a concrete SQLite or PostgreSQL source. A generic adapter package would add a name without owning a stable behavior, so it is not part of the public model.
 
-## 11. Extension rule
+## 11. Retained publication and fixed-point safety
+
+Mounted Component, expr, slot, fragment, raw, inline, and Root owners publish
+through one outer reactive dispatch. A local owner evaluates into a candidate
+generation and Ebox logical replacement; disjoint owners are coalesced into
+one TP/Ebox publication. The Root owner is the only complete-root adapter.
+
+Each Runtime flush records a candidate-aware effect tuple containing the
+generation id, effect-to-source edges and source versions, plus an immutable
+semantic-node stamp for candidate input/context/output facts. A repeated tuple
+reports the ordered effect/edge path of the non-converging graph. The flush
+bound is derived from candidate nodes, dependency edges, and source entries;
+it is not a fixed multiplier of an arbitrary threshold. Rollback discards the
+flush-local stamps, so the same failed state can be retried as a new
+transaction.
+
+Behavior installers use target-specific identity: reactive values and
+functions are compared with `eq`, while scalar attributes use value equality.
+Each installed Behavior also receives a stable `(mount-epoch resource-id)`
+address. Generation membership and the Runtime resource registry determine
+which installer is authoritative; a failed candidate removes only its staged
+Behavior resource and runs its contained cleanup.
+
+## 12. Extension rule
 
 Before adding a new concept, choose the smallest existing owner:
 
