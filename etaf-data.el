@@ -418,6 +418,16 @@ When SELECTED-P is nil, remove IDENTITY from the selection."
             (cl-remove identity selection :test #'equal)))))
 
 ;;;###autoload
+(defun etaf-data-select-one (controller identity)
+  "Replace CONTROLLER selection with the single IDENTITY.
+
+Use this explicit single-selection operation for tables and list views.  The
+existing `etaf-data-select' API remains additive for multi-select controls."
+  (let ((selection-ref (etaf-data-selection controller)))
+    (setf (etaf-value selection-ref)
+          (if (null identity) nil (list identity)))))
+
+;;;###autoload
 (defun etaf-data-selected-p (controller identity)
   "Return non-nil when IDENTITY is selected in CONTROLLER."
   (member identity (etaf-value (etaf-data-selection controller))))

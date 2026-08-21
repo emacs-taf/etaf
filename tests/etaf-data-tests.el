@@ -160,6 +160,22 @@
           (should-not (etaf-value (etaf-data-selection controller))))
       (etaf-data-stop controller))))
 
+(ert-deftest etaf-data-select-one-replaces-existing-selection ()
+  "Single-selection consumers replace, rather than adjoin, identities."
+  (let* ((source (etaf-data-memory-source
+                  '((:id 1) (:id 2) (:id 3)) :id-key :id))
+         (controller (etaf-data-controller source :auto-load nil)))
+    (unwind-protect
+        (progn
+          (etaf-data-select-one controller 1)
+          (etaf-data-select-one controller 2)
+          (should (equal '(2) (etaf-value (etaf-data-selection controller))))
+          (etaf-data-select-one controller 2)
+          (should (equal '(2) (etaf-value (etaf-data-selection controller))))
+          (etaf-data-select-one controller nil)
+          (should-not (etaf-value (etaf-data-selection controller))))
+      (etaf-data-stop controller))))
+
 (ert-deftest etaf-data-stop-disposes-source-and-controller ()
   "Stop controller lifecycle resources and reject later operations."
   (let* ((dispose-count 0)
