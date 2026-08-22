@@ -86,6 +86,8 @@
 (defvar etaf-test-transparent-parent-renders 0)
 (defvar etaf-test-transparent-inner-renders 0)
 (defvar etaf-test-transparent-outer-renders 0)
+(defvar etaf-test-ancestor-parent-source nil)
+(defvar etaf-test-ancestor-child-source nil)
 (defvar etaf-test-context-provider-source nil)
 (defvar etaf-test-context-provider-renders 0)
 (defvar etaf-test-context-consumer-renders 0)
@@ -593,6 +595,19 @@
 (etaf-define-component etaf-test-transparent-chain-parent ()
   "Place a transparent Component chain in one material parent."
   :view (column (etaf-test-transparent-outer)))
+
+(etaf-define-component etaf-test-ancestor-artifact-child ()
+  "Render a child whose local update invalidates ancestor artifacts."
+  :view
+  (text (expr :value
+              (if (etaf-value etaf-test-ancestor-child-source)
+                  "detail" "child"))))
+
+(etaf-define-component etaf-test-ancestor-artifact-parent ()
+  "Render a parent that can update after one descendant-only publication."
+  :view
+  (column :bgcolor (etaf-value etaf-test-ancestor-parent-source)
+   (etaf-test-ancestor-artifact-child)))
 
 (etaf-define-component etaf-test-generation-context-consumer ()
   "Render one generation-owned Context dependency."
@@ -3812,6 +3827,35 @@ Event composition is a Runtime contract, not a UI-library helper contract."
       (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
       (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+
+(ert-deftest etaf-runtime-parent-rerender-rebuilds-invalidated-artifact ()
+  "Rebuild a committed parent anchor after a descendant-only publication."
+  (let ((buffer-name " *etaf-ancestor-artifact-test*")
+        (etaf-test-ancestor-parent-source (etaf-ref "light"))
+        (etaf-test-ancestor-child-source (etaf-ref nil)))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name
+                      (etaf-view (etaf-test-ancestor-artifact-parent)))
+          (setf (etaf-value etaf-test-ancestor-child-source) t)
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (generation (etaf-runtime-current-generation runtime))
+                 (parent
+                  (etaf--generation-semantic
+                   generation '(etaf-test-ancestor-artifact-parent (root)))))
+            (should (etaf--semantic-component-p parent))
+            (should-not (etaf--semantic-component-artifact-key parent))
+            (setf (etaf-value etaf-test-ancestor-parent-source) "dark")
+            (should (equal
+                     (plist-get
+                      (etaf-runtime-host-props-for
+                       runtime '(etaf-host (root :view)))
+                      :bgcolor)
+                     "dark"))))
+      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-context-provider-promotes-consumer-atomically ()
   "Promote Context provider/consumer frames only with their generation."

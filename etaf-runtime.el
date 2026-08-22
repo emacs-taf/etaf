@@ -3460,10 +3460,20 @@ The candidate uses resolved VALUE, DEPS, and NODES."
                                                (car output-range))))
                (etaf-runtime-candidate-artifacts runtime))
       (push identity (etaf-runtime-candidate-rendered-identities runtime))
-      (list candidate
-            (gethash (etaf--semantic-component-artifact-key committed)
-                     (etaf-runtime-artifact-registry runtime))
-            (gethash effect-id (etaf-runtime-candidate-artifacts runtime))))))
+      (let ((committed-artifact
+             (and (etaf--semantic-component-artifact-key committed)
+                  (gethash (etaf--semantic-component-artifact-key committed)
+                           (etaf-runtime-artifact-registry runtime)))))
+        ;; Descendant-only publications invalidate cached ancestor artifacts
+        ;; while retaining the ancestor semantic tree.  When that ancestor
+        ;; becomes dirty on a later turn, rebuild its committed backend anchor
+        ;; from the immutable generation before diffing the new render.
+        (unless committed-artifact
+          (setq committed-artifact
+                (etaf--runtime-rebuild-component-artifact runtime committed)))
+        (list candidate committed-artifact
+              (gethash effect-id
+                       (etaf-runtime-candidate-artifacts runtime)))))))
 
 (defun etaf--runtime-render-dirty-range (runtime effect range)
   "Evaluate RUNTIME dirty RANGE EFFECT without running its Component owner."
