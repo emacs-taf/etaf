@@ -34,6 +34,8 @@
 (declare-function etaf--runtime-behavior-node "etaf-runtime" (runtime node path))
 (declare-function etaf--runtime-register-host "etaf-runtime" (runtime props path))
 (declare-function etaf-theme-defaults "etaf-context" (&optional default))
+(declare-function etaf-theme-token-p "etaf-context" (value))
+(declare-function etaf-theme-token-resolve "etaf-context" (value))
 
 (define-error 'etaf-renderer-error "ETAF rendering error")
 
@@ -133,6 +135,9 @@ not create another visual node category."
                                         key))))
                 (setq value (if (and (consp value) (eq (car value) 'quote))
                                 (cadr value)
+                              value))
+                (setq value (if (etaf-theme-token-p value)
+                                (etaf-theme-token-resolve value)
                               value))
                 (unless (plist-get props key)
                   (setq props (etaf--merge-property props key value))))))))

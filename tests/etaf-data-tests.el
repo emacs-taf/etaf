@@ -68,6 +68,21 @@
           (should (equal '(1 3) (etaf-data-test--ids controller))))
       (etaf-data-stop controller))))
 
+(ert-deftest etaf-data-imperative-pagination-reloads-without-auto-load ()
+  "Public pager commands reload Controllers that opt out of AUTO-LOAD."
+  (let* ((source (etaf-data-memory-source etaf-data-test-records
+                                          :id-key :id))
+         (controller (etaf-data-controller source :page-size 2)))
+    (unwind-protect
+        (progn
+          (etaf-data-load controller)
+          (should (equal '(1 2) (etaf-data-test--ids controller)))
+          (should (= 2 (etaf-data-next-page controller)))
+          (should (equal '(3 4) (etaf-data-test--ids controller)))
+          (should (= 1 (etaf-data-previous-page controller)))
+          (should (equal '(1 2) (etaf-data-test--ids controller))))
+      (etaf-data-stop controller))))
+
 (ert-deftest etaf-data-source-page-normalization-does-not-reload-twice ()
   "Avoid a second reload when source results normalize page refs."
   (let* ((load-count 0)
@@ -175,6 +190,40 @@
           (etaf-data-select-one controller nil)
           (should-not (etaf-value (etaf-data-selection controller))))
       (etaf-data-stop controller))))
+
+(ert-deftest etaf-data-selected-item-resolves-the-current-identity ()
+  "Resolve a selected identity to the loaded item through the public helper."
+  (let* ((source (etaf-data-memory-source etaf-data-test-records :id-key :id))
+         (controller (etaf-data-controller
+                      source :item-key (lambda (record) (plist-get record :id))
+                      :auto-load t)))
+    (unwind-protect
+        (progn
+          (etaf-data-select-one controller 3)
+          (should (equal "Alan"
+                         (plist-get (etaf-data-selected-item controller)
+                                    :name)))
+          (etaf-data-select-one controller 99)
+          (should-not (etaf-data-selected-item controller)))
+      (etaf-data-stop controller))))
+
+(ert-deftest etaf-data-controller-is-owned-by-current-scope ()
+  "Dispose a controller created in a Scope when its owner Scope stops."
+  (let ((disposed 0)
+        controller
+        (scope (etaf-effect-scope :detached t :name 'etaf-data-owner-test)))
+    (etaf-scope-run
+     scope
+     (lambda ()
+       (setq controller
+             (etaf-data-controller
+              (etaf-data-source
+               :load (lambda (_query _page _page-size)
+                       (list :items nil :total 0))
+               :dispose (lambda () (cl-incf disposed)))))))
+    (should (etaf-data-controller-p controller))
+    (etaf-scope-stop scope)
+    (should (= 1 disposed))))
 
 (ert-deftest etaf-data-stop-disposes-source-and-controller ()
   "Stop controller lifecycle resources and reject later operations."

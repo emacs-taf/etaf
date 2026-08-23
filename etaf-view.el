@@ -93,6 +93,13 @@ this list merely to make a demo convenient.")
 (defvar etaf--view-registry (make-hash-table :test #'eq)
   "Registry of Hosts and Components used by structural View calls.")
 
+(defvar etaf--allow-component-redefinition nil
+  "When non-nil, permit an explicit authoring tool to replace Components.
+
+Normal ETAF loading keeps duplicate definitions as errors.  Tools such as a
+source playground may bind this variable around an intentional reload after
+disposing the old Runtime.")
+
 (defvar etaf--current-component-props nil
   "Dynamic props of the Component currently being evaluated.")
 
@@ -142,13 +149,15 @@ form, or core Host.  A collision receives a semantic `-view' alias."
       (etaf--component-error
        "Component %S conflicts with a core Host" name))
     (when (and existing (not (eq existing etaf--host-marker))
-               (not (eq existing spec)))
+               (not (eq existing spec))
+               (not etaf--allow-component-redefinition))
       (etaf--component-error
        "Component %S is already registered" name)))
   (puthash name spec etaf--view-registry)
   (when-let ((alias (etaf--component-alias name)))
     (let ((existing (gethash alias etaf--view-registry)))
-      (when (and existing (not (eq existing spec)))
+      (when (and existing (not (eq existing spec))
+                 (not etaf--allow-component-redefinition))
         (etaf--component-error
          "Component alias %S is already registered" alias)))
     (puthash alias spec etaf--view-registry))

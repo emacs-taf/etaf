@@ -343,6 +343,14 @@ key 使用稳定的普通 symbol。最近的祖先优先，缺失的 required ke
     (lambda () (etaf-view (slot)))))
 ```
 
+Palette 解析属于 Theme，而不是 UI 目录。core 提供
+`etaf-theme-resolve-palette` 来解析显式的亮/暗语义 pair；可选的
+`etaf-theme-tp` 文件是唯一可以读取 TP renderer-level palette registry 的桥接层。
+`etaf-ui` 只消费 `:ui-*` 语义 token，不依赖 TP 名称，也不访问 Ebox/TP 私有状态。
+
+静态 Component 规则如果需要读取一个 Theme 值，应使用 `etaf-theme-token`；
+ETAF 会在样式边界解析这个延迟 token，使 retained Host 仍然走静态样式路径。
+
 显式 Host props 覆盖 Component styles，Component styles 覆盖 Theme defaults。
 
 样式所有权跟随创建每个 View node 的 Component。嵌套 Component 是样式边界：父规则不会穿透其内部。调用者提供的 slot 内容使用 caller scope，子组件自有的 fallback 内容保留在 child scope。

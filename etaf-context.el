@@ -24,6 +24,15 @@
 (defvar etaf--current-context nil
   "Context table of the Component currently being evaluated.")
 
+(defvar etaf--theme-defaults-cache
+  (make-hash-table :test #'eq :weakness 'key)
+  "Context-keyed cache of validated Theme default plists.
+
+Theme values are immutable for the duration of a render pass.  Keeping the
+validated copy by Context frame avoids rebuilding the same semantic palette
+for every Host that reads one token, while weak keys let disposed Component
+Contexts disappear with their Runtime.")
+
 (defvar etaf--context-inject-recorder nil
   "Candidate-local function recording Context provider reads.")
 
@@ -124,18 +133,27 @@ also accepted and remains tracked by the current render effect."
 ;;;###autoload
 (defun etaf-theme-defaults (&optional default)
   "Return inherited Theme property defaults, or DEFAULT when absent."
-  (let ((theme (etaf-inject 'theme default)))
-    (cond
-     ((or (etaf-ref-p theme) (etaf-computed-p theme))
-      (let ((value (etaf-value theme)))
-        (if (and (proper-list-p value)
-                 (zerop (% (length value) 2)))
-            (etaf--validate-theme-defaults value)
-          default)))
-     ((and (proper-list-p theme)
-           (zerop (% (length theme) 2)))
-      (etaf--validate-theme-defaults theme))
-     (t default))))
+  (let* ((theme (etaf-inject 'theme default))
+         (value (if (or (etaf-ref-p theme) (etaf-computed-p theme))
+                    (etaf-value theme)
+                  theme))
+         (context etaf--current-context)
+         (cached (gethash context etaf--theme-defaults-cache)))
+    (if (and cached
+             (eq (plist-get cached :source) theme)
+             (eq (plist-get cached :value) value)
+             (equal (plist-get cached :default) default))
+        (plist-get cached :validated)
+      (let ((validated
+             (if (and (proper-list-p value)
+                      (zerop (% (length value) 2)))
+                 (etaf--validate-theme-defaults value)
+               default)))
+        (puthash context
+                 (list :source theme :value value :default default
+                       :validated validated)
+                 etaf--theme-defaults-cache)
+        validated))))
 
 ;;;###autoload
 (defun etaf-theme-value (key &optional default)
@@ -144,6 +162,90 @@ also accepted and remains tracked by the current render effect."
     (if (plist-member theme key)
         (plist-get theme key)
       default)))
+
+;;;###autoload
+(defun etaf-theme-token (key &optional default)
+  "Return a deferred Theme token for a static Component style.
+
+KEY is resolved when ETAF lowers the Component's `:styles' declaration, so a
+static rule can use the current inherited Theme without turning every retained
+Host into an inline dynamic property.  DEFAULT is used when KEY is absent.
+The returned list is intentionally data, which also makes it safe to place
+directly in a quoted `(styles ...)' form."
+  (unless (keywordp key)
+    (signal 'etaf-context-error
+            (list (format "Theme token keys must be keywords: %S" key))))
+  (list 'etaf-theme-token key default))
+
+;;;###autoload
+(defun etaf-theme-token-p (value)
+  "Return non-nil when VALUE is a deferred ETAF Theme token."
+  (and (proper-list-p value)
+       (memq (length value) '(2 3))
+       (eq (car value) 'etaf-theme-token)
+       (keywordp (nth 1 value))))
+
+;;;###autoload
+(defun etaf-theme-token-resolve (value)
+  "Resolve deferred Theme token VALUE, or return ordinary VALUE unchanged."
+  (if (etaf-theme-token-p value)
+      (etaf-theme-value (nth 1 value) (nth 2 value))
+    value))
+
+;;;###autoload
+(defun etaf-theme-current-mode ()
+  "Return the current frame color mode as `light' or `dark'.
+
+This is only the default mode for palette resolution.  An application-owned
+Theme toggle should pass its explicit mode to `etaf-theme-resolve-palette'
+instead of changing the Emacs frame."
+  (if (eq (frame-parameter nil 'background-mode) 'dark) 'dark 'light))
+
+(defun etaf--theme-resolve-color (value mode)
+  "Resolve one light/dark VALUE for MODE."
+  (cond
+   ((stringp value) value)
+   ((and (consp value)
+         (or (stringp (car value)) (null (car value)))
+         (or (stringp (cdr value)) (null (cdr value))))
+    (if (eq mode 'dark) (cdr value) (car value)))
+   ((and (proper-list-p value)
+         (or (plist-member value :light) (plist-member value :dark)))
+    (if (eq mode 'dark) (plist-get value :dark) (plist-get value :light)))
+   ((null value) nil)
+   (t
+    (signal 'etaf-context-error
+            (list (format "Invalid ETAF palette color: %S" value))))))
+
+;;;###autoload
+(defun etaf-theme-resolve-palette (palette mode)
+  "Resolve semantic PALETTE token specs for explicit MODE.
+
+PALETTE is a keyword plist.  Each value may be a color string, a
+`(LIGHT . DARK)' pair, or a `(:light LIGHT :dark DARK)' plist.  MODE is
+`light' or `dark'.  The result is an ordinary Theme plist suitable for
+`etaf-theme-provide'.  ETAF owns this semantic contract; a renderer-specific
+palette package may adapt its own registry into this shape at the boundary."
+  (unless (memq mode '(light dark))
+    (signal 'etaf-context-error
+            (list (format "Theme palette mode must be light or dark: %S"
+                          mode))))
+  (unless (and (proper-list-p palette)
+               (zerop (% (length palette) 2)))
+    (signal 'etaf-context-error
+            (list (format "Theme palette must be a keyword plist: %S"
+                          palette))))
+  (let (result)
+    (while palette
+      (let ((key (pop palette))
+            (value (pop palette)))
+        (unless (keywordp key)
+          (signal 'etaf-context-error
+                  (list (format "Theme palette key must be a keyword: %S"
+                                key))))
+        (setq result
+              (append result (list key (etaf--theme-resolve-color value mode))))))
+    result))
 
 (provide 'etaf-context)
 

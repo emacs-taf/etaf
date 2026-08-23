@@ -68,6 +68,46 @@ The function is also useful to code that deliberately avoids that shorthand."
   (plist-get etaf--current-component-props
              (etaf--component-prop-key name)))
 
+;;;###autoload
+(defun etaf-component-set-styles (name styles)
+  "Replace the static style form for Component NAME with STYLES.
+
+STYLES must use the same `(styles (SELECTOR PROPERTY VALUE ...) ...)'
+contract accepted by `etaf-define-component'.  This small runtime authoring
+hook is useful to tools which reload a stylesheet without redefining the
+Component itself, such as a source/preview playground.  The next mount or
+render observes the replacement; existing mounted runtimes are not flushed
+implicitly."
+  (let ((spec (and (boundp 'etaf--view-registry)
+                   (gethash name etaf--view-registry))))
+    (unless (and (symbolp name) (etaf--component-spec-p spec))
+      (etaf--component-definition-error
+       "Unknown ETAF Component: %S" name))
+    (etaf--validate-styles-form styles name)
+    (setf (etaf--component-spec-styles spec) styles)
+    styles))
+
+(defun etaf-component-styles (name)
+  "Return the current static style form for Component NAME."
+  (let ((spec (and (boundp 'etaf--view-registry)
+                   (gethash name etaf--view-registry))))
+    (unless (and (symbolp name) (etaf--component-spec-p spec))
+      (etaf--component-definition-error
+       "Unknown ETAF Component: %S" name))
+    (etaf--component-spec-styles spec)))
+
+;;;###autoload
+(defun etaf-component-redefine-run (function)
+  "Run FUNCTION while allowing intentional Component redefinition.
+
+Normal duplicate Component definitions remain errors.  Authoring tools may
+use this narrow public boundary after disposing the old Runtime, so hot reload
+does not depend on ETAF's private registry flag."
+  (unless (functionp function)
+    (signal 'wrong-type-argument (list 'functionp function)))
+  (let ((etaf--allow-component-redefinition t))
+    (funcall function)))
+
 (defun etaf-current-slots ()
   "Return the current Component's normalized slot alist."
   (setq etaf--raw-slot-read-p t)

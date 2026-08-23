@@ -288,6 +288,18 @@ Theme is a Context convenience, not another runtime object:
     (lambda () (etaf-view (slot)))))
 ```
 
+For a light/dark application palette, keep the semantic roles in one palette
+plist and resolve it explicitly with
+`(etaf-theme-resolve-palette palette 'light)` or `'dark`. This keeps an app
+Theme toggle independent from the Emacs frame. The optional `etaf-theme-tp`
+adapter can translate TP palette registry entries into the same ETAF Theme
+contract; `etaf-ui` and the core Runtime do not depend on TP palette names.
+
+Static Component styles can defer one value to the inherited Theme with
+`(etaf-theme-token :token-key)`. ETAF resolves that token while lowering the
+style scope, so repeated retained Hosts can reuse the static style path rather
+than each carrying a dynamic inline property.
+
 ## 8. Events, Actions, Behaviors, and focus
 
 One local event uses an `:on-*` property:
@@ -441,7 +453,14 @@ The Component emits the next value; the caller owns the ref and supplies the cur
       (etaf-data-controller source :page-size 10 :auto-load t))
 ```
 
-The controller exposes reactive refs through `etaf-data-items`, `etaf-data-status`, `etaf-data-error`, `etaf-data-total`, `etaf-data-query`, `etaf-data-page`, `etaf-data-page-size`, and `etaf-data-selection`. Use `etaf-data-load`, `etaf-data-reload`, `etaf-data-mutate`, `etaf-data-set-query`, `etaf-data-next-page`, `etaf-data-previous-page`, `etaf-data-select` (additive multi-select), `etaf-data-select-one` (exclusive single-select), and `etaf-data-stop` for operations.
+The controller exposes reactive refs through `etaf-data-items`, `etaf-data-status`, `etaf-data-error`, `etaf-data-total`, `etaf-data-query`, `etaf-data-page`, `etaf-data-page-size`, and `etaf-data-selection`. Use `etaf-data-load`, `etaf-data-reload`, `etaf-data-mutate`, `etaf-data-set-query`, `etaf-data-next-page`, `etaf-data-previous-page`, `etaf-data-select` (additive multi-select), `etaf-data-select-one` (exclusive single-select), `etaf-data-selected-item`, and `etaf-data-stop` for operations. The imperative next/previous commands also reload a Controller whose `:auto-load` is nil; `:auto-load t` keeps reload ownership with the reactive effect.
+
+`etaf-data-controller` accepts `:item-key` for stable selected-row lookup. When
+created inside a Component setup, its internal effect Scope is owned by the
+current Component Scope automatically; pass `:owner-scope` when integrating a
+controller with another explicit owner. `etaf-data-mutate` returns the source
+mutation result after the reload succeeds, so a storage adapter can expose an
+inserted id or change count without another application-specific channel.
 
 The official DataGrid is a normal Component:
 
@@ -459,6 +478,11 @@ The official DataGrid is a normal Component:
 
 (etaf-data-mutate controller 'insert '(:id 3 :name "Alan"))
 ```
+
+For a selected record, use `(etaf-data-selected-item controller)` rather than
+duplicating identity matching in every detail view. A source may return a
+normalized mutation plist such as `(:operation insert :id 3 :changes 1
+:value ...)`; ETAF preserves that value while it refreshes the controller.
 
 DataGrid requires `:row-key` to return a non-nil stable scalar for every row. It projects loading, error, empty, header, rows, and footer through ordinary Hosts and slots. It is not a second data or Component model.
 
@@ -570,17 +594,17 @@ It depends only on Ebox. Use it when inspecting Ebox boxes and Grid layout; use 
 | API family | Main entry points | Use it when |
 | --- | --- | --- |
 | View and Runtime | `etaf-view`, `etaf-render`, `etaf-mount`, `etaf-unmount`, `etaf-runtime-flush` | Build, render, mount, or explicitly flush an application |
-| Components | `etaf-define-component`, `etaf-current-prop`, `etaf-current-slots` | Share a View or retain local state |
+| Components | `etaf-define-component`, `etaf-current-prop`, `etaf-current-slots`, `etaf-component-set-styles`, `etaf-component-redefine-run` | Share a View, retain local state, style an authoring surface, or deliberately reload code |
 | Reactive state | `etaf-ref`, `etaf-value`, `etaf-set-value`, `etaf-computed` | Store or derive state |
 | Reactive effects | `etaf-watch`, `etaf-watch-effect`, `etaf-effect-scope`, `etaf-scope-run` | Observe state or synchronize external resources |
 | Lifecycle | `etaf-on-mounted`, `etaf-on-updated`, `etaf-on-unmounted` | Attach Component lifecycle work |
-| Context | `etaf-provide`, `etaf-inject`, `etaf-theme-provide` | Share ambient dependencies through depth |
+| Context | `etaf-provide`, `etaf-inject`, `etaf-theme-provide`, `etaf-theme-token`, `etaf-theme-resolve-palette`, `etaf-theme-current-mode` | Share ambient dependencies and resolve semantic Theme palettes |
 | Events and focus | `etaf-dispatch-event`, `etaf-activate`, `etaf-focus`, `etaf-focus-next`, `etaf-focus-previous`, `etaf-input-mode` | Enter interactive Runtime behavior |
 | Actions | `etaf-action-define`, `etaf-dispatch` | Name and reuse business mutations |
 | Behaviors | `etaf-behavior-create`, `etaf-define-behavior`, `etaf-current-behavior-context`, `etaf-focusable`, `etaf-toggleable` | Reuse non-visual interaction bundles |
-| Data | `etaf-data-source`, `etaf-data-controller`, `etaf-data-memory-source`, `etaf-data-*` | Query, paginate, mutate, select, and stop data |
+| Data | `etaf-data-source`, `etaf-data-controller`, `etaf-data-memory-source`, `etaf-data-*` | Query, paginate, mutate, select, resolve the selected item, and stop data |
 | Resource | `etaf-resource`, `etaf-resource-result`, `etaf-error-boundary-run` | Own loader state and cleanup |
-| Official UI | `require 'etaf-ui`, `etaf-button`, `etaf-checkbox`, `etaf-label`, `etaf-panel`, `etaf-data-grid` | Use ready-made Components |
+| Official UI | `require 'etaf-ui`, `etaf-button`, `etaf-checkbox`, `etaf-number-input`, `etaf-label`, `etaf-panel`, `etaf-data-grid` | Use ready-made Components |
 | Playground | `etaf-playground-open`, `etaf-playground-open-ui`, `etaf-playground-close`, `ebox-playground-open`, `ebox-playground-close` | Explore the corresponding layer interactively |
 
 Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, `etaf-ref`, and event callbacks at first. The remaining APIs are additive capabilities, not prerequisites for understanding the core grammar.

@@ -287,6 +287,16 @@ Theme 是 Context 的便捷形式，不是另一个 Runtime 对象：
     (lambda () (etaf-view (slot)))))
 ```
 
+如果应用有亮/暗两套 palette，应把语义 role 集中放在一份 palette plist 中，
+再显式调用 `(etaf-theme-resolve-palette palette 'light)` 或 `'dark`。这样应用的
+Theme toggle 不依赖 Emacs frame。可选的 `etaf-theme-tp` adapter 可以把 TP 的
+palette registry 转换为同一份 ETAF Theme contract；`etaf-ui` 和 core Runtime
+都不依赖 TP palette 名称。
+
+静态 Component 样式可以用 `(etaf-theme-token :token-key)` 延迟读取继承的
+Theme。ETAF 会在 lowering 样式作用域时解析它，使重复的 retained Host 复用静态
+样式路径，而不是每个 Host 都携带一个动态 inline 属性。
+
 ## 8. 事件、Action、Behavior 与 focus
 
 一次局部事件使用 `:on-*` 属性：
@@ -440,7 +450,13 @@ Component 发出 next value；ref 由调用方拥有，并在下一次 render �
       (etaf-data-controller source :page-size 10 :auto-load t))
 ```
 
-Controller 通过 `etaf-data-items`、`etaf-data-status`、`etaf-data-error`、`etaf-data-total`、`etaf-data-query`、`etaf-data-page`、`etaf-data-page-size` 和 `etaf-data-selection` 暴露响应式 ref。操作使用 `etaf-data-load`、`etaf-data-reload`、`etaf-data-mutate`、`etaf-data-set-query`、`etaf-data-next-page`、`etaf-data-previous-page`、`etaf-data-select`（追加式多选）、`etaf-data-select-one`（互斥单选）和 `etaf-data-stop`。
+Controller 通过 `etaf-data-items`、`etaf-data-status`、`etaf-data-error`、`etaf-data-total`、`etaf-data-query`、`etaf-data-page`、`etaf-data-page-size` 和 `etaf-data-selection` 暴露响应式 ref。操作使用 `etaf-data-load`、`etaf-data-reload`、`etaf-data-mutate`、`etaf-data-set-query`、`etaf-data-next-page`、`etaf-data-previous-page`、`etaf-data-select`（追加式多选）、`etaf-data-select-one`（互斥单选）、`etaf-data-selected-item` 和 `etaf-data-stop`。当 Controller 的 `:auto-load` 为 nil 时，命令式的 next/previous 也会自动 reload；`:auto-load t` 时仍由 reactive effect 负责 reload，避免重复请求。
+
+`etaf-data-controller` 支持用于稳定选中行查找的 `:item-key`。在 Component
+setup 中创建时，它的内部 effect Scope 会自动归当前 Component Scope 所有；如果
+需要接入其他显式 owner，可以传入 `:owner-scope`。`etaf-data-mutate` 会在 reload
+成功后返回 source 的变更结果，因此存储适配器可以直接暴露插入 id 或 changes，
+不需要应用层再维护一条专用通道。
 
 官方 DataGrid 是普通 Component：
 
@@ -458,6 +474,10 @@ Controller 通过 `etaf-data-items`、`etaf-data-status`、`etaf-data-error`、`
 
 (etaf-data-mutate controller 'insert '(:id 3 :name "Alan"))
 ```
+
+详情视图应使用 `(etaf-data-selected-item controller)`，不要在每个页面重复写
+identity 匹配。source 可以返回类似 `(:operation insert :id 3 :changes 1
+:value ...)` 的规范化变更 plist；ETAF 会在刷新 controller 的同时保留这个结果。
 
 DataGrid 要求 `:row-key` 对每一行返回非 nil 的稳定标量。它通过普通 Host 和 slot 投影 loading、error、empty、header、rows 和 footer，不是第二种 data 或 Component 模型。
 
@@ -569,17 +589,17 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
 | API 家族 | 主要入口 | 何时使用 |
 | --- | --- | --- |
 | View 与 Runtime | `etaf-view`、`etaf-render`、`etaf-mount`、`etaf-unmount`、`etaf-runtime-flush` | 构建、渲染、挂载或显式 flush 应用 |
-| Component | `etaf-define-component`、`etaf-current-prop`、`etaf-current-slots` | 复用 View 或保留局部状态 |
+| Component | `etaf-define-component`、`etaf-current-prop`、`etaf-current-slots`、`etaf-component-set-styles`、`etaf-component-redefine-run` | 复用 View、保留局部状态、设置 authoring 样式或显式重载代码 |
 | 响应式状态 | `etaf-ref`、`etaf-value`、`etaf-set-value`、`etaf-computed` | 保存或派生状态 |
 | 响应式 effect | `etaf-watch`、`etaf-watch-effect`、`etaf-effect-scope`、`etaf-scope-run` | 观察状态或同步外部资源 |
 | 生命周期 | `etaf-on-mounted`、`etaf-on-updated`、`etaf-on-unmounted` | 绑定 Component 生命周期工作 |
-| Context | `etaf-provide`、`etaf-inject`、`etaf-theme-provide` | 跨层级共享依赖 |
+| Context | `etaf-provide`、`etaf-inject`、`etaf-theme-provide`、`etaf-theme-token`、`etaf-theme-resolve-palette`、`etaf-theme-current-mode` | 跨层级共享依赖并解析语义 Theme palette |
 | 事件与 focus | `etaf-dispatch-event`、`etaf-activate`、`etaf-focus`、`etaf-focus-next`、`etaf-focus-previous`、`etaf-input-mode` | 进入交互 Runtime |
 | Action | `etaf-action-define`、`etaf-dispatch` | 命名和复用业务变更 |
 | Behavior | `etaf-behavior-create`、`etaf-define-behavior`、`etaf-current-behavior-context`、`etaf-focusable`、`etaf-toggleable` | 复用非视觉交互 bundle |
-| Data | `etaf-data-source`、`etaf-data-controller`、`etaf-data-memory-source`、`etaf-data-*` | 查询、分页、变更、选择和停止数据 |
+| Data | `etaf-data-source`、`etaf-data-controller`、`etaf-data-memory-source`、`etaf-data-*` | 查询、分页、变更、选择、解析选中项和停止数据 |
 | Resource | `etaf-resource`、`etaf-resource-result`、`etaf-error-boundary-run` | 管理 loader 状态和 cleanup |
-| 官方 UI | `require 'etaf-ui`、`etaf-button`、`etaf-checkbox`、`etaf-label`、`etaf-panel`、`etaf-data-grid` | 使用现成 Component |
+| 官方 UI | `require 'etaf-ui`、`etaf-button`、`etaf-checkbox`、`etaf-number-input`、`etaf-label`、`etaf-panel`、`etaf-data-grid` | 使用现成 Component |
 | Playground | `etaf-playground-open`、`etaf-playground-open-ui`、`etaf-playground-close`、`ebox-playground-open`、`ebox-playground-close` | 探索对应层 |
 
 大多数应用一开始只需要 `etaf-view`、`etaf-mount`、`etaf-define-component`、`etaf-ref` 和事件 callback。其余 API 都是可选能力，不是理解核心语法的前置条件。

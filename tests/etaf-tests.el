@@ -850,6 +850,15 @@
     (etaf-theme-provide '(:color "theme-color" :bgcolor "theme-bg"))
     (lambda () (etaf-view (text :color nil "Themed")))))
 
+(etaf-define-component etaf-test-themed-style-token ()
+  "Resolve a deferred Theme token from a static Component style."
+  :styles
+  (styles ("&" :color (etaf-theme-token :color)))
+  :setup
+  (progn
+    (etaf-theme-provide '(:color "token-color"))
+    (lambda () (etaf-view (text "Token")))))
+
 (etaf-define-component etaf-test-stateful (&key label)
   "Render a retained counter for Runtime tests."
   :setup
@@ -1359,6 +1368,41 @@
       (when-let ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
+(ert-deftest etaf-theme-token-resolves-static-component-style ()
+  "Resolve a Theme token without turning the Host property inline."
+  (let ((buffer-name " *etaf-theme-token-test*"))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name
+                      (etaf-view (etaf-test-themed-style-token)))
+          (should (equal "token-color"
+                         (ebox-get
+                          (etaf-runtime-root-node
+                           (etaf-runtime-for-buffer buffer-name))
+                          :color))))
+      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-theme-resolves-explicit-light-dark-palette ()
+  "Resolve semantic palette pairs without coupling Theme to a renderer."
+  (should
+   (equal '(:ink "#172033" :paper "#F7F3EA")
+          (etaf-theme-resolve-palette
+           '(:ink ("#172033" . "#F4F7FF")
+             :paper (:light "#F7F3EA" :dark "#111827"))
+           'light)))
+  (should
+   (equal '(:ink "#F4F7FF" :paper "#111827")
+          (etaf-theme-resolve-palette
+           '(:ink ("#172033" . "#F4F7FF")
+             :paper (:light "#F7F3EA" :dark "#111827"))
+           'dark)))
+  (should-error
+   (etaf-theme-resolve-palette '(:ink "red") 'sepia)
+   :type 'etaf-context-error))
+
 (ert-deftest etaf-text-supports-inline-propertized-runs ()
   "Lower nested text Hosts to one Ebox content surface with text properties."
   (let* ((node (etaf-render
@@ -1820,6 +1864,35 @@ Event composition is a Runtime contract, not a UI-library helper contract."
         (should condition)
         (should (plist-get condition :path))
         (should (= 3 (length (plist-get condition :path))))))))
+
+(ert-deftest etaf-runtime-skips-descendant-range-under-rendered-component ()
+  "A freshly rendered Component absorbs its old descendant Range effect."
+  (let* ((component
+          (etaf--semantic-component-create
+           :semantic-id 7 :identity '(parent-component)))
+         (range
+          (etaf--semantic-range-create
+           :semantic-id 8 :effect-id 8 :component-id 7 :parent-id 7))
+         (generation
+          (etaf--generation-create
+           :generation-id 1
+           :semantic-nodes (etaf--pvec-put
+                            (etaf--pvec-put nil 7 component) 8 range)))
+         (runtime
+          (etaf--runtime-create
+           :candidate-rendered-identities '((parent-component))
+           :candidate-effects (make-hash-table :test #'eql)
+           :candidate-graph-nodes (make-hash-table :test #'eql))))
+    (puthash 8
+             (etaf--generation-effect-create
+              :effect-id 8 :kind 'range :semantic-id 8)
+             (etaf-runtime-candidate-effects runtime))
+    (puthash 8 range (etaf-runtime-candidate-graph-nodes runtime))
+    (should (etaf--runtime-range-owned-by-rendered-component-p
+             runtime generation range))
+    (setf (etaf-runtime-candidate-rendered-identities runtime) nil)
+    (should-not (etaf--runtime-range-owned-by-rendered-component-p
+                 runtime generation range))))
 
 (ert-deftest etaf-view-raw-ebox-is-an-explicit-backend-escape ()
   "Lower a public Ebox node only through the explicit raw escape."

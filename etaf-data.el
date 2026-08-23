@@ -36,7 +36,8 @@
   selection
   request-id
   stopped-p
-  auto-load-p)
+  auto-load-p
+  item-key)
 
 (defun etaf-data-source (&rest capabilities)
   "Create a Data source from callable CAPABILITIES.
@@ -236,16 +237,29 @@ and `reset'."
 
 ;;;###autoload
 (cl-defun etaf-data-controller
-    (source &key query (page 1) (page-size 20) selection auto-load name)
+    (source &key query (page 1) (page-size 20) selection auto-load name
+            item-key owner-scope)
   "Create a reactive Data Controller for SOURCE.
 
 QUERY, PAGE, PAGE-SIZE, result ITEMS, TOTAL, STATUS, ERROR, and SELECTION are
 stored in refs.  When AUTO-LOAD is non-nil, the controller loads immediately
 and reloads after query or pagination refs change.  NAME optionally labels the
-controller for diagnostics."
+controller for diagnostics.  ITEM-KEY is a function used by
+`etaf-data-selected-item' to match a selected identity to one loaded item.
+When OWNER-SCOPE is supplied, or when a current ETAF Scope exists, the
+controller's own child Scope is disposed with that owner; otherwise it keeps
+the detached Scope behavior."
   (unless (etaf-data-source-p source)
     (signal 'wrong-type-argument (list 'etaf-data-source-p source)))
-  (let* ((scope (etaf-effect-scope :detached t :name (or name 'etaf-data)))
+  (unless (or (null item-key) (functionp item-key))
+    (signal 'wrong-type-argument (list 'functionp item-key)))
+  (let* ((owner-scope (or owner-scope (etaf-current-effect-scope)))
+         (scope (if owner-scope
+                    (etaf-scope-run
+                     owner-scope
+                     (lambda ()
+                       (etaf-effect-scope :name (or name 'etaf-data))))
+                  (etaf-effect-scope :detached t :name (or name 'etaf-data))))
          (controller
           (etaf-data--controller-create
            :source source
@@ -260,7 +274,8 @@ controller for diagnostics."
            :selection (etaf-ref (copy-sequence selection)
                                 :name 'etaf-data-selection)
            :request-id 0
-           :auto-load-p auto-load)))
+           :auto-load-p auto-load
+           :item-key item-key)))
     (etaf-scope-run
         scope
         (lambda ()
@@ -317,18 +332,20 @@ controller for diagnostics."
 (defun etaf-data-mutate (controller operation payload)
   "Run source OPERATION with PAYLOAD, then reload CONTROLLER.
 
-Errors are stored in the controller error ref and re-signaled."
+Errors are stored in the controller error ref and re-signaled.  Return the
+source mutation result after the reload succeeds."
   (etaf-data--require-controller controller)
   (let ((request-id (1+ (etaf-data--controller-request-id controller))))
     (setf (etaf-data--controller-request-id controller) request-id)
     (setf (etaf-value (etaf-data--controller-status controller)) 'loading)
     (setf (etaf-value (etaf-data--controller-error controller)) nil)
     (condition-case err
-        (progn
-          (funcall (etaf-data--source-function
-                    (etaf-data--controller-source controller) :mutate t)
-                   operation payload)
-          (etaf-data-load controller))
+        (let ((result
+               (funcall (etaf-data--source-function
+                         (etaf-data--controller-source controller) :mutate t)
+                        operation payload)))
+          (etaf-data-load controller)
+          result)
       (error
        (etaf-data--apply-error controller request-id err)
        (signal (car err) (cdr err))))))
@@ -379,6 +396,21 @@ The status value is one of `idle', `loading', `success', or `error'."
    (etaf-data--require-controller controller)))
 
 ;;;###autoload
+(defun etaf-data-selected-item (controller &optional item-key)
+  "Return the loaded item matching CONTROLLER's first selected identity.
+
+ITEM-KEY overrides the function supplied to `etaf-data-controller'.  When no
+key function is available, item identity is compared directly.  Return nil
+when the selection or current page has no matching item."
+  (let* ((controller (etaf-data--require-controller controller))
+         (identity (car (etaf-value (etaf-data-selection controller))))
+         (items (etaf-value (etaf-data-items controller)))
+         (key (or item-key (etaf-data--controller-item-key controller)
+                  #'identity)))
+    (when identity
+      (cl-find identity items :key key :test #'equal))))
+
+;;;###autoload
 (defun etaf-data-set-query (controller query)
   "Set CONTROLLER query to QUERY and return QUERY."
   (setf (etaf-value (etaf-data-query controller)) query))
@@ -396,14 +428,25 @@ The status value is one of `idle', `loading', `success', or `error'."
 ;;;###autoload
 (defun etaf-data-next-page (controller)
   "Move CONTROLLER to the next page and return the new page."
+  (setq controller (etaf-data--require-controller controller))
   (let ((next (1+ (etaf-value (etaf-data-page controller)))))
-    (etaf-data-set-page controller next)))
+    (etaf-data-set-page controller next)
+    ;; An imperative pager must still refresh a Controller created with
+    ;; AUTO-LOAD nil.  AUTO-LOAD t remains owned by its reactive effect, so
+    ;; this branch avoids a duplicate source request.
+    (unless (etaf-data--controller-auto-load-p controller)
+      (etaf-data-load controller))
+    next))
 
 ;;;###autoload
 (defun etaf-data-previous-page (controller)
   "Move CONTROLLER to the previous page and return the new page."
+  (setq controller (etaf-data--require-controller controller))
   (let ((previous (max 1 (1- (etaf-value (etaf-data-page controller))))))
-    (etaf-data-set-page controller previous)))
+    (etaf-data-set-page controller previous)
+    (unless (etaf-data--controller-auto-load-p controller)
+      (etaf-data-load controller))
+    previous))
 
 ;;;###autoload
 (cl-defun etaf-data-select (controller identity &optional (selected-p t))

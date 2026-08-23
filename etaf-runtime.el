@@ -569,6 +569,52 @@ owning Component node."
                 (etaf--semantic-inline-range-component-id semantic))))
           (t nil)))))
 
+(defun etaf--runtime-range-owned-by-rendered-component-p
+    (runtime generation semantic)
+  "Return non-nil when SEMANTIC is subsumed by a rendered Component.
+
+RUNTIME's candidate already contains the Component's freshly lowered output in
+that case, so evaluating the old descendant Range again would duplicate work
+and later be discarded before publication.  Root-owned Ranges intentionally
+return nil because they have no material Component owner to absorb them."
+  (let* ((component-id
+          (cond
+           ((etaf--semantic-range-p semantic)
+            (etaf--semantic-range-component-id semantic))
+           ((etaf--semantic-slot-range-p semantic)
+            (etaf--semantic-slot-range-consumer-component-id semantic))
+           ((etaf--semantic-inline-range-p semantic)
+            (etaf--semantic-inline-range-component-id semantic))))
+         (component (and component-id
+                         (etaf--pvec-get
+                          (etaf-generation-semantic-nodes generation)
+                          component-id)))
+         (effect-id (cond
+                     ((etaf--semantic-range-p semantic)
+                      (etaf--semantic-range-effect-id semantic))
+                     ((etaf--semantic-slot-range-p semantic)
+                      (etaf--semantic-slot-range-effect-id semantic))
+                     ((etaf--semantic-inline-range-p semantic)
+                      (etaf--semantic-inline-range-effect-id semantic))))
+         (semantic-id (cond
+                       ((etaf--semantic-range-p semantic)
+                        (etaf--semantic-range-semantic-id semantic))
+                       ((etaf--semantic-slot-range-p semantic)
+                        (etaf--semantic-slot-range-semantic-id semantic))
+                       ((etaf--semantic-inline-range-p semantic)
+                        (etaf--semantic-inline-range-semantic-id semantic))))
+         (candidate-effects (etaf-runtime-candidate-effects runtime))
+         (candidate-nodes (etaf-runtime-candidate-graph-nodes runtime)))
+    (and (etaf--semantic-component-p component)
+         (member (etaf--semantic-component-identity component)
+                 (etaf-runtime-candidate-rendered-identities runtime))
+         ;; A Component render only subsumes the old Range once it actually
+         ;; staged the replacement Range/effect.  Context-owned direct Ranges
+         ;; can remain outside the Component render and must still evaluate
+         ;; to refresh their Context dependency edges.
+         (gethash effect-id candidate-effects)
+         (gethash semantic-id candidate-nodes))))
+
 (defun etaf--generation-source-effects (generation source)
   "Return current effect ids for SOURCE in GENERATION."
   (etaf--pvec-get (etaf-generation-source-effects generation)
@@ -3518,6 +3564,13 @@ The candidate uses resolved VALUE, DEPS, and NODES."
                (cl-pushnew (cons (etaf-context-owner-id frame) key)
                            context-deps :test #'equal)))
             (etaf--render-runtime runtime)
+            ;; Static style tokens are lowered in this second pass.  Preserve
+            ;; only the owning Context frame needed by Theme resolution; the
+            ;; range semantic ids below already provide the runtime lowering
+            ;; identity, and the other Component bindings belong to the value
+            ;; normalization pass above.
+            (etaf--current-context
+             (etaf--semantic-component-context-frame component))
             (etaf--current-component-semantic-id
              (etaf--semantic-range-component-id range))
             (etaf--current-semantic-parent-id
@@ -3924,29 +3977,34 @@ RENDERED-IDENTITIES names the Component render participants."
             (progn
               (etaf--runtime-record-effect-input-version
                runtime old effect-id)
-          (pcase (etaf--generation-effect-kind effect)
-            ('component-input
-             (etaf--runtime-evaluate-component-input runtime semantic))
-            ('component-render
-             (unless (member (etaf--semantic-component-identity semantic)
-                             (etaf-runtime-candidate-rendered-identities
-                              runtime))
-               (push (etaf--runtime-render-dirty-component runtime semantic)
-                     changes)))
-            ((or 'range 'fragment)
-             (push (etaf--runtime-render-dirty-range runtime effect semantic)
-                   range-changes))
-            ('raw
-             (push (etaf--runtime-render-dirty-raw-range
-                    runtime effect semantic)
-                   range-changes))
-            ('slot
-             (push (etaf--runtime-render-dirty-slot-range
-                    runtime effect semantic)
-                   range-changes))
-            ('inline
-             (etaf--runtime-render-dirty-inline-range
-              runtime effect semantic))))
+              (unless (and (memq (etaf--generation-effect-kind effect)
+                                 '(range fragment raw slot inline))
+                           (etaf--runtime-range-owned-by-rendered-component-p
+                            runtime old base-semantic))
+                (pcase (etaf--generation-effect-kind effect)
+                  ('component-input
+                   (etaf--runtime-evaluate-component-input runtime semantic))
+                  ('component-render
+                   (unless (member (etaf--semantic-component-identity semantic)
+                                   (etaf-runtime-candidate-rendered-identities
+                                    runtime))
+                     (push (etaf--runtime-render-dirty-component runtime semantic)
+                           changes)))
+                  ((or 'range 'fragment)
+                   (push (etaf--runtime-render-dirty-range
+                          runtime effect semantic)
+                         range-changes))
+                  ('raw
+                   (push (etaf--runtime-render-dirty-raw-range
+                          runtime effect semantic)
+                         range-changes))
+                  ('slot
+                   (push (etaf--runtime-render-dirty-slot-range
+                          runtime effect semantic)
+                         range-changes))
+                  ('inline
+                   (etaf--runtime-render-dirty-inline-range
+                    runtime effect semantic)))))
           ;; A route can deliver an effect queued by the previous generation
           ;; after that semantic subtree has already been removed.  Retire the
           ;; effect from the next generation instead of evaluating a nil owner.

@@ -344,6 +344,16 @@ Keys are stable ordinary symbols. The nearest ancestor wins; a missing required 
     (lambda () (etaf-view (slot)))))
 ```
 
+Palette resolution remains a Theme concern, not a UI catalog concern. Core
+provides `etaf-theme-resolve-palette` for explicit light/dark semantic pairs;
+the optional `etaf-theme-tp` file is the only bridge allowed to read TP's
+renderer-level palette registry. `etaf-ui` consumes `:ui-*` semantic tokens and
+does not depend on TP names or private Ebox/TP state.
+
+When a static Component rule needs one Theme value, use
+`etaf-theme-token`; ETAF resolves the deferred token at the style boundary so
+the rule remains static for retained Hosts.
+
 Explicit Host props override Component styles, and Component styles override Theme defaults.
 
 Style ownership follows the Component that authored each View node. A nested Component is a style boundary: parent rules do not penetrate its internals. Caller-provided slot content is rendered with the caller scope, while a child's own fallback content remains in the child scope.
