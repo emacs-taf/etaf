@@ -55,18 +55,22 @@ View = Text(content, typography)
      | ComponentCall(props, slots)
 ```
 
-目标中的 `Box` 布局模式是封闭集合：
+目标中 ETAF 对用户暴露的 `Box` 布局模式是封闭集合：
 
 ```text
-flow | row | column | flex | grid
+column | row | flex | grid
 ```
+
+普通 `Box` 默认采用纵向堆叠语义，因此用户不需要学习 `flow`。`flow` 是 Ebox
+内部 CSS-like display pair 的默认 inner value（当前普通 Ebox 的默认值是
+`(block flow)`），不是 ETAF 的业务布局类型，也不是 Component。
 
 语义映射大致为：
 
 | CSS 语义 | ETAF 目标表达 |
 | --- | --- |
 | inline text/run | `text` |
-| block flow | `(box :layout 'flow ...)` |
+| 普通块级/纵向内容 | `(box ...)` 或 `(box :layout 'column ...)` |
 | horizontal layout | `(box :layout 'row ...)` |
 | flex container | `(box :layout 'flex ...)` |
 | grid container | `(box :layout 'grid ...)` |
@@ -101,6 +105,9 @@ ETAF 公共语法不增加 `(box :content "...")`。`:content` 是 Ebox 后端�
 （例如 `ebox-create`）的内部字段；Renderer 可以把 `text` 降低为后端 content，
 但不能把后端字段反向暴露成第二套 ETAF 子树模型。这样可以自然混合字符串、
 Text、Box、Component 和 slot，也不会产生 content 与 children 的优先级歧义。
+
+ETAF 公共模型也不定义 `spacer`。没有子节点的 `Box` 就是空 Box；Ebox 可以在
+内部使用空内容节点或私有 helper 表示它，但这不是用户需要学习的独立视觉类型。
 
 ## 2. 模块职责
 
@@ -175,7 +182,7 @@ Ebox 是布局和渲染引擎，不是 ETAF Component Runtime。
 拥有：
 
 - 文本测量、字宽、换行和内容高度；
-- flow、row、column、flex、grid 的几何算法；
+- Ebox 内部 flow、row、column、flex、grid 的几何算法；
 - padding、border、surface、overflow、scroll 和 viewport 几何；
 - 稳定的布局快照、节点 identity、增量几何更新；
 - 从布局结果到后端可提交 Render/Paint plan 的转换。
@@ -386,20 +393,20 @@ text · fragment · container · row · column · stack · flex · grid · space
 ```
 
 当前 Renderer 直接把这些名称映射到 Ebox 构造器；Ebox Playground 也直接使用
-自己的布局 API。这是当前兼容表面，不是最终用户必须记忆的最佳词汇。
+自己的布局 API。这只是现状记录，不是目标 API，也不构成必须保留的兼容表面。
+`spacer` 和 `flow` 都不属于目标公共词汇。
 
 目标演进方向是：
 
 ```text
 Text + Box(layout)
     ↑
-row/column/flex/grid 作为编译期或语法级简写
-    ↑
-旧 container/stack 名称只作为兼容别名
+如果确实需要短写法，row/column/flex/grid 只能作为新语法糖
 ```
 
 这些简写不能通过 `etaf-define-component` 实现，否则每个布局节点都会被迫获得
 Component 的 identity、scope、slot 和调度边界。它们应直接降低为 Ebox 布局节点。
+不保留 `container`、`stack`、`spacer` 或旧 Host 注册名的兼容别名。
 
 目标模型尚未交付前，不得修改现有 Host 语法后再把未验证的 `box` 描述成已完成。
 
@@ -409,17 +416,21 @@ Component 的 identity、scope、slot 和调度边界。它们应直接降低为
 
 1. 增加 `Box` 的规范化 View 形状和字符串子节点规则；
 2. 只验证 `layout='column` 的 `box` 到 Ebox lowering；
-3. 将 `row` 作为无 Component 开销的语法别名接入；
+3. 决定是否提供 `row`、`column`、`flex`、`grid` 的新语法糖，并直接降低到 Box；
 4. 分别验证 `flex` 和 `grid` 的模式属性、布局结果和增量路径；
 5. 保留旧名称兼容，并用 Research Shelf 与 Flex reference 做 GUI 回归；
 6. 只有全部公共测试和真实性能门禁通过，才更新用户指南为 `text + box`。
 
 任何一步不能证明结果等价或性能收益，就删除该实验，不继续堆下一层抽象。
 
+这是一次干净重设计，不要求旧 `.el`、`.etaf` 文件或旧 Host 名称继续运行。迁移
+由明确的源码更新完成，不通过长期兼容层隐藏模型变化。
+
 ## 8. 明确不做的事情
 
 - 不把 `button`、`panel`、`data-grid` 等业务控件塞进 Ebox；
 - 不把 `row`、`column`、`flex`、`grid` 做成 Runtime Component；
+- 不把 `spacer` 或 `flow` 暴露成 ETAF 公共视觉类型；
 - 不在 ETAF 公共层引入 `box :content` 第二套内容模型；
 - 不让 TP 重新扫描布局或重新调和所有颜色；
 - 不让 Playground 拥有通用框架协议；

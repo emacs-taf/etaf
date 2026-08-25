@@ -46,14 +46,22 @@ View = Text(content, typography)
      | ComponentCall(props, slots)
 ```
 
-Box layout modes are a closed set:
+The Box layout modes exposed by the target ETAF API are a closed set:
 
 ```text
-flow | row | column | flex | grid
+column | row | flex | grid
 ```
+
+A plain Box defaults to vertical stacking, so users do not need to learn `flow`.
+`flow` is Ebox's internal CSS-like default inner display value (the current plain
+Ebox default is `(block flow)`), not an ETAF business layout or Component.
 
 `(box "text")` is shorthand for `(box (text "text"))`. ETAF must not expose
 `(box :content "text")`; `:content` remains an Ebox backend field.
+
+ETAF also does not define a public `spacer` type. A Box with no children is an empty
+Box; Ebox may use an empty-node representation or private helper, but users do not
+need another visual category.
 
 ## 2. Module responsibilities
 
@@ -77,7 +85,7 @@ contributions downstream. It does not own Component lifecycle or data requests.
 ### Ebox
 
 Ebox is the layout and rendering engine, not the ETAF Component Runtime. It owns text
-measurement, wrapping, flow/row/column/flex/grid geometry, surface/scroll geometry,
+measurement, wrapping, internal flow/row/column/flex/grid geometry, surface/scroll geometry,
 stable layout snapshots, and render/paint plans. It does not know Components, slots,
 Context, Actions, Behaviors, Data, or Resources.
 
@@ -150,7 +158,9 @@ Box geometry changes affect only the required layout owner. Component state/slot
 changes affect only the owner of that structure. Failed Ebox/TP candidates preserve the
 last committed result.
 
-The clean public direction is `Text + Box(layout) + Component`. Existing
-`row`/`column`/`flex`/`grid` names may remain as compile-time or syntax aliases, but
-must not become Runtime Components. `fragment` is transparent structure; `spacer` is
-an empty Box specialization. This target is not implemented merely by documenting it.
+The clean public direction is `Text + Box(layout) + Component`. If concise syntax is
+needed, `row`/`column`/`flex`/`grid` may be introduced as new compiler sugar, but they
+are not compatibility aliases and must not become Runtime Components. `fragment` is
+transparent structure. `spacer` and `flow` are not public ETAF types. The redesign does
+not preserve the old Host registry names or add a compatibility layer. This target is
+not implemented merely by documenting it.
