@@ -66,7 +66,6 @@ ELAPSED is milliseconds; START-TIME and END-TIME are wall-clock seconds."
     (etaf-data-source-load-page data-prepare)
     (etaf-data-mutate data-mutate)
     (etaf-resource-load resource-load)
-    (etaf-compile-app app-compile)
     (ebox-surface-update-buffer-viewport viewport)
     (ebox-rerender-buffer-with-context rerender)
     (etaf-focus focus)
@@ -86,8 +85,6 @@ ELAPSED is milliseconds; START-TIME and END-TIME are wall-clock seconds."
     (etaf--runtime-render-dirty-inline-range runtime inline-range-effect)
     (etaf--runtime-render-dirty-slot-range runtime slot-range-effect)
     (etaf-compiler-instantiate compiler blueprint-instantiate)
-    (etaf-compiler-write-app-artifact compiler app-artifact-write)
-    (etaf-load-app-artifact compiler app-artifact-load)
     (etaf-sqlite--call sqlite call)
     (etaf-sqlite--transaction sqlite transaction)
     (etaf-sqlite--select-items sqlite query)
@@ -428,7 +425,6 @@ When called interactively, suggest a timestamped `.eld' file in
       (if (etaf-performance--runtime-p first)
           first
         (and (boundp 'etaf--current-runtime) etaf--current-runtime)))
-     ((eq function 'etaf-compile-app) nil)
      ((memq function '(ebox-surface-update-buffer-viewport
                        ebox-rerender-buffer-with-context))
       (etaf-performance--runtime-for-buffer first))
@@ -484,7 +480,6 @@ FUNCTION received ARGUMENTS and produced RESULT when AFTER is non-nil."
              (or (nth 2 arguments) 1) (or (nth 3 arguments) 20)))
     ('etaf-data-mutate (format "data %S" (nth 1 arguments)))
     ('etaf-resource-load "resource load/reload")
-    ('etaf-compile-app (format "%s" (or (car arguments) "default App")))
     ('ebox-surface-update-buffer-viewport
      (format "viewport %sx%s" (nth 1 arguments) (or (nth 2 arguments) "-")))
     ('ebox-rerender-buffer-with-context

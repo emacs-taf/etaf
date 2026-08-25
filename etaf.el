@@ -29,7 +29,6 @@
 
 (require 'etaf-view)
 (require 'etaf-compiler)
-(require 'etaf-app)
 (require 'etaf-component)
 (require 'etaf-reactive)
 (require 'etaf-context)

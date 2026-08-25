@@ -442,7 +442,7 @@ ordinary Elisp expressions.  `expr' is the only computation bridge in the
   child region and accepts only `:value'."
   (declare (indent 1) (debug (form)))
   (if (fboundp 'etaf-compiler-expand-view)
-      (etaf-compiler-expand-view form :projection t)
+      (etaf-compiler-expand-view form :projection)
     (etaf--compile-view-form form :projection)))
 
 (defun etaf--component-prop-key (name)

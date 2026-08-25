@@ -35,17 +35,17 @@
      (text "static"))
     (text (expr :value text)))))
 
-(defun etaf-compiler-test--compiled (color text)
-  "Return a compiled fixture using COLOR and TEXT."
-  (etaf-compiled-view
+(defun etaf-compiler-test--lowered (color text)
+  "Return an automatically lowered fixture using COLOR and TEXT."
+  (etaf-view
    (column :color color
     (column :padding '(1 2)
      (text "static"))
     (text (expr :value text)))))
 
 (defun etaf-compiler-test--fallback-view ()
-  "Return a View containing the not-yet-compiled slot grammar."
-  (etaf-compiled-view
+  "Return a View containing unsupported slot grammar."
+  (etaf-view
    (column (slot (text "fallback")))))
 
 (defun etaf-compiler-test--fallback-reference ()
@@ -53,7 +53,7 @@
   (etaf-compiler-test--legacy-view
    (column (slot (text "fallback")))))
 
-(ert-deftest etaf-compiled-view-fallback-is-exact ()
+(ert-deftest etaf-automatic-view-fallback-is-exact ()
   "An unsupported slot keeps the existing View semantics."
   (let ((before (plist-get (etaf-compiler-statistics) :fallbacks)))
     (should
@@ -64,9 +64,9 @@
     (should (= (1+ before)
                (plist-get (etaf-compiler-statistics) :fallbacks)))))
 
-(defun etaf-compiler-test--compiled-supported (color)
-  "Return a supported compiled fixture using COLOR."
-  (etaf-compiled-view
+(defun etaf-compiler-test--lowered-supported (color)
+  "Return a supported automatically lowered fixture using COLOR."
+  (etaf-view
    (column :color color
     (column :padding '(1 2)
      (text "static-a")
@@ -82,35 +82,35 @@
      (text "static-b"))
     (text :color "blue" "tail"))))
 
-(ert-deftest etaf-compiled-view-supported-output-is-exact ()
+(ert-deftest etaf-automatic-view-supported-output-is-exact ()
   "A supported blueprint produces the same normalized View data."
   (should
    (equal (etaf-compiler-test--canonical
-           (etaf-compiler-test--compiled-supported "green"))
+           (etaf-compiler-test--lowered-supported "green"))
           (etaf-compiler-test--canonical
            (etaf-compiler-test--interpreted-supported "green")))))
 
-(ert-deftest etaf-compiled-view-reuses-static-subtrees ()
+(ert-deftest etaf-automatic-view-reuses-static-subtrees ()
   "Repeated instantiation reuses a static child while rebuilding its root."
   (etaf-compiler-clear-cache)
-  (let* ((first (etaf-compiler-test--compiled-supported "red"))
-         (second (etaf-compiler-test--compiled-supported "blue"))
+  (let* ((first (etaf-compiler-test--lowered-supported "red"))
+         (second (etaf-compiler-test--lowered-supported "blue"))
          (first-static (car (etaf--view-node-children first)))
          (second-static (car (etaf--view-node-children second))))
     (should-not (eq first second))
     (should (eq first-static second-static))))
 
-(ert-deftest etaf-compiled-view-reduces-runtime-construction-work ()
+(ert-deftest etaf-automatic-view-reduces-runtime-construction-work ()
   "A warmed blueprint constructs only its dynamic ancestor path."
   (etaf-compiler-clear-cache)
-  (etaf-compiler-test--compiled-supported "warm")
+  (etaf-compiler-test--lowered-supported "warm")
   (let ((calls 0)
         (original (symbol-function 'etaf--view-call)))
     (cl-letf (((symbol-function 'etaf--view-call)
                (lambda (&rest arguments)
                  (cl-incf calls)
                  (apply original arguments))))
-      (etaf-compiler-test--compiled-supported "next"))
+      (etaf-compiler-test--lowered-supported "next"))
     (should (= calls 1))
     (setq calls 0)
     (cl-letf (((symbol-function 'etaf--view-call)
@@ -120,7 +120,7 @@
       (etaf-compiler-test--interpreted-supported "next"))
     (should (> calls 1))))
 
-(ert-deftest etaf-compiled-view-exposes-blueprint-coverage ()
+(ert-deftest etaf-automatic-view-exposes-blueprint-coverage ()
   "The compiler reports static nodes, dynamic paths, and holes."
   (pcase-let* ((`(,blueprint . ,programs)
                 (etaf-compiler--compile
@@ -135,7 +135,7 @@
     (should (= (length programs) 1))
     (should (= (plist-get blueprint :hole-count) 1))))
 
-(ert-deftest etaf-compiled-view-expr-is-a-dynamic-child-hole ()
+(ert-deftest etaf-automatic-view-expr-is-a-dynamic-child-hole ()
   "Expr becomes one dynamic child program without forcing root fallback."
   (pcase-let* ((`(,blueprint . ,programs)
                 (etaf-compiler--compile

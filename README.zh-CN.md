@@ -40,41 +40,6 @@ Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
 
 `etaf-view` 是唯一的公共 View 构造入口。结构 form 不使用 quote；quote 仍然是普通 Elisp 数据语法，例如 `'bold`。普通 Elisp 返回 View 时，必须在 `expr` 中显式使用 `(etaf-view ...)` 构造它。
 
-## App 预编译
-
-App 预编译是 ETAF core 的通用能力，不依赖 Playground。App 或宿主先注册文件
-清单和产物位置：
-
-```elisp
-(etaf-register-app
- "my-app"
- :source "/path/to/my-app.el"
- :static "/path/to/my-app.etaf"
- :style "/path/to/my-app.ecss"
- :artifact "/path/to/build/my-app.etafc")
-```
-
-用户手动执行一次：
-
-```text
-M-x etaf-compile-app
-```
-
-命令会选择已注册 App，并原子生成独立 `.etafc` 中间产物。查看状态使用：
-
-```text
-M-x etaf-app-compile-status
-```
-
-状态包括 `current`、`missing`、`stale` 和 `invalid`。ETAF 会记录 companion、
-`.etaf` 和 `.ecss` 的内容 hash；任一源码变化都会拒绝旧产物。宿主启动 App 时
-调用 `etaf-app-load-artifact-or-warn`：有效产物直接加载，缺失或过期则保持完整
-source fallback 功能，同时明确提醒用户运行 `M-x etaf-compile-app`。
-
-`etaf-compiler.el` 只负责 blueprint 与 `.etafc` 的编译/校验；App 注册、交互
-命令、状态和回退提醒属于独立的 `etaf-app.el`。Playground 只是这个通用 API 的
-一个可选 UI consumer。
-
 ## 性能记录面板
 
 ETAF 内置了一个按需启用、与具体应用无关的性能记录器。它自动识别公共

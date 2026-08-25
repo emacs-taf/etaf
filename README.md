@@ -40,37 +40,6 @@ Define a Component:
 
 `etaf-view` is the single public View constructor. Structural forms do not use quote; quote remains ordinary Elisp data syntax, such as `'bold`. A View returned from ordinary Elisp is explicitly constructed with `(etaf-view ...)` inside `expr`.
 
-## App precompilation
-
-App precompilation is an ETAF core capability and does not depend on
-Playground. An App or host first registers its source manifest and artifact
-location:
-
-```elisp
-(etaf-register-app
- "my-app"
- :source "/path/to/my-app.el"
- :static "/path/to/my-app.etaf"
- :style "/path/to/my-app.ecss"
- :artifact "/path/to/build/my-app.etafc")
-```
-
-The user then runs `M-x etaf-compile-app` once to select a registered App and
-atomically generate its standalone `.etafc` intermediate artifact. Use
-`M-x etaf-app-compile-status` to report `current`, `missing`, `stale`, or
-`invalid`.
-
-ETAF records content hashes for the companion, `.etaf`, and `.ecss` sources;
-changing any of them rejects the old artifact. An App host calls
-`etaf-app-load-artifact-or-warn` before startup. A current artifact is loaded;
-a missing or stale artifact retains the complete source fallback and emits an
-explicit reminder to run `M-x etaf-compile-app`.
-
-`etaf-compiler.el` owns blueprint and `.etafc` compilation/validation.
-`etaf-app.el` independently owns App registration, interactive commands,
-status, and fallback warnings. Playground is only an optional UI consumer of
-these core APIs.
-
 ## Performance records
 
 ETAF includes an opt-in, application-neutral timing recorder.  It recognizes
