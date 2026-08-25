@@ -52,9 +52,12 @@ The Box layout modes exposed by the target ETAF API are a closed set:
 column | row | flex | grid
 ```
 
-A plain Box defaults to vertical stacking, so users do not need to learn `flow`.
-`flow` is Ebox's internal CSS-like default inner display value (the current plain
-Ebox default is `(block flow)`), not an ETAF business layout or Component.
+A Box with multiple children must have an arrangement rule; the target ETAF contract
+defaults that arrangement to `column` (vertical stacking). Users therefore do not
+need a public layout type named `flow`. `flow` is a real ordinary-content layout
+algorithm inside CSS/Ebox; current Ebox marks it with the CSS-like display pair
+`(block flow)` for plain text/content boxes. It is not an ETAF public mode, Component,
+or extra module.
 
 `(box "text")` is shorthand for `(box (text "text"))`. ETAF must not expose
 `(box :content "text")`; `:content` remains an Ebox backend field.
@@ -85,7 +88,8 @@ contributions downstream. It does not own Component lifecycle or data requests.
 ### Ebox
 
 Ebox is the layout and rendering engine, not the ETAF Component Runtime. It owns text
-measurement, wrapping, internal flow/row/column/flex/grid geometry, surface/scroll geometry,
+measurement, wrapping, ordinary Box content layout, row/column/flex/grid geometry,
+surface/scroll geometry,
 stable layout snapshots, and render/paint plans. It does not know Components, slots,
 Context, Actions, Behaviors, Data, or Resources.
 
@@ -142,7 +146,7 @@ never inject example protocols into core.
 ## 4. Rust and Elisp split
 
 Rust is for deterministic, environment-independent computation: normalized Render IR,
-keyed diff/patch, ECSS cascade, text measurement/wrapping, flow/flex/grid layout,
+keyed diff/patch, ECSS cascade, text measurement/wrapping, ordinary Box/flex/grid layout,
 geometry snapshots, and paint-contribution merging.
 
 Elisp/Emacs owns user Component execution, refs, Context, Actions, Data, Resources,
@@ -161,6 +165,7 @@ last committed result.
 The clean public direction is `Text + Box(layout) + Component`. If concise syntax is
 needed, `row`/`column`/`flex`/`grid` may be introduced as new compiler sugar, but they
 are not compatibility aliases and must not become Runtime Components. `fragment` is
-transparent structure. `spacer` and `flow` are not public ETAF types. The redesign does
-not preserve the old Host registry names or add a compatibility layer. This target is
-not implemented merely by documenting it.
+transparent structure. `spacer` and `flow` are not public ETAF types; `flow` is only
+the current name for the ordinary Box default path. The redesign does not preserve the
+old Host registry names or add a compatibility layer. This target is not implemented
+merely by documenting it.

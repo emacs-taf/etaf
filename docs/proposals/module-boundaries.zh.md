@@ -61,9 +61,11 @@ View = Text(content, typography)
 column | row | flex | grid
 ```
 
-普通 `Box` 默认采用纵向堆叠语义，因此用户不需要学习 `flow`。`flow` 是 Ebox
-内部 CSS-like display pair 的默认 inner value（当前普通 Ebox 的默认值是
-`(block flow)`），不是 ETAF 的业务布局类型，也不是 Component。
+普通 `Box` 包含多个子节点时必须有明确的排列规则；目标 ETAF 规定默认排列为
+`column`（纵向堆叠）。因此用户不需要学习另一个叫 `flow` 的公共布局类型。
+`flow` 在 CSS/Ebox 内部确实是普通内容布局算法；当前 Ebox 用 CSS-like display
+pair `(block flow)` 表示它，主要服务普通文本/内容盒。它不是 ETAF 的公共模式、
+Component 或额外模块。
 
 语义映射大致为：
 
@@ -182,7 +184,7 @@ Ebox 是布局和渲染引擎，不是 ETAF Component Runtime。
 拥有：
 
 - 文本测量、字宽、换行和内容高度；
-- Ebox 内部 flow、row、column、flex、grid 的几何算法；
+- 普通 Box 内容布局，以及 row、column、flex、grid 的几何算法；
 - padding、border、surface、overflow、scroll 和 viewport 几何；
 - 稳定的布局快照、节点 identity、增量几何更新；
 - 从布局结果到后端可提交 Render/Paint plan 的转换。
@@ -354,7 +356,7 @@ ebox-playground ─▶ Ebox public API only
 - Text/Box Render IR 的验证和规范化；
 - keyed diff、identity matching 和 patch batch；
 - ECSS selector/cascade/computed-style 计算；
-- 字符宽度、换行、flow/flex/grid 测量和布局；
+- 字符宽度、换行、普通 Box/flex/grid 测量和布局；
 - geometry snapshot、layout impact 和 paint contribution merge。
 
 保留在 Elisp/Emacs 适配层的内容：
@@ -394,7 +396,8 @@ text · fragment · container · row · column · stack · flex · grid · space
 
 当前 Renderer 直接把这些名称映射到 Ebox 构造器；Ebox Playground 也直接使用
 自己的布局 API。这只是现状记录，不是目标 API，也不构成必须保留的兼容表面。
-`spacer` 和 `flow` 都不属于目标公共词汇。
+`spacer` 和 `flow` 都不属于目标公共词汇；`flow` 是 Ebox 内部普通内容布局的
+实现路径名称，不是 ETAF 用户需要选择的布局模式。
 
 目标演进方向是：
 
