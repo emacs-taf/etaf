@@ -94,6 +94,7 @@ operation 的包级阶段。
 - [English Architecture](docs/architecture.en.md) · [中文架构](docs/architecture.zh.md)
 - [English User Guide](docs/user-guide.en.md) · [中文用户指南](docs/user-guide.zh.md)
 - [English Implementation Plan](docs/implementation-plan.en.md) · [中文实施计划](docs/implementation-plan.zh.md)
+- [Module-boundary proposal (unimplemented)](docs/proposals/module-boundaries.en.md) · [模块边界提案（未实现）](docs/proposals/module-boundaries.zh.md)
 - [English Best-practice Examples](examples/README.md) · [中文示例](examples/README.zh-CN.md)
 
 ## 独立包

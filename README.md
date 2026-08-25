@@ -98,6 +98,7 @@ The [`examples/`](examples/README.md) directory contains three core-only best-pr
 - [Architecture](docs/architecture.en.md) · [中文架构](docs/architecture.zh.md)
 - [User guide](docs/user-guide.en.md) · [中文用户指南](docs/user-guide.zh.md)
 - [Implementation plan](docs/implementation-plan.en.md) · [中文实施计划](docs/implementation-plan.zh.md)
+- [Module-boundary proposal (unimplemented)](docs/proposals/module-boundaries.en.md) · [模块边界提案（未实现）](docs/proposals/module-boundaries.zh.md)
 - [Best-practice examples](examples/README.md) · [中文示例](examples/README.zh-CN.md)
 
 ## Independent packages
