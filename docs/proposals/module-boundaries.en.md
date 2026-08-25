@@ -53,11 +53,11 @@ column | row | flex | grid
 ```
 
 A Box with multiple children must have an arrangement rule; the target ETAF contract
-defaults that arrangement to `column` (vertical stacking). Users therefore do not
-need a public layout type named `flow`. `flow` is a real ordinary-content layout
-algorithm inside CSS/Ebox; current Ebox marks it with the CSS-like display pair
-`(block flow)` for plain text/content boxes. It is not an ETAF public mode, Component,
-or extra module.
+defaults that arrangement to `column` (vertical stacking). Children are arranged only
+by `column`, `row`, `flex`, or `grid`. `Text` owns text measurement, wrapping, and
+inline runs, so the target model does not need a separate `flow` layout algorithm.
+Current Ebox marks its ordinary content path with `(block flow)`; that is a historical
+implementation marker, not a required target algorithm or module.
 
 `(box "text")` is shorthand for `(box (text "text"))`. ETAF must not expose
 `(box :content "text")`; `:content` remains an Ebox backend field.
@@ -88,7 +88,7 @@ contributions downstream. It does not own Component lifecycle or data requests.
 ### Ebox
 
 Ebox is the layout and rendering engine, not the ETAF Component Runtime. It owns text
-measurement, wrapping, ordinary Box content layout, row/column/flex/grid geometry,
+measurement, wrapping, row/column/flex/grid geometry,
 surface/scroll geometry,
 stable layout snapshots, and render/paint plans. It does not know Components, slots,
 Context, Actions, Behaviors, Data, or Resources.
@@ -165,7 +165,7 @@ last committed result.
 The clean public direction is `Text + Box(layout) + Component`. If concise syntax is
 needed, `row`/`column`/`flex`/`grid` may be introduced as new compiler sugar, but they
 are not compatibility aliases and must not become Runtime Components. `fragment` is
-transparent structure. `spacer` and `flow` are not public ETAF types; `flow` is only
-the current name for the ordinary Box default path. The redesign does not preserve the
-old Host registry names or add a compatibility layer. This target is not implemented
-merely by documenting it.
+transparent structure. `spacer` and `flow` are not public ETAF types; the target Ebox
+may replace the current `(block flow)` marker with ordinary Box/Text paths instead of
+retaining a separate flow branch. The redesign does not preserve the old Host registry
+names or add a compatibility layer. This target is not implemented merely by documenting it.

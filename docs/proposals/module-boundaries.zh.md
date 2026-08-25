@@ -62,10 +62,10 @@ column | row | flex | grid
 ```
 
 普通 `Box` 包含多个子节点时必须有明确的排列规则；目标 ETAF 规定默认排列为
-`column`（纵向堆叠）。因此用户不需要学习另一个叫 `flow` 的公共布局类型。
-`flow` 在 CSS/Ebox 内部确实是普通内容布局算法；当前 Ebox 用 CSS-like display
-pair `(block flow)` 表示它，主要服务普通文本/内容盒。它不是 ETAF 的公共模式、
-Component 或额外模块。
+`column`（纵向堆叠）。子节点只通过 `column`、`row`、`flex` 或 `grid` 排列。
+`Text` 自己负责文字测量、换行和 inline runs，因此目标模型不需要额外的 `flow`
+布局算法。当前 Ebox 用 CSS-like display pair `(block flow)` 表示普通内容路径，
+这是历史实现标记，不是目标架构必须保留的算法或模块。
 
 语义映射大致为：
 
@@ -184,7 +184,7 @@ Ebox 是布局和渲染引擎，不是 ETAF Component Runtime。
 拥有：
 
 - 文本测量、字宽、换行和内容高度；
-- 普通 Box 内容布局，以及 row、column、flex、grid 的几何算法；
+- Text 内容测量和换行，以及 row、column、flex、grid 的几何算法；
 - padding、border、surface、overflow、scroll 和 viewport 几何；
 - 稳定的布局快照、节点 identity、增量几何更新；
 - 从布局结果到后端可提交 Render/Paint plan 的转换。
@@ -396,8 +396,8 @@ text · fragment · container · row · column · stack · flex · grid · space
 
 当前 Renderer 直接把这些名称映射到 Ebox 构造器；Ebox Playground 也直接使用
 自己的布局 API。这只是现状记录，不是目标 API，也不构成必须保留的兼容表面。
-`spacer` 和 `flow` 都不属于目标公共词汇；`flow` 是 Ebox 内部普通内容布局的
-实现路径名称，不是 ETAF 用户需要选择的布局模式。
+`spacer` 和 `flow` 都不属于目标公共词汇；目标 Ebox 可以用普通 Box/Text 路径
+替代当前的 `flow` 标记，不为它保留独立布局分支。
 
 目标演进方向是：
 
