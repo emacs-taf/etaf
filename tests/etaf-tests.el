@@ -8,6 +8,12 @@
 (require 'subr-x)
 (require 'etaf)
 
+;; This suite locks ETAF range and slot semantics against the named Elisp
+;; projection plans.  Keep an optional locally built Ebox module from
+;; replacing those plans with `native-frame'; native execution is covered by
+;; the Playground integration and performance gates.
+(setq ebox-native-reflow-module-path nil)
+
 (defvar etaf-test-state-cell nil)
 (defvar etaf-test-setup-count 0)
 (defvar etaf-test-mounted-count 0)
