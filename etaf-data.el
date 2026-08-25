@@ -333,14 +333,14 @@ load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive."
                    (maphash
                     (lambda (identity _present)
                       (unless (gethash identity new-set)
-                        (when-let ((selected-ref
+                        (when-let* ((selected-ref
                                     (gethash identity selected-refs)))
                           (setf (etaf-value selected-ref) nil))))
                     old-set)
                    (maphash
                     (lambda (identity _present)
                       (unless (gethash identity old-set)
-                        (when-let ((selected-ref
+                        (when-let* ((selected-ref
                                     (gethash identity selected-refs)))
                           (setf (etaf-value selected-ref) t))))
                     new-set)))))
@@ -362,7 +362,7 @@ load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive."
           (etaf-on-scope-dispose
            (lambda ()
              (clrhash (etaf-data--controller-selected-refs controller))
-             (when-let ((dispose (etaf-data--source-function
+             (when-let* ((dispose (etaf-data--source-function
                                   source :dispose nil)))
                (funcall dispose))))))
     (when auto-load

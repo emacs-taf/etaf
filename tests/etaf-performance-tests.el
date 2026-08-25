@@ -306,9 +306,9 @@
                              '(runtime reactive ebox tp)))
                      (etaf-performance-operation-stages record)))
                   (etaf-performance-records))))))
-        (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
           (etaf-unmount runtime))
-        (when-let ((buffer (get-buffer buffer-name)))
+        (when-let* ((buffer (get-buffer buffer-name)))
           (kill-buffer buffer))))))
 
 (ert-deftest etaf-performance-panel-has-operation-and-stage-entries ()

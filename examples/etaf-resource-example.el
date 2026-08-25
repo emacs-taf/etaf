@@ -133,10 +133,10 @@
 (defun etaf-resource-example-close ()
   "Unmount and kill the Resource lifecycle example buffer."
   (interactive)
-  (when-let ((runtime
+  (when-let* ((runtime
               (etaf-runtime-for-buffer etaf-resource-example-buffer-name)))
     (etaf-unmount runtime))
-  (when-let ((buffer (get-buffer etaf-resource-example-buffer-name)))
+  (when-let* ((buffer (get-buffer etaf-resource-example-buffer-name)))
     (kill-buffer buffer)))
 
 (provide 'etaf-resource-example)

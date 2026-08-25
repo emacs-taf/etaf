@@ -62,7 +62,7 @@
 
 (defun etaf-compiler--compile-property (form programs)
   "Compile property FORM, returning `(DESCRIPTOR . PROGRAMS)'."
-  (if-let ((literal (etaf-compiler--literal form)))
+  (if-let* ((literal (etaf-compiler--literal form)))
       (cons (list :kind 'static :value (cdr literal)) programs)
     (let ((index (length programs)))
       (cons (list :kind 'hole :index index)
@@ -137,7 +137,7 @@
 
 (defun etaf-compiler--compile (form)
   "Compile FORM into `(BLUEPRINT PROGRAM-CODE...)', or return nil."
-  (when-let ((compiled (etaf-compiler--compile-block form '(0) nil)))
+  (when-let* ((compiled (etaf-compiler--compile-block form '(0) nil)))
     (let* ((root (car compiled))
            (programs (cadr compiled))
            (id (secure-hash 'sha256 (prin1-to-string form)))

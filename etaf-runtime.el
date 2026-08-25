@@ -343,7 +343,7 @@ the sequential `etaf--pvec-put' contract."
       (unless (hash-table-p updates)
         (error "ETAF Theme paint update requires an active candidate"))
       (if (eq property :border)
-          (if-let ((parts (etaf--theme-border-paint-parts resolved)))
+          (if-let* ((parts (etaf--theme-border-paint-parts resolved)))
               (let* ((shape (car parts))
                      (color (cadr parts))
                      (spec (etaf--theme-paint-face-spec
@@ -423,7 +423,7 @@ the sequential `etaf--pvec-put' contract."
                           (etaf--contribution-index-host-removals index)
                         (etaf--contribution-index-semantic-removals index)))
           (setq index nil)
-        (if-let ((entry (assoc key
+        (if-let* ((entry (assoc key
                               (etaf--contribution-index-values index slot))))
             (setq found entry)
           (setq index (etaf--contribution-index-base index)))))
@@ -482,7 +482,7 @@ the sequential `etaf--pvec-put' contract."
                     generation 'context-consumers))
       (let ((provider-id (caar entry)))
         (dolist (effect-id (cdr entry))
-          (when-let ((effect (etaf--generation-effect generation effect-id)))
+          (when-let* ((effect (etaf--generation-effect generation effect-id)))
             (let ((consumer-id (etaf--generation-effect-semantic-id effect)))
               (unless (= provider-id consumer-id)
                 (cl-pushnew consumer-id
@@ -668,7 +668,7 @@ FULL-P means candidate tables describe the complete mounted tree."
 
 (defun etaf-runtime-generation (runtime)
   "Return RUNTIME's committed generation id."
-  (if-let ((generation (etaf-runtime-current-generation runtime)))
+  (if-let* ((generation (etaf-runtime-current-generation runtime)))
       (etaf-generation-generation-id generation)
     0))
 
@@ -702,12 +702,12 @@ FULL-P means candidate tables describe the complete mounted tree."
 
 (defun etaf--generation-semantic (generation identity)
   "Return IDENTITY semantic node from GENERATION."
-  (when-let ((id (gethash identity (etaf-generation-identity-index generation))))
+  (when-let* ((id (gethash identity (etaf-generation-identity-index generation))))
     (etaf--pvec-get (etaf-generation-semantic-nodes generation) id)))
 
 (defun etaf--generation-effect-semantic (generation effect-id)
   "Return EFFECT-ID semantic node from GENERATION."
-  (when-let ((effect (etaf--pvec-get
+  (when-let* ((effect (etaf--pvec-get
                       (etaf-generation-effect-map generation) effect-id)))
     (etaf--pvec-get (etaf-generation-semantic-nodes generation)
                     (etaf--generation-effect-semantic-id effect))))
@@ -1012,7 +1012,7 @@ effect-to-source edges.  It is intentionally immutable and suitable as an
 
 (defun etaf--runtime-route-scheduler (route source)
   "Route dirty SOURCE through opaque ROUTE to its current generation."
-  (when-let ((runtime
+  (when-let* ((runtime
               (gethash (etaf-runtime-route-mount-epoch route)
                        etaf--runtime-route-registry)))
     (when (etaf-runtime-mounted-p runtime)
@@ -1144,7 +1144,7 @@ when the requested boundary is no longer mounted."
 (defun etaf--runtime-component-env-signature (runtime component-id)
   "Return COMPONENT-ID's candidate or committed input signature in RUNTIME."
   (when component-id
-    (or (when-let ((env (gethash component-id
+    (or (when-let* ((env (gethash component-id
                                  (etaf-runtime-candidate-component-envs runtime))))
           (list (copy-tree (plist-get env :props))
                 (copy-tree (plist-get env :slots))))
@@ -1366,7 +1366,7 @@ receive an independent Host effect."
 (defun etaf--runtime-finish-semantic-host
     (runtime semantic-id &optional content content-parts)
   "Seal SEMANTIC-ID Host child order from RUNTIME candidate graph."
-  (when-let ((record (gethash semantic-id
+  (when-let* ((record (gethash semantic-id
                               (etaf-runtime-candidate-graph-nodes runtime))))
     (setf (etaf--semantic-host-child-ids record)
           (copy-sequence
@@ -1515,7 +1515,7 @@ need to know how Behavior attributes are merged."
              (old-key (gethash identity old-resources))
              (candidate-key (gethash identity candidate-resources)))
         (unless (and candidate (eq candidate old))
-          (when-let ((cleanup (cdr old)))
+          (when-let* ((cleanup (cdr old)))
             (etaf--runtime-run-contained-cleanup
              runtime 'behavior-remove identity cleanup))
           (when old-key
@@ -1534,7 +1534,7 @@ need to know how Behavior attributes are merged."
 
 (defun etaf--runtime-rollback-behaviors (runtime)
   "Dispose Behavior installers created by a failed RUNTIME candidate."
-  (when-let ((candidate (etaf-runtime-candidate-behaviors runtime)))
+  (when-let* ((candidate (etaf-runtime-candidate-behaviors runtime)))
     (dolist (entry (reverse
                     (sort (let (entries)
                             (maphash (lambda (key value)
@@ -1558,7 +1558,7 @@ need to know how Behavior attributes are merged."
                             (etaf-runtime-behavior-resource-keys runtime))))
              (same-state (eq state old-state)))
        (unless same-state
-         (when-let ((cleanup (cdr state)))
+         (when-let* ((cleanup (cdr state)))
            (etaf--runtime-run-contained-cleanup
             runtime 'behavior-rollback identity cleanup))
          (when (and candidate-key (not (equal candidate-key old-key)))
@@ -1811,7 +1811,7 @@ need to know how Behavior attributes are merged."
                      (etaf-runtime-candidate-graph-children runtime))
             (remhash range-id (etaf-runtime-candidate-graph-children runtime))
             (dolist (child-id children)
-              (when-let ((child
+              (when-let* ((child
                           (gethash child-id
                                    (etaf-runtime-candidate-graph-nodes runtime))))
                 (let ((copy (copy-sequence child)))
@@ -1886,7 +1886,7 @@ need to know how Behavior attributes are merged."
                                'component-output effect-id)
            :item-host-ids child-ids :item-identity-index item-index)))
     (dolist (child-id child-ids)
-      (when-let ((child (gethash child-id
+      (when-let* ((child (gethash child-id
                                  (etaf-runtime-candidate-graph-nodes runtime))))
         (let ((copy (copy-sequence child)))
           (cond ((etaf--semantic-host-p copy)
@@ -1901,7 +1901,7 @@ need to know how Behavior attributes are merged."
           (puthash child-id copy
                    (etaf-runtime-candidate-graph-nodes runtime)))))
     (dolist (item-id all-item-ids)
-      (when-let ((item (gethash item-id
+      (when-let* ((item (gethash item-id
                                 (etaf-runtime-candidate-graph-nodes runtime))))
         (when (etaf--semantic-host-p item)
           (puthash (etaf--semantic-host-identity item) item-id item-index))))
@@ -1931,7 +1931,7 @@ need to know how Behavior attributes are merged."
     (puthash effect-id nodes
              (etaf-runtime-candidate-range-artifacts runtime))
     (dolist (child-id child-ids)
-      (when-let ((child (gethash child-id
+      (when-let* ((child (gethash child-id
                                  (etaf-runtime-candidate-graph-nodes runtime))))
         (let ((nested
                (cond
@@ -2038,13 +2038,13 @@ need to know how Behavior attributes are merged."
             ;; subtree.  Preserve the artifact root's contribution entry so
             ;; a stable interactive child (for example a Button Component)
             ;; remains dispatchable without traversing unrelated descendants.
-            (when-let ((host-ref (plist-get artifact :host-ref)))
-              (when-let ((handlers
+            (when-let* ((host-ref (plist-get artifact :host-ref)))
+              (when-let* ((handlers
                           (etaf--generation-index-lookup
                            old-generation 'handlers host-ref)))
                 (puthash host-ref (copy-tree handlers)
                          (etaf-runtime-candidate-handlers runtime)))
-              (when-let ((host-props
+              (when-let* ((host-props
                           (etaf--generation-index-lookup
                            old-generation 'host-props host-ref)))
                 (puthash host-ref (copy-tree host-props)
@@ -2309,12 +2309,12 @@ need to know how Behavior attributes are merged."
     (when (and (etaf--semantic-host-p semantic)
                (etaf--semantic-host-host-ref semantic))
       (let ((host-ref (etaf--semantic-host-host-ref semantic)))
-        (when-let ((handlers
+        (when-let* ((handlers
                     (etaf--generation-index-lookup
                      generation 'handlers host-ref)))
           (puthash host-ref (copy-tree handlers)
                    (etaf-runtime-candidate-handlers runtime)))
-        (when-let ((props
+        (when-let* ((props
                     (etaf--generation-index-lookup
                      generation 'host-props host-ref)))
           (puthash host-ref (copy-tree props)
@@ -2377,7 +2377,7 @@ need to know how Behavior attributes are merged."
     (puthash semantic-id (copy-sequence children)
              (etaf-runtime-candidate-graph-children runtime))
     (dolist (child-id children)
-      (when-let ((child (etaf--pvec-get
+      (when-let* ((child (etaf--pvec-get
                          (etaf-generation-semantic-nodes generation) child-id)))
         (etaf--runtime-carry-committed-subtree runtime generation child)))))
 
@@ -2543,7 +2543,7 @@ need to know how Behavior attributes are merged."
         (signal 'etaf-runtime-error
                 (list "raw-ebox :value must return one public Ebox node")))
       (setq node (copy-tree node))
-      (when-let ((key-thunk (etaf--raw-ebox-key-thunk raw)))
+      (when-let* ((key-thunk (etaf--raw-ebox-key-thunk raw)))
         (let ((key (funcall key-thunk)))
           (etaf--validate-key key)
           (setq node (plist-put node :key key)))))
@@ -2827,7 +2827,7 @@ The candidate uses resolved VALUE, DEPS, and NODES."
 
 (defun etaf--runtime-keyed-range-snapshot (expr)
   "Return EXPR's validated keyed Range snapshot, or nil."
-  (when-let ((snapshot-function (etaf--expr-range-snapshot expr)))
+  (when-let* ((snapshot-function (etaf--expr-range-snapshot expr)))
     (let ((key-function (etaf--expr-range-key expr))
           (item-function (etaf--expr-range-item expr))
           (snapshot (funcall snapshot-function)))
@@ -2991,7 +2991,7 @@ The candidate uses resolved VALUE, DEPS, and NODES."
                         (etaf-runtime-candidate-inline-host-ids runtime)
                         :test #'eql)
             (etaf--runtime-invalidate-semantic-ancestors runtime host-id)
-            (when-let ((component
+            (when-let* ((component
                         (etaf--pvec-get
                          (etaf-generation-semantic-nodes generation)
                          (etaf--semantic-inline-range-component-id old))))
@@ -3270,7 +3270,7 @@ Generation, including its effects and Host contributions."
       ;; node itself remains attached and is overwritten in place.
       (maphash
        (lambda (semantic-id semantic)
-         (when-let ((old (etaf--pvec-get
+         (when-let* ((old (etaf--pvec-get
                           (etaf-generation-semantic-nodes base) semantic-id)))
            (when (and (etaf--semantic-host-p old)
                       (etaf--semantic-host-p semantic)
@@ -3332,7 +3332,7 @@ Generation, including its effects and Host contributions."
                                         new-effects metrics)))))))
          (remove-effect
           (effect-id)
-          (when-let ((old-effect
+          (when-let* ((old-effect
                       (and effect-map
                            (etaf--pvec-get effect-map effect-id metrics
                                            'effect))))
@@ -3440,7 +3440,7 @@ Generation, including its effects and Host contributions."
       (dolist (effect-id (etaf-runtime-candidate-removed-effect-ids runtime))
         (remove-effect effect-id))
       (dolist (semantic-id (etaf-runtime-candidate-removed-semantic-ids runtime))
-        (when-let ((old-node (and base
+        (when-let* ((old-node (and base
                                   (etaf--pvec-get
                                    (etaf-generation-semantic-nodes base)
                                    semantic-id))))
@@ -3576,7 +3576,7 @@ Generation, including its effects and Host contributions."
 
 (defun etaf--runtime-complete-generation (runtime old generation)
   "Complete RUNTIME from OLD through GENERATION and prune obsolete routes."
-  (when-let ((focus-ref (etaf-runtime-focus-ref runtime)))
+  (when-let* ((focus-ref (etaf-runtime-focus-ref runtime)))
     (let ((props (etaf--generation-index-lookup
                   generation 'host-props focus-ref)))
       (unless (and (numberp (plist-get props :tab-index))
@@ -3585,7 +3585,7 @@ Generation, including its effects and Host contributions."
         (setf (etaf-runtime-focus-ref runtime) nil))))
   (maphash
    (lambda (_identity semantic)
-     (when-let ((instance
+     (when-let* ((instance
                  (gethash (etaf--semantic-component-resource-key semantic)
                           (etaf-runtime-resource-registry runtime))))
        (setf (etaf--component-instance-context instance)
@@ -3671,7 +3671,7 @@ Generation, including its effects and Host contributions."
              (etaf-runtime-candidate-behavior-resource-keys runtime)))
           (maphash
            (lambda (effect-id artifact)
-             (when-let ((semantic
+             (when-let* ((semantic
                          (etaf--generation-effect-semantic
                           generation effect-id)))
                (let ((key (etaf--semantic-component-artifact-key semantic)))
@@ -3681,7 +3681,7 @@ Generation, including its effects and Host contributions."
            (etaf-runtime-candidate-artifacts runtime))
           (maphash
            (lambda (effect-id artifact)
-             (when-let ((range
+             (when-let* ((range
                          (etaf--generation-effect-semantic
                           generation effect-id)))
                (let ((key (etaf--semantic-backend-range-artifact-key range)))
@@ -3728,7 +3728,7 @@ Generation, including its effects and Host contributions."
         (old (etaf--generation-participant-old participant))
         (candidate (etaf--generation-participant-candidate participant))
         paint-updates)
-    (when-let ((table
+    (when-let* ((table
                 (etaf-runtime-candidate-theme-paint-updates runtime)))
       (maphash (lambda (slot spec)
                  (push (cons slot (copy-tree spec)) paint-updates))
@@ -3743,7 +3743,7 @@ Generation, including its effects and Host contributions."
           (setf (etaf--generation-participant-state participant) 'published
                 success t))
       (unless success
-        (when-let ((paint-journal
+        (when-let* ((paint-journal
                     (etaf--generation-participant-paint-journal participant)))
           (tp-paint-slot-rollback-updates paint-journal)
           (setf (etaf--generation-participant-paint-journal participant) nil))
@@ -3752,7 +3752,7 @@ Generation, including its effects and Host contributions."
 
 (defun etaf--runtime-participant-rollback (participant)
   "Rollback PARTICIPANT generation exactly and idempotently."
-  (when-let ((paint-journal
+  (when-let* ((paint-journal
               (etaf--generation-participant-paint-journal participant)))
     (tp-paint-slot-rollback-updates paint-journal)
     (setf (etaf--generation-participant-paint-journal participant) nil))
@@ -3838,7 +3838,7 @@ Generation, including its effects and Host contributions."
            generation (etaf--semantic-component-child-ids semantic)))
          found)
     (dolist (semantic-id descendants)
-      (when-let ((slot-range
+      (when-let* ((slot-range
                   (let ((node (etaf--pvec-get
                                (etaf-generation-semantic-nodes generation)
                                semantic-id)))
@@ -3922,7 +3922,7 @@ Generation, including its effects and Host contributions."
                          (etaf--resolve-property-value
                           (etaf--host-property-binding-expression
                            binding)))))))
-          (if-let ((component-id
+          (if-let* ((component-id
                     (etaf--semantic-host-component-id base)))
               (etaf--runtime-call-with-component-env
                runtime component-id evaluate)
@@ -4518,7 +4518,7 @@ Generation, including its effects and Host contributions."
                     :test #'eql)
         (etaf--runtime-invalidate-semantic-ancestors
          runtime (etaf--semantic-inline-range-parent-id inline))
-        (when-let ((component
+        (when-let* ((component
                     (etaf--pvec-get
                      (etaf-generation-semantic-nodes
                       (etaf-runtime-current-generation runtime))
@@ -4607,7 +4607,7 @@ Generation, including its effects and Host contributions."
                   (or (gethash (etaf--semantic-component-identity record)
                                (etaf-runtime-candidate-semantic-nodes runtime))
                       record))))
-            (when-let ((key (etaf--semantic-component-artifact-key record)))
+            (when-let* ((key (etaf--semantic-component-artifact-key record)))
               (push key
                     (etaf-runtime-candidate-invalidated-artifact-keys runtime)))
             (setf (etaf--semantic-component-artifact-key candidate) nil)
@@ -5190,10 +5190,10 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
         (pop tail)
         (unless (memq key '(:viewport-width :viewport-height))
           (error "Unknown ETAF mount option: %S" key)))))
-  (when-let ((width (plist-get options :viewport-width)))
+  (when-let* ((width (plist-get options :viewport-width)))
     (unless (and (numberp width) (> width 0))
       (error "ETAF mount :viewport-width must be positive: %S" width)))
-  (when-let ((height (plist-get options :viewport-height)))
+  (when-let* ((height (plist-get options :viewport-height)))
     (unless (and (numberp height) (> height 0))
       (error "ETAF mount :viewport-height must be positive: %S" height)))
   options)
@@ -5238,7 +5238,7 @@ of requiring an immediate viewport rerender."
     (etaf-scope-stop (etaf-runtime-scope runtime))
     (maphash
      (lambda (identity state)
-       (when-let ((cleanup (cdr state)))
+       (when-let* ((cleanup (cdr state)))
          (etaf--runtime-run-contained-cleanup
           runtime 'behavior-unmount identity cleanup)))
      (etaf-runtime-behaviors runtime))

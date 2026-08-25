@@ -387,7 +387,7 @@ When called interactively, suggest a timestamped `.eld' file in
   (interactive)
   ;; Keep correlation IDs monotonic even if an active operation clears history.
   (setq etaf-performance--record-ring nil)
-  (when-let ((panel (get-buffer "*ETAF Performance*")))
+  (when-let* ((panel (get-buffer "*ETAF Performance*")))
     (with-current-buffer panel
       (when (derived-mode-p 'etaf-performance-panel-mode)
         (tabulated-list-revert))))
@@ -698,7 +698,7 @@ KIND, LABEL, optional RUNTIME, and optional BUFFER are evaluated once."
 
 (defun etaf-performance--uninstall-function (function)
   "Remove recorder advice installed on FUNCTION."
-  (when-let ((entry (assq function etaf-performance--installed-advices)))
+  (when-let* ((entry (assq function etaf-performance--installed-advices)))
     (advice-remove function (cdr entry))
     (setq etaf-performance--installed-advices
           (delq entry etaf-performance--installed-advices))))
@@ -785,7 +785,7 @@ package defining FUNCTION is loaded.  Return FUNCTION."
 
 (defun etaf-performance--format-report (operation)
   "Return compact public backend metadata for OPERATION."
-  (if-let ((report (plist-get (etaf-performance-operation-metadata operation)
+  (if-let* ((report (plist-get (etaf-performance-operation-metadata operation)
                               :ebox)))
       (format "%s/%s d:%s o:%s tp:%s/%s/%s%s"
               (or (plist-get report :strategy) "-")

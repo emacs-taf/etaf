@@ -179,10 +179,10 @@ Use BORDER and BACKGROUND for its semantic color family."
 (defun etaf-data-example-close ()
   "Unmount and kill the Data Controller example buffer."
   (interactive)
-  (when-let ((runtime
+  (when-let* ((runtime
               (etaf-runtime-for-buffer etaf-data-example-buffer-name)))
     (etaf-unmount runtime))
-  (when-let ((buffer (get-buffer etaf-data-example-buffer-name)))
+  (when-let* ((buffer (get-buffer etaf-data-example-buffer-name)))
     (kill-buffer buffer)))
 
 (provide 'etaf-data-example)

@@ -157,7 +157,7 @@ form, or core Host.  A collision receives a semantic `-view' alias."
       (etaf--component-error
        "Component %S is already registered" name)))
   (puthash name spec etaf--view-registry)
-  (when-let ((alias (etaf--component-alias name)))
+  (when-let* ((alias (etaf--component-alias name)))
     (let ((existing (gethash alias etaf--view-registry)))
       (when (and existing (not (eq existing spec))
                  (not etaf--allow-component-redefinition))

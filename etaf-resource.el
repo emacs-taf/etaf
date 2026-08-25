@@ -63,7 +63,7 @@
 
 (defun etaf--resource-run-cleanup (resource)
   "Run RESOURCE's current cleanup once."
-  (when-let ((cleanup (etaf-resource-cleanup resource)))
+  (when-let* ((cleanup (etaf-resource-cleanup resource)))
     (setf (etaf-resource-cleanup resource) nil)
     (funcall cleanup)))
 

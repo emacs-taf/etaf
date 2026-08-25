@@ -1456,9 +1456,9 @@
                    (etaf-runtime-root-node
                     (etaf-runtime-for-buffer buffer-name))
                    :color))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-mounted-styles-stop-at-nested-component-boundaries ()
@@ -1473,9 +1473,9 @@
              (etaf-runtime-root-node
               (etaf-runtime-for-buffer buffer-name))
              :color))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-theme-defaults-are-inherited-and-overridable ()
@@ -1488,9 +1488,9 @@
                  (node (etaf-runtime-root-node runtime)))
             (should (equal "theme-color" (ebox-get node :color)))
             (should (equal "theme-bg" (ebox-get node :bgcolor)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-theme-token-resolves-static-component-style ()
@@ -1505,9 +1505,9 @@
                           (etaf-runtime-root-node
                            (etaf-runtime-for-buffer buffer-name))
                           :color))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-theme-token-resolves-nested-fallback-before-transform ()
@@ -1551,9 +1551,9 @@
                                "#EEEEEE"))
                 (should (equal (etaf-test--face-value face :background)
                                "#111111"))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-theme-paint-slot-rolls-back-with-generation-failure ()
@@ -1582,9 +1582,9 @@
             (should (= generation (etaf-runtime-generation runtime)))
             (should (equal "#111111"
                            (plist-get (tp-paint-slot-spec slot) :foreground)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-theme-and-component-change-publish-one-final-artifact ()
@@ -1627,9 +1627,9 @@
                   (should (equal "#111111" (background slot))))
                 (should (string-match-p
                          "Dark" (etaf-test--buffer-text buffer-name)))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-detached-component-subtree-retires-host-effects ()
@@ -1664,9 +1664,9 @@
               (should
                (equal "#222222"
                       (plist-get (tp-paint-slot-spec color) :foreground))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-theme-resolves-explicit-light-dark-palette ()
@@ -1729,9 +1729,9 @@
           (should (= etaf-test-updated-count 1))
           (etaf-unmount (etaf-runtime-for-buffer buffer-name))
           (should (= etaf-test-unmounted-count 1)))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-recollects-late-branch-dependencies ()
@@ -1748,9 +1748,9 @@
           (setf (etaf-value etaf-test-branch-late-cell) "late-updated")
           (with-current-buffer buffer-name
             (should (equal "late-updated" (buffer-string)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-branch-switch-keeps-equal-sources-distinct ()
@@ -1774,9 +1774,9 @@
             (setf (etaf-value etaf-test-branch-late-cell) "new-only")
             (should (= (1+ before) (etaf-runtime-generation runtime)))
             (should (equal "new-only" (etaf-test--buffer-text buffer-name)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-theme-validation-snapshot-is-shared-across-contexts ()
   "Validate one immutable Theme value once for all inheriting Context frames."
@@ -1810,9 +1810,9 @@
           (setf (etaf-value etaf-test-theme-cell) 'light)
           (with-current-buffer buffer-name
             (should (equal "light" (buffer-string)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-behavior-event-and-action-share-runtime-boundary ()
@@ -1847,9 +1847,9 @@
                                             (etaf-runtime-handlers runtime)))))
             (etaf-unmount runtime))
           (should (= etaf-test-behavior-cleanups 1)))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-composes-host-and-behavior-events-in-order ()
@@ -1873,9 +1873,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (etaf-dispatch-event (etaf-runtime-for-buffer buffer-name)
                                'composed 'press)
           (should (equal order '(host behavior))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-behavior-replacement-disposes-previous-installer ()
@@ -1912,9 +1912,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (setf (etaf-value marker) 1)
           (should (= 3 etaf-test-behavior-installs))
           (should (= 2 etaf-test-behavior-cleanups)))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-behavior-rollback-cleanups-continue-and-diagnose ()
@@ -2285,9 +2285,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (with-current-buffer buffer-name
             (should (equal "B" (buffer-string))))
           (should (= 1 etaf-test-setup-count)))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-keeps-last-committed-view-after-render-error ()
@@ -2308,9 +2308,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (setf (etaf-value fail-p) nil)
           (with-current-buffer buffer-name
             (should (equal "stable:0" (buffer-string)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-keeps-published-state-when-lifecycle-fails ()
@@ -2334,9 +2334,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (setf (etaf-value label) "C")
           (with-current-buffer buffer-name
             (should (equal "C" (buffer-string)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-events-support-payload-and-cyclic-focus ()
@@ -2359,9 +2359,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (eq 'first (etaf-focus-next runtime)))
             (etaf-dispatch-event runtime 'second 'input "value" t)
             (should (equal "value" payload))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-event-dispatch-batches-reactive-publication ()
@@ -2379,9 +2379,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                        "source=2 computed=4 watch:2 effect:4"
                        (buffer-string))))
             (should (= 1 (- (etaf-runtime-generation runtime) before)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-pvec-put-many-preserves-values-and-shares-untouched-branches ()
@@ -2448,9 +2448,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (should (= 1 (hash-table-count etaf-test-retained-render-counts)))
               (should (eq old-index (etaf-generation-identity-index new)))
               (should (<= (etaf--generation-metrics-node-copies metrics) 128)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-shared-source-renders-siblings-in-one-commit ()
   "Render exactly two subscribing siblings and publish one candidate."
@@ -2493,9 +2493,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (zerop (gethash "U" etaf-test-retained-render-counts 0)))
             (should (= 1 root-calls))
             (should (= 1 (hash-table-count (etaf-ref-subscribers shared))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-root-rebuild-retains-unchanged-sibling-routes ()
   "Retain an unchanged sibling semantic subtree across a Root-owned rebuild."
@@ -2530,9 +2530,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (= root-before root-calls))
             (should (= 1 (gethash "R" etaf-test-retained-render-counts 0)))
             (should (zerop (gethash "B" etaf-test-retained-render-counts 0)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-setup-read-is-not-a-render-dependency ()
   "Do not subscribe a Component render owner to setup-only reads."
@@ -2552,9 +2552,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (setf (etaf-value render-source) "B")
             (should (= (1+ before) (etaf-runtime-generation runtime)))
             (should (equal "B" (etaf-test--buffer-text buffer-name)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-dependency-only-promotion-skips-ebox-publication ()
   "Promote changed dependencies/output inputs without an Ebox commit."
@@ -2575,9 +2575,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                 (setf (etaf-value source) 1)
                 (should (= (1+ before) (etaf-runtime-generation runtime)))
                 (should (zerop commits))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-equal-component-input-skips-render ()
   "Promote an input target dependency change without running its render target."
@@ -2596,9 +2596,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (setf (etaf-value trigger) 1)
             (should (= (1+ before) (etaf-runtime-generation runtime)))
             (should (zerop etaf-test-input-render-count))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-input-target-precedes-render-target ()
   "Render once with final inputs regardless of batched source write order."
@@ -2625,9 +2625,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (should (= 1 etaf-test-priority-render-count))
               (should (= 1 (- (etaf-runtime-generation runtime) before)))
               (should (equal "B/1" (etaf-test--buffer-text buffer-name)))))
-        (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
           (etaf-unmount runtime))
-        (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
+        (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
 
 (ert-deftest etaf-runtime-local-component-retains-caller-style-environment ()
   "Preserve caller style/slot environment across a Component-only update."
@@ -2650,9 +2650,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                 (should (equal "B" (substring-no-properties text)))
                 (should (equal '(:foreground "retained-color")
                                (get-text-property 0 'face text)))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-lazy-computed-owns-its-underlying-dependency ()
   "Route Component to computed while its ordinary effect owns the base ref."
@@ -2673,9 +2673,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (setf (etaf-value etaf-test-lazy-computed-base) 3)
               (should (= (1+ before) (etaf-runtime-generation runtime)))
               (should (equal "6" (etaf-test--buffer-text buffer-name))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-reactive-post-publication-write-runs-next-runtime-turn ()
   "Drain a lifecycle source write as a distinct following Runtime turn."
@@ -2695,9 +2695,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (setf (etaf-value source) 1)
             (should (= 2 (- (etaf-runtime-generation runtime) before)))
             (should (equal "1/1" (etaf-test--buffer-text buffer-name)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-route-is-opaque-and-unmount-disarms-sources ()
   "Keep sources free of Runtime closures and remove route tokens on unmount."
@@ -2713,7 +2713,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
         (should (gethash route (etaf-ref-subscribers source)))
         (etaf-unmount runtime)
         (should (= baseline (hash-table-count (etaf-ref-subscribers source)))))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-participant-publish-failure-restores-generation ()
   "Restore generation and Ebox state when participant publish fails after swap."
@@ -2784,9 +2784,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (should (equal "1=2" (etaf-test--buffer-text buffer-name)))
               (etaf-runtime-flush runtime)
               (should (equal "1=3" (etaf-test--buffer-text buffer-name))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-artifact-registry-stays-bounded ()
   "Discard superseded artifacts after repeated Component publications."
@@ -2805,9 +2805,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (<= (hash-table-count
                          (etaf-runtime-artifact-registry runtime))
                         baseline))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-prepublication-journals-are-exception-atomic ()
   "Rollback partial resource, artifact, and route installation immediately."
@@ -2845,7 +2845,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                   (etaf--view-call 'etaf-test-retained-leaf
                                    (list :label 1 :cell source) nil))
       (etaf-unmount (etaf-runtime-for-buffer buffer-name))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-route-arm-kth-failure-is-bounded-and-retryable ()
   "Rollback each partial route arm and keep repeated failures bounded."
@@ -2900,9 +2900,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (should (zerop (hash-table-count (etaf-ref-subscribers left))))
               (should (zerop (hash-table-count
                               (etaf-ref-subscribers right))))))
-        (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
           (etaf-unmount runtime))
-        (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
+        (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
 
 (ert-deftest etaf-runtime-published-generation-resolves-new-resource ()
   "Make every newly published resource membership immediately resolvable."
@@ -2943,9 +2943,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                          (etaf-generation-identity-index generation)))))))
               (setf (etaf-value show) t)))
           (should (= 1 checked)))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-local-parent-does-not-carry-unchanged-descendants ()
   "Avoid generation subtree carry for 500 unchanged children of a dirty parent."
@@ -2965,9 +2965,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (setf (etaf-value etaf-test-wide-parent-source) 1))
             (should (zerop (hash-table-count
                             etaf-test-retained-render-counts)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-direct-expr-publishes-child-range-only ()
   "Publish a direct material-child expr without running its Component owner."
@@ -3044,9 +3044,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                                    child-id)))
                        (walk child-id))))
                 (walk 0)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-view-expr-callsite-token-is-stable ()
   "Give repeated values from one compiled expr site the same opaque token."
@@ -3081,9 +3081,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                (etaf-generation-identity-index generation))
               (should (= 1 (length ranges)))
               (push (etaf--semantic-range-token (car ranges)) tokens)))
-        (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
           (etaf-unmount runtime))
-        (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))
+        (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))
     (should (eq (car tokens) (cadr tokens)))))
 
 (ert-deftest etaf-runtime-does-not-encode-ebox-layout-shapes ()
@@ -3195,9 +3195,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                                (list 'host range-id :key 'b)
                                (etaf--semantic-range-item-identity-index range))))
                       (if b-id (should (= b-id id)) (setq b-id id))))))))
-        (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
           (etaf-unmount runtime))
-        (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
+        (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
 
 (ert-deftest etaf-runtime-two-direct-ranges-batch-one-publication ()
   "Evaluate and splice two disjoint Ranges once in one logical commit."
@@ -3227,9 +3227,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (= 1 commits))
             (should (= 1 (hash-table-count
                           (etaf-ref-subscribers etaf-test-range-source))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-range-artifact-survives-root-rebuild ()
   "Relower current Range graph after Root change without application thunks."
@@ -3285,9 +3285,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (setf (etaf-value etaf-test-range-source) '((b . "B")))
             (should (= 1 etaf-test-range-evals))
             (should (string-match-p "B" (etaf-test--buffer-text buffer-name)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-range-address-survives-preceding-static-insert ()
   "Keep Range id/ref when its material parent's preceding siblings change."
@@ -3322,9 +3322,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (should (eq range-ref (etaf--semantic-range-range-ref range))))
             (setf (etaf-value etaf-test-range-source) '((a . "A")))
             (should (= 1 etaf-test-range-evals))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-range-rebuild-keeps-bare-string-siblings ()
   "Keep mounted synthetic string Hosts through Range invalidation and rebuild."
@@ -3344,9 +3344,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (string-match-p "prefix" text))
             (should (string-match-p "A" text))
             (should (string-match-p "suffix" text))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-range-failure-rolls-back-and-manual-retries ()
   "Restore Range graph/artifacts/buffer for prepublish and final-accept failure."
@@ -3400,9 +3400,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (etaf-runtime-flush runtime)
               (should (string-match-p "B"
                                       (etaf-test--buffer-text buffer-name))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-direct-range-rejects-step4b-output-without-reownership ()
   "Reject direct Component/raw output while retaining Range-only dependency."
@@ -3429,9 +3429,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                           (etaf--generation-effect generation effect-id)))
                        (etaf--generation-source-effects
                         generation etaf-test-unsupported-range-source))))))
-        (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
           (etaf-unmount runtime))
-        (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
+        (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
 
 (ert-deftest etaf-runtime-direct-range-normalizes-bare-string-item ()
   "Represent a bare direct expr string as one synthetic semantic text Host."
@@ -3454,9 +3454,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (= 1 (length (etaf--semantic-range-item-host-ids range))))
             (should (string-match-p "hello"
                                     (etaf-test--buffer-text buffer-name)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-range-recursively-retains-and-removes-host-subtree ()
   "Retain keyed nested Hosts and tombstone their full removed subtree."
@@ -3532,9 +3532,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                     (should-not (etaf--pvec-get
                                  (etaf-generation-children-table new-generation)
                                  semantic-id))))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-inline-effect-replaces-only-containing-host ()
   "Update one inline site beside 500 unrelated Components with one Host commit."
@@ -3612,9 +3612,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                          (etaf--pvec-get
                           (etaf-generation-parent-table generation)
                           (etaf--semantic-inline-range-semantic-id inline)))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-inline-effects-coalesce-per-host ()
   "Coalesce two inline effects in one Host and split two distinct Hosts."
@@ -3647,9 +3647,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (= 1 host-replaces))
             (should (= 1 commits))
             (should (= 1 etaf-test-inline-updated-count))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))
   (let ((buffer-name " *etaf-inline-two-host-test*")
         (etaf-test-inline-shared (etaf-ref "0"))
         (etaf-test-inline-shared-evals 0)
@@ -3670,9 +3670,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (should (= 2 etaf-test-inline-shared-evals))
           (should (= 2 host-replaces))
           (should (= 1 commits)))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-inline-output-equal-promotes-dependencies-only ()
   "Promote an inline branch dependency change without Ebox publication."
@@ -3709,9 +3709,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                 (should (= (1+ before) (etaf-runtime-generation runtime)))
                 (should (zerop commits))
                 (should (zerop etaf-test-inline-branch-updated))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-slot-inline-keeps-authoring-component-environment ()
   "Read authoring parent props through default and forwarded named slots."
@@ -3740,9 +3740,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (= 1 etaf-test-slot-parent-renders))
             (should (zerop etaf-test-slot-forwarder-renders))
             (should (zerop etaf-test-slot-consumer-renders)))
-        (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
           (etaf-unmount runtime))
-        (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
+        (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
 
 (ert-deftest etaf-runtime-nested-component-input-reads-caller-candidate-props ()
   "Resolve child input thunks from final candidate parent props."
@@ -3755,9 +3755,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (should (equal "A" (etaf-test--buffer-text buffer-name)))
           (setf (etaf-value label) "B")
           (should (equal "B" (etaf-test--buffer-text buffer-name))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-inline-and-input-fixed-point-uses-final-props-once ()
   "Run input, inline, and Component render once for either source write order."
@@ -3788,9 +3788,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (should (= 1 etaf-test-inline-priority-renders))
               (should (= 1 etaf-test-inline-priority-updated))
               (should (equal "B/1" (etaf-test--buffer-text buffer-name)))))
-        (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
           (etaf-unmount runtime))
-        (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
+        (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
 
 (ert-deftest etaf-runtime-range-and-input-fixed-point-reuses-range-candidate ()
   "Evaluate direct Range once when Component input changes in the same turn."
@@ -3818,9 +3818,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (should (= 1 etaf-test-range-component-renders))
               (should (string-match-p "B/1"
                                       (etaf-test--buffer-text buffer-name)))))
-        (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
           (etaf-unmount runtime))
-        (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
+        (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
 
 (ert-deftest etaf-runtime-slot-range-direct-source-skips-component-renders ()
   "Update default, forwarded named, and fallback slot Ranges directly."
@@ -3872,9 +3872,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                                    (get-text-property
                                     0 'face (buffer-string))))))
               (should (= 1 etaf-test-slot-author-updated))))
-        (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
           (etaf-unmount runtime))
-        (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
+        (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
 
 (ert-deftest etaf-runtime-slot-range-two-sites-batch-one-commit ()
   "Evaluate two projection sites and publish two Range replacements once."
@@ -3899,9 +3899,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (should (= 2 etaf-test-slot-range-evals))
           (should (= 2 range-replaces))
           (should (= 1 commits)))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-slot-retarget-equal-output-promotes-dependencies ()
   "Retarget caller slot deps without rendering Consumer or publishing Ebox."
@@ -3936,9 +3936,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                            generation etaf-test-slot-branch-left))
               (should (etaf--generation-source-effects
                        generation etaf-test-slot-branch-right)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-slot-range-rolls-back-rebuilds-and-removes-items ()
   "Keep slot Range state atomic across rollback, rebuild, and item removal."
@@ -3993,9 +3993,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                              (etaf-generation-parent-table generation) item-id))
                 (should-not (etaf--pvec-get
                              (etaf-generation-children-table generation) item-id))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-material-fragment-is-one-retained-range-owner ()
   "Update a material fragment without rendering its Component or Root."
@@ -4037,9 +4037,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (eq 'fragment
                         (etaf--generation-effect-kind
                          (etaf--generation-effect generation effect-id))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-material-raw-ebox-is-one-opaque-range-owner ()
   "Update raw value and key through one opaque Range effect."
@@ -4103,9 +4103,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (should (equal before (etaf-test--buffer-text buffer-name))))
             (etaf-runtime-flush runtime)
             (should (string-match-p "C" (etaf-test--buffer-text buffer-name)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-root-effect-owns-one-semantic-root-range ()
   "Publish Root changes through one semantic Root Range and root replacement."
@@ -4159,9 +4159,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (should (equal before (etaf-test--buffer-text buffer-name))))
             (etaf-runtime-flush runtime)
             (should (string-match-p "C" (etaf-test--buffer-text buffer-name)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-transparent-component-publishes-output-range ()
   "Publish transparent Component nil/one/many output through one Range."
@@ -4228,9 +4228,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (etaf-runtime-flush runtime)
             (should (string-match-p "C"
                                     (etaf-test--buffer-text buffer-name)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-transparent-chain-shares-nearest-backend-anchor ()
   "Update an inner transparent Component without rendering its ancestors."
@@ -4260,9 +4260,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (should (= 1 range-replaces))
           (should (= 1 commits))
           (should (string-match-p "B" (etaf-test--buffer-text buffer-name))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-parent-rerender-rebuilds-invalidated-artifact ()
   "Rebuild a committed parent anchor after a descendant-only publication."
@@ -4288,9 +4288,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                        runtime '(etaf-host (root :view)))
                       :bgcolor)
                      "dark"))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-context-provider-promotes-consumer-atomically ()
@@ -4329,9 +4329,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                              (get-text-property 0 'face (buffer-string)))))
             (should-not (eq old-generation
                             (etaf-runtime-current-generation runtime)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-generation-owns-handler-ref-and-focus-contributions ()
   "Dispatch only committed handlers and remove stale focus membership."
@@ -4382,9 +4382,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should-error (etaf-dispatch-event runtime 'target 'press)
                           :type 'etaf-event-error)
             (should-not (etaf-focused-host-ref runtime))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-candidate-reintroduced-host-cancels-contribution-removal ()
   "Cancel a Host tombstone when the same stable ref is re-registered."
@@ -4492,9 +4492,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                         (etaf--generation-effect-kind
                          (etaf--generation-effect generation
                                                   (cadar edges)))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-context-edge-belongs-to-slot-range-effect ()
   "Invalidate the authored slot Range without rendering its consumer."
@@ -4523,9 +4523,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (eq 'slot
                         (etaf--generation-effect-kind
                          (etaf--generation-effect generation effect-id))))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-context-cycle-validator-allows-long-chain-and-rejects-cycle ()
   "Settle a long Context graph and reject one deterministic cross-edge cycle."
@@ -4593,9 +4593,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (let ((text (buffer-string)))
               (should (equal "PB" (substring-no-properties text)))
               (should (get-text-property 1 'face text)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-event-dispatch-noop-does-not-publish ()
   "Do not publish when an event callback changes no reactive state."
@@ -4607,9 +4607,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                  (before (etaf-runtime-generation runtime)))
             (etaf-dispatch-event runtime 'event-batch-noop 'press)
             (should (= before (etaf-runtime-generation runtime)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-event-dispatch-nested-batches-once ()
@@ -4624,9 +4624,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (equal "Outer Inner nested"
                            (etaf-test--buffer-text buffer-name)))
             (should (= 1 (- (etaf-runtime-generation runtime) before)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-event-dispatch-batches-behavior-two-ref-write ()
@@ -4642,9 +4642,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (equal "Toggle left=on right=on"
                            (etaf-test--buffer-text buffer-name)))
             (should (= 1 (- (etaf-runtime-generation runtime) before)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-event-dispatch-batches-computed-theme ()
@@ -4661,9 +4661,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (equal "Theme theme=dark"
                            (etaf-test--buffer-text buffer-name)))
             (should (= 1 (- (etaf-runtime-generation runtime) before)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-event-dispatch-batches-resource-success-and-error ()
@@ -4696,9 +4696,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                        "status=error value=none error=yes"
                        (buffer-string))))
             (should (= 1 (- (etaf-runtime-generation runtime) before)))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer))
       (etaf-resource-dispose resource))))
 
@@ -4746,9 +4746,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (etaf-unmount runtime))
           (with-current-buffer buffer-name
             (should-not etaf-input-mode)))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-activation-skips-disabled-and-callbackless-hosts ()
@@ -4777,9 +4777,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                        (list window
                              (etaf-host-ref-position runtime 'passive))))))
             (should (= 0 etaf-test-event-count))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-mount-publishes-through-ebox ()
@@ -4791,7 +4791,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                       (etaf-view (text :color "#F4F6FB" "Mounted")))
           (with-current-buffer buffer-name
             (should (equal "Mounted" (buffer-string)))))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-mount-accepts-final-initial-viewport ()
@@ -4815,9 +4815,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (should-error
            (etaf-mount buffer-name (etaf-view (text "Invalid"))
                        '(:viewport-width 0))))
-      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
-      (when-let ((buffer (get-buffer buffer-name)))
+      (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
 ;;; etaf-tests.el ends here

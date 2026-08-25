@@ -142,7 +142,7 @@ Runtime, watchers run synchronously.")
         ((etaf-effect-active-p subscriber)
          (unless (gethash subscriber etaf--dispatch-effect-set)
            (puthash subscriber t etaf--dispatch-effect-set)
-           (if-let ((scheduler (etaf-effect-scheduler subscriber)))
+           (if-let* ((scheduler (etaf-effect-scheduler subscriber)))
                (funcall scheduler subscriber)
              (etaf-reactive-effect-run subscriber))))))
      subscribers)))
@@ -210,7 +210,7 @@ Runtime, watchers run synchronously.")
   (when (and (etaf-effect-p effect) (etaf-effect-active-p effect))
     (setf (etaf-effect-active-p effect) nil)
     (etaf--clear-effect-deps effect)
-    (when-let ((cleanup (etaf-effect-on-stop effect)))
+    (when-let* ((cleanup (etaf-effect-on-stop effect)))
       (setf (etaf-effect-on-stop effect) nil)
       (funcall cleanup)))
   effect)
@@ -422,7 +422,7 @@ diagnostics.  Return a stop function."
                     (when cleanup
                       (funcall cleanup)
                       (setq cleanup nil))
-                    (when-let ((result (funcall callback new-value previous)))
+                    (when-let* ((result (funcall callback new-value previous)))
                       (when (functionp result)
                         (setq cleanup result)))))))))
     (setq effect
@@ -451,7 +451,7 @@ effect.  If FUNCTION returns a function, it cleans up the previous run."
           (lambda ()
             (when (etaf-effect-active-p effect)
               (when cleanup (funcall cleanup) (setq cleanup nil))
-              (when-let ((result (etaf-reactive-effect-run effect)))
+              (when-let* ((result (etaf-reactive-effect-run effect)))
                 (when (functionp result) (setq cleanup result))))))
     (setq effect
           (etaf-reactive-effect-create
@@ -519,7 +519,7 @@ effect.  If FUNCTION returns a function, it cleans up the previous run."
       (setf (etaf-effect-scope-effects scope) nil
             (etaf-effect-scope-children scope) nil
             (etaf-effect-scope-cleanups scope) nil)
-      (when-let ((parent (etaf-effect-scope-parent scope)))
+      (when-let* ((parent (etaf-effect-scope-parent scope)))
         (setf (etaf-effect-scope-children parent)
               (delq scope (etaf-effect-scope-children parent))))
       (nreverse errors))))

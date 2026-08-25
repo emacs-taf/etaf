@@ -131,7 +131,7 @@ the position."
                     start end (<= start position) (< position end))
            (push (list host-ref start (- end start)) candidates)))))
     (setq candidates (sort candidates #'etaf--activation-candidate-before-p))
-    (if-let ((candidate (car candidates)))
+    (if-let* ((candidate (car candidates)))
         (etaf-dispatch-event runtime (car candidate) 'press)
       (unless quiet
         (user-error "No interactive ETAF Host at point")))))
@@ -234,7 +234,7 @@ When called interactively without arguments, focus the first visible Host."
       (let ((buffer (window-buffer window)))
         (when (buffer-live-p buffer)
           (with-current-buffer buffer
-            (when-let ((runtime (etaf-runtime-for-buffer buffer)))
+            (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
               (goto-char position)
               (etaf--activation-at-position runtime position t))))))))
 

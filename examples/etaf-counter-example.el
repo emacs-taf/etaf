@@ -129,10 +129,10 @@
 (defun etaf-counter-example-close ()
   "Unmount and kill the counter example buffer."
   (interactive)
-  (when-let ((runtime
+  (when-let* ((runtime
               (etaf-runtime-for-buffer etaf-counter-example-buffer-name)))
     (etaf-unmount runtime))
-  (when-let ((buffer (get-buffer etaf-counter-example-buffer-name)))
+  (when-let* ((buffer (get-buffer etaf-counter-example-buffer-name)))
     (kill-buffer buffer)))
 
 (provide 'etaf-counter-example)
