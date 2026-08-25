@@ -48,12 +48,11 @@ appearance."
           (signal 'etaf-context-error
                   (list (format "Invalid TP Theme binding: %S"
                                 (cons token binding)))))
-        (setq theme
-              (append theme
-                      (list token
-                            (tp-palette-color-for-mode
-                             (car binding) (cdr binding) mode))))))
-    theme))
+        (push token theme)
+        (push (tp-palette-color-for-mode
+               (car binding) (cdr binding) mode)
+              theme)))
+    (nreverse theme)))
 
 (provide 'etaf-theme-tp)
 ;;; etaf-theme-tp.el ends here

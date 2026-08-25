@@ -34,6 +34,32 @@
           (should (eq 'success (etaf-value (etaf-data-status controller)))))
       (etaf-data-stop controller))))
 
+(ert-deftest etaf-data-controller-accepts-prepared-initial-result ()
+  "Seed one data-ready Controller without a second source call."
+  (let* ((calls 0)
+         (source
+          (etaf-data-source
+           :load (lambda (_query page page-size)
+                   (cl-incf calls)
+                   (list :items '((:id 9 :name "Prepared"))
+                         :total 41 :page page :page-size page-size))))
+         (prepared (etaf-data-source-load-page source nil 2 10))
+         (controller (etaf-data-controller
+                      source :page 2 :page-size 10
+                      :initial-result prepared :item-key (lambda (row)
+                                                           (plist-get row :id)))))
+    (unwind-protect
+        (progn
+          (should (= 1 calls))
+          (should (equal '(9) (etaf-data-test--ids controller)))
+          (should (= 41 (etaf-value (etaf-data-total controller))))
+          (should (= 2 (etaf-value (etaf-data-page controller))))
+          (should (= 10 (etaf-value (etaf-data-page-size controller))))
+          (should (eq 'success (etaf-value (etaf-data-status controller))))
+          (should-error
+           (etaf-data-controller source :initial-result prepared :auto-load t)))
+      (etaf-data-stop controller))))
+
 (ert-deftest etaf-data-loading-state-is-visible-to-source-boundary ()
   "Publish loading before invoking the source load capability."
   (let (controller seen)
@@ -174,6 +200,63 @@
           (etaf-data-clear-selection controller)
           (should-not (etaf-value (etaf-data-selection controller))))
       (etaf-data-stop controller))))
+
+(ert-deftest etaf-data-selected-refs-are-stable-and-differential ()
+  "Selected refs keep identity and notify only changed identities."
+  (let* ((source (etaf-data-memory-source etaf-data-test-records :id-key :id))
+         (controller (etaf-data-controller source :selection '(1 3)))
+         (one (etaf-data-selected-ref controller 1))
+         (two (etaf-data-selected-ref controller 2))
+         (three (etaf-data-selected-ref controller 3))
+         (one-updates 0)
+         (two-updates 0)
+         (three-updates 0))
+    (unwind-protect
+        (progn
+          (should (eq one (etaf-data-selected-ref controller 1)))
+          (should (etaf-value one))
+          (should-not (etaf-value two))
+          (should (etaf-value three))
+          (etaf-watch one (lambda (&rest _) (cl-incf one-updates)))
+          (etaf-watch two (lambda (&rest _) (cl-incf two-updates)))
+          (etaf-watch three (lambda (&rest _) (cl-incf three-updates)))
+          (setf (etaf-value (etaf-data-selection controller)) '(2 3))
+          (should-not (etaf-value one))
+          (should (etaf-value two))
+          (should (etaf-value three))
+          (should (= 1 one-updates))
+          (should (= 1 two-updates))
+          (should (zerop three-updates)))
+      (etaf-data-stop controller))))
+
+(ert-deftest etaf-data-selected-refs-preserve-multi-select-apis ()
+  "Additive selection updates the matching keyed refs independently."
+  (let* ((source (etaf-data-memory-source etaf-data-test-records :id-key :id))
+         (controller (etaf-data-controller source))
+         (one (etaf-data-selected-ref controller 1))
+         (three (etaf-data-selected-ref controller 3)))
+    (unwind-protect
+        (progn
+          (etaf-data-select controller 1)
+          (etaf-data-select controller 3)
+          (should (equal '(3 1) (etaf-value (etaf-data-selection controller))))
+          (should (etaf-value one))
+          (should (etaf-value three))
+          (etaf-data-select controller 1 nil)
+          (should-not (etaf-value one))
+          (should (etaf-value three))
+          (etaf-data-clear-selection controller)
+          (should-not (etaf-value three)))
+      (etaf-data-stop controller))))
+
+(ert-deftest etaf-data-stop-disposes-selection-index-watcher ()
+  "Stopping a controller unsubscribes its selection-index watcher."
+  (let* ((source (etaf-data-memory-source etaf-data-test-records :id-key :id))
+         (controller (etaf-data-controller source))
+         (selection (etaf-data-selection controller)))
+    (should (= 1 (hash-table-count (etaf-ref-subscribers selection))))
+    (etaf-data-stop controller)
+    (should (zerop (hash-table-count (etaf-ref-subscribers selection))))))
 
 (ert-deftest etaf-data-select-one-replaces-existing-selection ()
   "Single-selection consumers replace, rather than adjoin, identities."

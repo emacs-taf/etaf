@@ -101,17 +101,34 @@ Runtime, watchers run synchronously.")
 
 (defvar etaf--dispatch-depth 0)
 (defvar etaf--dispatch-source-queue nil)
+(defvar etaf--dispatch-source-queue-tail nil)
 (defvar etaf--dispatch-source-set (make-hash-table :test #'eq))
 (defvar etaf--dispatch-runtime-queue nil)
+(defvar etaf--dispatch-runtime-queue-tail nil)
 (defvar etaf--dispatch-runtime-set (make-hash-table :test #'eq))
 (defvar etaf--dispatch-effect-set (make-hash-table :test #'eq))
+
+(defun etaf--dispatch-append-source (source)
+  "Append SOURCE to the reactive FIFO in constant time."
+  (let ((cell (list source)))
+    (if etaf--dispatch-source-queue-tail
+        (setcdr etaf--dispatch-source-queue-tail cell)
+      (setq etaf--dispatch-source-queue cell))
+    (setq etaf--dispatch-source-queue-tail cell)))
+
+(defun etaf--dispatch-append-runtime (runtime)
+  "Append RUNTIME to the reactive publication FIFO in constant time."
+  (let ((cell (list runtime)))
+    (if etaf--dispatch-runtime-queue-tail
+        (setcdr etaf--dispatch-runtime-queue-tail cell)
+      (setq etaf--dispatch-runtime-queue cell))
+    (setq etaf--dispatch-runtime-queue-tail cell)))
 
 (defun etaf-reactive-enqueue-runtime-flush (runtime function)
   "Queue FUNCTION once for RUNTIME after the outer reactive dispatch settles."
   (unless (gethash runtime etaf--dispatch-runtime-set)
     (puthash runtime function etaf--dispatch-runtime-set)
-    (setq etaf--dispatch-runtime-queue
-          (nconc etaf--dispatch-runtime-queue (list runtime)))))
+    (etaf--dispatch-append-runtime runtime)))
 
 (defun etaf--dispatch-source-now (source)
   "Notify SOURCE subscribers without opening another dispatch boundary."
@@ -135,12 +152,15 @@ Runtime, watchers run synchronously.")
   (while (or etaf--dispatch-source-queue etaf--dispatch-runtime-queue)
     (while etaf--dispatch-source-queue
       (let ((source (pop etaf--dispatch-source-queue)))
+        (unless etaf--dispatch-source-queue
+          (setq etaf--dispatch-source-queue-tail nil))
         (remhash source etaf--dispatch-source-set)
         (etaf--dispatch-source-now source)))
     ;; Detach this turn.  A lifecycle write may enqueue a source and the same
     ;; Runtime again for the following turn without merging it into this one.
     (let ((turn etaf--dispatch-runtime-queue))
-      (setq etaf--dispatch-runtime-queue nil)
+      (setq etaf--dispatch-runtime-queue nil
+            etaf--dispatch-runtime-queue-tail nil)
       (dolist (runtime turn)
         (let ((function (gethash runtime etaf--dispatch-runtime-set)))
           (remhash runtime etaf--dispatch-runtime-set)
@@ -257,13 +277,14 @@ of the run."
   "Notify every current subscriber of SOURCE once."
   (unless (gethash source etaf--dispatch-source-set)
     (puthash source t etaf--dispatch-source-set)
-    (setq etaf--dispatch-source-queue
-          (nconc etaf--dispatch-source-queue (list source))))
+    (etaf--dispatch-append-source source))
   (when (zerop etaf--dispatch-depth)
     (let ((etaf--dispatch-depth 1))
       (unwind-protect (etaf--drain-dispatch)
         (setq etaf--dispatch-source-queue nil
-              etaf--dispatch-runtime-queue nil)
+              etaf--dispatch-source-queue-tail nil
+              etaf--dispatch-runtime-queue nil
+              etaf--dispatch-runtime-queue-tail nil)
         (clrhash etaf--dispatch-source-set)
         (clrhash etaf--dispatch-runtime-set)
         (clrhash etaf--dispatch-effect-set)))))

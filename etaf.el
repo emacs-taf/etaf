@@ -28,6 +28,8 @@
 (etaf--prefer-local-files)
 
 (require 'etaf-view)
+(require 'etaf-compiler)
+(require 'etaf-app)
 (require 'etaf-component)
 (require 'etaf-reactive)
 (require 'etaf-context)
@@ -39,6 +41,10 @@
 (require 'etaf-behavior)
 (require 'etaf-actions)
 (require 'etaf-events)
+(require 'etaf-performance)
+
+(unless (fboundp 'ebox-call-with-render-burst)
+  (error "ETAF requires an Ebox build with framework render-burst support"))
 
 (provide 'etaf)
 

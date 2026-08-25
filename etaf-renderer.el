@@ -22,9 +22,22 @@
 (defvar etaf--rendered-range-container-nodes nil
   "Candidate-local Ebox nodes whose layout directly contains a Range.")
 (declare-function etaf--runtime-render-child-range "etaf-runtime" (runtime expr path))
+(declare-function etaf--runtime-render-fragment-range
+                  "etaf-runtime" (runtime fragment path))
+(declare-function etaf--runtime-render-raw-range
+                  "etaf-runtime" (runtime raw path))
 (declare-function etaf--runtime-render-slot-range
                   "etaf-runtime" (runtime projection path))
-(declare-function etaf--runtime-register-semantic-host "etaf-runtime" (runtime name props backend-props path))
+(declare-function etaf--runtime-register-semantic-host
+                  "etaf-runtime"
+                  (runtime name props backend-props path
+                           &optional theme-bindings theme-deps
+                           property-bindings property-deps
+                           property-context-deps base-props site-token))
+(declare-function etaf--runtime-resolve-host-properties
+                  "etaf-runtime" (props))
+(declare-function etaf--runtime-theme-paint-value
+                  "etaf-runtime" (runtime property token source resolved))
 (declare-function etaf--runtime-finish-semantic-host
                   "etaf-runtime" (runtime semantic-id &optional content content-parts))
 (declare-function etaf--runtime-render-inline-content
@@ -32,7 +45,8 @@
 (declare-function etaf--runtime-call-with-component-env
                   "etaf-runtime" (runtime component-id function))
 (declare-function etaf--runtime-behavior-node "etaf-runtime" (runtime node path))
-(declare-function etaf--runtime-register-host "etaf-runtime" (runtime props path))
+(declare-function etaf--runtime-register-host
+                  "etaf-runtime" (runtime props path &optional site-token))
 (declare-function etaf-theme-defaults "etaf-context" (&optional default))
 (declare-function etaf-theme-token-p "etaf-context" (value))
 (declare-function etaf-theme-token-resolve "etaf-context" (value))
@@ -65,10 +79,10 @@
   (and (keywordp property)
        (string-prefix-p "on-" (substring (symbol-name property) 1))))
 
-(defun etaf--generated-host-ref (props path)
-  "Return the explicit or generated opaque host reference for PROPS and PATH."
+(defun etaf--generated-host-ref (props path &optional site-token)
+  "Return the explicit or generated opaque Host reference."
   (or (plist-get props :ref)
-      (list 'etaf-host (copy-sequence path))))
+      (list 'etaf-host (or site-token (copy-sequence path)))))
 
 (defun etaf--merge-property (props key value)
   "Return PROPS with KEY set to VALUE, preserving the original order."
@@ -136,9 +150,6 @@ not create another visual node category."
                 (setq value (if (and (consp value) (eq (car value) 'quote))
                                 (cadr value)
                               value))
-                (setq value (if (etaf-theme-token-p value)
-                                (etaf-theme-token-resolve value)
-                              value))
                 (unless (plist-get props key)
                   (setq props (etaf--merge-property props key value))))))))
       (etaf--view-node-create
@@ -151,7 +162,8 @@ not create another visual node category."
   "Apply known inherited Theme defaults to NODE without overriding props.
 Unknown Theme keys remain readable through `etaf-theme-value' but are design
 tokens, not Ebox Host properties, and therefore are not materialized here."
-  (let ((defaults (etaf-theme-defaults)))
+  (let* ((source (etaf--theme-source))
+         (defaults (etaf--theme-source-value source nil nil)))
     (if (null defaults)
         node
       (let ((props (copy-sequence
@@ -162,12 +174,40 @@ tokens, not Ebox Host properties, and therefore are not materialized here."
                 (value (pop defaults)))
             (when (and (etaf--theme-ebox-property-p key)
                        (not (plist-get props key)))
-              (setq props (etaf--merge-property props key value)))))
+              (setq props
+                    (etaf--merge-property
+                     props key (etaf-theme-token key value))))))
         (etaf--view-node-create
          :name (etaf--view-node-name node)
          :token (etaf--view-node-token node)
          :props props
          :children (etaf--view-node-children node))))))
+
+(defun etaf--resolve-theme-property-plist (props)
+  "Return resolved PROPS, Theme bindings, and reactive dependencies."
+  (let ((source (etaf--theme-source)) resolved bindings deps)
+    (while props
+      (let ((property (pop props))
+            (value (pop props)))
+        (if (etaf-theme-token-p value)
+            (let ((resolved-value
+                   (etaf--theme-token-resolve-from-source value source)))
+              (push property resolved)
+              (push (if etaf--render-runtime
+                        (etaf--runtime-theme-paint-value
+                         etaf--render-runtime property value source
+                         resolved-value)
+                      resolved-value)
+                    resolved)
+              (when (or (etaf-ref-p source) (etaf-computed-p source))
+                (push (etaf--theme-property-binding-create
+                       :property property :token (copy-tree value)
+                       :source source)
+                      bindings)
+                (cl-pushnew source deps :test #'eq)))
+          (push property resolved)
+          (push value resolved))))
+    (list (nreverse resolved) (nreverse bindings) (nreverse deps))))
 
 (defun etaf--theme-ebox-property-p (key)
   "Return non-nil when Theme KEY is a known Ebox property.
@@ -250,7 +290,7 @@ the ordinary layout lowering path instead."
     (cl-every #'etaf--inline-text-structural-p value))
    (t nil)))
 
-(defun etaf--ebox-properties (props path)
+(defun etaf--ebox-properties (props path &optional site-token)
   "Translate ETAF PROPS at PATH into Ebox's public property list."
   (let* ((source-props (etaf--resolve-property-plist props))
          (props (copy-sequence source-props))
@@ -260,11 +300,13 @@ the ordinary layout lowering path instead."
             (value (pop props)))
         (cond
          ((eq key :face)
-          (setq surface-properties
-                (append surface-properties (list 'face value))))
+          (push 'face surface-properties)
+          (push value surface-properties))
          ((eq key :surface-properties)
-          (setq surface-properties
-                (append surface-properties value)))
+          (let ((tail value))
+            (while tail
+              (push (pop tail) surface-properties)
+              (push (pop tail) surface-properties))))
          ((eq key :content)
           (signal 'etaf-renderer-error
                   (list "Use View children for content, not :content")))
@@ -273,10 +315,14 @@ the ordinary layout lowering path instead."
               (eq key :styles))
           nil)
          (t
-          (setq ebox-props (append ebox-props (list key value)))))))
+          (push key ebox-props)
+          (push value ebox-props)))))
+    (setq ebox-props (nreverse ebox-props)
+          surface-properties (nreverse surface-properties))
     (setq ebox-props
           (etaf--merge-property
-           ebox-props :host-ref (etaf--generated-host-ref source-props path)))
+           ebox-props :host-ref
+           (etaf--generated-host-ref source-props path site-token)))
     (when surface-properties
       (setq ebox-props
             (append ebox-props
@@ -426,24 +472,47 @@ the ordinary layout lowering path instead."
                    (etaf--runtime-behavior-node
                     etaf--render-runtime node path)
                  node))
+         (property-result
+          (if etaf--render-runtime
+              (etaf--runtime-resolve-host-properties
+               (etaf--view-node-props node))
+            (list (etaf--resolve-property-plist
+                   (etaf--view-node-props node))
+                  nil nil nil)))
+         (property-bindings (nth 1 property-result))
+         (property-deps (nth 2 property-result))
+         (property-context-deps (nth 3 property-result))
+         (base-props (car property-result))
+         (node (let ((copy (copy-sequence node)))
+                 (setf (etaf--view-node-props copy) base-props)
+                 copy))
          (node (if (fboundp 'etaf--runtime-style-node)
                    (etaf--runtime-style-node node path)
                  node))
          (node (etaf--apply-theme-defaults node))
          (name (etaf--view-node-name node))
-         (raw-props (etaf--resolve-property-plist
-                     (etaf--view-node-props node)))
-         (props (etaf--ebox-properties raw-props path))
+         (theme-result
+          (etaf--resolve-theme-property-plist
+           (etaf--resolve-property-plist (etaf--view-node-props node))))
+         (raw-props (nth 0 theme-result))
+         (theme-bindings (nth 1 theme-result))
+         (theme-deps (nth 2 theme-result))
+         (props (etaf--ebox-properties
+                 raw-props path (etaf--view-node-token node)))
          (children (etaf--view-node-children node)))
     (when (and etaf--render-runtime
                (fboundp 'etaf--runtime-register-host))
-      (etaf--runtime-register-host etaf--render-runtime raw-props path))
+      (etaf--runtime-register-host
+       etaf--render-runtime raw-props path (etaf--view-node-token node)))
     (pcase name
       ('text
        (let* ((semantic-id
               (and etaf--render-runtime
                     (etaf--runtime-register-semantic-host
-                     etaf--render-runtime name raw-props props path)))
+                     etaf--render-runtime name raw-props props path
+                     theme-bindings theme-deps property-bindings
+                     property-deps property-context-deps base-props
+                     (etaf--view-node-token node))))
               (child-path (append path (list :text)))
               (runtime-inline
                (and semantic-id
@@ -474,7 +543,10 @@ the ordinary layout lowering path instead."
                  (list "spacer cannot have children")))
        (when etaf--render-runtime
          (let ((semantic-id (etaf--runtime-register-semantic-host
-                             etaf--render-runtime name raw-props props path)))
+                             etaf--render-runtime name raw-props props path
+                             theme-bindings theme-deps property-bindings
+                             property-deps property-context-deps base-props
+                             (etaf--view-node-token node))))
            (etaf--runtime-finish-semantic-host
             etaf--render-runtime semantic-id)))
        (list (apply #'ebox-spacer props)))
@@ -487,7 +559,10 @@ the ordinary layout lowering path instead."
              (semantic-id
               (and etaf--render-runtime
                    (etaf--runtime-register-semantic-host
-                    etaf--render-runtime name raw-props props path))))
+                    etaf--render-runtime name raw-props props path
+                    theme-bindings theme-deps property-bindings
+                    property-deps property-context-deps base-props
+                    (etaf--view-node-token node)))))
          (dolist (child children)
            (setq nodes
                  (nconc nodes
@@ -597,11 +672,14 @@ Runtime because their setup Scope must have a lifecycle owner."
      (t (apply #'ebox-column nodes)))))
 
 ;;;###autoload
-(defun etaf-mount (buffer-or-name view)
-  "Mount normalized VIEW into BUFFER-OR-NAME and return its buffer."
+(defun etaf-mount (buffer-or-name view &optional options)
+  "Mount normalized VIEW into BUFFER-OR-NAME and return its buffer.
+OPTIONS is forwarded to `etaf-runtime-mount' when the Runtime is loaded."
   (if (fboundp 'etaf-runtime-mount)
-      (etaf-runtime-mount buffer-or-name view)
-    (ebox-render-to-buffer buffer-or-name (etaf-render view))))
+      (etaf-runtime-mount buffer-or-name view options)
+    (let ((ebox-viewport-width (plist-get options :viewport-width))
+          (ebox-viewport-height (plist-get options :viewport-height)))
+      (ebox-render-to-buffer buffer-or-name (etaf-render view)))))
 
 (provide 'etaf-renderer)
 

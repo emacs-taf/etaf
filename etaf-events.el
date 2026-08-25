@@ -28,6 +28,8 @@
 (declare-function etaf-runtime-set-focus-ref "etaf-runtime" (runtime host-ref))
 (declare-function etaf-runtime-event-begin "etaf-runtime" (runtime))
 (declare-function etaf-runtime-event-end "etaf-runtime" (runtime))
+(declare-function ebox-call-with-render-burst
+                  "ebox-buffer-backend" (function &rest arguments))
 
 (define-error 'etaf-event-error "Invalid ETAF Event")
 
@@ -57,24 +59,27 @@
     (runtime host-ref kind &optional payload (payload-p nil))
   "Dispatch KIND for HOST-REF through mounted RUNTIME.
 
-When PAYLOAD-P is non-nil, pass PAYLOAD as the callback's only argument;
+  When PAYLOAD-P is non-nil, pass PAYLOAD as the callback's only argument;
 otherwise call the local callback with no arguments."
-  (setq runtime (etaf-runtime-require-mounted runtime))
-  (let ((callback (etaf--event-handler runtime host-ref kind)))
-    (unless callback
-      (signal 'etaf-event-error
-              (list (format "No %S handler for Host reference %S"
-                            (etaf-event-kind kind) host-ref))))
-    (let ((etaf--current-runtime runtime)
-          (etaf--current-event
-           (list :runtime runtime :host-ref host-ref
-                 :kind (etaf-event-kind kind) :payload payload)))
-      (etaf-runtime-event-begin runtime)
-      (unwind-protect
-          (if payload-p
-              (funcall callback payload)
-            (funcall callback))
-        (etaf-runtime-event-end runtime)))))
+  (let ((dispatch
+         (lambda ()
+           (setq runtime (etaf-runtime-require-mounted runtime))
+           (let ((callback (etaf--event-handler runtime host-ref kind)))
+             (unless callback
+               (signal 'etaf-event-error
+                       (list (format "No %S handler for Host reference %S"
+                                     (etaf-event-kind kind) host-ref))))
+             (let ((etaf--current-runtime runtime)
+                   (etaf--current-event
+                    (list :runtime runtime :host-ref host-ref
+                          :kind (etaf-event-kind kind) :payload payload)))
+               (etaf-runtime-event-begin runtime)
+               (unwind-protect
+                   (if payload-p
+                       (funcall callback payload)
+                     (funcall callback))
+                 (etaf-runtime-event-end runtime)))))))
+    (ebox-call-with-render-burst dispatch)))
 
 ;;;###autoload
 (defun etaf-host-ref-bounds (runtime host-ref)

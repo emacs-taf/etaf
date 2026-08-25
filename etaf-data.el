@@ -37,7 +37,9 @@
   request-id
   stopped-p
   auto-load-p
-  item-key)
+  item-key
+  selection-snapshot
+  selected-refs)
 
 (defun etaf-data-source (&rest capabilities)
   "Create a Data source from callable CAPABILITIES.
@@ -204,6 +206,17 @@ and `reset'."
     (error "ETAF Data source load result lacks :items"))
   result)
 
+;;;###autoload
+(defun etaf-data-source-load-page
+    (source &optional query page page-size)
+  "Load and normalize one SOURCE page without creating a Controller.
+QUERY is passed through unchanged.  PAGE and PAGE-SIZE default to 1 and 20.
+This public preparation boundary performs no reactive publication; callers may
+use its result as `:initial-result' for `etaf-data-controller'."
+  (etaf-data--normalize-result
+   (funcall (etaf-data--source-function source :load t)
+            query (max 1 (or page 1)) (max 1 (or page-size 20)))))
+
 (defun etaf-data--apply-load-success (controller request-id result)
   "Publish successful RESULT for CONTROLLER when REQUEST-ID is current."
   (when (= request-id (etaf-data--controller-request-id controller))
@@ -238,7 +251,7 @@ and `reset'."
 ;;;###autoload
 (cl-defun etaf-data-controller
     (source &key query (page 1) (page-size 20) selection auto-load name
-            item-key owner-scope)
+            item-key owner-scope initial-result)
   "Create a reactive Data Controller for SOURCE.
 
 QUERY, PAGE, PAGE-SIZE, result ITEMS, TOTAL, STATUS, ERROR, and SELECTION are
@@ -248,12 +261,29 @@ controller for diagnostics.  ITEM-KEY is a function used by
 `etaf-data-selected-item' to match a selected identity to one loaded item.
 When OWNER-SCOPE is supplied, or when a current ETAF Scope exists, the
 controller's own child Scope is disposed with that owner; otherwise it keeps
-the detached Scope behavior."
+the detached Scope behavior.  INITIAL-RESULT may be a normalized source result
+for QUERY/PAGE/PAGE-SIZE; it seeds a successful Controller without another
+load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive."
   (unless (etaf-data-source-p source)
     (signal 'wrong-type-argument (list 'etaf-data-source-p source)))
   (unless (or (null item-key) (functionp item-key))
     (signal 'wrong-type-argument (list 'functionp item-key)))
-  (let* ((owner-scope (or owner-scope (etaf-current-effect-scope)))
+  (when (and initial-result auto-load)
+    (error "ETAF Data :initial-result and :auto-load are mutually exclusive"))
+  (let* ((initial-result (and initial-result
+                              (etaf-data--normalize-result initial-result)))
+         (initial-items (and initial-result
+                             (plist-get initial-result :items)))
+         (initial-page (if (and initial-result
+                                (plist-member initial-result :page))
+                           (plist-get initial-result :page)
+                         page))
+         (initial-page-size
+          (if (and initial-result
+                   (plist-member initial-result :page-size))
+              (plist-get initial-result :page-size)
+            page-size))
+         (owner-scope (or owner-scope (etaf-current-effect-scope)))
          (scope (if owner-scope
                     (etaf-scope-run
                      owner-scope
@@ -265,20 +295,56 @@ the detached Scope behavior."
            :source source
            :scope scope
            :query (etaf-ref query :name 'etaf-data-query)
-           :page (etaf-ref page :name 'etaf-data-page)
-           :page-size (etaf-ref page-size :name 'etaf-data-page-size)
-           :items (etaf-ref nil :name 'etaf-data-items)
-           :total (etaf-ref 0 :name 'etaf-data-total)
-           :status (etaf-ref 'idle :name 'etaf-data-status)
+           :page (etaf-ref initial-page :name 'etaf-data-page)
+           :page-size (etaf-ref initial-page-size :name 'etaf-data-page-size)
+           :items (etaf-ref initial-items :name 'etaf-data-items)
+           :total (etaf-ref (if initial-result
+                                (or (plist-get initial-result :total)
+                                    (length initial-items))
+                              0)
+                            :name 'etaf-data-total)
+           :status (etaf-ref (if initial-result 'success 'idle)
+                             :name 'etaf-data-status)
            :error (etaf-ref nil :name 'etaf-data-error)
            :selection (etaf-ref (copy-sequence selection)
                                 :name 'etaf-data-selection)
+           :selection-snapshot (copy-sequence selection)
+           :selected-refs (make-hash-table :test #'equal :weakness 'value)
            :request-id 0
            :auto-load-p auto-load
            :item-key item-key)))
     (etaf-scope-run
         scope
         (lambda ()
+          (etaf-watch
+           (etaf-data--controller-selection controller)
+           (lambda (new-selection old-selection)
+             (setf (etaf-data--controller-selection-snapshot controller)
+                   new-selection)
+             (let ((selected-refs
+                    (etaf-data--controller-selected-refs controller)))
+               (unless (zerop (hash-table-count selected-refs))
+                 (let ((old-set (make-hash-table :test #'equal))
+                       (new-set (make-hash-table :test #'equal)))
+                   (dolist (identity old-selection)
+                     (puthash identity t old-set))
+                   (dolist (identity new-selection)
+                     (puthash identity t new-set))
+                   (maphash
+                    (lambda (identity _present)
+                      (unless (gethash identity new-set)
+                        (when-let ((selected-ref
+                                    (gethash identity selected-refs)))
+                          (setf (etaf-value selected-ref) nil))))
+                    old-set)
+                   (maphash
+                    (lambda (identity _present)
+                      (unless (gethash identity old-set)
+                        (when-let ((selected-ref
+                                    (gethash identity selected-refs)))
+                          (setf (etaf-value selected-ref) t))))
+                    new-set)))))
+           :name 'etaf-data-selection-index)
           (let ((effect
                  (etaf-reactive-effect-create
                   (lambda ()
@@ -295,6 +361,7 @@ the detached Scope behavior."
             (etaf-reactive-effect-run effect))
           (etaf-on-scope-dispose
            (lambda ()
+             (clrhash (etaf-data--controller-selected-refs controller))
              (when-let ((dispose (etaf-data--source-function
                                   source :dispose nil)))
                (funcall dispose))))))
@@ -394,6 +461,28 @@ The status value is one of `idle', `loading', `success', or `error'."
   "Return CONTROLLER's selected identity list ref."
   (etaf-data--controller-selection
    (etaf-data--require-controller controller)))
+
+;;;###autoload
+(defun etaf-data-selected-ref (controller identity)
+  "Return CONTROLLER's stable boolean selection ref for IDENTITY.
+
+The returned ref changes only when IDENTITY enters or leaves the controller's
+selection.  Repeated calls for the same identity return the same ref for the
+controller lifetime.  Updates made through the selection APIs or by writing
+the public `etaf-data-selection' ref directly are both reflected."
+  (setq controller (etaf-data--require-controller controller))
+  (let* ((refs (etaf-data--controller-selected-refs controller))
+         (selected-ref (gethash identity refs)))
+    (or selected-ref
+        (let ((created
+               (etaf-ref
+                (not (null
+                      (member identity
+                              (etaf-data--controller-selection-snapshot
+                               controller))))
+                :name 'etaf-data-selected)))
+          (puthash identity created refs)
+          created))))
 
 ;;;###autoload
 (defun etaf-data-selected-item (controller &optional item-key)

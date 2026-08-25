@@ -33,6 +33,20 @@ validated copy by Context frame avoids rebuilding the same semantic palette
 for every Host that reads one token, while weak keys let disposed Component
 Contexts disappear with their Runtime.")
 
+(defvar etaf--theme-value-cache
+  (make-hash-table :test #'eq :weakness 'key)
+  "Theme-value identity cache of validated immutable palette snapshots.
+
+Many descendant Context frames can inherit the same reactive Theme value.
+Caching the defensive copy by that shared value avoids validating and copying
+the complete palette once per consumer while keeping Context dependency reads
+unchanged.")
+
+(cl-defstruct (etaf--theme-property-binding
+               (:constructor etaf--theme-property-binding-create))
+  "One reactive Theme token bound to a concrete Host property."
+  property token source)
+
 (defvar etaf--context-inject-recorder nil
   "Candidate-local function recording Context provider reads.")
 
@@ -114,8 +128,9 @@ Hosts in the inherited subtree."
         (unless (keywordp key)
           (signal 'etaf-context-error
                   (list (format "Theme default must use a keyword: %S" key))))
-        (setq copy (append copy (list key value)))))
-    copy))
+        (push key copy)
+        (push value copy)))
+    (nreverse copy)))
 
 ;;;###autoload
 (defun etaf-theme-provide (theme)
@@ -125,10 +140,13 @@ THEME is a property plist such as `(:color \"#F4F6FB\" :bgcolor \"#202634\")'.
 Explicit Host properties and matching Component `:styles' declarations take
 precedence over these defaults.  A reactive ref containing such a plist is
 also accepted and remains tracked by the current render effect."
-  (etaf-provide 'theme
-                (if (or (etaf-ref-p theme) (etaf-computed-p theme))
-                    theme
-                  (etaf--validate-theme-defaults theme))))
+  (etaf-provide
+   'theme
+   (if (or (etaf-ref-p theme) (etaf-computed-p theme))
+       theme
+     (let ((validated (etaf--validate-theme-defaults theme)))
+       (puthash validated validated etaf--theme-value-cache)
+       validated))))
 
 ;;;###autoload
 (defun etaf-theme-defaults (&optional default)
@@ -147,13 +165,39 @@ also accepted and remains tracked by the current render effect."
       (let ((validated
              (if (and (proper-list-p value)
                       (zerop (% (length value) 2)))
-                 (etaf--validate-theme-defaults value)
+                 (or (gethash value etaf--theme-value-cache)
+                     (let ((copy (etaf--validate-theme-defaults value)))
+                       (puthash value copy etaf--theme-value-cache)
+                       copy))
                default)))
         (puthash context
                  (list :source theme :value value :default default
                        :validated validated)
                  etaf--theme-defaults-cache)
         validated))))
+
+(defun etaf--theme-source (&optional default)
+  "Return the inherited Theme source without reading its reactive value."
+  (etaf-inject 'theme default))
+
+(defun etaf--theme-source-value (source &optional default tracked-p)
+  "Return SOURCE Theme value or DEFAULT.
+When TRACKED-P is nil, do not attach the read to the current render effect."
+  (let ((value
+         (if (or (etaf-ref-p source) (etaf-computed-p source))
+             (let ((etaf--tracking-enabled-p tracked-p))
+               (etaf-value source))
+           source)))
+    (if (and (proper-list-p value) (zerop (% (length value) 2)))
+        value
+      default)))
+
+(defun etaf--theme-token-resolve-from-source (value source)
+  "Resolve Theme token VALUE from SOURCE without render-effect tracking."
+  (if (etaf-theme-token-p value)
+      (let ((theme (etaf--theme-source-value source nil nil)))
+        (etaf--theme-token-resolve-from-theme value theme))
+    value))
 
 ;;;###autoload
 (defun etaf-theme-value (key &optional default)
@@ -164,32 +208,56 @@ also accepted and remains tracked by the current render effect."
       default)))
 
 ;;;###autoload
-(defun etaf-theme-token (key &optional default)
+(defun etaf-theme-token (key &optional default transform)
   "Return a deferred Theme token for a static Component style.
 
 KEY is resolved when ETAF lowers the Component's `:styles' declaration, so a
 static rule can use the current inherited Theme without turning every retained
 Host into an inline dynamic property.  DEFAULT is used when KEY is absent.
+TRANSFORM, when non-nil, is a pure function applied after nested defaults have
+resolved; it lets a semantic color token lower to a backend value such as a
+border specification without reading Theme during Component render.
 The returned list is intentionally data, which also makes it safe to place
 directly in a quoted `(styles ...)' form."
   (unless (keywordp key)
     (signal 'etaf-context-error
             (list (format "Theme token keys must be keywords: %S" key))))
-  (list 'etaf-theme-token key default))
+  (when (and transform (not (functionp transform)))
+    (signal 'etaf-context-error
+            (list (format "Theme token transform must be callable: %S"
+                          transform))))
+  (append (list 'etaf-theme-token key default)
+          (and transform (list transform))))
 
 ;;;###autoload
 (defun etaf-theme-token-p (value)
   "Return non-nil when VALUE is a deferred ETAF Theme token."
   (and (proper-list-p value)
-       (memq (length value) '(2 3))
+       (memq (length value) '(2 3 4))
        (eq (car value) 'etaf-theme-token)
-       (keywordp (nth 1 value))))
+       (keywordp (nth 1 value))
+       (or (< (length value) 4) (functionp (nth 3 value)))))
+
+(defun etaf--theme-token-resolve-from-theme (value theme)
+  "Resolve token VALUE from already resolved THEME data."
+  (if (not (etaf-theme-token-p value))
+      value
+    (let* ((key (nth 1 value))
+           (default (nth 2 value))
+           (transform (nth 3 value))
+           (resolved
+            (if (plist-member theme key) (plist-get theme key) default))
+           (resolved
+            (if (etaf-theme-token-p resolved)
+                (etaf--theme-token-resolve-from-theme resolved theme)
+              resolved)))
+      (if transform (funcall transform resolved) resolved))))
 
 ;;;###autoload
 (defun etaf-theme-token-resolve (value)
   "Resolve deferred Theme token VALUE, or return ordinary VALUE unchanged."
   (if (etaf-theme-token-p value)
-      (etaf-theme-value (nth 1 value) (nth 2 value))
+      (etaf--theme-token-resolve-from-theme value (etaf-theme-defaults))
     value))
 
 ;;;###autoload
@@ -243,9 +311,9 @@ palette package may adapt its own registry into this shape at the boundary."
           (signal 'etaf-context-error
                   (list (format "Theme palette key must be a keyword: %S"
                                 key))))
-        (setq result
-              (append result (list key (etaf--theme-resolve-color value mode))))))
-    result))
+        (push key result)
+        (push (etaf--theme-resolve-color value mode) result)))
+    (nreverse result)))
 
 (provide 'etaf-context)
 

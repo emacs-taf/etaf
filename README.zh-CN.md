@@ -40,6 +40,80 @@ Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
 
 `etaf-view` 是唯一的公共 View 构造入口。结构 form 不使用 quote；quote 仍然是普通 Elisp 数据语法，例如 `'bold`。普通 Elisp 返回 View 时，必须在 `expr` 中显式使用 `(etaf-view ...)` 构造它。
 
+## App 预编译
+
+App 预编译是 ETAF core 的通用能力，不依赖 Playground。App 或宿主先注册文件
+清单和产物位置：
+
+```elisp
+(etaf-register-app
+ "my-app"
+ :source "/path/to/my-app.el"
+ :static "/path/to/my-app.etaf"
+ :style "/path/to/my-app.ecss"
+ :artifact "/path/to/build/my-app.etafc")
+```
+
+用户手动执行一次：
+
+```text
+M-x etaf-compile-app
+```
+
+命令会选择已注册 App，并原子生成独立 `.etafc` 中间产物。查看状态使用：
+
+```text
+M-x etaf-app-compile-status
+```
+
+状态包括 `current`、`missing`、`stale` 和 `invalid`。ETAF 会记录 companion、
+`.etaf` 和 `.ecss` 的内容 hash；任一源码变化都会拒绝旧产物。宿主启动 App 时
+调用 `etaf-app-load-artifact-or-warn`：有效产物直接加载，缺失或过期则保持完整
+source fallback 功能，同时明确提醒用户运行 `M-x etaf-compile-app`。
+
+`etaf-compiler.el` 只负责 blueprint 与 `.etafc` 的编译/校验；App 注册、交互
+命令、状态和回退提醒属于独立的 `etaf-app.el`。Playground 只是这个通用 API 的
+一个可选 UI consumer。
+
+## 性能记录面板
+
+ETAF 内置了一个按需启用、与具体应用无关的性能记录器。它自动识别公共
+Event、Action、mount、flush、focus、Data、Resource 和 viewport 操作；当
+Ebox、TP、SQLite 等包已加载时，还会把这些包的粗粒度阶段关联到同一个
+operation。
+
+```elisp
+(etaf-performance-mode 1)
+;; 正常操作任意已挂载的 ETAF 应用。
+(etaf-performance-show)
+```
+
+交互采集时先执行 `M-x etaf-performance-clear`，复现一组操作后，在面板按
+`c`（或执行 `M-x etaf-performance-copy-report`）即可把完整报告复制到剪贴板；
+按 `w`（或执行 `M-x etaf-performance-export`）可保存为 `.eld` 文件。报告包含
+Emacs/显示环境、电源来源、低功耗模式、系统负载、分组 p50/p95/max、每次
+operation、GC 增量和嵌套阶段；面板 header 也显示同一环境信息，避免把整机降频
+误判成某个包的热点。
+
+`*ETAF Performance*` 面板会显示 operation ID 与父 operation、generation
+变化、总耗时、GC 增量，以及嵌套阶段的 inclusive/self 耗时。记录数量由
+`etaf-performance-max-records` 限制；关闭 mode 会移除全部记录 advice。
+`etaf-performance-summary` 会按需计算 operation 的 p50/p95/max，
+`etaf-performance-operation-stage-summary` 则按 exclusive 耗时排列单次
+operation 的包级阶段。
+
+默认注册表刻意只记录包级粗边界，避免分析工具明显改变被测应用。任意包或
+应用可以临时增加更细的探针，不需要绑定某个示例：
+
+```elisp
+(etaf-performance-register-stage
+ 'my-package-expensive-step 'application 'expensive-step)
+```
+
+没有内置公共边界的任意操作，可以使用
+`etaf-performance-call-operation` 或 `etaf-performance-with-operation`
+包裹。
+
 ## 可执行示例
 
 [`examples/`](examples/README.zh-CN.md) 目录包含三个只依赖 core 的最佳实践应用：保留式状态与 Action、Data Controller 所有权，以及 Resource 错误/清理 lifecycle。`make check` 会编译它们，并通过已挂载的公开事件路径驱动交互。

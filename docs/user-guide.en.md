@@ -48,6 +48,15 @@ Mount it into an Emacs buffer:
 (etaf-unmount (etaf-runtime-for-buffer "*etaf-hello*"))
 ```
 
+Headless hosts or callers that already know the final layout context can pass
+it with the optional third argument.  The first Ebox publication then uses
+that viewport directly instead of immediately rerendering:
+
+```elisp
+(etaf-mount buffer view
+            '(:viewport-width 1200 :viewport-height 48))
+```
+
 `etaf-render` is useful for pure, stateless rendering or tests:
 
 ```elisp
@@ -455,6 +464,14 @@ The Component emits the next value; the caller owns the ref and supplies the cur
 
 The controller exposes reactive refs through `etaf-data-items`, `etaf-data-status`, `etaf-data-error`, `etaf-data-total`, `etaf-data-query`, `etaf-data-page`, `etaf-data-page-size`, and `etaf-data-selection`. Use `etaf-data-load`, `etaf-data-reload`, `etaf-data-mutate`, `etaf-data-set-query`, `etaf-data-next-page`, `etaf-data-previous-page`, `etaf-data-select` (additive multi-select), `etaf-data-select-one` (exclusive single-select), `etaf-data-selected-item`, and `etaf-data-stop` for operations. The imperative next/previous commands also reload a Controller whose `:auto-load` is nil; `:auto-load t` keeps reload ownership with the reactive effect.
 
+`etaf-data-selected-ref` returns one stable boolean ref for a row identity.  It
+updates only when that identity enters or leaves the main selection, including
+when application code writes `etaf-data-selection` directly.  The default
+DataGrid path uses these refs with keyed retained row owners, so a single-select
+change invalidates the old and new rows rather than the complete visible page.
+Custom `:row-selected-p` and `:selected-key` contracts remain available when
+selection is owned outside the Controller.
+
 `etaf-data-controller` accepts `:item-key` for stable selected-row lookup. When
 created inside a Component setup, its internal effect Scope is owned by the
 current Component Scope automatically; pass `:owner-scope` when integrating a
@@ -589,7 +606,39 @@ The independent Ebox playground demonstrates the lower-level layout contract:
 
 It depends only on Ebox. Use it when inspecting Ebox boxes and Grid layout; use `etaf-playground` when inspecting Components, Runtime, Data, and the official catalog.
 
-## 13. Public API map
+## 13. Performance records
+
+Enable the generic recorder around any application workload, then open its
+ordinary `tabulated-list-mode` panel:
+
+```elisp
+(etaf-performance-mode 1)
+(etaf-performance-show)
+```
+
+Run `M-x etaf-performance-clear` before the measured reproduction.  Afterwards,
+press `c` in the panel, or run `M-x etaf-performance-copy-report`, to copy the
+environment, summary, operation, GC, and stage data.  Press `w`, or run
+`M-x etaf-performance-export`, to save the same portable report as an `.eld`
+file.  The report and panel header include power source, low-power mode, and
+system load alongside the ordinary Emacs/display environment.
+
+The recorder creates bounded operation records for public interaction,
+lifecycle, Data, Resource, and viewport boundaries.  Loaded Ebox, TP, and
+SQLite functions contribute nested coarse stages without depending on ETAF.
+Each stage reports inclusive and exclusive milliseconds; failures and quits
+are recorded and then re-signaled unchanged.
+
+`etaf-performance-summary` calculates grouped p50/p95/max statistics only when
+requested.  `etaf-performance-operation-stage-summary` ranks the package
+categories of one recorded operation by exclusive time.
+
+Use `etaf-performance-register-stage` for a temporary package-specific detail
+probe.  Use `etaf-performance-with-operation` for application work that does
+not enter through a built-in public boundary.  Disable the mode when the
+capture is complete; all installed advice is removed.
+
+## 14. Public API map
 
 | API family | Main entry points | Use it when |
 | --- | --- | --- |
@@ -606,10 +655,11 @@ It depends only on Ebox. Use it when inspecting Ebox boxes and Grid layout; use 
 | Resource | `etaf-resource`, `etaf-resource-result`, `etaf-error-boundary-run` | Own loader state and cleanup |
 | Official UI | `require 'etaf-ui`, `etaf-button`, `etaf-checkbox`, `etaf-number-input`, `etaf-label`, `etaf-panel`, `etaf-data-grid` | Use ready-made Components |
 | Playground | `etaf-playground-open`, `etaf-playground-open-ui`, `etaf-playground-close`, `ebox-playground-open`, `ebox-playground-close` | Explore the corresponding layer interactively |
+| Performance | `etaf-performance-mode`, `etaf-performance-show`, `etaf-performance-copy-report`, `etaf-performance-export`, `etaf-performance-environment-data`, `etaf-performance-records`, `etaf-performance-summary`, `etaf-performance-operation-stage-summary`, `etaf-performance-with-operation`, `etaf-performance-register-stage` | Attribute generic operation latency across loaded packages and share reports |
 
 Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, `etaf-ref`, and event callbacks at first. The remaining APIs are additive capabilities, not prerequisites for understanding the core grammar.
 
-## 14. Common mistakes
+## 15. Common mistakes
 
 - Put every property before the first child.
 - Use `:face 'bold`, not `:face :bold`; a face is an Elisp symbol value, not a property keyword.

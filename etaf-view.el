@@ -31,7 +31,10 @@
                (:constructor etaf--expr-create))
   "Internal executable child expression."
   token
-  thunk)
+  thunk
+  range-snapshot
+  range-key
+  range-item)
 
 (cl-defstruct (etaf--component-spec
                (:constructor etaf--component-spec-create))
@@ -161,6 +164,8 @@ form, or core Host.  A collision receives a semantic `-view' alias."
         (etaf--component-error
          "Component alias %S is already registered" alias)))
     (puthash alias spec etaf--view-registry))
+  (when (fboundp 'etaf-compiler-note-registry-change)
+    (etaf-compiler-note-registry-change))
   spec)
 
 (defun etaf--register-core-hosts ()
@@ -200,8 +205,9 @@ form, or core Host.  A collision receives a semantic `-view' alias."
         (when (memq key seen)
           (etaf--component-error "Duplicate View property: %S" key))
         (push key seen)
-        (setq copy (append copy (list key value)))))
-    copy))
+        (push key copy)
+        (push value copy)))
+    (nreverse copy)))
 
 (defun etaf--resolve-property-value (value)
   "Resolve one lazily compiled property VALUE."
@@ -214,10 +220,9 @@ form, or core Host.  A collision receives a semantic `-view' alias."
   (let ((copy nil)
         (tail props))
     (while tail
-      (setq copy (append copy
-                         (list (pop tail)
-                               (etaf--resolve-property-value (pop tail))))))
-    copy))
+      (push (pop tail) copy)
+      (push (etaf--resolve-property-value (pop tail)) copy))
+    (nreverse copy)))
 
 (defun etaf--compile-property-value (form)
   "Compile property FORM as a constant or a render-time thunk."
@@ -434,9 +439,11 @@ FORM uses one grammar for Hosts and Component calls:
 
 Properties must come first and children must come last.  Property values are
 ordinary Elisp expressions.  `expr' is the only computation bridge in the
-child region and accepts only `:value'."
+  child region and accepts only `:value'."
   (declare (indent 1) (debug (form)))
-  (etaf--compile-view-form form :projection))
+  (if (fboundp 'etaf-compiler-expand-view)
+      (etaf-compiler-expand-view form :projection t)
+    (etaf--compile-view-form form :projection)))
 
 (defun etaf--component-prop-key (name)
   "Return the keyword used to pass Component prop NAME."

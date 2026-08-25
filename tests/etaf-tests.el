@@ -96,6 +96,9 @@
 (defvar etaf-test-slot-consumer-updated 0)
 (defvar etaf-test-slot-branch-left nil)
 (defvar etaf-test-slot-branch-right nil)
+(defvar etaf-test-detached-list-source nil)
+(defvar etaf-test-detached-theme-source nil)
+(defvar etaf-test-detached-row-renders 0)
 
 (defun etaf-test--range-items ()
   "Return keyed text Views from `etaf-test-range-source'."
@@ -1043,6 +1046,122 @@
         (text (expr :value
                     (format "theme=%s" (etaf-theme-value :color)))))))))
 
+(defvar etaf-test-theme-property-render-count 0)
+(defvar etaf-test-theme-property-cell nil)
+
+(defun etaf-test--face-value (face property)
+  "Return PROPERTY from anonymous FACE contributions."
+  (cond
+   ((symbolp face)
+    (let* ((remap (assq face face-remapping-alist))
+           (mapped
+            (cl-some (lambda (spec)
+                       (and (listp spec) (keywordp (car-safe spec))
+                            (plist-get spec property)))
+                     (cdr remap)))
+           (attribute
+            (pcase property
+              (:foreground :foreground)
+              (:background :background)
+              (_ property)))
+           (value (face-attribute face attribute nil nil)))
+      (or mapped
+          (unless (memq value '(unspecified unspecified-fg unspecified-bg))
+            value))))
+   ((and (listp face) (keywordp (car-safe face)))
+    (plist-get face property))
+   ((listp face)
+    (cl-some (lambda (entry)
+               (etaf-test--face-value entry property))
+             face))))
+
+(etaf-define-component etaf-test-theme-property-effect ()
+  "Update a Theme-bound Host property without rerunning this Component."
+  :setup
+  (let* ((dark (etaf-ref nil))
+         (theme
+          (etaf-computed
+           (lambda ()
+             (if (etaf-value dark)
+                 '(:color "#EEEEEE" :bgcolor "#111111")
+               '(:color "#111111" :bgcolor "#FFFFFF"))))))
+    (setq etaf-test-theme-property-cell dark)
+    (etaf-theme-provide theme)
+    (lambda ()
+      (cl-incf etaf-test-theme-property-render-count)
+      (etaf-view
+       (text :ref 'theme-property-toggle
+             :color (etaf-theme-token :color)
+             :bgcolor (etaf-theme-token :bgcolor)
+             :on-press
+             (lambda ()
+               (setf (etaf-value dark) (not (etaf-value dark))))
+             "Theme property")))))
+
+(etaf-define-component etaf-test-theme-atomic-child (&key label on-press)
+  "Render Theme paint below a Component whose input also changes."
+  :view
+  (column :ref 'theme-atomic-panel
+          :color (etaf-theme-token :color)
+          :bgcolor (etaf-theme-token :bgcolor)
+   (text :ref 'theme-atomic-toggle :on-press on-press
+         (expr :value label))))
+
+(etaf-define-component etaf-test-theme-atomic-owner ()
+  "Change Component content and descendant Theme properties in one turn."
+  :setup
+  (let* ((dark (etaf-ref nil))
+         (theme
+          (etaf-computed
+           (lambda ()
+             (if (etaf-value dark)
+                 '(:color "#EEEEEE" :bgcolor "#111111")
+               '(:color "#111111" :bgcolor "#FFFFFF")))))
+         (toggle (lambda ()
+                   (setf (etaf-value dark) (not (etaf-value dark))))))
+    (etaf-theme-provide theme)
+    (lambda ()
+      (etaf--view-call
+       'column (list :ref 'theme-atomic-root
+                     :bgcolor (etaf-theme-token :bgcolor))
+       (list
+        (etaf--view-call
+         'etaf-test-theme-atomic-child
+         (list :label (if (etaf-value dark) "Dark" "Light")
+               :on-press toggle)
+         nil))))))
+
+(etaf-define-component etaf-test-detached-theme-row (&key row-ref label)
+  "Render one keyed Theme-bound row used by detached-subtree tests."
+  :setup
+  (lambda ()
+    (cl-incf etaf-test-detached-row-renders)
+    (etaf--view-call
+     'row
+     (list :ref (etaf-current-prop :row-ref)
+           :color (etaf-theme-token :color))
+     (list (etaf--view-call
+            'text nil (list (etaf-current-prop :label)))))))
+
+(etaf-define-component etaf-test-detached-theme-list ()
+  "Render keyed Components below stable nested Host containers."
+  :setup
+  (progn
+    (etaf-theme-provide etaf-test-detached-theme-source)
+    (lambda ()
+      (etaf--view-call
+       'column (list :key 'shell)
+       (list
+        (etaf--view-call
+         'column (list :key 'body)
+         (mapcar
+          (lambda (entry)
+            (etaf--view-call
+             'etaf-test-detached-theme-row
+             (list :key (car entry) :row-ref (car entry) :label (cdr entry))
+             nil))
+          (etaf-value etaf-test-detached-list-source))))))))
+
 (etaf-define-component etaf-test-event-batch-resource (&key resource fail)
   "Render synchronous Resource success and error state transitions."
   :setup
@@ -1385,6 +1504,165 @@
       (when-let ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
+(ert-deftest etaf-theme-token-resolves-nested-fallback-before-transform ()
+  "Resolve semantic aliases once, then transform the final Theme value."
+  (let ((token
+         (etaf-theme-token
+          :ui-border
+          (etaf-theme-token :line "#AAAAAA")
+          (lambda (color) (list (list 1) 'solid color)))))
+    (should
+     (equal '((1) solid "#202020")
+            (etaf--theme-token-resolve-from-theme
+             token '(:ui-border "#202020" :line "#101010"))))
+    (should
+     (equal '((1) solid "#101010")
+            (etaf--theme-token-resolve-from-theme
+             token '(:line "#101010"))))
+    (should
+     (equal '((1) solid "#AAAAAA")
+            (etaf--theme-token-resolve-from-theme token nil)))))
+
+(ert-deftest etaf-theme-token-updates-host-property-without-component-render ()
+  "A reactive Theme token should publish one Host paint update directly."
+  (let ((buffer-name " *etaf-theme-property-effect-test*")
+        (etaf-test-theme-property-render-count 0)
+        (etaf-test-theme-property-cell nil))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name
+                      (etaf-view (etaf-test-theme-property-effect)))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (generation (etaf-runtime-generation runtime)))
+            (should (= etaf-test-theme-property-render-count 1))
+            (etaf-dispatch-event runtime 'theme-property-toggle 'press)
+            (should (= etaf-test-theme-property-render-count 1))
+            (should (= (etaf-runtime-generation runtime) (1+ generation)))
+            (should (etaf-value etaf-test-theme-property-cell))
+            (with-current-buffer buffer-name
+              (let ((face (get-text-property (point-min) 'face)))
+                (should (equal (etaf-test--face-value face :foreground)
+                               "#EEEEEE"))
+                (should (equal (etaf-test--face-value face :background)
+                               "#111111"))))))
+      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-theme-paint-slot-rolls-back-with-generation-failure ()
+  "A failed generation promotion must restore the committed paint plane."
+  (let ((buffer-name " *etaf-theme-paint-rollback-test*")
+        (etaf-test-theme-property-cell nil))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name
+                      (etaf-view (etaf-test-theme-property-effect)))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (generation (etaf-runtime-generation runtime))
+                 (slot
+                  (plist-get
+                   (etaf-runtime-host-props-for
+                    runtime 'theme-property-toggle)
+                   :color)))
+            (should (tp-paint-slot-p slot))
+            (should (equal "#111111"
+                           (plist-get (tp-paint-slot-spec slot) :foreground)))
+            (cl-letf (((symbol-function 'etaf--runtime-swap-generation)
+                       (lambda (&rest _)
+                         (error "injected generation promotion failure"))))
+              (should-error
+               (etaf-dispatch-event runtime 'theme-property-toggle 'press)))
+            (should (= generation (etaf-runtime-generation runtime)))
+            (should (equal "#111111"
+                           (plist-get (tp-paint-slot-spec slot) :foreground)))))
+      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-theme-and-component-change-publish-one-final-artifact ()
+  "Publish same-turn content and Theme changes from the final Generation."
+  (let ((buffer-name " *etaf-theme-atomic-artifact-test*"))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name
+                      (etaf-view (etaf-test-theme-atomic-owner)))
+          (let ((runtime (etaf-runtime-for-buffer buffer-name)))
+            (cl-labels
+                ((ebox-host-node
+                  (host-ref)
+                  (let* ((buffer (get-buffer buffer-name))
+                         (state (ebox--buffer-render-state buffer))
+                         (node-id
+                          (gethash host-ref
+                                   (plist-get state :host-ref-table))))
+                    (gethash node-id (plist-get state :node-table))))
+                 (background
+                  (value)
+                  (if (tp-paint-slot-p value)
+                      (plist-get (tp-paint-slot-spec value) :background)
+                    value)))
+              (let ((slot
+                     (plist-get (ebox-host-node 'theme-atomic-panel)
+                                :bgcolor)))
+                (should (equal "#FFFFFF" (background slot)))
+                (etaf-dispatch-event runtime 'theme-atomic-toggle 'press)
+                (let ((semantic
+                       (plist-get
+                        (etaf-runtime-host-props-for
+                         runtime 'theme-atomic-panel)
+                        :bgcolor))
+                      (backend
+                       (plist-get (ebox-host-node 'theme-atomic-panel)
+                                  :bgcolor)))
+                  (should (eq slot semantic))
+                  (should (eq slot backend))
+                  (should (equal "#111111" (background slot))))
+                (should (string-match-p
+                         "Dark" (etaf-test--buffer-text buffer-name)))))))
+      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-runtime-detached-component-subtree-retires-host-effects ()
+  "Retire unreachable Host contributions before a later Theme update."
+  (let ((buffer-name " *etaf-detached-theme-list-test*")
+        (etaf-test-detached-list-source
+         (etaf-ref '((old-a . "A") (old-b . "B"))))
+        (etaf-test-detached-theme-source
+         (etaf-ref '(:color "#111111")))
+        (etaf-test-detached-row-renders 0))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name
+                      (etaf-view (etaf-test-detached-theme-list)))
+          (let ((runtime (etaf-runtime-for-buffer buffer-name)))
+            (should (etaf-runtime-host-props-for runtime 'old-b))
+            (setf (etaf-value etaf-test-detached-list-source)
+                  '((old-a . "A2") (new-c . "C")))
+            (should-not (etaf-runtime-host-props-for runtime 'old-b))
+            (should-not
+             (gethash 'old-b
+                      (ebox--buffer-host-ref-table (get-buffer buffer-name))))
+            (setq etaf-test-detached-row-renders 0)
+            (setf (etaf-value etaf-test-detached-theme-source)
+                  '(:color "#222222"))
+            (should (zerop etaf-test-detached-row-renders))
+            (let ((color
+                   (plist-get
+                    (etaf-runtime-host-props-for runtime 'new-c)
+                    :color)))
+              (should (tp-paint-slot-p color))
+              (should
+               (equal "#222222"
+                      (plist-get (tp-paint-slot-spec color) :foreground))))))
+      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
 (ert-deftest etaf-theme-resolves-explicit-light-dark-palette ()
   "Resolve semantic palette pairs without coupling Theme to a renderer."
   (should
@@ -1493,6 +1771,24 @@
       (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
       (when-let ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+
+(ert-deftest etaf-theme-validation-snapshot-is-shared-across-contexts ()
+  "Validate one immutable Theme value once for all inheriting Context frames."
+  (let* ((theme (list :color "ink" :bgcolor "paper" :border "line"))
+         (provider (etaf--context-create))
+         (left (etaf--context-create :parent provider))
+         (right (etaf--context-create :parent provider))
+         (etaf--theme-value-cache
+          (make-hash-table :test #'eq :weakness 'key))
+         left-value right-value)
+    (puthash 'theme theme (etaf-context-values provider))
+    (let ((etaf--current-context left))
+      (setq left-value (etaf-theme-defaults)))
+    (let ((etaf--current-context right))
+      (setq right-value (etaf-theme-defaults)))
+    (should (eq left-value right-value))
+    (should-not (eq left-value theme))
+    (should (equal theme left-value))))
 
 (ert-deftest etaf-context-provide-inject-follows-component-tree ()
   "Resolve the nearest Context and react to its provided ref."
@@ -1741,12 +2037,19 @@ Event composition is a Runtime contract, not a UI-library helper contract."
     (with-temp-buffer
       (insert-file-contents file)
       (setq source (buffer-string)))
-    ;; Mounted non-root invalidations set only their effect queue.  The sole
-    ;; setter is the Root effect route; mount construction's initial t is not
-    ;; a mounted invalidation.
+    ;; Mounted non-root invalidations set only their effect queue.  Root-owned
+    ;; rebuilds are centralized behind one marker and are requested only by a
+    ;; Root effect route or by an explicit local-proof miss.
     (should (= 1 (let ((start 0) count)
                    (while (string-match
                            "(setf (etaf-runtime-root-dirty-p runtime) t)"
+                           source start)
+                     (setq count (1+ (or count 0))
+                           start (match-end 0)))
+                   count)))
+    (should (= 2 (let ((start 0) count)
+                   (while (string-match
+                           "(etaf--runtime-mark-root-dirty runtime)"
                            source start)
                      (setq count (1+ (or count 0))
                            start (match-end 0)))
@@ -1787,6 +2090,60 @@ Event composition is a Runtime contract, not a UI-library helper contract."
     (setf (etaf-ref-version source) 1)
     (should (etaf--runtime-record-effect-input-version
              runtime generation 3))))
+
+(ert-deftest etaf-reactive-dispatch-fifos-append-in-constant-time-order ()
+  "Keep source and Runtime dispatch order with explicit FIFO tails."
+  (let ((etaf--dispatch-depth 1)
+        (etaf--dispatch-source-queue nil)
+        (etaf--dispatch-source-queue-tail nil)
+        (etaf--dispatch-source-set (make-hash-table :test #'eq))
+        (etaf--dispatch-runtime-queue nil)
+        (etaf--dispatch-runtime-queue-tail nil)
+        (etaf--dispatch-runtime-set (make-hash-table :test #'eq))
+        (sources (cl-loop repeat 100 collect (etaf-ref nil))))
+    (dolist (source sources)
+      (etaf--dispatch-source source))
+    (etaf--dispatch-source (car sources))
+    (etaf-reactive-enqueue-runtime-flush 'first #'ignore)
+    (etaf-reactive-enqueue-runtime-flush 'second #'ignore)
+    (etaf-reactive-enqueue-runtime-flush 'first #'ignore)
+    (should (equal sources etaf--dispatch-source-queue))
+    (should (eq (car etaf--dispatch-source-queue-tail) (car (last sources))))
+    (should (equal '(first second) etaf--dispatch-runtime-queue))
+    (should (eq 'second (car etaf--dispatch-runtime-queue-tail)))))
+
+(ert-deftest etaf-runtime-dirty-effect-fifo-and-priority-stay-stable ()
+  "Append dirty effects in O(1) and sort each immutable effect only once."
+  (let* ((runtime
+          (etaf--runtime-create
+           :dirty-effect-ids (make-hash-table :test #'eql)))
+         (generation
+          (etaf--generation-create
+           :effect-map
+           (etaf--pvec-put-many
+            nil
+            (list
+             (cons 5 (etaf--generation-effect-create
+                      :effect-id 5 :kind 'component-render))
+             (cons 2 (etaf--generation-effect-create
+                      :effect-id 2 :kind 'inline))
+             (cons 3 (etaf--generation-effect-create
+                      :effect-id 3 :kind 'component-input))
+             (cons 1 (etaf--generation-effect-create
+                      :effect-id 1 :kind 'root)))))))
+    (dolist (effect-id '(5 2 3 1 2))
+      (etaf--runtime-enqueue-effect runtime effect-id))
+    (should (equal '(5 2 3 1)
+                   (etaf-runtime-dirty-effect-queue runtime)))
+    (should (= 1 (car (etaf-runtime-dirty-effect-queue-tail runtime))))
+    (should (equal '(1 3 2 5)
+                   (etaf--runtime-sort-dirty-effects
+                    generation (etaf-runtime-dirty-effect-queue runtime))))
+    (let (popped)
+      (while (etaf-runtime-dirty-effect-queue runtime)
+        (push (etaf--runtime-pop-effect runtime) popped))
+      (should (equal '(5 2 3 1) (nreverse popped)))
+      (should-not (etaf-runtime-dirty-effect-queue-tail runtime)))))
 
 (ert-deftest etaf-runtime-fixed-point-step-bound-stops-monotonic-cycle ()
   "Stop a cycle whose source version changes on every evaluation."
@@ -3931,7 +4288,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
         (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-context-provider-promotes-consumer-atomically ()
-  "Promote Context provider/consumer frames only with their generation."
+  "Promote provider and dependent Host property only with their generation."
   (let ((buffer-name " *etaf-generation-context-test*")
         (etaf-test-context-provider-source (etaf-ref "red")))
     (setq etaf-test-context-provider-renders 0
@@ -3946,7 +4303,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                  (old-generation (etaf-runtime-current-generation runtime)))
             (setf (etaf-value etaf-test-context-provider-source) "blue")
             (should (= 1 etaf-test-context-provider-renders))
-            (should (= 1 etaf-test-context-consumer-renders))
+            (should (zerop etaf-test-context-consumer-renders))
             (with-current-buffer buffer-name
               (should (equal '(:foreground "blue")
                              (get-text-property 0 'face (buffer-string)))))
@@ -4046,6 +4403,65 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                (setf (etaf-runtime-current-generation runtime) generation)
                runtime)
              'stable))))
+
+(ert-deftest etaf-contribution-index-compaction-preserves-effective-values ()
+  "Flatten contribution deltas without changing values or tombstones."
+  (let* ((base
+          (etaf--contribution-index-create
+           :handlers '((a . ((press . old))) (b . ((press . removed))))
+           :host-props '((a :role button) (b :role button))
+           :contexts '((10 . old-context) (20 . stable-context))
+           :themes '((10 . old-theme) (20 . stable-theme))
+           :behaviors '((10 . old-behavior) (20 . stable-behavior))
+           :context-consumers '(((10 . theme) 1) ((20 . theme) 2))
+           :lifecycle '((old . updated))))
+         (delta
+          (etaf--contribution-index-create
+           :base base :depth 2
+           :handlers '((a . ((press . new))))
+           :host-props '((a :role checkbox))
+           :contexts '((10 . new-context))
+           :themes '((10 . new-theme))
+           :behaviors '((10 . new-behavior))
+           :context-consumers '(((10 . theme) 3))
+           :lifecycle '((new . updated))
+           :host-removals '(b)
+           :semantic-removals '(30)))
+         (compacted (etaf--contribution-index-compact delta)))
+    (should-not (etaf--contribution-index-base compacted))
+    (should (= 1 (etaf--contribution-index-depth compacted)))
+    (dolist (slot '(handlers host-props contexts themes behaviors
+                            context-consumers lifecycle))
+      (should (equal (etaf--contribution-index-entries delta slot)
+                     (etaf--contribution-index-entries compacted slot))))
+    (let ((generation (etaf--generation-create :indexes compacted)))
+      (should (equal '((press . new))
+                     (etaf--generation-index-lookup generation 'handlers 'a)))
+      (should-not
+       (etaf--generation-index-lookup generation 'handlers 'b)))))
+
+(ert-deftest etaf-contribution-index-depth-stays-bounded ()
+  "Periodically compact a long sequence of local contribution generations."
+  (let ((etaf-generation-index-max-depth 4)
+        (runtime
+         (etaf--runtime-create
+          :candidate-handlers (make-hash-table :test #'equal)
+          :candidate-host-props (make-hash-table :test #'equal)
+          :candidate-semantic-nodes (make-hash-table :test #'equal)
+          :candidate-graph-nodes (make-hash-table :test #'eql)
+          :candidate-behaviors (make-hash-table :test #'equal)
+          :candidate-behavior-resource-keys (make-hash-table :test #'equal)))
+        generation)
+    (dotimes (index 20)
+      (setq generation
+            (etaf--generation-create
+             :generation-id (1+ index)
+             :indexes
+             (etaf--runtime-build-contribution-indexes
+              runtime generation nil)))
+      (should (<= (etaf--contribution-index-depth
+                   (etaf-generation-indexes generation))
+                  etaf-generation-index-max-depth)))))
 
 (ert-deftest etaf-context-edge-belongs-to-direct-range-effect ()
   "Invalidate the injecting Range effect, not its lexical Component effect."
@@ -4369,6 +4785,32 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                       (etaf-view (text :color "#F4F6FB" "Mounted")))
           (with-current-buffer buffer-name
             (should (equal "Mounted" (buffer-string)))))
+      (when-let ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-mount-accepts-final-initial-viewport ()
+  "Publish the first generation at its final viewport without a rerender."
+  (let ((buffer-name " *etaf-test-initial-viewport*"))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer-name
+           (etaf-view
+            (column :width '(viewport) :height '(viewport-height)
+             (text "Viewport")))
+           '(:viewport-width 640 :viewport-height 24))
+          (let ((report
+                 (ebox-surface-update-buffer-viewport
+                  (get-buffer buffer-name) 640 24)))
+            (should (eq (plist-get report :strategy) 'no-op)))
+          (should-error
+           (etaf-mount buffer-name (etaf-view (text "Invalid"))
+                       '(:unknown-option t)))
+          (should-error
+           (etaf-mount buffer-name (etaf-view (text "Invalid"))
+                       '(:viewport-width 0))))
+      (when-let ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
       (when-let ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 

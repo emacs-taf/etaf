@@ -40,6 +40,80 @@ Define a Component:
 
 `etaf-view` is the single public View constructor. Structural forms do not use quote; quote remains ordinary Elisp data syntax, such as `'bold`. A View returned from ordinary Elisp is explicitly constructed with `(etaf-view ...)` inside `expr`.
 
+## App precompilation
+
+App precompilation is an ETAF core capability and does not depend on
+Playground. An App or host first registers its source manifest and artifact
+location:
+
+```elisp
+(etaf-register-app
+ "my-app"
+ :source "/path/to/my-app.el"
+ :static "/path/to/my-app.etaf"
+ :style "/path/to/my-app.ecss"
+ :artifact "/path/to/build/my-app.etafc")
+```
+
+The user then runs `M-x etaf-compile-app` once to select a registered App and
+atomically generate its standalone `.etafc` intermediate artifact. Use
+`M-x etaf-app-compile-status` to report `current`, `missing`, `stale`, or
+`invalid`.
+
+ETAF records content hashes for the companion, `.etaf`, and `.ecss` sources;
+changing any of them rejects the old artifact. An App host calls
+`etaf-app-load-artifact-or-warn` before startup. A current artifact is loaded;
+a missing or stale artifact retains the complete source fallback and emits an
+explicit reminder to run `M-x etaf-compile-app`.
+
+`etaf-compiler.el` owns blueprint and `.etafc` compilation/validation.
+`etaf-app.el` independently owns App registration, interactive commands,
+status, and fallback warnings. Playground is only an optional UI consumer of
+these core APIs.
+
+## Performance records
+
+ETAF includes an opt-in, application-neutral timing recorder.  It recognizes
+public Event, Action, mount, flush, focus, Data, Resource, and viewport
+operations, then correlates coarse ETAF, Ebox, TP, and SQLite stages when those
+packages are loaded.
+
+```elisp
+(etaf-performance-mode 1)
+;; Use any mounted ETAF application normally.
+(etaf-performance-show)
+```
+
+For an interactive capture, run `M-x etaf-performance-clear` first.  After
+reproducing the operations, press `c` in the panel (or run
+`M-x etaf-performance-copy-report`) to copy a complete report.  Press `w` (or
+run `M-x etaf-performance-export`) to save the same report as an `.eld` file.
+The portable report includes the Emacs/display environment, power source,
+low-power mode, system load, grouped p50/p95/max, individual operations, GC
+deltas, and nested stages.  The panel header exposes the same environment
+context so a machine-wide slowdown is not mistaken for one package hotspot.
+
+The `*ETAF Performance*` panel shows operation IDs and parent operations,
+generation changes, total latency, GC deltas, and nested stage inclusive/self
+time.  Records are bounded by `etaf-performance-max-records`; disabling the
+mode removes all recorder advice.  `etaf-performance-summary` computes
+operation p50/p95/max statistics on demand, while
+`etaf-performance-operation-stage-summary` ranks one operation's package
+categories by exclusive time.
+
+The default registry deliberately uses coarse package boundaries to keep the
+measured application representative.  A package or application can add a
+temporary detail probe without coupling itself to an example:
+
+```elisp
+(etaf-performance-register-stage
+ 'my-package-expensive-step 'application 'expensive-step)
+```
+
+Use `etaf-performance-call-operation` or
+`etaf-performance-with-operation` to trace an arbitrary operation that has no
+built-in public boundary.
+
 ## Executable examples
 
 The [`examples/`](examples/README.md) directory contains three core-only best-practice applications: retained state and Actions, Data Controller ownership, and Resource error/cleanup lifecycle. They are byte-compiled and driven through mounted public event paths by `make check`.
