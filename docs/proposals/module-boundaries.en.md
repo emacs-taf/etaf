@@ -66,6 +66,26 @@ ETAF also does not define a public `spacer` type. A Box with no children is an e
 Box; Ebox may use an empty-node representation or private helper, but users do not
 need another visual category.
 
+### 1.3 Should Box expose an outer participation mode?
+
+The target does not expose `inline`/`block` as a second public ETAF layout axis yet:
+
+- the parent Box already decides child placement through `column`, `row`, `flex`, or
+  `grid`;
+- `Text` owns inline runs, wrapping, and text measurement;
+- most ETAF Boxes are layout items whose position is owned by the parent layout;
+- adding `:outer 'inline` would also require inline boxes, anonymous line boxes, mixed
+  block/inline flow, and corresponding incremental proofs.
+
+The target public API therefore exposes `Box :layout ...` and inline content through
+`Text`. If a real inline badge, inline-flex, or mixed inline/block requirement appears
+later, add an orthogonal `:outer` property. It must remain independent from `:layout`
+because CSS `inline-flex` means outer inline plus inner flex. Do not turn the two axes
+into one growing enum or replace them with a Component.
+
+Ebox may keep an outer/inner display pair internally; that backend choice does not make
+both axes ETAF public API.
+
 ## 2. Module responsibilities
 
 ### ETAF Core

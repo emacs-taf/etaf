@@ -81,7 +81,34 @@ column | row | flex | grid
 文本应用不需要把完整 CSS `display` 矩阵暴露给用户；未来若 Ebox 确实需要，
 应增加正交属性，而不是增加 `inline` Component。
 
-### 1.3 子节点与后端 content
+### 1.3 是否需要 Box 的外部参与方式
+
+当前目标不把 `inline`/`block` 暴露为 ETAF 的第二个公共布局轴，原因是：
+
+- ETAF 的父级 `Box` 已经通过 `column`、`row`、`flex` 或 `grid` 明确决定子节点
+  如何参与布局；
+- `Text` 自己负责 inline runs、换行和文字测量；
+- 大多数 ETAF Box 都是布局项，父级布局拥有它们的位置，不需要再由子节点声明
+  一套 CSS 外部参与规则；
+- 引入 `:outer 'inline` 会同时要求 inline box、匿名 line box、混合 block/inline
+  流和对应的增量证明，超出当前文本应用的最小模型。
+
+因此目标公共 API 只有：
+
+```text
+Box :layout ...
+Text inline content
+```
+
+如果未来出现真实的 inline badge、inline-flex 或混合 inline/block 需求，再增加
+正交的 `:outer` 属性，例如 `:outer 'inline` 或 `:outer 'block`。它必须独立于
+`:layout`，因为 CSS 的 `inline-flex` 本身就是“外部 inline、内部 flex”；不能把
+它们拼成一个越来越大的 `:layout` 枚举，也不能用 Component 代替。
+
+当前 Ebox 内部保留 outer/inner display pair 是后端实现选择，不代表 ETAF 必须
+暴露这两个轴。
+
+### 1.4 子节点与后端 content
 
 目标 ETAF 语法只保留一个内容模型：子节点。
 
