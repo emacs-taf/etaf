@@ -384,7 +384,7 @@ SLOT-MODE distinguishes Component-owned projections from call-site inputs."
 SLOT-MODE distinguishes Component-owned projections from call-site inputs."
   (cond
    ((null form) nil)
-   ((stringp form) `(quote ,form))
+   ((stringp form) `(etaf--text-view-from-string ,form))
    ((not (and (consp form) (symbolp (car form))))
     (etaf--syntax-error "View form must start with a symbol: %S" form))
    ((eq (car form) 'expr)
@@ -466,19 +466,41 @@ ordinary Elisp expressions.  `expr' is the only computation bridge in the
            key (etaf--component-spec-name spec)))))
     props))
 
+(defun etaf--text-view-from-string (value)
+  "Return one normalized Text View containing string VALUE."
+  (etaf--view-node-create :name 'text :props nil :children (list value)))
+
+(defun etaf--normalize-structural-child (child)
+  "Normalize static structural CHILD without evaluating expressions."
+  (cond
+   ((stringp child) (etaf--text-view-from-string child))
+   ((etaf--slot-input-p child)
+    (let ((copy (copy-sequence child)))
+      (setf (etaf--slot-input-children copy)
+            (mapcar #'etaf--normalize-structural-child
+                    (etaf--slot-input-children child)))
+      copy))
+   (t child)))
+
 (defun etaf--view-call (name props children &optional token)
   "Construct NAME from PROPS and CHILDREN, retaining optional site TOKEN."
   (unless (symbolp name)
     (etaf--syntax-error "View name must be a symbol: %S" name))
   (setq props (etaf--validate-property-plist props))
-  (let ((entry (gethash name etaf--view-registry)))
+  (let* ((entry (gethash name etaf--view-registry))
+         (host-name (and (eq entry etaf--host-marker)
+                         (etaf--canonical-host-name name)))
+         (children
+          (if (eq host-name 'text)
+              children
+            (mapcar #'etaf--normalize-structural-child children))))
     (cond
      ((eq entry etaf--host-marker)
       (when (plist-member props :key)
         (etaf--validate-key
          (etaf--resolve-property-value (plist-get props :key))))
       (etaf--view-node-create
-       :name (etaf--canonical-host-name name)
+       :name host-name
        :token token
        :props props
        :children children))

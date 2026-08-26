@@ -1271,6 +1271,30 @@
            (etaf-view
             (text (expr :value (list "A" "B"))))))))
 
+(ert-deftest etaf-view-normalizes-box-string-child-to-text ()
+  "Normalize a static Box string child to one Text View."
+  (let* ((view (etaf-view (box "A")))
+         (child (car (etaf--view-node-children view))))
+    (should (etaf--view-node-p child))
+    (should (eq (etaf--view-node-name child) 'text))
+    (should (equal (etaf--view-node-children child) '("A")))))
+
+(ert-deftest etaf-view-normalizes-root-string-to-text ()
+  "Normalize a static root string to one Text View."
+  (let ((view (etaf-view "A")))
+    (should (etaf--view-node-p view))
+    (should (eq (etaf--view-node-name view) 'text))
+    (should (equal (etaf--view-node-children view) '("A")))))
+
+(ert-deftest etaf-view-normalizes-component-string-slot-to-text ()
+  "Normalize a static Component string child before slot ownership."
+  (let* ((call (etaf-view (etaf-test-slot-card :title "Card" "Body")))
+         (child (car (cdr (assq 'default
+                                (etaf--component-call-slots call))))))
+    (should (etaf--view-node-p child))
+    (should (eq (etaf--view-node-name child) 'text))
+    (should (equal (etaf--view-node-children child) '("Body")))))
+
 (ert-deftest etaf-view-expr-rejects-extra-properties ()
   "Reject an expr property other than `:value'."
   (should-error
