@@ -7,6 +7,10 @@
 本文只定义目标模型、模块 owner、依赖方向和完成条件。实现顺序属于单独的
 实施计划；历史名称和兼容策略不参与目标架构设计。
 
+用户心智成本是本提案的硬约束：同一能力只有一个规范名称和一种推荐写法；内部
+算法、后端节点、wrapper 和兼容别名不能作为并列公共概念。普通应用只需学习
+Text、Box、Component；Fragment、布局细节和底层包通过渐进披露进入。
+
 ## 1. 最终模型
 
 ETAF 的表示链只有四层：
@@ -117,7 +121,50 @@ run-in、list-item 或任意匿名盒规则。Ebox 可以把 `normal` 映射为�
 (box :layout 'grid ...)
 ```
 
-### 2.5 Fragment
+### 2.5 Ebox DSL 的基础节点与语法糖
+
+ETAF View 和 Ebox DSL 是两层不同接口：ETAF 有 Text/Box/Fragment/Component；
+Ebox 只接收已经降低的内容与布局。目标 Ebox DSL 只有一个基础结构 tag：
+
+```elisp
+(box :layout MODE ...)
+```
+
+Ebox `box` 可以是 content leaf，也可以包含 children 并建立布局上下文。Range
+descriptor 是增量后端协议，不是作者 DSL 节点；裸字符串只是 content literal
+简写，也不是节点类型。
+
+当前 DSL 的其他 tag 必须明确分类，不能与基础节点并列：
+
+| 当前 tag | 分类 | 目标表达 |
+| --- | --- | --- |
+| `ebox` | `box` 的兼容别名 | 删除，统一写 `box` |
+| `spacer` | 空 Box 便捷糖 | 删除，使用无 children 的 `box` |
+| `row` | layout tag 糖 | `(box :layout 'row ...)` |
+| `column` | layout tag 糖 | `(box :layout 'column ...)` |
+| `flex` | layout tag 糖 | `(box :layout 'flex ...)` |
+| `grid` | layout tag 糖 | `(box :layout 'grid ...)` |
+| `item` | Flex child participation 糖 | 把 `:flex-*`、`:order`、`:align-self` 直接写在 child Box |
+| `grid-item` | Grid child placement 糖 | 把 `:grid-*` placement 直接写在 child Box |
+
+因此 `item` 和 `grid-item` 不是必要 wrapper。父级参与属性属于 child Box，并由
+父级 layout mode 验证：
+
+```elisp
+(box :layout 'flex
+  (box :flex-grow 1 :content "A"))
+
+(box :layout 'grid
+  (box :grid-column '(1 :span 2) :content "Header"))
+```
+
+以上示例是 Ebox 低层 DSL，因此可以使用 Ebox 的 `:content`；ETAF View 仍然只用
+Text/children，不暴露 `:content`。
+
+目标 Ebox DSL 不保留上述兼容别名或糖。布局算法仍由 Ebox 分别实现，但节点
+分类只保留 `box`；算法种类不等于作者节点种类。
+
+### 2.6 Fragment
 
 `Fragment` 是无视觉 wrapper 的结构 Range：
 
@@ -130,7 +177,7 @@ Component call 本身没有 `:outer` 或 `:layout`。它的根 Text/Box 决定�
 布局；返回 Fragment 的透明 Component 可以产生多个兄弟节点，因此不存在单一的
 “Component 外部盒子”。
 
-### 2.6 字符串、content 与空 Box
+### 2.7 字符串、content 与空 Box
 
 Box 子节点中的字符串规范化为 Text：
 
@@ -335,6 +382,10 @@ Component identity、依赖所有权、TP 优先级和 generation authority 不�
 当前代码仍注册 `text`、`fragment`、`container`、`row`、`column`、`stack`、
 `flex`、`grid` 和 `spacer`，并提供 `raw-ebox`；目标 `box`、`:outer`、
 `:layout 'normal` 尚未实现，目标公共 View 也不保留 `raw-ebox`。
+
+当前 Ebox DSL 仍接受 `box`、`ebox`、`row`、`column`、`flex`、`item`、`grid`、
+`grid-item` 和 `spacer`。目标 Ebox DSL 只保留 `box`；其他 tag 按上表删除或改为
+Box 属性。
 
 这是干净重设计，不要求旧 Host 名称或旧 `.etaf` 文件继续运行，也不增加长期
 兼容层。实现完成前，正式架构和用户指南不得把目标语法描述成当前 API。

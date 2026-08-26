@@ -8,6 +8,11 @@ This document defines only the target model, module owners, dependency direction
 completion criteria. Delivery sequencing belongs in a separate implementation plan;
 historical names and compatibility do not shape the target architecture.
 
+User mental cost is a hard constraint: one capability has one canonical name and one
+recommended spelling. Internal algorithms, backend nodes, wrappers, and compatibility
+aliases never become peer public concepts. Ordinary applications learn Text, Box, and
+Component first; Fragment, layout detail, and lower packages are progressively disclosed.
+
 ## 1. Final model
 
 ```text
@@ -92,7 +97,51 @@ child's `:outer` does not change ordering. `:outer` is consumed only by a normal
 They are Box modes, not Components or alternate Runtime node names. The only canonical
 surface is `(box :layout 'MODE ...)`; core provides no layout-name aliases.
 
-### 2.5 Fragment
+### 2.5 Ebox DSL primitives and sugar
+
+ETAF View and Ebox DSL are different layers: ETAF has Text/Box/Fragment/Component,
+while Ebox receives lowered content and layout. The target Ebox DSL has one structural
+tag:
+
+```elisp
+(box :layout MODE ...)
+```
+
+An Ebox box may be a content leaf or own children and a layout context. A Range
+descriptor is an incremental backend protocol, not an authoring node. A bare string is
+content-literal shorthand, not a node type.
+
+Current tags classify as follows:
+
+| Current tag | Classification | Target expression |
+| --- | --- | --- |
+| `ebox` | compatibility alias for `box` | remove; use `box` |
+| `spacer` | empty-Box convenience sugar | remove; use a childless `box` |
+| `row` | layout-tag sugar | `(box :layout 'row ...)` |
+| `column` | layout-tag sugar | `(box :layout 'column ...)` |
+| `flex` | layout-tag sugar | `(box :layout 'flex ...)` |
+| `grid` | layout-tag sugar | `(box :layout 'grid ...)` |
+| `item` | Flex-child participation sugar | put flex/order/align-self properties on the child Box |
+| `grid-item` | Grid-child placement sugar | put grid placement properties on the child Box |
+
+Item wrappers are therefore unnecessary. Parent-participation properties belong to
+the child Box and are validated by the parent layout mode:
+
+```elisp
+(box :layout 'flex
+  (box :flex-grow 1 :content "A"))
+
+(box :layout 'grid
+  (box :grid-column '(1 :span 2) :content "Header"))
+```
+
+These are low-level Ebox examples, so Ebox `:content` is valid. ETAF View continues to
+use Text/children and does not expose `:content`.
+
+The target Ebox DSL retains none of those aliases or sugar tags. Ebox still implements
+the layout algorithms independently, but algorithm kinds are not authoring node kinds.
+
+### 2.6 Fragment
 
 Fragment is a nonvisual structural Range. It may contain zero, one, or many sibling
 Views, creates no Box or layout context, and may carry only a stable `:key` plus
@@ -101,7 +150,7 @@ children. Runtime may retain and replace its Range independently.
 A Component call has no fixed outer/layout properties. Its root Text/Box determines
 participation. A transparent Component returning a Fragment may have multiple roots.
 
-### 2.6 Strings, content, and empty Boxes
+### 2.7 Strings, content, and empty Boxes
 
 Strings under a Box normalize to Text, so `(box "text")` equals
 `(box (text "text"))`. ETAF does not expose `(box :content ...)`; `:content` remains an
@@ -268,6 +317,10 @@ Current code still registers `text`, `fragment`, `container`, `row`, `column`, `
 `flex`, `grid`, and `spacer`, and exposes `raw-ebox`. Target `box`, `:outer`, and
 `:layout 'normal` are not implemented, and the target public View does not retain
 `raw-ebox`.
+
+Current Ebox DSL still accepts `box`, `ebox`, `row`, `column`, `flex`, `item`, `grid`,
+`grid-item`, and `spacer`. The target Ebox DSL keeps only `box`; all other tags are
+removed or represented as Box properties according to the table above.
 
 This is a clean redesign: old Host names and old `.etaf` sources need not continue to
 run, and no long-lived compatibility layer is added. Formal architecture/user docs must
