@@ -38,6 +38,19 @@ The public concepts are:
 `Host` is an internal Renderer term for a primitive lowered to a backend. It is not a
 third public visual taxonomy. An `Ebox Node` is a lower-level geometry/render object.
 
+ETAF should keep two orthogonal Box properties instead of turning these concepts into
+Components:
+
+```text
+:outer  = inline | block
+:layout = normal | row | column | flex | grid
+```
+
+`:outer` describes how the Box participates in its parent's ordinary layout;
+`:layout` describes how the Box arranges its own children. `normal` is the clearer
+user-facing name for ordinary content layout; the Renderer may lower it to Ebox's
+internal ordinary-content path.
+
 The target View model is:
 
 ```text
@@ -46,18 +59,37 @@ View = Text(content, typography)
      | ComponentCall(props, slots)
 ```
 
-The Box layout modes exposed by the target ETAF API are a closed set:
+The Box inner-layout modes exposed by the target ETAF API are a closed set:
 
 ```text
-column | row | flex | grid
+normal | row | column | flex | grid
 ```
 
-A Box with multiple children must have an arrangement rule; the target ETAF contract
-defaults that arrangement to `column` (vertical stacking). Children are arranged only
-by `column`, `row`, `flex`, or `grid`. `Text` owns text measurement, wrapping, and
-inline runs, so the target model does not need a separate `flow` layout algorithm.
-Current Ebox marks its ordinary content path with `(block flow)`; that is a historical
-implementation marker, not a required target algorithm or module.
+A plain Box defaults to `:outer 'block :layout 'normal`; it does not silently become a
+column. Use `:layout 'column` for vertical stacking, or choose `row`, `flex`, or `grid`
+explicitly. Text defaults to inline content in normal layout and owns text measurement,
+wrapping, and inline runs.
+
+The mapping is:
+
+| CSS meaning | Target ETAF expression |
+| --- | --- |
+| ordinary block content | `(box :outer 'block :layout 'normal ...)` |
+| ordinary inline content | `(box :outer 'inline :layout 'normal ...)` |
+| vertical stacking | `(box :layout 'column ...)` |
+| horizontal layout | `(box :layout 'row ...)` |
+| flex container | `(box :layout 'flex ...)` |
+| grid container | `(box :layout 'grid ...)` |
+
+`inline-flex` is the direct orthogonal combination:
+
+```elisp
+(box :outer 'inline :layout 'flex ...)
+```
+
+A Component call has no fixed `:outer` or `:layout`; its root Text/Box output decides
+how it participates in the parent. A transparent Component may return siblings and
+therefore has no single outer Box.
 
 `(box "text")` is shorthand for `(box (text "text"))`. ETAF must not expose
 `(box :content "text")`; `:content` remains an Ebox backend field.
@@ -66,25 +98,22 @@ ETAF also does not define a public `spacer` type. A Box with no children is an e
 Box; Ebox may use an empty-node representation or private helper, but users do not
 need another visual category.
 
-### 1.3 Should Box expose an outer participation mode?
+Box properties remain grouped by owner rather than becoming one unconstrained plist:
 
-The target does not expose `inline`/`block` as a second public ETAF layout axis yet:
+| Group | Properties | Purpose |
+| --- | --- | --- |
+| structure | `:outer`, `:layout`, `:key` | participation, child layout, identity |
+| geometry/surface | `:width`, `:height`, min/max, `:margin`, `:padding`, `:border`, `:box-sizing`, `:overflow` | size and surface |
+| text | `:face`, `:color`, `:bgcolor`, `:wrap-mode`, `:text-align` | typography and text paint |
+| flex item | `:order`, `:flex-grow`, `:flex-shrink`, `:flex-basis`, `:align-self` | valid under a Flex parent |
+| grid item | `:grid-row`, `:grid-column`, spans | valid under a Grid parent |
+| semantics/interaction | `:class`, `:id`, `:role`, `:ref`, `:aria-*`, `:on-*`, `:use` | Runtime events, Behaviors, and queries |
 
-- the parent Box already decides child placement through `column`, `row`, `flex`, or
-  `grid`;
-- `Text` owns inline runs, wrapping, and text measurement;
-- most ETAF Boxes are layout items whose position is owned by the parent layout;
-- adding `:outer 'inline` would also require inline boxes, anonymous line boxes, mixed
-  block/inline flow, and corresponding incremental proofs.
+`:outer` and `:layout` are geometry/structure properties, not TP paint slots. ECSS may
+resolve them, but Ebox validates the final combination and owns the layout result.
 
-The target public API therefore exposes `Box :layout ...` and inline content through
-`Text`. If a real inline badge, inline-flex, or mixed inline/block requirement appears
-later, add an orthogonal `:outer` property. It must remain independent from `:layout`
-because CSS `inline-flex` means outer inline plus inner flex. Do not turn the two axes
-into one growing enum or replace them with a Component.
-
-Ebox may keep an outer/inner display pair internally; that backend choice does not make
-both axes ETAF public API.
+Ebox may keep an outer/inner display representation internally; the public split is
+the explicit `:outer` and `:layout` contract.
 
 ## 2. Module responsibilities
 

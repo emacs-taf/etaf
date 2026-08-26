@@ -46,8 +46,18 @@ CSS 中所有最终可见元素都会产生 box，但 CSS 生成的 box、ETAF �
 Ebox 的后端节点不是同一棵树。`inline` 和 `block` 描述盒子参与父布局的方式；
 `flex` 和 `grid` 描述盒子内部如何排列子节点。
 
-因此 ETAF 不应该把 `inline`、`block`、`flex`、`grid` 都做成 Component。目标
-公共模型是：
+因此 ETAF 不应该把这些概念做成 Component，而应在 Box 上保留两个正交属性：
+
+```text
+:outer  = inline | block
+:layout = normal | row | column | flex | grid
+```
+
+`:outer` 表示这个 Box 如何参与父级的普通布局；`:layout` 表示这个 Box 如何
+排列自己的子节点。`normal` 是 ETAF 用户层对普通内容布局的名称，Renderer
+可以把它降低为 Ebox 内部的普通内容路径。
+
+目标公共模型是：
 
 ```text
 View = Text(content, typography)
@@ -55,58 +65,54 @@ View = Text(content, typography)
      | ComponentCall(props, slots)
 ```
 
-目标中 ETAF 对用户暴露的 `Box` 布局模式是封闭集合：
+目标中 ETAF 对用户暴露的 Box 内部布局模式是封闭集合：
 
 ```text
-column | row | flex | grid
+normal | row | column | flex | grid
 ```
 
-普通 `Box` 包含多个子节点时必须有明确的排列规则；目标 ETAF 规定默认排列为
-`column`（纵向堆叠）。子节点只通过 `column`、`row`、`flex` 或 `grid` 排列。
-`Text` 自己负责文字测量、换行和 inline runs，因此目标模型不需要额外的 `flow`
-布局算法。当前 Ebox 用 CSS-like display pair `(block flow)` 表示普通内容路径，
-这是历史实现标记，不是目标架构必须保留的算法或模块。
+普通 `Box` 默认是 `:outer 'block :layout 'normal`，不会隐式变成 `column`。
+需要纵向堆叠时明确写 `:layout 'column`；需要横向、Flex 或 Grid 时明确选择
+对应模式。`Text` 默认作为 inline content 参与 normal 布局，但自身负责文字
+测量、换行和 inline runs。
 
 语义映射大致为：
 
 | CSS 语义 | ETAF 目标表达 |
 | --- | --- |
 | inline text/run | `text` |
-| 普通块级/纵向内容 | `(box ...)` 或 `(box :layout 'column ...)` |
+| 普通 block 内容 | `(box :outer 'block :layout 'normal ...)` |
+| 普通 inline 内容 | `(box :outer 'inline :layout 'normal ...)` |
+| 纵向排列 | `(box :layout 'column ...)` |
 | horizontal layout | `(box :layout 'row ...)` |
 | flex container | `(box :layout 'flex ...)` |
 | grid container | `(box :layout 'grid ...)` |
 
-完整的 `inline-flex` 这类组合属于“外部参与方式 + 内部布局方式”两个轴。当前
-文本应用不需要把完整 CSS `display` 矩阵暴露给用户；未来若 Ebox 确实需要，
-应增加正交属性，而不是增加 `inline` Component。
+`inline-flex` 是两个属性的正交组合：
 
-### 1.3 是否需要 Box 的外部参与方式
-
-当前目标不把 `inline`/`block` 暴露为 ETAF 的第二个公共布局轴，原因是：
-
-- ETAF 的父级 `Box` 已经通过 `column`、`row`、`flex` 或 `grid` 明确决定子节点
-  如何参与布局；
-- `Text` 自己负责 inline runs、换行和文字测量；
-- 大多数 ETAF Box 都是布局项，父级布局拥有它们的位置，不需要再由子节点声明
-  一套 CSS 外部参与规则；
-- 引入 `:outer 'inline` 会同时要求 inline box、匿名 line box、混合 block/inline
-  流和对应的增量证明，超出当前文本应用的最小模型。
-
-因此目标公共 API 只有：
-
-```text
-Box :layout ...
-Text inline content
+```elisp
+(box :outer 'inline :layout 'flex ...)
 ```
 
-如果未来出现真实的 inline badge、inline-flex 或混合 inline/block 需求，再增加
-正交的 `:outer` 属性，例如 `:outer 'inline` 或 `:outer 'block`。它必须独立于
-`:layout`，因为 CSS 的 `inline-flex` 本身就是“外部 inline、内部 flex”；不能把
-它们拼成一个越来越大的 `:layout` 枚举，也不能用 Component 代替。
+Component call 自身没有固定的 `:outer` 或 `:layout`；它的根 Text/Box 输出决定
+它如何参与父级布局。透明 Component 可以输出多个兄弟节点，因此不能假定每个
+Component 都有一个外部盒子。
 
-当前 Ebox 内部保留 outer/inner display pair 是后端实现选择，不代表 ETAF 必须
-暴露这两个轴。
+### 1.3 属性分组
+
+Box 的属性按 owner 分组，不能做成一个无约束的大 plist：
+
+| 分组 | 属性 | 作用 |
+| --- | --- | --- |
+| 外部/内部结构 | `:outer`、`:layout`、`:key` | 参与方式、子布局、稳定 identity |
+| 几何和表面 | `:width`、`:height`、min/max、`:margin`、`:padding`、`:border`、`:box-sizing`、`:overflow` | 尺寸、表面和可见区域 |
+| 文本 | `:face`、`:color`、`:bgcolor`、`:wrap-mode`、`:text-align` | Text 或普通内容的排版/绘制 |
+| Flex 子项 | `:order`、`:flex-grow`、`:flex-shrink`、`:flex-basis`、`:align-self` | 只在 Flex 父级中有效 |
+| Grid 子项 | `:grid-row`、`:grid-column`、span | 只在 Grid 父级中有效 |
+| 语义和交互 | `:class`、`:id`、`:role`、`:ref`、`:aria-*`、`:on-*`、`:use` | Runtime 事件、Behavior 和查询 |
+
+`:outer` 和 `:layout` 是结构/几何属性，变化会触发布局 owner；它们不是 TP
+paint slot。ECSS 可以参与解析它们，但最终合法性和布局仍由 Ebox 契约验证。
 
 ### 1.4 子节点与后端 content
 
