@@ -1,122 +1,138 @@
 # ETAF 模块职责与目标架构（设计提案，未实现）
 
-> 状态：设计提案。本文不是当前公共 API 或已交付实现的规范；当前可用契约仍以
+> 状态：设计提案。本文不描述当前已交付 API。当前行为仍以
 > [`architecture.zh.md`](../architecture.zh.md)、[`user-guide.zh.md`](../user-guide.zh.md)
-> 和实际测试为准。
+> 和通过的测试为准。
 
-本文把 ETAF、Ebox、ECSS、TP、`etaf-ui`、`etaf-sqlite`、性能工具和两个
-Playground 的职责收敛成一份待评审的边界提案。它描述的是从零设计时应保持的
-模型，不是把当前实现中的每个文件名当成架构真相。
+本文只定义目标模型、模块 owner、依赖方向和完成条件。实现顺序属于单独的
+实施计划；历史名称和兼容策略不参与目标架构设计。
 
-文中标有“目标”的部分是后续演进方向；除非代码、测试和基准同时完成，不能
-把目标 API 描述成已经交付的功能。提案没有自动授权实现，也不改变当前 Host
-注册表、View 语法或包依赖。
+## 1. 最终模型
 
-## 1. 最小稳定模型
-
-ETAF 需要区分四种表示，而不是把它们都叫作“组件”或“box”：
+ETAF 的表示链只有四层：
 
 ```text
 Component 语义与所有权
     ↓
-Text / Box View 结构
+View：Text / Box / Fragment
     ↓
-Ebox 几何与渲染计划
+Ebox：测量、布局、几何 patch
     ↓
-TP / Emacs 最终提交
+TP + Emacs adapter：paint 与最终提交
 ```
 
-### 1.1 公共概念
+用户需要理解的主要概念只有 `Text`、`Box` 和 `Component`。`Fragment` 是高级
+结构语法；`Host` 是 Renderer 内部术语；`Ebox Node` 是后端对象，都不构成第二套
+组件模型。
 
-用户只需要学习三个主要概念：
+规范化 View 的完整形状是：
 
-| 概念 | 稳定职责 | 不负责的事情 |
-| --- | --- | --- |
-| `Text` | 文本内容、字体、inline text properties、换行入口 | 子树布局、业务状态、生命周期 |
-| `Box` | 尺寸、背景、边框、padding、子节点和布局 | Component identity、Data、Action |
-| `Component` | 可复用语义、props、slot、状态、Context、Action、生命周期 | 像素测量和布局算法 |
+```text
+View = Text
+     | Box
+     | Fragment
+     | ComponentCall
+     | RawEbox
+```
 
-`Host` 是 Renderer 内部用于称呼可直接降低到后端的原语，不是用户需要额外
-学习的第三套视觉分类。`Ebox Node` 则是更底层的几何/渲染对象；它可以由一个
-`Text`、一个 `Box`，或一棵 Component 子树产生。
+`expr` 和 `slot` 是计算/投影机制，不是视觉节点。`RawEbox` 是明确的低层出口，
+不获得正常 View 的样式、事件或增量语义。
 
-### 1.2 Text 与 Box 的关系
+## 2. Text、Box 与 Fragment
 
-CSS 中所有最终可见元素都会产生 box，但 CSS 生成的 box、ETAF 的 View 原语和
-Ebox 的后端节点不是同一棵树。`inline` 和 `block` 描述盒子参与父布局的方式；
-`flex` 和 `grid` 描述盒子内部如何排列子节点。
+### 2.1 Text
 
-因此 ETAF 不应该把这些概念做成 Component，而应在 Box 上保留两个正交属性：
+`Text` 是文本叶子，负责：
+
+- 字符串和 inline Text runs；
+- 字体、前景/背景、下划线等文本 paint；
+- 文字测量、换行和文本对齐的输入；
+- 可选 identity、语义和事件属性。
+
+`Text` 默认 `:outer 'inline`。它不能拥有 Box、Component 或任意布局子节点，也
+不能建立 `row`、`column`、`flex` 或 `grid` 上下文。需要 padding、border、尺寸
+或子布局时，在外层使用 `Box`。
+
+### 2.2 Box 的两个正交轴
+
+`Box` 同时拥有一个外部参与方式和一个内部布局方式：
 
 ```text
 :outer  = inline | block
 :layout = normal | row | column | flex | grid
 ```
 
-`:outer` 表示这个 Box 如何参与父级的普通布局；`:layout` 表示这个 Box 如何
-排列自己的子节点。`normal` 是 ETAF 用户层对普通内容布局的名称，Renderer
-可以把它降低为 Ebox 内部的普通内容路径。
+- `:outer`：这个 Box 如何参与父级的 `normal` 布局；
+- `:layout`：这个 Box 如何排列自己的子节点。
 
-目标公共模型是：
-
-```text
-View = Text(content, typography)
-     | Box(layout, surface, children)
-     | ComponentCall(props, slots)
-```
-
-目标中 ETAF 对用户暴露的 Box 内部布局模式是封闭集合：
+默认值是：
 
 ```text
-normal | row | column | flex | grid
+Box  :outer block  :layout normal
+Text :outer inline
 ```
 
-普通 `Box` 默认是 `:outer 'block :layout 'normal`，不会隐式变成 `column`。
-需要纵向堆叠时明确写 `:layout 'column`；需要横向、Flex 或 Grid 时明确选择
-对应模式。`Text` 默认作为 inline content 参与 normal 布局，但自身负责文字
-测量、换行和 inline runs。
-
-语义映射大致为：
-
-| CSS 语义 | ETAF 目标表达 |
-| --- | --- |
-| inline text/run | `text` |
-| 普通 block 内容 | `(box :outer 'block :layout 'normal ...)` |
-| 普通 inline 内容 | `(box :outer 'inline :layout 'normal ...)` |
-| 纵向排列 | `(box :layout 'column ...)` |
-| horizontal layout | `(box :layout 'row ...)` |
-| flex container | `(box :layout 'flex ...)` |
-| grid container | `(box :layout 'grid ...)` |
-
-`inline-flex` 是两个属性的正交组合：
+`inline-flex` 是两个轴的组合，不是新的节点类型：
 
 ```elisp
 (box :outer 'inline :layout 'flex ...)
 ```
 
-Component call 自身没有固定的 `:outer` 或 `:layout`；它的根 Text/Box 输出决定
-它如何参与父级布局。透明 Component 可以输出多个兄弟节点，因此不能假定每个
-Component 都有一个外部盒子。
+公开 API 使用 `:outer` 和 `:layout`。不公开 `:inner`，也不要求用户写 Ebox 的
+`(:display (block flow))` 一类后端表示。
 
-### 1.3 属性分组
+### 2.3 normal 的明确范围
 
-Box 的属性按 owner 分组，不能做成一个无约束的大 plist：
+`normal` 是一个真实但刻意收敛的布局上下文：
 
-| 分组 | 属性 | 作用 |
-| --- | --- | --- |
-| 外部/内部结构 | `:outer`、`:layout`、`:key` | 参与方式、子布局、稳定 identity |
-| 几何和表面 | `:width`、`:height`、min/max、`:margin`、`:padding`、`:border`、`:box-sizing`、`:overflow` | 尺寸、表面和可见区域 |
-| 文本 | `:face`、`:color`、`:bgcolor`、`:wrap-mode`、`:text-align` | Text 或普通内容的排版/绘制 |
-| Flex 子项 | `:order`、`:flex-grow`、`:flex-shrink`、`:flex-basis`、`:align-self` | 只在 Flex 父级中有效 |
-| Grid 子项 | `:grid-row`、`:grid-column`、span | 只在 Grid 父级中有效 |
-| 语义和交互 | `:class`、`:id`、`:role`、`:ref`、`:aria-*`、`:on-*`、`:use` | Runtime 事件、Behavior 和查询 |
+- 连续的 inline `Text` 或 inline `Box` 进入同一行流并按可用宽度换行；
+- block `Box` 从新行开始并形成独立块；
+- block 前后的 inline 行会在块边界结束；
+- 子节点顺序保持稳定。
 
-`:outer` 和 `:layout` 是结构/几何属性，变化会触发布局 owner；它们不是 TP
-paint slot。ECSS 可以参与解析它们，但最终合法性和布局仍由 Ebox 契约验证。
+目标不实现完整浏览器 CSS：没有 float、table、absolute/fixed positioning、
+run-in、list-item 或任意匿名盒规则。Ebox 可以把 `normal` 映射为内部 flow
+算法，但 `flow` 不是 ETAF 公共词汇。
 
-### 1.4 子节点与后端 content
+当父级 `:layout` 是 `row`、`column`、`flex` 或 `grid` 时，父算法直接拥有子项
+位置；子项的 `:outer` 不改变排列顺序。`:outer` 只决定节点进入 `normal` 父级时
+是 inline 还是 block。
 
-目标 ETAF 语法只保留一个内容模型：子节点。
+### 2.4 其他布局模式
+
+| 模式 | 职责 |
+| --- | --- |
+| `row` | 简单水平顺序布局，不执行 Flex 空间分配 |
+| `column` | 简单垂直顺序布局，不执行 Flex 空间分配 |
+| `flex` | Flex sizing、direction、wrap、alignment 和 gap |
+| `grid` | 二维轨道、放置、跨度和 gap |
+
+这些都是 `Box` 的 layout mode，不是 Component，也不注册 `row`、`column`、
+`flex` 或 `grid` 的第二套 Runtime 节点名称。目标 API 只有规范写法：
+
+```elisp
+(box :layout 'row ...)
+(box :layout 'column ...)
+(box :layout 'flex ...)
+(box :layout 'grid ...)
+```
+
+### 2.5 Fragment
+
+`Fragment` 是无视觉 wrapper 的结构 Range：
+
+- 可以承载零个、一个或多个兄弟 View；
+- 不产生 Box、尺寸、背景或布局上下文；
+- Runtime 可以为其保留稳定 Range identity 并局部替换；
+- 只接受子节点和可选稳定 `:key`，不接受视觉/事件属性。
+
+Component call 本身没有 `:outer` 或 `:layout`。它的根 Text/Box 决定如何参与父级
+布局；返回 Fragment 的透明 Component 可以产生多个兄弟节点，因此不存在单一的
+“Component 外部盒子”。
+
+### 2.6 字符串、content 与空 Box
+
+Box 子节点中的字符串规范化为 Text：
 
 ```elisp
 (box "this is text")
@@ -128,348 +144,205 @@ paint slot。ECSS 可以参与解析它们，但最终合法性和布局仍由 E
 (box (text "this is text"))
 ```
 
-需要文本属性时显式写 `text`：
+ETAF 不提供 `(box :content "...")`。`:content` 只属于 Ebox 后端构造器；暴露它
+会制造 content 与 children 两套结构模型。
 
-```elisp
-(box
- :padding '(1 2)
- (text :face 'bold "Title"))
-```
+ETAF 也不提供 `spacer` 类型。没有子节点的 Box 就是空 Box。
 
-ETAF 公共语法不增加 `(box :content "...")`。`:content` 是 Ebox 后端构造器
-（例如 `ebox-create`）的内部字段；Renderer 可以把 `text` 降低为后端 content，
-但不能把后端字段反向暴露成第二套 ETAF 子树模型。这样可以自然混合字符串、
-Text、Box、Component 和 slot，也不会产生 content 与 children 的优先级歧义。
+## 3. 属性契约
 
-ETAF 公共模型也不定义 `spacer`。没有子节点的 `Box` 就是空 Box；Ebox 可以在
-内部使用空内容节点或私有 helper 表示它，但这不是用户需要学习的独立视觉类型。
+属性是闭集，并按 owner 验证；未知属性和不适用组合必须报错。
 
-## 2. 模块职责
+| Owner | 属性类别 | 代表属性 |
+| --- | --- | --- |
+| Text | 外部参与 | `:outer` |
+| Text | 文本/paint | `:face`、`:color`、`:bgcolor`、`:wrap-mode`、`:text-align` |
+| Box | 外部/内部布局 | `:outer`、`:layout` |
+| Box | 几何/表面 | `:width`、`:height`、`:min-*`、`:max-*`、`:margin`、`:padding`、`:border`、`:box-sizing`、`:overflow` |
+| Flex container | 布局 | `:flex-direction`、`:flex-wrap`、`:justify-content`、`:align-items`、`:align-content`、`:gap` |
+| Flex item | 父级参与 | `:order`、`:flex-grow`、`:flex-shrink`、`:flex-basis`、`:align-self` |
+| Grid container | 布局 | track templates、auto flow、gap、item/content alignment |
+| Grid item | 父级参与 | `:grid-row`、`:grid-column`、row/column span |
+| Text/Box | identity/语义 | `:key`、`:ref`、`:class`、`:id`、`:role`、`:aria-*`、`:on-*`、`:use` |
 
-下面的边界是“谁拥有完整规则”的判断标准。调用别的模块的公开契约不等于拥有
-那个模块的职责。
+规则：
 
-### 2.1 ETAF Core
+- `:key` 是 identity metadata，不是视觉属性；
+- `:outer`、`:layout` 和 layout-specific 属性属于 structure/geometry impact；
+- color、background、typography 等属于 paint impact；
+- ECSS 可以解析上述属性，但必须保留 impact 分类；
+- TP 只消费已经解析的 paint contribution，不判断布局合法性；
+- 结构属性变化必须事务性重建对应布局上下文，不能走 paint-only 快速路径。
 
-#### `etaf-view`
+## 4. 模块 owner
 
-拥有：
+### 4.1 ETAF Core
 
-- `Text`、`Box`、Component call、Fragment 的结构语法和规范化 View 值；
-- 属性优先解析和 `expr :value` 求值边界；
-- props、`key` 和 slot 的静态形状验证；
-- Component 注册表与 View 名称解析。
+`etaf-view`：
 
-不拥有：
+- 定义并规范化 Text、Box、Fragment、ComponentCall 和 RawEbox；
+- 将字符串规范化为 Text；
+- 验证属性闭集、slot、`:key` 和表达式边界；
+- 不测量、不布局、不写 buffer。
 
-- 字宽、像素、布局、滚动和 buffer 写入；
-- Component 生命周期和 Runtime 调度；
-- 业务数据、数据库、UI 控件实现。
+`etaf-component`：
 
-#### `etaf-component`
+- 定义 Component props、`:view`、`:setup`、`:styles`；
+- 不调度 Runtime，不调用 Ebox。
 
-拥有：
+`etaf-runtime`：
 
-- `etaf-define-component`；
-- `:view`、`:setup`、`:styles` 定义边界；
-- props 和静态 Component style 的声明验证。
+- 拥有 Component/Fragment/Range identity、响应式依赖、Context、Theme、Action、
+  Behavior、Data、Resource 和 lifecycle；
+- 拥有 candidate generation、事务、提交授权、回滚和释放；
+- 决定变化影响哪个 Component、Range、结构属性或 paint contribution；
+- 不计算像素和布局。
 
-不拥有：
+`etaf-renderer`：
 
-- Ebox 私有节点；
-- Data 请求、数据库连接或全局 UI 控件目录。
+- 是唯一 ETAF → Ebox 的 lowering adapter；
+- 把规范化 View 和 computed properties 转换为 Ebox 输入；
+- 不执行 Component lifecycle，不访问 Ebox 私有状态。
 
-#### `etaf-runtime`
+Theme 的语义 token 和继承属于 ETAF Context。TP 不拥有“暗色主题”等业务意义。
 
-拥有：
+### 4.2 Ebox
 
-- Component identity、`:key`、retained instance；
-- ref、computed、effect、watch 和 Scope cleanup；
-- Context、Theme、Action、Behavior、Data、Resource 的生命周期；
-- 依赖失效、候选 generation、提交、回滚和调度；
-- 将变化定位到 Component、Range、Host 属性或 Paint contribution。
+Ebox 拥有：
 
-不拥有：
+- Text 测量、换行和行布局；
+- `normal`、`row`、`column`、`flex`、`grid` 几何算法；
+- width/height、box model、overflow、scroll、viewport；
+- 稳定 Ebox node identity、geometry snapshot 和结构 patch plan。
 
-- 字体测量、flex/grid 算法、像素布局；
-- Ebox 私有状态；
-- SQLite、HTTP 或某个示例的业务规则。
+Ebox 不理解 Component、slot、Context、Action、Behavior、Data 或 Resource，也不
+决定 paint contribution 的优先级。
 
-#### `etaf-renderer`
-
-拥有：
-
-- 唯一的 ETAF View → Ebox 公共 lowering 边界；
-- Text、Box、Component 输出到 Ebox 公共构造器的转换；
-- 把已解析的 style/theme/property contribution 传给下游；
-- 明确的 `raw-ebox` 低层出口。
-
-不拥有：
-
-- Component setup/lifecycle 的所有权；
-- Ebox 的测量和布局实现；
-- Data 查询或应用 Action。
-
-### 2.2 Ebox
-
-Ebox 是布局和渲染引擎，不是 ETAF Component Runtime。
-
-拥有：
-
-- 文本测量、字宽、换行和内容高度；
-- Text 内容测量和换行，以及 row、column、flex、grid 的几何算法；
-- padding、border、surface、overflow、scroll 和 viewport 几何；
-- 稳定的布局快照、节点 identity、增量几何更新；
-- 从布局结果到后端可提交 Render/Paint plan 的转换。
-
-不拥有：
-
-- Component、props、slot、Context、Action、Behavior、Data、Resource；
-- 应用语义或 UI 控件分类；
-- ETAF 的响应式依赖图。
-
-`row`、`column`、`flex`、`grid` 即使在 ETAF 目标 API 中统一为
-`box :layout ...`，Ebox 内部仍然可以保留不同的布局上下文和算法。统一的是
-上层表达，不是把不同几何问题硬塞进一个无差别函数。
-
-逻辑上可以继续拆为两个边界：
+逻辑边界：
 
 ```text
-ebox-core       纯测量、布局、快照和 Render plan
-ebox-emacs      字体/窗口能力、Ebox Node 到 Emacs buffer 的提交适配
+ebox-core   纯测量、布局、快照和结构 patch
+ebox-emacs  字体/窗口能力、buffer 位置和结构提交
 ```
 
-这两个边界不一定现在就变成两个发行包，但不能让布局算法和 Emacs buffer 副作用
-混在同一个职责中。
+这不要求立即拆成两个发行包，但纯布局和 Emacs 副作用必须能独立测试。
 
-### 2.3 ECSS
+### 4.3 ECSS
 
-拥有：
+ECSS 拥有 selector、cascade、继承和 computed properties。输出必须携带属性的
+structure/geometry/paint impact；ECSS 不执行布局，也不写 buffer。
 
-- selector 解析和匹配；
-- style declaration、cascade、继承和 computed style；
-- 把静态规则转换为可复用、可验证的样式中间产物。
+### 4.4 TP 与提交边界
 
-不拥有：
+TP 拥有：
 
-- Component state、slot、Action；
-- 字宽、布局或 Ebox Node；
-- Emacs text property 的提交和回滚。
+- Theme、Component style、state、inline 等 paint contribution 的优先级；
+- paint operation 合并；
+- Emacs text property journal、apply 和 rollback。
 
-ECSS 决定“某个结构节点应该得到哪些样式值”，不决定“这些像素如何排布”。
-
-### 2.4 TP
-
-拥有：
-
-- Emacs text property / paint slot 的分层；
-- Theme、Component、state、inline 等 Paint contribution 的优先级合并；
-- 原子应用、journal、rollback 和已提交层的复用。
-
-不拥有：
-
-- CSS selector/cascade；
-- 布局测量、祖先证明或文字换行；
-- Component 和 Data。
-
-TP 应接收精确的 Paint operations，不应该为了换一个背景色重新推导整棵 View
-或重新执行所有 Component。
-
-### 2.5 `etaf-ui`
-
-拥有官方可复用 Component，例如：
-
-- Button；
-- Checkbox；
-- Label；
-- Panel；
-- Number input；
-- DataGrid；
-- Pagination。
-
-这些控件使用 ETAF 的 props、slot、事件、Behavior、Theme 和 Data 契约。它们
-不是第二套 Widget/Control/Component 模型，也不应该实现自己的 Runtime 或布局
-引擎。
-
-### 2.6 `etaf-sqlite`
-
-拥有：
-
-- SQLite 连接、schema、查询、分页和 mutation；
-- 参数和标识符校验；
-- 具体 Data Source 的事务和 dispose 边界。
-
-不拥有：
-
-- ETAF Data Controller 状态机；
-- View、Component、DataGrid 或 playground UI。
-
-其他数据库、REST、文件和 ORM 集成也应实现同一个具体 Data Source capability，
-但使用各自明确的包名，不引入一个笼统的 `etaf-adapters` 层。
-
-### 2.7 性能工具
-
-性能记录器必须是应用无关的逻辑模块（当前可以先作为 ETAF 中的独立子模块，
-未来再决定是否单独发行）。它拥有：
-
-- operation、stage、父子关系和 generation 记录；
-- p50/p95/max、GC、环境信息和跨包阶段关联；
-- 公共 Event、Action、mount、flush、Data、Resource、viewport 边界的探针；
-- 报告、复制和导出。
-
-它不拥有：
-
-- Research Shelf 或任何示例名称；
-- 应用状态或布局规则；
-- 为了采样而改变正常渲染路径。
-
-Playground 只能展示这个工具，不能定义它的核心协议。
-
-### 2.8 两个 Playground
-
-`ebox-playground`：
-
-- 只验证 Ebox 的布局、测量、重排和性能；
-- 只依赖 Ebox 公共 API；
-- 不加载 ETAF、Component、Data Controller 或 UI 目录。
-
-`etaf-playground`：
-
-- 验证 ETAF 的 Component、Runtime、Data、UI 和交互组合；
-- 可以选择加载 `etaf-ui` 和 `etaf-sqlite`；
-- 提供 `.etaf` 示例加载、快捷键和状态展示；
-- 不拥有 ETAF 的核心语法、Runtime 或性能记录协议。
-
-`.etaf` 静态文件如果只是 Playground manifest，就属于 Playground；它不是 ETAF
-Core 的 Runtime 入口。未来若增加通用 `.etaf` compiler，compiler 必须把结果
-降低到同一套 Text/Box/Component 契约，不能创建第二套 Runtime。
-
-## 3. 依赖方向
-
-目标依赖图如下：
+一次更新的权限顺序固定为：
 
 ```text
-                         ┌──────────────┐
-                         │ etaf-performance │
-                         │ optional observer│
-                         └──────┬───────┘
-                                │ public probes only
-                                ▼
-┌────────────┐       ┌────────────────────┐       ┌──────────────┐
-│  etaf-ui   │──────▶│      ETAF Core     │──────▶│ Ebox public  │
-└────────────┘       │ View/Component/RT │       │ layout port  │
-                     └─────────┬──────────┘       └──────┬───────┘
-                               │                         │
-                     ┌─────────▼─────────┐       ┌──────▼───────┐
-                     │ ECSS / TP adapters│       │ Ebox backend │
-                     └───────────────────┘       │  / Emacs    │
-                                                 └──────────────┘
-
-etaf-sqlite ─────▶ ETAF Data Source contract
-etaf-playground ─▶ ETAF + optional etaf-ui + optional etaf-sqlite
-ebox-playground ─▶ Ebox public API only
+ETAF Runtime 创建 candidate 并拥有提交授权
+    ↓
+Ebox stage 结构/几何 patch
+    ↓
+TP stage paint patch
+    ↓
+Emacs adapter 原子应用两个 patch
+    ↓
+ETAF Runtime 提升 generation；失败则回滚参与者
 ```
 
-约束：
+Ebox 不拥有 TP paint 优先级；TP 不拥有节点布局；两者都不能自行提升 Runtime
+generation。
 
-- Ebox 不向上依赖 ETAF；
-- TP 不解析 View，也不调用 Component；
-- ECSS 不写 buffer；
-- `etaf-ui` 不调用 Ebox 私有函数；
-- `etaf-sqlite` 不知道任何 UI；
-- Playground 不向 core 反向注入示例协议；
-- 性能工具通过公开边界观察各包，不让被测包依赖某个示例。
+### 4.5 上层包
 
-## 4. Rust 与 Elisp 的切分
+| 包 | 拥有 | 不拥有 |
+| --- | --- | --- |
+| `etaf-ui` | Button、Checkbox、Label、Panel、DataGrid 等普通 Component | 第二套 Widget Runtime、布局引擎 |
+| `etaf-sqlite` | SQLite Data Source、查询、mutation、事务和 dispose | Data Controller、View、UI |
+| `etaf-performance` | 应用无关 operation/stage、环境、统计和报告 | 示例语义、布局规则、调度权限 |
+| `ebox-playground` | Ebox 公共布局 API 示例与验证 | ETAF |
+| `etaf-playground` | ETAF/UI/SQLite 组合示例、加载命令和状态展示 | Core 语法、Runtime、性能协议 |
 
-目标不是把所有代码机械地翻译成 Rust，而是把确定性计算和环境副作用分开。
+`etaf-performance` 是独立可选包。ETAF、Ebox、TP 和 SQLite 不依赖它；它只通过
+公开边界观察和关联阶段。
 
-适合 Rust 纯计算核心的内容：
+Playground 的 `.etaf` manifest 属于 Playground。未来通用 compiler 若存在，必须
+降低到同一套 View/Component 契约，不得创建第二套 Runtime。
 
-- Text/Box Render IR 的验证和规范化；
-- keyed diff、identity matching 和 patch batch；
-- ECSS selector/cascade/computed-style 计算；
-- 字符宽度、换行、普通 Box/flex/grid 测量和布局；
-- geometry snapshot、layout impact 和 paint contribution merge。
-
-保留在 Elisp/Emacs 适配层的内容：
-
-- 执行用户定义的 Component 函数；
-- ref、Context、Action、Data、Resource 和 lifecycle callback；
-- Emacs 事件、窗口、字体能力和 buffer 提交；
-- 调用 Rust 核心并提交返回的 patch/paint plan。
-
-Elisp 不应再次实现 Rust 已经计算过的布局、cascade、diff 或文字扫描；Rust 也不
-应读取 Emacs buffer 或理解 Component slot 语义。
-
-## 5. 性能与正确性不变量
-
-模块增加不能把一次局部变化升级成多次全量遍历。必须保持：
-
-- 一次事务中的稳定 identity、依赖、布局快照和 Paint contribution 只 materialize
-  一次；
-- Text paint 改变不重新执行无关 Component，不重新做布局；
-- Box 几何改变只触发受影响的布局 owner；
-- Component 状态/slot/列表拓扑改变只执行拥有该结构的 Component；
-- Ebox 失败或 TP 提交失败时保留上一代已提交结果；
-- 快速路径必须是普通正确路径的严格子集，并且能验证失败后精确回退；
-- 性能工具本身不能改变被测应用的调度和布局路径。
-
-真实 GUI 场景仍然是最终证据。固定场景在功能、文本属性、identity、生命周期和
-回滚语义不缩水的前提下，p95 和 max 都必须满足项目的 50ms 目标；单独的微基准
-不能替代跨包验证。
-
-## 6. 当前实现与目标模型的关系
-
-当前 ETAF Core 的 Host 注册表仍包含：
+## 5. 依赖方向
 
 ```text
-text · fragment · container · row · column · stack · flex · grid · spacer
+etaf-ui ─────────────▶ ETAF Core ─────────────▶ Ebox public port
+etaf-sqlite ─────────▶ ETAF Data contract
+etaf-playground ─────▶ ETAF + optional UI/SQLite
+ebox-playground ─────▶ Ebox only
+etaf-performance ────▶ public observation boundaries only
+
+ETAF Renderer ───────▶ ECSS computed properties
+ETAF Runtime  ───────▶ Ebox/TP transaction participants
 ```
 
-当前 Renderer 直接把这些名称映射到 Ebox 构造器；Ebox Playground 也直接使用
-自己的布局 API。这只是现状记录，不是目标 API，也不构成必须保留的兼容表面。
-`spacer` 和 `flow` 都不属于目标公共词汇；目标 Ebox 可以用普通 Box/Text 路径
-替代当前的 `flow` 标记，不为它保留独立布局分支。
+禁止反向依赖：Ebox 不依赖 ETAF；TP 不解析 View；ECSS 不写 buffer；UI 不调用
+Ebox 私有函数；SQLite 不知道 UI；Playground 不向 Core 注入协议。
 
-目标演进方向是：
+## 6. Rust 与 Elisp
+
+模块边界先于实现语言。只有接口和等价性测试冻结后，确定性计算才迁移到 Rust：
 
 ```text
-Text + Box(layout)
-    ↑
-如果确实需要短写法，row/column/flex/grid 只能作为新语法糖
+Rust 候选：
+  规范化 View 的验证与结构 diff（只处理 opaque stable IDs）
+  ECSS cascade
+  Text 测量输入处理与 Ebox 布局
+  geometry/paint patch 的纯数据计算
+
+Elisp / Emacs：
+  执行用户 Component、ref、Context、Action、Data、Resource、lifecycle
+  数据库和外部 I/O
+  Emacs 事件、字体/窗口能力和最终提交
 ```
 
-这些简写不能通过 `etaf-define-component` 实现，否则每个布局节点都会被迫获得
-Component 的 identity、scope、slot 和调度边界。它们应直接降低为 Ebox 布局节点。
-不保留 `container`、`stack`、`spacer` 或旧 Host 注册名的兼容别名。
+Component identity、依赖所有权、TP 优先级和 generation authority 不因 Rust 化而
+转移。Elisp 不重复 Rust 已经完成的 diff、cascade、布局或文字扫描。
 
-目标模型尚未交付前，不得修改现有 Host 语法后再把未验证的 `box` 描述成已完成。
+## 7. 正确性与性能不变量
 
-## 7. 有边界的演进顺序
+- 同一事务中的 View、computed properties、geometry snapshot 和 paint contribution
+  各 materialize 一次；
+- Text paint 改变不执行无关 Component，也不运行布局；
+- `:outer`、`:layout` 或几何改变只运行受影响的布局 owner；
+- Fragment/slot/list 变化只替换对应 Range；
+- Ebox/TP/Emacs 任一 participant 失败时保留上一代已提交状态；
+- resize 使用当前窗口事实立即重排，不以隐藏 debounce 改变交互语义；
+- 性能记录器不改变被测路径。
 
-如果开始实现目标模型，只做下面这个最小顺序：
+最终门禁必须覆盖：
 
-1. 增加 `Box` 的规范化 View 形状和字符串子节点规则；
-2. 只验证 `layout='column` 的 `box` 到 Ebox lowering；
-3. 决定是否提供 `row`、`column`、`flex`、`grid` 的新语法糖，并直接降低到 Box；
-4. 分别验证 `flex` 和 `grid` 的模式属性、布局结果和增量路径；
-5. 保留旧名称兼容，并用 Research Shelf 与 Flex reference 做 GUI 回归；
-6. 只有全部公共测试和真实性能门禁通过，才更新用户指南为 `text + box`。
+- Text/Box/Fragment 结构等价；
+- `outer × layout` 合法组合和失败组合；
+- normal inline/block、row、column、flex、grid 的 GUI 行为；
+- Component root 与透明 Fragment 的布局参与；
+- style/Theme/TP 优先级和事务回滚；
+- Research Shelf 与 Flex reference 的连续 resize；
+- 固定真实场景 p95 和 max 均不超过 50ms。
 
-任何一步不能证明结果等价或性能收益，就删除该实验，不继续堆下一层抽象。
+## 8. 当前实现差距与非目标
 
-这是一次干净重设计，不要求旧 `.el`、`.etaf` 文件或旧 Host 名称继续运行。迁移
-由明确的源码更新完成，不通过长期兼容层隐藏模型变化。
+当前代码仍注册 `text`、`fragment`、`container`、`row`、`column`、`stack`、
+`flex`、`grid` 和 `spacer`；目标 `box`、`:outer`、`:layout 'normal` 尚未实现。
 
-## 8. 明确不做的事情
+这是干净重设计，不要求旧 Host 名称或旧 `.etaf` 文件继续运行，也不增加长期
+兼容层。实现完成前，正式架构和用户指南不得把目标语法描述成当前 API。
 
-- 不把 `button`、`panel`、`data-grid` 等业务控件塞进 Ebox；
-- 不把 `row`、`column`、`flex`、`grid` 做成 Runtime Component；
-- 不把 `spacer` 或 `flow` 暴露成 ETAF 公共视觉类型；
-- 不在 ETAF 公共层引入 `box :content` 第二套内容模型；
-- 不让 TP 重新扫描布局或重新调和所有颜色；
-- 不让 Playground 拥有通用框架协议；
-- 不为了“预编译”而新增没有长编译时间和真实运行时收益的中间产物；
-- 不为了减少名词而合并 Component、Text、Box、Ebox Node、Paint slot 等不同所有权
-  和生命周期概念。
+非目标：
+
+- 不实现完整浏览器 CSS；
+- 不提供 `spacer`、公共 `flow` 或 `(box :content ...)`；
+- 不把布局模式做成 Component 或第二套 Runtime 节点；
+- 不在 Core 中保留旧 Host alias 或可选短写法；
+- 不让 Playground、UI 或数据库包拥有 Core 协议；
+- 不在没有真实编译成本和运行时收益前增加 App 预编译产物。

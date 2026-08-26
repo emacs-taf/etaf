@@ -1,220 +1,281 @@
 # ETAF Module Responsibilities and Target Architecture (Unimplemented Proposal)
 
-> Status: design proposal. This is not the current public API or a delivered
-> implementation. The current contract remains [`architecture.en.md`](../architecture.en.md),
-> [`user-guide.en.md`](../user-guide.en.md), and the passing tests.
+> Status: design proposal. This is not the delivered API. Current behavior remains
+> defined by [`architecture.en.md`](../architecture.en.md),
+> [`user-guide.en.md`](../user-guide.en.md), and passing tests.
 
-This proposal defines clean-slate ownership boundaries for ETAF, Ebox, ECSS,
-TP, `etaf-ui`, `etaf-sqlite`, the performance recorder, and both Playgrounds. It
-describes the target architecture; current compatibility names are not treated as
-the architecture itself.
+This document defines only the target model, module owners, dependency direction, and
+completion criteria. Delivery sequencing belongs in a separate implementation plan;
+historical names and compatibility do not shape the target architecture.
 
-The target parts below are not delivered API until code, tests, and real benchmarks
-prove them. This proposal does not change the current Host registry, View grammar,
-or package dependencies.
-
-## 1. Minimal stable model
-
-ETAF has four representations:
+## 1. Final model
 
 ```text
 Component semantics and ownership
     ↓
-Text / Box View structure
+View: Text / Box / Fragment
     ↓
-Ebox geometry and render plan
+Ebox: measurement, layout, geometry patches
     ↓
-TP / Emacs final submission
+TP + Emacs adapter: paint and final submission
 ```
 
-The public concepts are:
+The main public concepts are `Text`, `Box`, and `Component`. `Fragment` is advanced
+structure, `Host` is an internal Renderer term, and an Ebox Node is a backend object.
 
-| Concept | Owns | Does not own |
-| --- | --- | --- |
-| `Text` | text content, typography, inline properties, wrapping input | subtree layout, business state, lifecycle |
-| `Box` | size, surface, children, and layout | Component identity, Data, Actions |
-| `Component` | reusable semantics, props, slots, state, Context, Actions, lifecycle | pixel measurement and layout algorithms |
+The complete normalized View shape is:
 
-`Host` is an internal Renderer term for a primitive lowered to a backend. It is not a
-third public visual taxonomy. An `Ebox Node` is a lower-level geometry/render object.
+```text
+View = Text
+     | Box
+     | Fragment
+     | ComponentCall
+     | RawEbox
+```
 
-ETAF should keep two orthogonal Box properties instead of turning these concepts into
-Components:
+`expr` and `slot` are computation/projection mechanisms, not visual nodes. `RawEbox`
+is an opaque low-level escape and does not inherit normal View semantics.
+
+## 2. Text, Box, and Fragment
+
+### 2.1 Text
+
+Text is a leaf that owns strings and inline Text runs, typography/paint, text
+measurement and wrapping input, and optional identity/semantic/event properties.
+
+Text defaults to `:outer 'inline`. It cannot own Box/Component children or establish
+row, column, flex, or grid layout. Use an outer Box for padding, border, dimensions, or
+child layout.
+
+### 2.2 Box axes
 
 ```text
 :outer  = inline | block
 :layout = normal | row | column | flex | grid
 ```
 
-`:outer` describes how the Box participates in its parent's ordinary layout;
-`:layout` describes how the Box arranges its own children. `normal` is the clearer
-user-facing name for ordinary content layout; the Renderer may lower it to Ebox's
-internal ordinary-content path.
-
-The target View model is:
-
-```text
-View = Text(content, typography)
-     | Box(layout, surface, children)
-     | ComponentCall(props, slots)
-```
-
-The Box inner-layout modes exposed by the target ETAF API are a closed set:
-
-```text
-normal | row | column | flex | grid
-```
-
-A plain Box defaults to `:outer 'block :layout 'normal`; it does not silently become a
-column. Use `:layout 'column` for vertical stacking, or choose `row`, `flex`, or `grid`
-explicitly. Text defaults to inline content in normal layout and owns text measurement,
-wrapping, and inline runs.
-
-The mapping is:
-
-| CSS meaning | Target ETAF expression |
-| --- | --- |
-| ordinary block content | `(box :outer 'block :layout 'normal ...)` |
-| ordinary inline content | `(box :outer 'inline :layout 'normal ...)` |
-| vertical stacking | `(box :layout 'column ...)` |
-| horizontal layout | `(box :layout 'row ...)` |
-| flex container | `(box :layout 'flex ...)` |
-| grid container | `(box :layout 'grid ...)` |
-
-`inline-flex` is the direct orthogonal combination:
+`:outer` controls participation in a parent normal layout. `:layout` controls child
+layout. Defaults are `Box: block/normal` and `Text: inline`.
 
 ```elisp
 (box :outer 'inline :layout 'flex ...)
 ```
 
-A Component call has no fixed `:outer` or `:layout`; its root Text/Box output decides
-how it participates in the parent. A transparent Component may return siblings and
-therefore has no single outer Box.
+This is inline-flex: an orthogonal combination, not another node type. ETAF exposes
+`:outer` and `:layout`, not `:inner` or Ebox's raw display-pair representation.
 
-`(box "text")` is shorthand for `(box (text "text"))`. ETAF must not expose
-`(box :content "text")`; `:content` remains an Ebox backend field.
+### 2.3 Bounded normal layout
 
-ETAF also does not define a public `spacer` type. A Box with no children is an empty
-Box; Ebox may use an empty-node representation or private helper, but users do not
-need another visual category.
+Normal layout supports only:
 
-Box properties remain grouped by owner rather than becoming one unconstrained plist:
+- consecutive inline Text/Box nodes in one wrapping line flow;
+- block Boxes starting a new independent block;
+- stable child order and block boundaries ending adjacent inline lines.
 
-| Group | Properties | Purpose |
+It does not implement full browser CSS: no floats, tables, absolute/fixed positioning,
+run-in, list-item, or arbitrary anonymous-box rules. Ebox may map `normal` to an
+internal flow algorithm; `flow` is not ETAF vocabulary.
+
+For row, column, flex, or grid parents, the parent algorithm owns item placement and a
+child's `:outer` does not change ordering. `:outer` is consumed only by a normal parent.
+
+### 2.4 Other layout modes
+
+| Mode | Responsibility |
+| --- | --- |
+| `row` | simple horizontal order without Flex distribution |
+| `column` | simple vertical order without Flex distribution |
+| `flex` | Flex sizing, direction, wrapping, alignment, and gaps |
+| `grid` | two-dimensional tracks, placement, spans, and gaps |
+
+They are Box modes, not Components or alternate Runtime node names. The only canonical
+surface is `(box :layout 'MODE ...)`; core provides no layout-name aliases.
+
+### 2.5 Fragment
+
+Fragment is a nonvisual structural Range. It may contain zero, one, or many sibling
+Views, creates no Box or layout context, and may carry only a stable `:key` plus
+children. Runtime may retain and replace its Range independently.
+
+A Component call has no fixed outer/layout properties. Its root Text/Box determines
+participation. A transparent Component returning a Fragment may have multiple roots.
+
+### 2.6 Strings, content, and empty Boxes
+
+Strings under a Box normalize to Text, so `(box "text")` equals
+`(box (text "text"))`. ETAF does not expose `(box :content ...)`; `:content` remains an
+Ebox backend field. ETAF also has no spacer type: a childless Box is an empty Box.
+
+## 3. Property contract
+
+Properties form closed, owner-specific schemas. Unknown or inapplicable combinations
+fail explicitly.
+
+| Owner | Category | Representative properties |
 | --- | --- | --- |
-| structure | `:outer`, `:layout`, `:key` | participation, child layout, identity |
-| geometry/surface | `:width`, `:height`, min/max, `:margin`, `:padding`, `:border`, `:box-sizing`, `:overflow` | size and surface |
-| text | `:face`, `:color`, `:bgcolor`, `:wrap-mode`, `:text-align` | typography and text paint |
-| flex item | `:order`, `:flex-grow`, `:flex-shrink`, `:flex-basis`, `:align-self` | valid under a Flex parent |
-| grid item | `:grid-row`, `:grid-column`, spans | valid under a Grid parent |
-| semantics/interaction | `:class`, `:id`, `:role`, `:ref`, `:aria-*`, `:on-*`, `:use` | Runtime events, Behaviors, and queries |
+| Text | outer participation | `:outer` |
+| Text | text/paint | `:face`, `:color`, `:bgcolor`, `:wrap-mode`, `:text-align` |
+| Box | outer/inner layout | `:outer`, `:layout` |
+| Box | geometry/surface | width/height/min/max, margin, padding, border, box sizing, overflow |
+| Flex container/item | layout/participation | direction, wrap, alignment, gap, grow/shrink/basis/order |
+| Grid container/item | layout/participation | tracks, auto flow, placement, spans, alignment, gap |
+| Text/Box | identity/semantics | `:key`, `:ref`, class/id/role/ARIA/events/Behaviors |
 
-`:outer` and `:layout` are geometry/structure properties, not TP paint slots. ECSS may
-resolve them, but Ebox validates the final combination and owns the layout result.
+Key rules:
 
-Ebox may keep an outer/inner display representation internally; the public split is
-the explicit `:outer` and `:layout` contract.
+- `:key` is identity metadata, not paint;
+- outer/layout/layout-specific properties have structure/geometry impact;
+- color/background/typography have paint impact;
+- ECSS preserves that impact classification;
+- TP consumes resolved paint contributions only;
+- structural changes transactionally replace the required layout context.
 
-## 2. Module responsibilities
+## 4. Module owners
 
 ### ETAF Core
 
-`etaf-view` owns the View grammar, Text/Box/Component-call normalization, property
-and slot shape validation, expression boundaries, and Component registration. It does
-not measure pixels, lay out nodes, write buffers, or implement business data.
+`etaf-view` owns normalized View shapes, string-to-Text normalization, closed property
+schemas, slots, keys, and expression boundaries. It does not measure, lay out, or write
+buffers.
 
-`etaf-component` owns `etaf-define-component`, `:view`, `:setup`, `:styles`, and
-definition validation. It does not own Runtime scheduling or Ebox nodes.
+`etaf-component` owns Component props and `:view`/`:setup`/`:styles` definitions. It
+does not schedule Runtime or call Ebox.
 
-`etaf-runtime` owns retained identity, reactive refs/computed/effects/watchers, Scope
-cleanup, Context/Theme, Actions, Behaviors, Data, Resources, lifecycle, invalidation,
-transactions, commit, and rollback. It does not own pixel layout or Ebox private state.
+`etaf-runtime` owns Component/Fragment/Range identity, reactive dependencies, Context,
+Theme, Actions, Behaviors, Data, Resources, lifecycle, candidate generations, commit
+authority, rollback, and disposal. It does not compute pixels.
 
-`etaf-renderer` is the only ETAF-to-Ebox lowering boundary. It translates Text, Box,
-and Component output to public Ebox constructors and carries resolved style/paint
-contributions downstream. It does not own Component lifecycle or data requests.
+`etaf-renderer` is the only ETAF-to-Ebox lowering adapter. It consumes normalized View
+and computed properties without accessing Ebox private state.
+
+Theme token meaning and inheritance belong to ETAF Context, not TP.
 
 ### Ebox
 
-Ebox is the layout and rendering engine, not the ETAF Component Runtime. It owns text
-measurement, wrapping, row/column/flex/grid geometry,
-surface/scroll geometry,
-stable layout snapshots, and render/paint plans. It does not know Components, slots,
-Context, Actions, Behaviors, Data, or Resources.
+Ebox owns Text measurement/wrapping/line layout, normal/row/column/flex/grid geometry,
+the box model, overflow/scroll/viewport behavior, stable Ebox node identity, geometry
+snapshots, and structural patch plans. It does not know Component semantics or paint
+contribution priority.
 
-Logically it has two boundaries:
-
-```text
-ebox-core       pure measurement, layout, snapshots, and render plans
-ebox-emacs      font/window capabilities and Emacs buffer submission
-```
-
-They need not be separate distribution packages immediately, but geometry and Emacs
-side effects must not become one responsibility.
-
-### ECSS and TP
-
-ECSS owns selectors, declarations, cascade, inheritance, and computed styles. It does
-not own Runtime state, layout, or buffer writes.
-
-TP owns layered Emacs text-property/paint slots, priority merging, atomic application,
-journaling, and rollback. It does not parse selectors, measure layout, or execute
-Components.
-
-### Optional/application packages
-
-`etaf-ui` owns reusable Button, Checkbox, Label, Panel, Number input, DataGrid, and
-Pagination Components. It does not implement another Runtime or layout engine.
-
-`etaf-sqlite` owns SQLite connections, schema/query/mutation validation, paging, and
-Data Source disposal. It does not own Data Controller state or UI.
-
-The performance recorder owns application-neutral operation/stage records, summaries,
-environment context, and export. It observes public boundaries and never embeds a
-Playground name or changes the measured render path.
-
-`ebox-playground` only validates public Ebox layout APIs. `etaf-playground` validates
-ETAF composition and may optionally load `etaf-ui` and `etaf-sqlite`; neither Playground
-owns framework protocols. A static `.etaf` manifest belongs to the Playground unless a
-future compiler lowers it to the same Text/Box/Component contract.
-
-## 3. Dependency direction
+Logical boundaries:
 
 ```text
-etaf-ui ───────▶ ETAF Core ───────▶ Ebox public layout port
-etaf-sqlite ──▶ ETAF Data contract
-etaf-playground ─▶ ETAF + optional UI/SQLite
-ebox-playground ─▶ Ebox public API only
-performance ───▶ public probes only
+ebox-core   pure measurement, layout, snapshots, structural patches
+ebox-emacs  font/window capabilities, buffer positions, structural submission
 ```
 
-Ebox never depends upward on ETAF. TP never parses View trees. ECSS never writes
-buffers. UI never calls private Ebox functions. SQLite never knows UI. Playgrounds
-never inject example protocols into core.
+These need not become separate distribution packages immediately, but must remain
+independently testable.
 
-## 4. Rust and Elisp split
+### ECSS
 
-Rust is for deterministic, environment-independent computation: normalized Render IR,
-keyed diff/patch, ECSS cascade, text measurement/wrapping, ordinary Box/flex/grid layout,
-geometry snapshots, and paint-contribution merging.
+ECSS owns selectors, cascade, inheritance, and computed properties. Its output retains
+structure/geometry/paint impact. ECSS does not run layout or write buffers.
 
-Elisp/Emacs owns user Component execution, refs, Context, Actions, Data, Resources,
-lifecycle callbacks, Emacs events/windows/fonts, and final patch submission. Elisp must
-not reimplement Rust layout/cascade/diff; Rust must not read Emacs buffers or understand
-Component slots.
+### TP and commit boundary
 
-## 5. Invariants and evolution
+TP owns paint-contribution priority, paint-operation merging, Emacs text-property
+journaling, application, and rollback.
 
-One transaction materializes stable identity, dependencies, layout snapshots, and paint
-contributions once. Text paint changes do not rerun unrelated Components or layout.
-Box geometry changes affect only the required layout owner. Component state/slot/list
-changes affect only the owner of that structure. Failed Ebox/TP candidates preserve the
-last committed result.
+```text
+ETAF Runtime creates a candidate and owns commit authority
+    ↓
+Ebox stages structural/geometry patches
+    ↓
+TP stages paint patches
+    ↓
+Emacs adapter atomically applies both
+    ↓
+ETAF Runtime promotes the generation; failure rolls participants back
+```
 
-The clean public direction is `Text + Box(layout) + Component`. If concise syntax is
-needed, `row`/`column`/`flex`/`grid` may be introduced as new compiler sugar, but they
-are not compatibility aliases and must not become Runtime Components. `fragment` is
-transparent structure. `spacer` and `flow` are not public ETAF types; the target Ebox
-may replace the current `(block flow)` marker with ordinary Box/Text paths instead of
-retaining a separate flow branch. The redesign does not preserve the old Host registry
-names or add a compatibility layer. This target is not implemented merely by documenting it.
+Ebox does not own TP priority, TP does not own layout, and neither participant may
+promote a Runtime generation.
+
+### Upper packages
+
+| Package | Owns | Does not own |
+| --- | --- | --- |
+| `etaf-ui` | ordinary reusable Components | another Runtime or layout engine |
+| `etaf-sqlite` | SQLite Data Source and its transactions/disposal | Data Controller or UI |
+| `etaf-performance` | application-neutral operations/stages/statistics/reports | example semantics or scheduling authority |
+| `ebox-playground` | public Ebox examples/verification | ETAF |
+| `etaf-playground` | ETAF/UI/SQLite composition examples and tooling | core protocols |
+
+`etaf-performance` is a separate optional package. No measured package depends on it;
+it observes only public boundaries. A Playground `.etaf` manifest belongs to the
+Playground. Any future general compiler must lower to the same View/Component contract.
+
+## 5. Dependency direction
+
+```text
+etaf-ui ─────────────▶ ETAF Core ─────────────▶ Ebox public port
+etaf-sqlite ─────────▶ ETAF Data contract
+etaf-playground ─────▶ ETAF + optional UI/SQLite
+ebox-playground ─────▶ Ebox only
+etaf-performance ────▶ public observation boundaries only
+
+ETAF Renderer ───────▶ ECSS computed properties
+ETAF Runtime  ───────▶ Ebox/TP transaction participants
+```
+
+Reverse dependencies are forbidden: Ebox never depends on ETAF, TP never parses View,
+ECSS never writes buffers, UI never calls Ebox private APIs, SQLite never knows UI, and
+Playgrounds never inject protocols into core.
+
+## 6. Rust and Elisp
+
+Boundaries precede implementation language. Deterministic kernels may move to Rust only
+after contracts and equivalence tests are stable:
+
+```text
+Rust candidates:
+  normalized View validation and structural diff over opaque stable IDs
+  ECSS cascade
+  Text-measurement input processing and Ebox layout
+  pure geometry/paint patch computation
+
+Elisp / Emacs:
+  user Components, refs, Context, Actions, Data, Resources, lifecycle
+  database and external I/O
+  Emacs events, font/window capabilities, and final submission
+```
+
+Component identity, dependency ownership, TP priority, and generation authority do not
+move merely because a kernel is written in Rust. Elisp must not repeat Rust diff,
+cascade, layout, or text scans.
+
+## 7. Correctness and performance invariants
+
+- View, computed properties, geometry snapshots, and paint contributions materialize
+  once per transaction;
+- Text paint changes do not execute unrelated Components or layout;
+- outer/layout/geometry changes affect only the required layout owner;
+- Fragment/slot/list changes replace only their Range;
+- Ebox/TP/Emacs participant failure preserves the last committed generation;
+- resize uses current window facts immediately, without hidden debouncing semantics;
+- instrumentation does not change the measured path.
+
+Final gates cover structural equivalence, legal/illegal outer-layout combinations,
+normal inline/block behavior, row/column/flex/grid GUI behavior, Component roots and
+Fragments, style/Theme/TP priority and rollback, continuous Research Shelf/Flex
+reference resize, and p95/max at or below 50ms in fixed real scenarios.
+
+## 8. Current gap and non-goals
+
+Current code still registers `text`, `fragment`, `container`, `row`, `column`, `stack`,
+`flex`, `grid`, and `spacer`. Target `box`, `:outer`, and `:layout 'normal` are not
+implemented.
+
+This is a clean redesign: old Host names and old `.etaf` sources need not continue to
+run, and no long-lived compatibility layer is added. Formal architecture/user docs must
+not present target syntax as delivered before implementation is complete.
+
+Non-goals:
+
+- full browser CSS;
+- spacer, public flow, or `(box :content ...)`;
+- layout modes as Components or alternate Runtime nodes;
+- old Host aliases or optional layout shorthand in core;
+- core protocols owned by Playground/UI/database packages;
+- App precompilation without measured compile cost and runtime benefit.
