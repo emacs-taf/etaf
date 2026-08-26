@@ -931,6 +931,41 @@ typed Layout 尚未实现，目标公共 View 也不保留 `raw-ebox`。
 五个 Box author form；删除 `:content` 作者/公共 constructor 语法以及 `ebox`、`spacer`、
 `item`、`grid-item`。
 
+### 8.1 原子迁移顺序与门禁
+
+本迁移不采用逐个 tag 的长期兼容路线。当前已验证基线为 Ebox `6d9f2a4` 与
+Ebox Playground `f571c89`；任何未提交实验都不构成功能或性能基线。实施按以下
+依赖顺序推进，并且 author boundary 的切断作为一个跨仓原子目标提交：
+
+1. 先补齐 typed core：Normal 支持零个或多个 inline/block child；Row/Column 完整
+   实现 `:item-gap/:cross-align`；Normal/Row/Column/Flex/Grid 都由一个 BoxNode 加
+   typed LayoutConfig 表达。Text 可以作为 Flex/Grid 直接 child 并使用默认
+   participation，但不能携带非默认 participation。
+2. `ebox-build` 一次切换到唯一 grammar：String、`text`、`box`、`row`、`column`、
+   `flex`、`grid`。五个 Box form 直接构造 typed Box/LayoutConfig；删除
+   `ebox/spacer/item/grid-item`，拒绝 author `:content/:layout` 和 raw runtime node。
+3. 同一次目标删除完整 legacy public creation surface：`ebox-create`、
+   `ebox-concat/ebox-stack/ebox-spacer/ebox-grid-fr`、旧
+   `ebox-row/ebox-column/ebox-flex/ebox-grid` constructor 的 public/autoload 身份，
+   以及相应 public inventory、帮助、README、文档和示例。仍被后端需要的 lowering
+   可以暂时私有存在，但不得成为 canonical output、公共概念或第二条作者路径。
+4. 同步迁移全部实际消费者：Ebox、ETAF、ETAF UI、Ebox Playground、ETAF
+   Playground 及其 README、文档、示例和测试。公共材料与示例不得出现
+   `:ebox-content-node`、`:display`、`:ebox-type` 等私有后端字段。
+
+验证采用最小而有判定力的矩阵，不为 legacy 行为复制同义测试：一组表驱动 grammar
+与 negative contract 覆盖七个入口、五种 Layout、Normal 多 child、Text 默认参与、
+wrong-parent；复用已有 identity、final-candidate、commit/rollback 门禁；删除只证明
+旧 wrapper/alias 的测试。
+
+每个候选先跑定向测试，再跑所有受影响仓库的完整静态/测试门禁。GUI 连续 resize
+逐步检查无非预期 full-root fallback，最终文本与全部文本属性等同 fresh render，且
+稳定 identity 不丢失。性能比较在同一 Emacs、frame、宽度序列和操作序列下，对已
+提交基线与候选交错采样：每个操作先 warm up 5 次，再各测至少 30 次；使用通用
+recorder 比较 operation、跨包 stage、p95 与 max。受影响真实场景的 p95 与 max
+均不得超过 50ms，任何 stage 的可复现退化都必须先定位根因。任一功能、GUI 或
+性能门禁失败时停止提交，不增加 compatibility 分支或大量同义测试。
+
 这是干净重设计，不要求旧 Host 名称或旧 `.etaf` 文件继续运行，也不增加长期
 兼容层。实现完成前，正式架构和用户指南不得把目标语法描述成当前 API。
 

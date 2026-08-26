@@ -1036,6 +1036,51 @@ target adds an explicit TextNode/BoxNode canonical IR and typed constructors; re
 Text, Box, and the five Box author forms; and removes `:content` from author/public
 constructor syntax as well as removing `ebox`, `spacer`, `item`, and `grid-item`.
 
+### 8.1 Atomic migration order and gates
+
+This migration does not keep a tag-by-tag compatibility route. The current verified
+baselines are Ebox `6d9f2a4` and Ebox Playground `f571c89`; uncommitted experiments
+are never functional or performance baselines. Work proceeds in the following
+dependency order, and the author-boundary cutover is committed as one cross-repo
+atomic objective:
+
+1. Complete the typed core first: Normal supports zero or many inline/block children;
+   Row/Column fully implement `:item-gap/:cross-align`; Normal/Row/Column/Flex/Grid
+   are all one BoxNode with a typed LayoutConfig. Text may be a direct Flex/Grid child
+   with default participation, but it cannot carry nondefault participation.
+2. Switch `ebox-build` once to the sole grammar: String, `text`, `box`, `row`,
+   `column`, `flex`, and `grid`. The five Box forms directly construct typed
+   Box/LayoutConfig values; remove `ebox/spacer/item/grid-item`, and reject author
+   `:content/:layout` plus raw runtime nodes.
+3. In the same objective, remove the complete legacy public creation surface:
+   `ebox-create`, `ebox-concat/ebox-stack/ebox-spacer/ebox-grid-fr`, the public and
+   autoload identity of the old `ebox-row/ebox-column/ebox-flex/ebox-grid`
+   constructors, and their public inventories, help, README, documentation, and
+   examples. Lowering still required by a backend may remain private temporarily,
+   but it must not be canonical output, a public concept, or a second author path.
+4. Migrate every actual consumer together: Ebox, ETAF, ETAF UI, Ebox Playground,
+   ETAF Playground, and their README files, documentation, examples, and tests.
+   Public material and examples must not expose private backend fields such as
+   `:ebox-content-node`, `:display`, or `:ebox-type`.
+
+Verification uses a minimal decisive matrix rather than duplicating legacy tests: one
+table-driven grammar/negative contract covers seven author entries, five Layouts,
+Normal multi-child behavior, Text default participation, and wrong-parent failures;
+existing identity, final-candidate, and commit/rollback gates are reused; tests that
+only prove removed wrappers or aliases are deleted.
+
+Each candidate first runs targeted checks and then every affected repository's full
+static and test gates. Continuous GUI resize checks every step for no unexpected
+full-root fallback, requires final text and all text properties to equal a fresh
+render, and retains stable identity. Performance comparison interleaves the committed
+baseline and candidate under the same Emacs, frame, width sequence, and action
+sequence: warm up each operation five times, then measure each side at least thirty
+times; use the general recorder to compare operation latency, cross-package stages,
+p95, and max. Affected real scenarios must keep p95 and max at or below 50ms, and any
+reproducible stage regression must be root-caused first. Any functional, GUI, or
+performance failure stops the commit; it must not be hidden by compatibility branches
+or a large set of synonymous tests.
+
 This is a clean redesign. It does not require old Host names or old `.etaf` files to
 continue working, and it adds no long-lived compatibility layer. Until implementation
 is complete, the formal architecture and user guide must not describe target syntax as
