@@ -52,7 +52,7 @@
          (status (plist-get task :status))
          (host-ref (intern (format "data-task-%d" identity))))
     (etaf-view
-     (flex :width '(718) :flex-flow '(row nowrap) :gap '(0 (10))
+     (box :layout 'flex :width '(718) :flex-flow '(row nowrap) :gap '(0 (10))
       :padding '(1 (12)) :border "#6D8A73"
       :bgcolor (if selected "#DCEBDD" "#FFFDF8")
       :ref host-ref :role 'button :use (list (etaf-focusable))
@@ -76,7 +76,7 @@
   (let ((total (etaf-value (etaf-data-total controller)))
         (selection (etaf-value (etaf-data-selection controller))))
     (etaf-view
-     (column :width '(720) :padding '(1 (18)) :border "#8F432F"
+     (box :layout 'column :width '(720) :padding '(1 (18)) :border "#8F432F"
       :bgcolor "#FFFDF8" :text-align 'center
       (text :color "#8F432F" :face 'bold
             "BEST PRACTICE  /  DATA OWNERSHIP")
@@ -101,7 +101,7 @@ Use BORDER and BACKGROUND for its semantic color family."
 (defun etaf-data-example--toolbar (controller next-id)
   "Return the action toolbar for CONTROLLER and NEXT-ID."
   (etaf-view
-   (flex :width '(720) :flex-flow '(row wrap) :gap '(1 (10))
+   (box :layout 'flex :width '(720) :flex-flow '(row wrap) :gap '(1 (10))
     (expr :value (etaf-data-example--filter-control
                   controller "ALL" 'data-filter-all nil
                   "#4E7890" "#D9EAF2"))
@@ -134,14 +134,14 @@ Use BORDER and BACKGROUND for its semantic color family."
 (defun etaf-data-example--view (controller next-id)
   "Return the Data example View for CONTROLLER and NEXT-ID."
   (etaf-view
-   (column :width '(720) :color "#252A2E" :bgcolor "#F8F5EE"
+   (box :layout 'column :width '(720) :color "#252A2E" :bgcolor "#F8F5EE"
     (expr :value (etaf-data-example--header controller))
-    (spacer :height 1)
+    (box :height 1)
     (expr :value (etaf-data-example--toolbar controller next-id))
-    (spacer :height 1)
-    (column :width '(720)
+    (box :height 1)
+    (box :layout 'column :width '(720)
      (expr :value (etaf-data-example--rows controller)))
-    (spacer :height 1)
+    (box :height 1)
     (text :width '(720) :padding '(1 (16)) :border "#8D887F"
           :color "#4D5651" :bgcolor "#EEEAE2"
           "Owner rule: create in setup, mutate through Data, stop on unmount"))))

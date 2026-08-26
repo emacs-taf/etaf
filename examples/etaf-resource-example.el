@@ -25,7 +25,7 @@
 (defun etaf-resource-example--header ()
   "Return the Resource example header."
   (etaf-view
-   (column :width '(680) :padding '(1 (18)) :border "#8F432F"
+   (box :layout 'column :width '(680) :padding '(1 (18)) :border "#8F432F"
     :bgcolor "#FFFDF8" :text-align 'center
     (text :color "#8F432F" :face 'bold
           "BEST PRACTICE  /  RESOURCE LIFECYCLE")
@@ -41,7 +41,7 @@
          (border (if success "#6D8A73" "#C97252"))
          (ink (if success "#24422D" "#6B3020")))
     (etaf-view
-     (column :width '(680) :padding '(2 (18)) :border border
+     (box :layout 'column :width '(680) :padding '(2 (18)) :border border
       :bgcolor surface :color ink :text-align 'center
       (text :face 'bold
             (expr :value (upcase (symbol-name status))))
@@ -53,7 +53,7 @@
 (defun etaf-resource-example--actions (resource fail-next)
   "Return action controls for RESOURCE and FAIL-NEXT."
   (etaf-view
-   (flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
+   (box :layout 'flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
     (text :flex-grow 1 :flex-shrink 1 :flex-basis '(200)
           :min-width '(180) :padding '(1 (12))
           :border "#4E7890" :bgcolor "#D9EAF2" :face 'bold
@@ -74,14 +74,14 @@
 (defun etaf-resource-example--view (resource fail-next cleanup-count)
   "Return the example View for RESOURCE, FAIL-NEXT, and CLEANUP-COUNT."
   (etaf-view
-   (column :width '(680) :color "#252A2E" :bgcolor "#F8F5EE"
+   (box :layout 'column :width '(680) :color "#252A2E" :bgcolor "#F8F5EE"
     (expr :value (etaf-resource-example--header))
-    (spacer :height 1)
+    (box :height 1)
     (expr :value
           (etaf-resource-example--status resource cleanup-count))
-    (spacer :height 1)
+    (box :height 1)
     (expr :value (etaf-resource-example--actions resource fail-next))
-    (spacer :height 1)
+    (box :height 1)
     (text :width '(680) :padding '(1 (16)) :border "#8D887F"
           :color "#4D5651" :bgcolor "#EEEAE2"
           "Scope rule: reload releases the old value; unmount releases the last one"))))

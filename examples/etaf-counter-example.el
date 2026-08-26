@@ -28,7 +28,7 @@
 (defun etaf-counter-example--header (title)
   "Return the counter header for TITLE."
   (etaf-view
-   (column :class "hero"
+   (box :layout 'column :class "hero"
     (text :class "eyebrow" "BEST PRACTICE  /  RETAINED STATE")
     (text :face 'bold (expr :value title))
     (text :color "#66706A"
@@ -37,7 +37,7 @@
 (defun etaf-counter-example--metrics (count double status)
   "Return metric cards for COUNT, DOUBLE, and STATUS."
   (etaf-view
-   (flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
+   (box :layout 'flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
     (text :class "metric"
           (expr :value (format "COUNT  %d" (etaf-value count))))
     (text :class "metric"
@@ -58,7 +58,7 @@
 (defun etaf-counter-example--actions (count)
   "Return the action group for COUNT."
   (etaf-view
-   (flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
+   (box :layout 'flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
     (expr :value
           (etaf-counter-example--action
            count "−  DECREMENT" 'counter-decrement 'decrement))
@@ -96,14 +96,14 @@
                   :name 'counter-status)))
     (lambda ()
       (etaf-view
-       (column
+       (box :layout 'column
         (expr :value (etaf-counter-example--header title))
-        (spacer :height 1)
+        (box :height 1)
         (expr :value
               (etaf-counter-example--metrics count double status))
-        (spacer :height 1)
+        (box :height 1)
         (expr :value (etaf-counter-example--actions count))
-        (spacer :height 1)
+        (box :height 1)
         (text :class "note"
               "Public path: Event → Action → Ref → Computed → Runtime commit"))))))
 
