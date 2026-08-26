@@ -13,23 +13,70 @@ Text、Box、Component；Fragment、布局细节和底层包通过渐进披露�
 
 ## 1. 最终模型
 
-ETAF 的表示链只有四层：
+ETAF/Ebox 的表示链按职责分层：
 
 ```text
-Component 语义与所有权
-    ↓
-View：Text / Box / Fragment
-    ↓
-Ebox：测量、布局、几何 patch
-    ↓
-TP + Emacs adapter：paint 与最终提交
+AuthorView
+  ↓ parse / desugar / string normalization
+NormalizedView = Text | Box | Fragment | ComponentCall
+  ↓ ETAF Runtime resolves ComponentCall
+Resolved candidate + computed properties
+  ├─ structure/geometry impact
+  │    ↓ Fragment projection preserves RangeAnchors
+  │  CanonicalEboxInput = Forest<TextNode | BoxNode> + RangeAnchors
+  │    ↓ Ebox measure / layout
+  │  LayoutPlan → GeometryPatch
+  │
+  └─ paint impact
+       ↓ source-specific contribution adapter
+       (ETAF: etaf-theme-tp; standalone Ebox: ebox-surface-tp)
+     TP ContributionPlan → PaintPatch
+
+GeometryPatch and PaintPatch join the existing TP transaction
+  ↓ Emacs adapter commit / rollback
+Published generation
 ```
+
+这些层不是相互竞争或重复 materialize 的树。每次 lowering 只消费上层已经保留的
+identity、computed properties 和 child 顺序；同一事实不重复解析或推导。
+LayoutPlan 与 ContributionPlan 是同一候选事务的独立派生产物；paint-only path 不
+构造 CanonicalEboxInput 或运行 layout。两条路径在现有 transaction participant
+汇合。plan 不拥有作者 identity，也不是 DSL 节点。
+
+Canonical node 的非法状态必须不可表达：
+
+```text
+TextNode = {
+  value: String,
+  measurementProps,
+  sourceHandle,
+  eboxNodeId
+}
+
+BoxNode = {
+  outer: inline | block,
+  layout: Normal | RowConfig | ColumnConfig | FlexConfig | GridConfig,
+  geometryProps,
+  parentParticipationProps,
+  children: [TextNode | BoxNode],
+  sourceHandle,
+  eboxNodeId
+}
+```
+
+TextNode 没有 children/outer/layout；BoxNode 没有 content/value。participation 字段
+存储在 BoxNode，但只有直接父 formatting context 可以验证和解释它。
+
+`sourceHandle` 是来源层拥有的 opaque handle：ETAF 路径指向 Runtime
+Text/Box/Range source，独立 Ebox DSL 路径指向 Ebox author source。`eboxNodeId` 只
+标识 Ebox retained geometry node。Renderer/surface 保留二者映射；Ebox reconciliation
+不得接管 Component、Fragment、Range 或 lifecycle identity。
 
 用户需要理解的主要概念只有 `Text`、`Box` 和 `Component`。`Fragment` 是高级
 结构语法；`Host` 是 Renderer 内部术语；`Ebox Node` 是后端对象，都不构成第二套
 组件模型。
 
-规范化 View 的完整形状是：
+NormalizedView 的完整形状是：
 
 ```text
 View = Text
@@ -37,6 +84,31 @@ View = Text
      | Fragment
      | ComponentCall
 ```
+
+作者语法和规范化 View 不是同一层。ETAF 与 Ebox 的视觉作者语法共享：
+
+```text
+AuthorNode = String
+           | TextForm
+           | BoxForm
+           | RowSugar
+           | ColumnSugar
+           | FlexSugar
+           | GridSugar
+```
+
+`String` 规范化为 Text；五个 Box form 规范化为带对应 typed Layout 的 Box。form
+名称不进入
+Runtime identity、diff、style、layout 或 paint 协议。ETAF 另外增加 Fragment、
+ComponentCall、`expr` 和 `slot`；Ebox DSL 不拥有这些语义。
+
+两层作者语法共享结构词汇和规范化结果，不要求共享求值环境：ETAF property 是
+Elisp expression；`.ebox` DSL 是数据 form。quote 和 expression 的差异只属于
+parser，不产生两套 canonical schema。
+
+Flex/Grid item 是 material child Box 在父 formatting context 中获得的角色，不是
+另一种 View 或父子边类型。participation 属性存储在 child Box，合法性、计算和
+dirty propagation 由直接父 Flex/Grid Box 拥有。
 
 `expr` 和 `slot` 是计算/投影机制，不是视觉节点。目标公共 View 不接受原始 Ebox
 节点；缺失的渲染能力必须先形成有类型、有 identity/impact 契约的 View/Ebox 能力，
@@ -48,14 +120,26 @@ View = Text
 
 `Text` 是文本叶子，负责：
 
-- 字符串和 inline Text runs；
+- 恰好一个求值后为字符串的 payload；
 - 字体、前景/背景、下划线等文本 paint；
 - 文字测量、换行和文本对齐的输入；
 - 可选 identity、语义和事件属性。
 
-`Text` 默认 `:outer 'inline`。它不能拥有 Box、Component 或任意布局子节点，也
-不能建立 `row`、`column`、`flex` 或 `grid` 上下文。需要 padding、border、尺寸
-或子布局时，在外层使用 `Box`。
+`Text` 固定为 inline，不公开 `:outer`。它没有 View children，不能嵌套 Text，
+也不能建立任何布局上下文。多个 styled runs 是相邻的多个 Text，而不是一棵 Text
+子树。需要 block participation、padding、border、尺寸或子布局时，使用外层 Box。
+
+两个作者入口的 Text grammar 精确区分求值能力：
+
+```text
+ETAF TextForm = (text TEXT-PROP VALUE)
+VALUE         = String | (expr :value Expr<String>)
+
+Ebox TextForm = (text TEXT-PROP String)
+```
+
+所有属性键值对必须位于唯一 payload 之前。零个、多个、嵌套 Text 或非字符串
+payload 都报错。裸字符串只是无属性 Text 的语法糖，在所有位置只有这一种解释。
 
 ### 2.2 Box 的两个正交轴
 
@@ -63,27 +147,34 @@ View = Text
 
 ```text
 :outer  = inline | block
-:layout = normal | row | column | flex | grid
+layout = Normal | RowConfig | ColumnConfig | FlexConfig | GridConfig
 ```
 
 - `:outer`：这个 Box 如何参与父级的 `normal` 布局；
-- `:layout`：这个 Box 如何排列自己的子节点。
+- `layout` variant：这个 Box 如何排列自己的子节点。
 
 默认值是：
 
 ```text
-Box  :outer block  :layout normal
-Text :outer inline
+Box  :outer block  :layout Normal
+Text :fixed inline
 ```
 
-`inline-flex` 是两个轴的组合，不是新的节点类型：
+作者层不公开 `:layout` 属性，而由 form 名唯一选择 layout：
 
 ```elisp
-(box :outer 'inline :layout 'flex ...)
+(box ...)                 ; Normal
+(row ...)                 ; RowConfig
+(column ...)              ; ColumnConfig
+(flex ...)                ; FlexConfig
+(grid ...)                ; GridConfig
 ```
 
-公开 API 使用 `:outer` 和 `:layout`。不公开 `:inner`，也不要求用户写 Ebox 的
-`(:display (block flow))` 一类后端表示。
+因此 inline-flex 写为 `(flex :outer 'inline ...)`，不是新节点类型。`:outer` 是所有
+Box author form 的公共属性；layout config 由对应 form 的闭集属性构造。需要动态
+切换 layout 时，由 `expr` 选择不同 View form，而不是把 `:layout` 当普通动态样式。
+Canonical Box 使用 typed Layout variant；不公开 `:inner` 或 Ebox
+`(:display (block flow))` 后端表示。
 
 ### 2.3 normal 的明确范围
 
@@ -98,7 +189,7 @@ Text :outer inline
 run-in、list-item 或任意匿名盒规则。Ebox 可以把 `normal` 映射为内部 flow
 算法，但 `flow` 不是 ETAF 公共词汇。
 
-当父级 `:layout` 是 `row`、`column`、`flex` 或 `grid` 时，父算法直接拥有子项
+当父级 Layout 是 Row/Column/Flex/Grid 时，父算法直接拥有子项
 位置；子项的 `:outer` 不改变排列顺序。`:outer` 只决定节点进入 `normal` 父级时
 是 inline 还是 block。
 
@@ -111,28 +202,58 @@ run-in、list-item 或任意匿名盒规则。Ebox 可以把 `normal` 映射为�
 | `flex` | Flex sizing、direction、wrap、alignment 和 gap |
 | `grid` | 二维轨道、放置、跨度和 gap |
 
-这些都是 `Box` 的 layout mode，不是 Component，也不注册 `row`、`column`、
-`flex` 或 `grid` 的第二套 Runtime 节点名称。目标 API 只有规范写法：
+这些都是 `Box` 的 Layout variant，不是 Component，也不注册 `row`、`column`、
+`flex` 或 `grid` 的第二套 Runtime 节点名称。作者 form 的规范化映射唯一：
 
-```elisp
-(box :layout 'row ...)
-(box :layout 'column ...)
-(box :layout 'flex ...)
-(box :layout 'grid ...)
+```text
+box    → Box(layout = Normal)
+row    → Box(layout = RowConfig)
+column → Box(layout = ColumnConfig)
+flex   → Box(layout = FlexConfig)
+grid   → Box(layout = GridConfig)
 ```
+
+ETAF 与 Ebox 共享这五个 Box author form。所谓“layout form”只表示输入拼写和
+对应 config schema，不表示保留 Host、node type 或运行时分派。
+
+上表是唯一规范性 lowering 表。Ebox 拥有 canonical Layout variant 和 config
+schema；ETAF parser 只处理自己的 Elisp 求值并选择同名 variant，不复制取值规则。
+两个入口必须通过跨接口 conformance 测试证明同一结构产生相同 canonical shape、
+computed defaults 和错误。
 
 ### 2.5 Ebox DSL 的基础节点与语法糖
 
-ETAF View 和 Ebox DSL 是两层不同接口：ETAF 有 Text/Box/Fragment/Component；
-Ebox 只接收已经降低的内容与布局。目标 Ebox DSL 只有一个基础结构 tag：
+ETAF View 和 Ebox DSL 是两层不同接口，但共享同一个视觉作者语法：Text 是文本
+叶子，Box 是结构/几何容器。Ebox DSL 的完整视觉语法是：
 
 ```elisp
-(box :layout MODE ...)
+"plain text"
+(text TEXT-PROPS "styled text")
+(box BOX-PROPS CHILD...)
+(row BOX-PROPS CHILD...)
+(column BOX-PROPS CHILD...)
+(flex BOX-PROPS CHILD...)
+(grid BOX-PROPS CHILD...)
 ```
 
-Ebox `box` 可以是 content leaf，也可以包含 children 并建立布局上下文。Range
-descriptor 是增量后端协议，不是作者 DSL 节点；裸字符串只是 content literal
-简写，也不是节点类型。
+字符串始终规范化为 Text；`text` 只接受文本内容和 Text 属性；`box` 只接受
+children 和 Box 属性。Ebox DSL 不接受 `:content`，因此不存在“字符串有时是
+Box content、有时又是 child”的双重解释。空 `(box :width ... :height ...)` 是
+合法的空几何容器。
+
+`ebox-build` 是作者 DSL 的 parse/desugar 入口。程序化公共端口使用两个 typed
+constructor：`ebox-text-create` 构造 TextNode，`ebox-box-create` 接收一个 typed
+Layout variant 并构造 BoxNode。constructor 不接受作者 form 或扁平的跨 layout
+属性袋；ETAF Renderer 直接调用它们，不重新拼 DSL。
+
+目标公共端口不保留无 kind 的 `(ebox-create :content ...)`。若运行时为了性能把
+Text payload 融合进相邻 Box 存储，该优化只能发生在 canonical Text identity、
+range 和 impact 已建立之后，并且必须可逆地保留这些事实；私有存储编码不能成为
+作者或程序化公共 API。Range descriptor 同样是增量后端协议，不是 DSL 节点。
+
+五个 Box author form 必须在 DSL 边界立即、无状态地构造对应 typed Layout variant，
+不能建立不同的 node type、identity、缓存、验证或渲染分支。任何作者 form 都拒绝
+`:layout`；layout-specific 属性只由对应 form 接受。
 
 当前 DSL 的其他 tag 必须明确分类，不能与基础节点并列：
 
@@ -140,29 +261,34 @@ descriptor 是增量后端协议，不是作者 DSL 节点；裸字符串只是 
 | --- | --- | --- |
 | `ebox` | `box` 的兼容别名 | 删除，统一写 `box` |
 | `spacer` | 空 Box 便捷糖 | 删除，使用无 children 的 `box` |
-| `row` | layout tag 糖 | `(box :layout 'row ...)` |
-| `column` | layout tag 糖 | `(box :layout 'column ...)` |
-| `flex` | layout tag 糖 | `(box :layout 'flex ...)` |
-| `grid` | layout tag 糖 | `(box :layout 'grid ...)` |
-| `item` | Flex child participation 糖 | 把 `:flex-*`、`:order`、`:align-self` 直接写在 child Box |
-| `grid-item` | Grid child placement 糖 | 把 `:grid-*` placement 直接写在 child Box |
+| `row` | Box layout form | 保留并构造 RowConfig |
+| `column` | Box layout form | 保留并构造 ColumnConfig |
+| `flex` | Box layout form | 保留并构造 FlexConfig |
+| `grid` | Box layout form | 保留并构造 GridConfig |
+| `item` | Flex wrapper/糖 | 删除；participation 属性直接写在 child Box |
+| `grid-item` | Grid wrapper/糖 | 删除；placement 属性直接写在 child Box |
 
-因此 `item` 和 `grid-item` 不是必要 wrapper。父级参与属性属于 child Box，并由
-父级 layout mode 验证：
+Flex/Grid 直接 child 自动取得 item 角色；item 不是节点类型。需要非默认参与方式时，
+唯一推荐路径是显式 child Box：
 
 ```elisp
-(box :layout 'flex
-  (box :flex-grow 1 :content "A"))
+(flex
+  (box :flex-grow 1 "Flexible")
+  "Fixed")
 
-(box :layout 'grid
-  (box :grid-column '(1 :span 2) :content "Header"))
+(grid
+  (box :grid-column '(1 :span 2) "Header")
+  (box "Body"))
 ```
 
-以上示例是 Ebox 低层 DSL，因此可以使用 Ebox 的 `:content`；ETAF View 仍然只用
-Text/children，不暴露 `:content`。
+participation/placement 属性存储在 child Box，但只由直接父 Flex/Grid 验证和消费；
+出现在错误父级时必须报错。属性变化使父布局 owner 进入 geometry path，但不改变
+child Component/Text 的 identity、lifecycle 或 paint ownership。直接 Text 使用
+默认 item 参数；需要非默认参数时显式包 Box。
 
-目标 Ebox DSL 不保留上述兼容别名或糖。布局算法仍由 Ebox 分别实现，但节点
-分类只保留 `box`；算法种类不等于作者节点种类。
+目标 Ebox DSL 删除 `ebox`、`spacer`、`item` 和 `grid-item`，保留 Text、Box 与
+四个布局糖。布局算法仍由 Ebox 分别实现，但 canonical 视觉节点只保留
+TextNode/BoxNode；作者语法、canonical tree、layout plan 和运行时存储是不同层次。
 
 ### 2.6 Fragment
 
@@ -173,7 +299,13 @@ Text/children，不暴露 `:content`。
 - Runtime 可以为其保留稳定 Range identity 并局部替换；
 - 只接受子节点和可选稳定 `:key`，不接受视觉/事件属性。
 
-Component call 本身没有 `:outer` 或 `:layout`。它的根 Text/Box 决定如何参与父级
+Fragment resolution 不把 Range identity 丢掉。它把 material children 按顺序 splice
+进 CanonicalEboxInput forest，同时产生 `{range-id, before, after}` RangeAnchor；空
+Fragment 仍有可插入锚点，根 Fragment 可以对应零个或多个 forest roots。Range
+identity 由 ETAF Runtime 拥有；Ebox 只消费 descriptor 来形成局部 geometry patch，
+RangeAnchor 不是视觉 node，也不参与测量。
+
+Component call 本身没有 `:outer` 或 Layout。它的根 Text/Box 决定如何参与父级
 布局；返回 Fragment 的透明 Component 可以产生多个兄弟节点，因此不存在单一的
 “Component 外部盒子”。
 
@@ -191,8 +323,9 @@ Box 子节点中的字符串规范化为 Text：
 (box (text "this is text"))
 ```
 
-ETAF 不提供 `(box :content "...")`。`:content` 只属于 Ebox 后端构造器；暴露它
-会制造 content 与 children 两套结构模型。
+ETAF 与 Ebox 作者 DSL 都不提供 `(box :content "...")`。`:content` 只属于
+现有未类型化运行时存储，目标公共程序化端口也不保留它。把 `:content` 暴露给
+作者 DSL 或 canonical constructor 都会重新制造 content 与 Text children 两套模型。
 
 ETAF 也不提供 `spacer` 类型。没有子节点的 Box 就是空 Box。
 
@@ -202,24 +335,51 @@ ETAF 也不提供 `spacer` 类型。没有子节点的 Box 就是空 Box。
 
 | Owner | 属性类别 | 代表属性 |
 | --- | --- | --- |
-| Text | 外部参与 | `:outer` |
-| Text | 文本/paint | `:face`、`:color`、`:bgcolor`、`:wrap-mode`、`:text-align` |
-| Box | 外部/内部布局 | `:outer`、`:layout` |
-| Box | 几何/表面 | `:width`、`:height`、`:min-*`、`:max-*`、`:margin`、`:padding`、`:border`、`:box-sizing`、`:overflow` |
+| ETAF Runtime metadata | identity/语义/事件/Behavior | `:key`、`:ref`、`:role`、`:aria-*`、`:on-*`、`:use` |
+| ECSS author style source | selector/inline declarations | `:class`、`:id`、style declarations |
+| Ebox TextNode | canonical 文本测量 | font metrics、wrap policy、intrinsic constraints |
+| Ebox BoxNode | 外部/内部布局 | `:outer`、typed Layout variant |
+| Ebox BoxNode | 几何 | width/height/min/max、margin、padding、border widths、box sizing、overflow |
 | Flex container | 布局 | `:flex-direction`、`:flex-wrap`、`:justify-content`、`:align-items`、`:align-content`、`:gap` |
-| Flex item | 父级参与 | `:order`、`:flex-grow`、`:flex-shrink`、`:flex-basis`、`:align-self` |
+| Flex child Box | 父级参与 | `:order`、`:flex-grow`、`:flex-shrink`、`:flex-basis`、`:align-self` |
 | Grid container | 布局 | track templates、auto flow、gap、item/content alignment |
-| Grid item | 父级参与 | `:grid-row`、`:grid-column`、row/column span |
-| Text/Box | identity/语义 | `:key`、`:ref`、`:class`、`:id`、`:role`、`:aria-*`、`:on-*`、`:use` |
+| Grid child Box | 父级参与 | `:grid-row`、`:grid-column`、row/column span、self alignment |
+| TP contribution | paint | color/background、underline/overline、border paint、visibility paint |
 
 规则：
 
-- `:key` 是 identity metadata，不是视觉属性；
-- `:outer`、`:layout` 和 layout-specific 属性属于 structure/geometry impact；
-- color、background、typography 等属于 paint impact；
-- ECSS 可以解析上述属性，但必须保留 impact 分类；
+- impact 是集合，不是互斥枚举；
+- `:key` 属于 identity，不是视觉属性；
+- `:class` 只进入 ECSS selector；`:id` 是一个 author input，可同时投影到 ECSS
+  selector 和语义 metadata，但不能由两个模块分别定义含义；
+- color/background 等不改变 metrics 的贡献属于 paint-only；
+- font family/size/weight 等 metric 属性属于 geometry + paint；
+- padding、border width 等属于 geometry + paint；
+- `:outer`、Layout variant 属于 structure + geometry；
+- Flex/Grid participation 存储在 child Box，但变化时只使对应父布局 owner geometry dirty；
+- ECSS cascade 输出必须保留上述 impact set；
+- ETAF/Ebox candidate normalization pipeline 只解析一次 property fact，再按 owner/impact
+  交给 Runtime metadata、ECSS、Ebox geometry 和对应 TP adapter；各 owner 不重新解析
+  原 plist；
+- border/font 等 multi-impact fact 可以同时投影 geometry 与 paint 字段，但 computed
+  value 只 materialize 一次，不在 Ebox node 中复制 paint-only 状态；
 - TP 只消费已经解析的 paint contribution，不判断布局合法性；
 - 结构属性变化必须事务性重建对应布局上下文，不能走 paint-only 快速路径。
+
+验证分成两个确定阶段：
+
+1. normalization 做 form-local schema 校验。`box` 只接受 Normal/Common Box 属性；
+   `flex` 才接受 Flex container config；`grid` 才接受 Grid container config；其他
+   layout-specific 属性立即报错。
+2. Component/Fragment resolution 与 ECSS cascade 完成后，Ebox 在 candidate final
+   tree 上做 parent-context 校验。Flex participation（grow/shrink/basis/order/self
+   alignment）只允许在直接父 Flex 的 child Box，Grid placement/self alignment
+   只允许在直接父 Grid 的 child Box；root 或错误父级报错。
+
+同一个 Box 可以内部建立一种 Layout、外部参与另一种父 Layout，例如 Grid 下的
+`(flex :grid-column ... )`；这是两个正交字段，不是属性混用。动态事务同时改变父
+Layout 和 child participation 时只验证最终 candidate，任何失败保留上一代。与
+浏览器对不适用 CSS 属性常采取 no-effect 不同，本框架不静默忽略无效组合。
 
 ## 4. 模块 owner
 
@@ -229,6 +389,7 @@ ETAF 也不提供 `spacer` 类型。没有子节点的 Box 就是空 Box。
 
 - 定义并规范化 Text、Box、Fragment 和 ComponentCall；
 - 将字符串规范化为 Text；
+- 将 `row`、`column`、`flex`、`grid` 作者糖规范化为 Box；
 - 验证属性闭集、slot、`:key` 和表达式边界；
 - 不测量、不布局、不写 buffer。
 
@@ -248,8 +409,15 @@ ETAF 也不提供 `spacer` 类型。没有子节点的 Box 就是空 Box。
 `etaf-renderer`：
 
 - 是唯一 ETAF → Ebox 的 lowering adapter；
-- 把规范化 View 和 computed properties 转换为 Ebox 输入；
+- 把 ResolvedView 的 structure/geometry projection 转换为 CanonicalEboxInput forest、
+  RangeAnchors 和 typed measurement/geometry props；
 - 不执行 Component lifecycle，不访问 Ebox 私有状态。
+
+`etaf-theme-tp`：
+
+- 是 ETAF/ECSS computed paint contribution → TP 的唯一 adapter；
+- 产生 ContributionPlan，不测量、不布局、不拥有 TP priority/commit authority；
+- paint-only candidate 不调用 `etaf-renderer` 的 geometry lowering。
 
 Theme 的语义 token 和继承属于 ETAF Context。TP 不拥有“暗色主题”等业务意义。
 
@@ -257,6 +425,9 @@ Theme 的语义 token 和继承属于 ETAF Context。TP 不拥有“暗色主题
 
 Ebox 拥有：
 
+- Ebox DSL 的 String/Text/Box 规范化和布局糖展开；
+- child Box participation 的上下文验证、父布局消费和 dirty propagation；
+- typed TextNode/BoxNode constructor 及 canonical 属性 schema；
 - Text 测量、换行和行布局；
 - `normal`、`row`、`column`、`flex`、`grid` 几何算法；
 - width/height、box model、overflow、scroll、viewport；
@@ -264,6 +435,17 @@ Ebox 拥有：
 
 Ebox 不理解 Component、slot、Context、Action、Behavior、Data 或 Resource，也不
 决定 paint contribution 的优先级。
+
+独立 Ebox DSL 的 author paint 由 `ebox-surface` 的 TP adapter 投影为 inline
+ContributionPlan；它与 ETAF 的 `etaf-theme-tp` 是两条来源 adapter，共同消费 TP
+公开 contribution contract。两者都不把 paint-only 属性塞回 CanonicalEboxInput，
+也不拥有 TP priority、journal 或 commit authority。
+
+`ebox-build` 独占作者 form 的 parse/desugar；`ebox-text-create` 与
+`ebox-box-create` 接收已经求值的 canonical 参数，只验证 typed node invariant。
+三者最终消费同一个 canonical property schema 并进入同一条布局实现。ETAF
+Renderer 直接调用 typed programmatic port，不能重新拼 DSL 再触发一次解析。
+现有无 kind 的 `ebox-create :content` 不属于目标公共端口。
 
 逻辑边界：
 
@@ -273,6 +455,10 @@ ebox-emacs  字体/窗口能力、buffer 位置和结构提交
 ```
 
 这不要求立即拆成两个发行包，但纯布局和 Emacs 副作用必须能独立测试。
+
+CanonicalEboxInput forest 经测量产生 LayoutPlan；plan 只包含本次候选所需的测量结果、
+坐标、尺寸、布局 owner 和 geometry delta。它不新增作者可见 node type，不拥有
+Component/Text/Box identity，提交或回滚结束后可被保留为下一次增量输入或释放。
 
 ### 4.3 ECSS
 
@@ -292,17 +478,19 @@ TP 拥有：
 ```text
 ETAF Runtime 创建 candidate 并拥有提交授权
     ↓
-Ebox stage 结构/几何 patch
+Ebox candidate stage 结构/几何 patch
     ↓
-TP stage paint patch
+Ebox surface 把 rollback-capable participant 加入现有 TP transaction
     ↓
-Emacs adapter 原子应用两个 patch
+TP precommit paint；Ebox commit 发布 Emacs surface
     ↓
-ETAF Runtime 提升 generation；失败则回滚参与者
+全部成功后 ETAF Runtime 提升 generation
+任一步失败则沿现有 Ebox/TP/Runtime journal 回滚
 ```
 
 Ebox 不拥有 TP paint 优先级；TP 不拥有节点布局；两者都不能自行提升 Runtime
-generation。
+generation。目标不新增第二个跨包 coordinator；现有 transaction participant 就是
+Ebox surface 与 TP/Emacs 提交对齐的唯一机制。
 
 ### 4.5 上层包
 
@@ -330,7 +518,10 @@ ebox-playground ─────▶ Ebox only
 etaf-performance ────▶ public observation boundaries only
 
 ETAF Renderer ───────▶ ECSS computed properties
+Ebox style pipeline ─▶ ECSS computed-properties port
 ETAF Runtime  ───────▶ Ebox/TP transaction participants
+etaf-theme-tp ───────▶ TP contribution contract
+Ebox surface ────────▶ TP inline contribution + transaction participant
 ```
 
 禁止反向依赖：Ebox 不依赖 ETAF；TP 不解析 View；ECSS 不写 buffer；UI 不调用
@@ -354,14 +545,16 @@ Elisp / Emacs：
 ```
 
 Component identity、依赖所有权、TP 优先级和 generation authority 不因 Rust 化而
-转移。Elisp 不重复 Rust 已经完成的 diff、cascade、布局或文字扫描。
+转移。Rust 最多计算无副作用的候选 paint operations；TP 继续拥有 contribution
+slot、优先级、journal 和 commit/rollback。Elisp 不重复 Rust 已经完成的 diff、
+cascade、布局或文字扫描。
 
 ## 7. 正确性与性能不变量
 
 - 同一事务中的 View、computed properties、geometry snapshot 和 paint contribution
   各 materialize 一次；
-- Text paint 改变不执行无关 Component，也不运行布局；
-- `:outer`、`:layout` 或几何改变只运行受影响的布局 owner；
+- Text 的 paint-only contribution 改变不执行无关 Component，也不运行布局；
+- `:outer`、Layout variant 或几何改变只运行受影响的布局 owner；
 - Fragment/slot/list 变化只替换对应 Range；
 - Ebox/TP/Emacs 任一 participant 失败时保留上一代已提交状态；
 - resize 使用当前窗口事实立即重排，不以隐藏 debounce 改变交互语义；
@@ -370,9 +563,20 @@ Component identity、依赖所有权、TP 优先级和 generation authority 不�
 最终门禁必须覆盖：
 
 - Text/Box/Fragment 结构等价；
+- 字符串只规范化为 Text，两个作者 DSL 都拒绝 `box :content`；
+- Text 固定 inline 且恰好一个字符串 payload；嵌套/空/多 payload 均报错；
+- ETAF/Ebox 五个 Box form 的 canonical shape、defaults 和错误跨接口一致；
+- 五个 Box author form 产生唯一对应 Layout，任何作者 `:layout` 均报错；
+- Flex/Grid participation 只允许在匹配父级的 child Box；错误上下文精确报错；
+- participation 变化只运行父布局，不重建 child identity/lifecycle；
+- typed Text/Box constructors 拒绝互斥字段和布局糖，并与 `ebox-build` 共享结果；
+- CanonicalEboxInput 不含 paint-only 字段；ETAF 与独立 Ebox paint adapter 各自只投影一次；
+- sourceHandle 与 eboxNodeId 生命周期独立，reconciliation 不改变来源 identity；
 - `outer × layout` 合法组合和失败组合；
 - normal inline/block、row、column、flex、grid 的 GUI 行为；
 - Component root 与透明 Fragment 的布局参与；
+- 空/单根/多根 Fragment 都保留 RangeAnchor 并可局部替换；
+- paint-only candidate 不构造 LayoutPlan，geometry 与 paint patch 在现有事务汇合；
 - style/Theme/TP 优先级和事务回滚；
 - Research Shelf 与 Flex reference 的连续 resize；
 - 固定真实场景 p95 和 max 均不超过 50ms。
@@ -381,11 +585,13 @@ Component identity、依赖所有权、TP 优先级和 generation authority 不�
 
 当前代码仍注册 `text`、`fragment`、`container`、`row`、`column`、`stack`、
 `flex`、`grid` 和 `spacer`，并提供 `raw-ebox`；目标 `box`、`:outer`、
-`:layout 'normal` 尚未实现，目标公共 View 也不保留 `raw-ebox`。
+typed Layout 尚未实现，目标公共 View 也不保留 `raw-ebox`。
 
-当前 Ebox DSL 仍接受 `box`、`ebox`、`row`、`column`、`flex`、`item`、`grid`、
-`grid-item` 和 `spacer`。目标 Ebox DSL 只保留 `box`；其他 tag 按上表删除或改为
-Box 属性。
+当前 Ebox DSL 仍把 `box :content` 和裸字符串直接编码为无类型
+`ebox-create :content`，并把 `item`、`grid-item` 构造成运行时 wrapper。目标新增
+明确的 TextNode/BoxNode canonical IR 与 typed constructors，保留 Text、Box 和
+五个 Box author form；删除 `:content` 作者/公共 constructor 语法以及 `ebox`、`spacer`、
+`item`、`grid-item`。
 
 这是干净重设计，不要求旧 Host 名称或旧 `.etaf` 文件继续运行，也不增加长期
 兼容层。实现完成前，正式架构和用户指南不得把目标语法描述成当前 API。
@@ -393,7 +599,8 @@ Box 属性。
 非目标：
 
 - 不实现完整浏览器 CSS；
-- 不提供 `spacer`、公共 `flow` 或 `(box :content ...)`；
+- 作者 DSL 不提供 `spacer`、公共 `flow` 或 `(box :content ...)`；
+- 不把 Flex/Grid item 做成作者节点、视觉 wrapper 或独立 identity；
 - 不允许应用把原始 Ebox Node 注入 View；
 - 不把布局模式做成 Component 或第二套 Runtime 节点；
 - 不在 Core 中保留旧 Host alias 或可选短写法；
