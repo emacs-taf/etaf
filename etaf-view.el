@@ -73,7 +73,7 @@
   key-thunk)
 
 (defconst etaf--host-names
-  '(text fragment container row column stack flex grid spacer)
+  '(text box fragment container row column stack flex grid spacer)
   "Minimal unstyled Hosts implemented by ETAF core.
 
 Product Components such as Button belong to `etaf-ui'; they are not added to

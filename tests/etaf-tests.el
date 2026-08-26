@@ -1294,6 +1294,51 @@
           (etaf-test--render-text
            (etaf-view (column (text "A") (text "B")))))))
 
+(ert-deftest etaf-view-box-lowers-outer-and-layout-to-ebox ()
+  "Lower canonical Box axes through Ebox's public Box DSL."
+  (let ((row
+         (etaf-render
+          (etaf-view
+           (box :outer 'inline :layout 'row
+                (text "A")
+                (text "B")))))
+        (column
+         (etaf-render
+          (etaf-view
+           (box :outer 'block :layout 'column
+                (text "A")
+                (text "B"))))))
+    (should (equal (ebox--computed-display row) '(inline row)))
+    (should (equal (ebox--computed-display column) '(block column)))
+    (should (equal (substring-no-properties (ebox-render row)) "AB"))
+    (should (equal (substring-no-properties (ebox-render column)) "A\nB"))))
+
+(ert-deftest etaf-view-box-rejects-invalid-layout ()
+  "Reject an invalid canonical Box layout before publication."
+  (should-error
+   (etaf-render (etaf-view (box :layout 'masonry "A")))
+   :type 'error))
+
+(ert-deftest etaf-runtime-box-retains-child-text-update ()
+  "Mounted canonical Box should retain its layout while Text updates."
+  (let ((buffer-name " *etaf-box-runtime-test*")
+        (source (etaf-ref "A")))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer-name
+           (etaf-view
+            (box :layout 'row
+                 (text (expr :value (etaf-value source)))
+                 (text "B"))))
+          (should (string-match-p "AB" (etaf-test--buffer-text buffer-name)))
+          (setf (etaf-value source) "C")
+          (should (string-match-p "CB" (etaf-test--buffer-text buffer-name))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
 (ert-deftest etaf-view-grid-lowers-to-ebox-grid ()
   "Lower the Grid Host through Ebox's two-dimensional layout node."
   (let ((node (etaf-render

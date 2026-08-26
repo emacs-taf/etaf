@@ -552,7 +552,7 @@ the ordinary layout lowering path instead."
        (list (apply #'ebox-spacer props)))
       ('fragment
        (etaf--render-value-list children (append path (list :fragment))))
-      ((or 'row 'column 'container 'stack 'flex 'grid)
+      ((or 'box 'row 'column 'container 'stack 'flex 'grid)
        (let ((nodes nil)
              (index 0)
              (range-child-p nil)
@@ -624,6 +624,8 @@ the ordinary layout lowering path instead."
 RANGE-CHILD-P records that NODES include nonvisual Range segments."
   (let ((node
          (cond
+   ((eq name 'box)
+    (ebox-build (append (list 'box) props nodes)))
    ((eq name 'row)
     (if (null props)
         (apply #'ebox-row nodes)
@@ -653,7 +655,7 @@ RANGE-CHILD-P preserves the direct material Range parent."
          (etaf--layout-node 'row props children range-child-p)
        (apply #'ebox-create :content content props)))
     ('spacer (apply #'ebox-spacer props))
-    ((or 'row 'column 'container 'stack 'flex 'grid)
+    ((or 'box 'row 'column 'container 'stack 'flex 'grid)
      (etaf--layout-node name props children range-child-p))
     (_ (signal 'etaf-renderer-error
                (list (format "Semantic Host requires Step4b lowering: %S"

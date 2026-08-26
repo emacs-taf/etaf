@@ -1122,7 +1122,8 @@ when the requested boundary is no longer mounted."
           (or (plist-get env :slots)
               (and component (etaf--semantic-component-slots component)))))
     (if (null component-id)
-        (let ((etaf--current-component-instance nil)
+        (let ((etaf--current-runtime runtime)
+              (etaf--current-component-instance nil)
               (etaf--current-component-identity nil)
               (etaf--current-component-semantic-id nil)
               (etaf--current-component-props nil)
@@ -2991,10 +2992,12 @@ The candidate uses resolved VALUE, DEPS, and NODES."
                         (etaf-runtime-candidate-inline-host-ids runtime)
                         :test #'eql)
             (etaf--runtime-invalidate-semantic-ancestors runtime host-id)
-            (when-let* ((component
+            (when-let* ((component-id
+                         (etaf--semantic-inline-range-component-id old))
+                        (component
                         (etaf--pvec-get
                          (etaf-generation-semantic-nodes generation)
-                         (etaf--semantic-inline-range-component-id old))))
+                         component-id)))
               (cl-pushnew (etaf--semantic-component-identity component)
                           (etaf-runtime-candidate-updated-component-identities
                            runtime)
@@ -4456,43 +4459,23 @@ Generation, including its effects and Host contributions."
 
 (defun etaf--runtime-render-dirty-inline-range (runtime effect inline)
   "Evaluate RUNTIME dirty INLINE EFFECT and stage its semantic output."
-  (let* ((generation (etaf-runtime-current-generation runtime))
-         (base-component
-          (etaf--pvec-get (etaf-generation-semantic-nodes generation)
-                          (etaf--semantic-inline-range-component-id inline)))
-         (component
-          (or (gethash (etaf--semantic-component-identity base-component)
-                       (etaf-runtime-candidate-semantic-nodes runtime))
-              base-component))
-         (instance
-          (gethash (etaf--semantic-component-resource-key component)
-                   (etaf-runtime-resource-registry runtime)))
-         deps context-deps output)
-    (let ((etaf--runtime-dependency-collector
-           (lambda (source) (cl-pushnew source deps :test #'eq)))
-          (etaf--context-inject-recorder
-           (lambda (frame key)
-             (cl-pushnew (cons (etaf-context-owner-id frame) key)
-                         context-deps :test #'equal)))
-          (etaf--current-runtime runtime)
-          (etaf--current-component-instance instance)
-          (etaf--current-component-identity
-           (etaf--semantic-component-identity component))
-          (etaf--current-component-semantic-id
-           (etaf--semantic-component-semantic-id component))
-          (etaf--current-component-props
-           (etaf--semantic-component-props component))
-          (etaf--current-component-slots
-           (etaf--semantic-component-slots component))
-          (etaf--current-context
-           (etaf--semantic-component-context-frame component))
-          (etaf--active-effect nil)
-          (etaf--render-phase-p t))
-      (setq output
-            (etaf--runtime-inline-value-string
-             (funcall
-              (etaf--expr-thunk (etaf--generation-effect-target effect)))
-             (etaf--semantic-inline-range-surface-properties inline))))
+  (let (deps context-deps output)
+    (etaf--runtime-call-with-component-env
+     runtime (etaf--semantic-inline-range-component-id inline)
+     (lambda ()
+       (let ((etaf--runtime-dependency-collector
+              (lambda (source) (cl-pushnew source deps :test #'eq)))
+             (etaf--context-inject-recorder
+              (lambda (frame key)
+                (cl-pushnew (cons (etaf-context-owner-id frame) key)
+                            context-deps :test #'equal)))
+             (etaf--active-effect nil)
+             (etaf--render-phase-p t))
+         (setq output
+               (etaf--runtime-inline-value-string
+                (funcall
+                 (etaf--expr-thunk (etaf--generation-effect-target effect)))
+                (etaf--semantic-inline-range-surface-properties inline))))))
     (let ((candidate (copy-sequence inline)))
       (setf (etaf--semantic-inline-range-output candidate)
             (copy-sequence output)
@@ -4518,11 +4501,13 @@ Generation, including its effects and Host contributions."
                     :test #'eql)
         (etaf--runtime-invalidate-semantic-ancestors
          runtime (etaf--semantic-inline-range-parent-id inline))
-        (when-let* ((component
+        (when-let* ((component-id
+                     (etaf--semantic-inline-range-component-id inline))
+                    (component
                     (etaf--pvec-get
                      (etaf-generation-semantic-nodes
                       (etaf-runtime-current-generation runtime))
-                     (etaf--semantic-inline-range-component-id inline))))
+                     component-id)))
           (cl-pushnew (etaf--semantic-component-identity component)
                       (etaf-runtime-candidate-updated-component-identities runtime)
                       :test #'equal)))
@@ -4675,11 +4660,13 @@ RENDERED-IDENTITIES names the Component render participants."
                           (etaf--pvec-get
                            (etaf-generation-semantic-nodes generation)
                            inline-id))))
+         (component-id
+          (and inline (etaf--semantic-inline-range-component-id inline)))
          (component
-          (and inline
+          (and component-id
                (etaf--pvec-get
                 (etaf-generation-semantic-nodes generation)
-                (etaf--semantic-inline-range-component-id inline)))))
+                component-id))))
     (and component
          (member (etaf--semantic-component-identity component)
                  rendered-identities))))
