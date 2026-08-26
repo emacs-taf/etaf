@@ -30,11 +30,12 @@ View = Text
      | Box
      | Fragment
      | ComponentCall
-     | RawEbox
 ```
 
-`expr` and `slot` are computation/projection mechanisms, not visual nodes. `RawEbox`
-is an opaque low-level escape and does not inherit normal View semantics.
+`expr` and `slot` are computation/projection mechanisms, not visual nodes. The target
+public View does not accept raw Ebox Nodes. Missing rendering capability must become a
+typed View/Ebox feature with explicit identity and impact contracts rather than an
+opaque escape.
 
 ## 2. Text, Box, and Fragment
 
@@ -264,8 +265,9 @@ reference resize, and p95/max at or below 50ms in fixed real scenarios.
 ## 8. Current gap and non-goals
 
 Current code still registers `text`, `fragment`, `container`, `row`, `column`, `stack`,
-`flex`, `grid`, and `spacer`. Target `box`, `:outer`, and `:layout 'normal` are not
-implemented.
+`flex`, `grid`, and `spacer`, and exposes `raw-ebox`. Target `box`, `:outer`, and
+`:layout 'normal` are not implemented, and the target public View does not retain
+`raw-ebox`.
 
 This is a clean redesign: old Host names and old `.etaf` sources need not continue to
 run, and no long-lived compatibility layer is added. Formal architecture/user docs must
@@ -275,6 +277,7 @@ Non-goals:
 
 - full browser CSS;
 - spacer, public flow, or `(box :content ...)`;
+- injecting raw Ebox Nodes into View;
 - layout modes as Components or alternate Runtime nodes;
 - old Host aliases or optional layout shorthand in core;
 - core protocols owned by Playground/UI/database packages;

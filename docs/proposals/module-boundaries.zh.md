@@ -32,11 +32,11 @@ View = Text
      | Box
      | Fragment
      | ComponentCall
-     | RawEbox
 ```
 
-`expr` 和 `slot` 是计算/投影机制，不是视觉节点。`RawEbox` 是明确的低层出口，
-不获得正常 View 的样式、事件或增量语义。
+`expr` 和 `slot` 是计算/投影机制，不是视觉节点。目标公共 View 不接受原始 Ebox
+节点；缺失的渲染能力必须先形成有类型、有 identity/impact 契约的 View/Ebox 能力，
+不能通过 opaque escape 绕过框架语义。
 
 ## 2. Text、Box 与 Fragment
 
@@ -180,7 +180,7 @@ ETAF 也不提供 `spacer` 类型。没有子节点的 Box 就是空 Box。
 
 `etaf-view`：
 
-- 定义并规范化 Text、Box、Fragment、ComponentCall 和 RawEbox；
+- 定义并规范化 Text、Box、Fragment 和 ComponentCall；
 - 将字符串规范化为 Text；
 - 验证属性闭集、slot、`:key` 和表达式边界；
 - 不测量、不布局、不写 buffer。
@@ -333,7 +333,8 @@ Component identity、依赖所有权、TP 优先级和 generation authority 不�
 ## 8. 当前实现差距与非目标
 
 当前代码仍注册 `text`、`fragment`、`container`、`row`、`column`、`stack`、
-`flex`、`grid` 和 `spacer`；目标 `box`、`:outer`、`:layout 'normal` 尚未实现。
+`flex`、`grid` 和 `spacer`，并提供 `raw-ebox`；目标 `box`、`:outer`、
+`:layout 'normal` 尚未实现，目标公共 View 也不保留 `raw-ebox`。
 
 这是干净重设计，不要求旧 Host 名称或旧 `.etaf` 文件继续运行，也不增加长期
 兼容层。实现完成前，正式架构和用户指南不得把目标语法描述成当前 API。
@@ -342,6 +343,7 @@ Component identity、依赖所有权、TP 优先级和 generation authority 不�
 
 - 不实现完整浏览器 CSS；
 - 不提供 `spacer`、公共 `flow` 或 `(box :content ...)`；
+- 不允许应用把原始 Ebox Node 注入 View；
 - 不把布局模式做成 Component 或第二套 Runtime 节点；
 - 不在 Core 中保留旧 Host alias 或可选短写法；
 - 不让 Playground、UI 或数据库包拥有 Core 协议；
