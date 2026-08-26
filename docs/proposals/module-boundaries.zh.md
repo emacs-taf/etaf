@@ -7,9 +7,52 @@
 本文只定义目标模型、模块 owner、依赖方向和完成条件。实现顺序属于单独的
 实施计划；历史名称和兼容策略不参与目标架构设计。
 
-用户心智成本是本提案的硬约束：同一能力只有一个规范名称和一种推荐写法；内部
-算法、后端节点、wrapper 和兼容别名不能作为并列公共概念。普通应用只需学习
+用户心智成本是本提案的硬约束：同一能力只有一个 canonical identity、规范名称和
+推荐写法；少量 alias 只能是 parse-time 输入糖，不能成为并列公共概念。内部算法、
+后端节点、wrapper 和兼容别名不能作为并列公共概念。普通应用只需学习
 Text、Box、Component；Fragment、布局细节和底层包通过渐进披露进入。
+
+## 0. 设计决策摘要
+
+普通 ETAF 用户只学习 Text、Box、Component，以及下面的结构 form：
+
+```elisp
+"plain text"
+(text PROPS "styled text")
+(box PROPS CHILD...)
+(row PROPS CHILD...)
+(column PROPS CHILD...)
+(flex PROPS CHILD...)
+(grid PROPS CHILD...)
+```
+
+`row/column/flex/grid` 都只是 Box 的布局形式。用户属性分为 metadata、语义/事件、
+视觉样式和 parent participation；采用语义一致的标准 CSS 名称、少量明确的
+ETAF/Ebox 个性属性和少量 parse-time alias。用户不接触 Ebox/TP/Emacs backend。
+
+独立 Ebox 用户通过 `ebox-build` 使用相同视觉 form 的 inert data syntax，但没有
+Component、Fragment、expr、slot 或 lifecycle。
+
+框架集成者只使用 typed Text/Box constructors、LayoutConfig、render 和 commit
+边界；不重新拼 DSL，不重新执行 cascade，不生成 Emacs text properties。
+
+内部执行只有四层：
+
+```text
+Author API
+  → Canonical Model
+  → Render Plan (Ebox geometry + TP paint + ETAF semantics)
+  → Emacs Adapter commit
+```
+
+核心 owner 不变：ETAF Runtime 拥有 identity/lifecycle/reactivity；ECSS 拥有
+selector/cascade/computed style；Ebox 拥有 measurement/geometry；TP 拥有 paint
+priority/transaction；最终 adapter 才拥有 `face`、`display`、`keymap` 等 Emacs
+text properties。
+
+普通用户文档不出现 NormalizedView、PropertyDefinition、ProjectionPlan、node ID、
+RangeAnchor 或 TP slot。框架 integration reference 才描述 typed constructors；
+只有内部架构章节描述 facts、plans、patches 和 journals。
 
 ## 1. 最终模型
 
@@ -358,9 +401,9 @@ ETAF 也不提供 `spacer` 类型。没有子节点的 Box 就是空 Box。
 - `:outer`、Layout variant 属于 structure + geometry；
 - Flex/Grid participation 存储在 child Box，但变化时只使对应父布局 owner geometry dirty；
 - ECSS cascade 输出必须保留上述 impact set；
-- ETAF/Ebox candidate normalization pipeline 只解析一次 property fact，再按 owner/impact
-  交给 Runtime metadata、ECSS、Ebox geometry 和对应 TP adapter；各 owner 不重新解析
-  原 plist；
+- ETAF/Ebox candidate normalization 只解析一次 author plist 并产生 canonical
+  declarations/metadata facts；ECSS 只计算一次 computed facts；projection 再按
+  owner/impact 交给 Runtime、Ebox 和 TP，各 owner 不重新解析原 plist；
 - border/font 等 multi-impact fact 可以同时投影 geometry 与 paint 字段，但 computed
   value 只 materialize 一次，不在 Ebox node 中复制 paint-only 状态；
 - TP 只消费已经解析的 paint contribution，不判断布局合法性；
@@ -380,6 +423,274 @@ ETAF 也不提供 `spacer` 类型。没有子节点的 Box 就是空 Box。
 `(flex :grid-column ... )`；这是两个正交字段，不是属性混用。动态事务同时改变父
 Layout 和 child participation 时只验证最终 candidate，任何失败保留上一代。与
 浏览器对不适用 CSS 属性常采取 no-effect 不同，本框架不静默忽略无效组合。
+
+### 3.1 作者 form 的规范属性组合
+
+下面的组合是规范性公共 schema；shorthand 在进入 canonical registry 时立即展开，
+不产生第二套 owner 或 impact 规则。
+
+```text
+SharedSourceMetadata = :key :class :id
+ETAFOnlyMetadata     = :ref :role :aria-* :on-* :use
+ETAFSourceMetadata   = SharedSourceMetadata + ETAFOnlyMetadata
+EboxSourceMetadata   = SharedSourceMetadata
+
+TextStyle =
+  :font-family :font-size :font-weight :font-style
+  :color :background-color
+  :text-decoration-line :text-decoration-color :text-decoration-style
+  :wrap-mode (word | grapheme | none)
+
+BoxFrame =
+  :outer
+  :width/:min-width/:max-width
+  :height/:min-height/:max-height
+  :box-sizing
+  margin/padding shorthands and logical/physical longhands
+  border shorthands and width/style/color longhands
+  :overflow :visibility
+  inherited standard text style source such as font/color
+  non-inherited surface source such as :background-color
+
+NormalConfig = :text-align
+
+RowConfig = :item-gap :cross-align
+ColumnConfig = :item-gap :cross-align
+
+FlexConfig =
+  :flex-direction :flex-wrap :flex-flow
+  :justify-content :align-items :align-content
+  :gap :row-gap :column-gap
+
+GridConfig =
+  :grid-template-columns :grid-template-rows
+  :grid-auto-columns :grid-auto-rows :grid-auto-flow
+  :justify-items :align-items :justify-content :align-content
+  :gap :row-gap :column-gap
+
+FlexParticipation =
+  :order :flex :flex-grow :flex-shrink :flex-basis :align-self
+
+GridParticipation =
+  :order :grid-column :grid-row :align-self :justify-self
+```
+
+六个视觉 form 只通过组合产生：
+
+```text
+text   = SurfaceSourceMetadata + TextStyle + one String
+box    = SurfaceSourceMetadata + BoxFrame + NormalConfig + ParentParticipation + children
+row    = SurfaceSourceMetadata + BoxFrame + RowConfig + ParentParticipation + children
+column = SurfaceSourceMetadata + BoxFrame + ColumnConfig + ParentParticipation + children
+flex   = SurfaceSourceMetadata + BoxFrame + FlexConfig + ParentParticipation + children
+grid   = SurfaceSourceMetadata + BoxFrame + GridConfig + ParentParticipation + children
+```
+
+`SurfaceSourceMetadata` 在 ETAF surface 取 ETAFSourceMetadata，在独立 Ebox surface
+取 EboxSourceMetadata。`:item-gap` 与 `:cross-align` 是 Ebox Row/Column extension，
+不是 CSS `gap`/`align-items`；前者沿主轴插入固定间距，后者值为
+`start|center|end|stretch` 并控制 cross axis。Flex/Grid 的 `:gap` 保持标准 CSS
+shorthand 语义，同时展开 row-gap 和 column-gap。
+
+`ParentParticipation` 由最终直接父级选择为 Default、FlexParticipation 或
+GridParticipation；同一个 candidate 不能同时携带互斥的 Flex-only 与 Grid-only
+字段。Text 不接受 BoxFrame、LayoutConfig 或 Participation；需要这些能力时显式包
+Box。Ebox DSL 不接受 ETAFOnlyMetadata。
+
+### 3.2 命名层与后端投影
+
+作者层名称分为 CSS、ETAF、Ebox 和 optional Emacs-adapter 四个 namespace。只有
+适用对象、值 grammar、默认/继承、impact 和可观察行为与 CSS 一致或是明确子集时，
+才采用标准 CSS 名称；概念相近但语义不同的能力保留精确的 ETAF/Ebox 名称，不能
+为了熟悉感使用错误的标准名称。
+
+目标公共 API 对历史/后端名称分类处理：
+
+```text
+:bgcolor          → exact alias of :background-color
+:font-height      → removed from core; optional Emacs adapter source only
+:font-slant       → exact alias of :font-style with identical value grammar
+:border-top-p     → retained Ebox boolean shorthand for top width/style
+:grid-column-span → Ebox positive-integer shorthand for :grid-column (span N)
+:grid-row-span    → Ebox positive-integer shorthand for :grid-row (span N)
+:face             → not a core canonical property
+:display          → private Ebox/Emacs lowering field
+:content          → private legacy runtime storage field
+```
+
+`:wrap-mode` 不与 CSS `white-space`、`overflow-wrap`、`word-break` 或 `line-break`
+等价，因此保留为 Ebox namespace 的唯一公共名称，值限定为 `word`、`grapheme`、
+`none`。如果未来实现完整且语义一致的 CSS 属性，应以一次明确迁移替换它，而不是
+长期同时保留两套名称。
+
+标准 CSS shorthand 只有一套展开规则，例如 `:margin`、`:padding`、`:border`、
+`:gap`、`:flex`、`:flex-flow`、`:grid-column` 和 `:grid-row`。canonical registry 使用
+namespaced ID（例如 `ebox/font-size`、`ebox/background-color`）；作者只写 keyword，
+不会看到内部 ID。
+
+每个定义显式记录命名领域与标准关系：
+
+```text
+PropertyDefinition {
+  authorName
+  canonicalId
+  aliases
+  namespace: css | etaf | ebox | emacs-adapter
+  standardReference
+  semanticSubset
+  acceptedContexts
+  valueGrammar
+  initial
+  inherits
+  impactSet
+  owner
+  projections
+}
+```
+
+alias 必须与 canonical property 的 context、value grammar、owner、impact 和 projection
+完全相同，且不能转换 value；需要一对多展开的是 shorthand，需要解析后端复合值的
+是 adapter source。alias 在 parse 入口立即解析为 canonicalId，computed style、
+cache、diff、Ebox、TP 和 Rust 都不再看到它。PropertyDefinition 注册时拒绝
+canonical/alias collision；同一声明同时写 canonical 与 alias（或重复 alias）直接
+报错，不采用隐式 last-wins。source spelling 只可保存在 diagnostics provenance。
+
+属性参考把 alias 列在 canonical property 下，例如：
+
+```text
+background-color
+  Canonical: :background-color
+  Aliases:   :bgcolor
+```
+
+不把 `bgcolor` 单独列成第二个功能。第一阶段 alias 由 owning package 的 schema
+注册，不开放 process-global 用户 alias；上层包若需要 alias，必须限制在自己的
+schema scope，不能污染全局 Ebox visual property domain。
+
+`:border-top-p` 不是 alias，而是保留的 Ebox boolean shorthand：`t` 展开为
+`:border-top-width 1` + `:border-top-style solid`，`nil` 展开为 width 0 + style none；
+颜色由 `:border-top-color`/`:border-color`/默认前景提供。需要完整控制时使用标准
+`:border-top` 或 longhands。同一声明混写 `:border-top-p` 与其 width/style 输出必须
+报错；不同 cascade source 仍按 ECSS 正常覆盖。
+
+`:grid-column-span`/`:grid-row-span` 同样不是 alias；它们只接受正整数并分别展开
+为对应 Grid shorthand 的 `span N` value，与 `:grid-column`/`:grid-row` 在同一声明
+混写时报错。`:font-slant` 只有在值 grammar 与 `:font-style` 完全相同时才作为 exact
+alias；`:font-height` 的 Emacs face-height 语义不冒充 CSS `font-size`。
+
+Emacs text property 名称 `face`、`display`、`keymap`、`mouse-face`、`help-echo`、
+`invisible`、`line-prefix`、`wrap-prefix` 和 sticky properties 只属于最终 adapter。
+Ebox core、ETAF Runtime、ECSS 和 Rust 都不直接生成或消费这些名字。若需要复用
+named Emacs face，只能由可选 adapter 提供显式 `:emacs-face` source input，立即
+解析为标准 font/paint facts 并计算 impact；原始 face symbol 不进入 canonical IR。
+
+一次典型投影是：
+
+```text
+:font-weight bold
+  → ebox/font-weight, impact {geometry, paint}
+  → Ebox Text measurement weight
+  + TP face-weight contribution
+  → Emacs adapter emits face :weight
+
+:width 120
+  → ebox/width, impact {geometry}
+  → Ebox GeometryPatch
+  → Emacs adapter may emit display space width
+```
+
+### 3.3 统一属性事实与投影层
+
+统一层不是 `author keyword → Emacs text property` 的直接字典。一项属性可能同时
+影响测量与 paint，多项属性也可能合并为一个 Emacs `face`；布局结果产生的
+`display` 又可能没有直接作者属性。内部阶段必须区分：
+
+```text
+CanonicalDeclaration {
+  propertyId
+  specifiedValue
+  sourceSpelling
+  sourceProvenance
+}
+
+SelectorSubjectFact {
+  classes
+  id
+  sourceHandle
+  sourceProvenance
+}
+
+RuntimeMetadataFact {
+  propertyId
+  value
+  sourceHandle
+}
+
+ComputedPropertyFact {
+  propertyId
+  computedValue
+  winningProvenance
+  impactSet
+  sourceHandle
+}
+
+ProjectionPlan {
+  metadataFacts
+  measurementFacts
+  geometryFacts
+  paintFacts
+}
+```
+
+normalization 对 author input 只解析一次，并同时产生 immutable
+CanonicalDeclaration、SelectorSubjectFact 和 RuntimeMetadataFact。`:class/:id` 不
+进入 CSS declarations；SelectorSubjectFact 在 cascade 前直接构造 ECSS subject。
+`:id` 的同一个 parsed source value 由 selector 与 semantic projection 共享，不各自
+重读 plist。ECSS cascade/inheritance 接收 SelectorSubjectFact + declarations，产生
+immutable ComputedPropertyFact。`:key`、`:ref`、`:on-*` 等不进入 ECSS，只进入
+RuntimeMetadataFact。这里的“一次 materialize”指每个阶段只生成一次自己的
+immutable artifact，不是让同一对象跨阶段变异。
+
+纯 property projector 在 cascade 后消费 computed style facts 与 metadata facts，按
+PropertyDefinition 的 owner/impact/projections 生成 ProjectionPlan，各 consumer
+引用同一 fact，不重新解析或复制 computed value。TP paint projector 是唯一把
+paintFacts 转为 ContributionPlan 的模块；ETAF semantic projector 把 metadataFacts
+转为 Runtime/SemanticPlan。
+
+Registry 不是 process-global 万能表。每个 owning package 提供 immutable
+SchemaRegistry，并遵守同一个 schema protocol；一个 surface 组合成 SurfaceSchemaSet：
+
+```text
+ETAF SurfaceSchemaSet = ETAF registry + Ebox registry
+Ebox SurfaceSchemaSet = Ebox registry
+ETAF + Emacs adapter  = ETAF registry + Ebox registry + adapter registry
+```
+
+每个 canonicalId 只有一个 owning definition；canonical/alias collision 在
+SchemaSet composition 时检查。这样既没有反向依赖，也没有重复事实源。
+
+逻辑模块保持小而完整：
+
+- package property schema：package-scoped PropertyDefinition registry；
+- SurfaceSchemaSet：无冲突组合各 package registry；
+- property normalizer：author name、shorthand、value grammar；
+- property projector：computed/metadata facts → backend-neutral ProjectionPlan；
+- Ebox layout projector：measurement/geometry facts → LayoutPlan；
+- TP paint projector：paint facts → ContributionPlan；
+- ETAF semantic projector：metadata facts → Runtime/SemanticPlan；
+- Emacs adapter：GeometryPatch + PaintPatch + SemanticPlan → text-property operations。
+
+因此 Ebox canonical node 不保存 paint-only 字段，TP 不保存 geometry，Emacs adapter
+不重新解释 CSS，Rust 只接收 canonical facts/plans 而不接收 `face`、`display` 或
+Elisp plist。调试与性能工具必须能显示完整链路，例如：
+
+```text
+:font-weight
+→ ebox/font-weight
+→ {geometry, paint}
+→ measurement/font-weight + paint/font-weight
+→ face :weight
+```
 
 ## 4. 模块 owner
 
@@ -508,6 +819,24 @@ Ebox surface 与 TP/Emacs 提交对齐的唯一机制。
 Playground 的 `.etaf` manifest 属于 Playground。未来通用 compiler 若存在，必须
 降低到同一套 View/Component 契约，不得创建第二套 Runtime。
 
+### 4.6 按使用者分层的公共面
+
+- 普通 ETAF 用户只使用 `etaf-view`、Component、Text/Box form、ETAF metadata/
+  events、canonical CSS-aligned properties，以及明确列出的 ETAF/Ebox extensions
+  （如 `:outer`、`:wrap-mode`）和 parse-time aliases；不调用 Ebox/TP/Emacs adapter。
+- 独立 Ebox 用户通过 `ebox-build` 使用同一视觉结构词汇的 inert data form；不拥有
+  Component、slot、expr 或 lifecycle。
+- 框架集成者使用 `ebox-text-create`、`ebox-box-create`、typed LayoutConfig、
+  RangeAnchor 和 TP contribution contract；不重新拼 DSL、不传 shorthand、不运行
+  第二次 cascade。
+- optional Emacs adapter 是显式 opt-in 的独立 schema namespace；只有加载 adapter
+  的 surface 才接受 `:emacs-face`，否则 normalization 精确报未知 namespace/property。
+- `ebox--*`、`etaf--*`、`tp--*`、`:ebox-type`、`:node-id`、`:region-id`、Emacs
+  text properties 和 runtime storage fields 全部私有。
+
+用户指南只描述第一层；Ebox DSL 指南描述第二层；integration reference 描述第三层；
+架构文档才描述 canonical IR、identity owner、impact projection 和 commit protocol。
+
 ## 5. 依赖方向
 
 ```text
@@ -563,6 +892,15 @@ cascade、布局或文字扫描。
 最终门禁必须覆盖：
 
 - Text/Box/Fragment 结构等价；
+- package registries 组合 SurfaceSchemaSet 时拒绝 canonical/alias collision；
+- exact alias 在 normalization 后消失，shorthand 唯一展开且与 owned outputs 混写报错；
+- optional adapter namespace 只有显式 opt-in surface 接受，未加载时精确报错；
+- CanonicalDeclaration、SelectorSubjectFact、RuntimeMetadataFact 和
+  ComputedPropertyFact 分阶段 immutable，selector subject 在 cascade 前只生成一次；
+- ProjectionPlan 只含 paintFacts，只有 TP projector 能产生 ContributionPlan；
+- Row/Column 只接受 `:item-gap/:cross-align` extension，不借用 CSS
+  `:gap/:align-items` 的不同语义；
+- geometry+paint 等 multi-impact computed value 只 materialize 一次并被两路引用；
 - 字符串只规范化为 Text，两个作者 DSL 都拒绝 `box :content`；
 - Text 固定 inline 且恰好一个字符串 payload；嵌套/空/多 payload 均报错；
 - ETAF/Ebox 五个 Box form 的 canonical shape、defaults 和错误跨接口一致；
@@ -603,6 +941,6 @@ typed Layout 尚未实现，目标公共 View 也不保留 `raw-ebox`。
 - 不把 Flex/Grid item 做成作者节点、视觉 wrapper 或独立 identity；
 - 不允许应用把原始 Ebox Node 注入 View；
 - 不把布局模式做成 Component 或第二套 Runtime 节点；
-- 不在 Core 中保留旧 Host alias 或可选短写法；
+- 不在 Core 中保留旧 Host/layout-form alias；property alias 只服从 3.2 的统一机制；
 - 不让 Playground、UI 或数据库包拥有 Core 协议；
 - 不在没有真实编译成本和运行时收益前增加 App 预编译产物。

@@ -10,10 +10,56 @@ completion criteria. Implementation order belongs in a separate delivery plan;
 historical names and compatibility policy do not shape the target architecture.
 
 User mental cost is a hard constraint of this proposal: one capability has one canonical
-name and one recommended spelling. Internal algorithms, backend nodes, wrappers, and
-compatibility aliases must not become peer public concepts. Ordinary applications need
-to learn only Text, Box, and Component; Fragment, layout details, and lower-level
-packages enter through progressive disclosure.
+identity, canonical name, and recommended spelling. A small set of aliases may exist
+only as parse-time input sugar and must not become peer public concepts. Internal
+algorithms, backend nodes, wrappers, and compatibility aliases must not become peer
+public concepts. Ordinary applications need to learn only Text, Box, and Component;
+Fragment, layout details, and lower-level packages enter through progressive disclosure.
+
+## 0. Design Decision Summary
+
+Ordinary ETAF users learn only Text, Box, Component, and these structural forms:
+
+```elisp
+"plain text"
+(text PROPS "styled text")
+(box PROPS CHILD...)
+(row PROPS CHILD...)
+(column PROPS CHILD...)
+(flex PROPS CHILD...)
+(grid PROPS CHILD...)
+```
+
+`row/column/flex/grid` are only layout forms of Box. User properties fall into metadata,
+semantics/events, visual style, and parent participation. They use semantically aligned
+standard CSS names, a small set of explicit ETAF/Ebox-specific properties, and a small
+set of parse-time aliases. Users do not interact with the Ebox, TP, or Emacs backend.
+
+Standalone Ebox users access the same visual forms as inert data syntax through
+`ebox-build`, but have no Component, Fragment, expr, slot, or lifecycle.
+
+Framework integrators use only typed Text/Box constructors, LayoutConfig, and the render
+and commit boundaries. They do not reconstruct DSL, rerun cascade, or generate Emacs
+text properties.
+
+Internal execution has only four layers:
+
+```text
+Author API
+  → Canonical Model
+  → Render Plan (Ebox geometry + TP paint + ETAF semantics)
+  → Emacs Adapter commit
+```
+
+Core ownership remains unchanged: ETAF Runtime owns identity/lifecycle/reactivity; ECSS
+owns selectors/cascade/computed style; Ebox owns measurement/geometry; TP owns paint
+priority/transactions; only the final adapter owns Emacs text properties such as
+`face`, `display`, and `keymap`.
+
+Ordinary user documentation does not mention NormalizedView, PropertyDefinition,
+ProjectionPlan, node IDs, RangeAnchor, or TP slots. The framework integration reference
+describes typed constructors; only internal architecture sections describe facts, plans,
+patches, and journals.
 
 ## 1. Final Model
 
@@ -393,9 +439,10 @@ Rules:
 - Flex/Grid participation is stored on the child Box, but a change dirties only the
   corresponding parent layout owner for geometry;
 - ECSS cascade output must retain the impact set above;
-- the ETAF/Ebox candidate normalization pipeline parses each property fact once, then
-  passes it by owner/impact to Runtime metadata, ECSS, Ebox geometry, and the appropriate
-  TP adapter; owners do not reparse the original plist;
+- ETAF/Ebox candidate normalization parses the author plist once and produces canonical
+  declarations/metadata facts; ECSS computes the computed facts once; projection then
+  passes them by owner/impact to Runtime, Ebox, and TP, and no owner reparses the original
+  plist;
 - a multi-impact fact such as border or font may project to both geometry and paint
   fields, but its computed value materializes only once and paint-only state is not
   duplicated in the Ebox node;
@@ -422,6 +469,294 @@ parent Layout and child participation, only the final candidate is validated; an
 failure preserves the previous generation. Unlike browsers, which commonly treat an
 inapplicable CSS property as having no effect, this framework does not silently ignore
 invalid combinations.
+
+### 3.1 Canonical Property Composition of Author Forms
+
+The following compositions are the normative public schemas. Shorthands expand
+immediately upon entering the canonical registry and do not create a second set of owner
+or impact rules.
+
+```text
+SharedSourceMetadata = :key :class :id
+ETAFOnlyMetadata     = :ref :role :aria-* :on-* :use
+ETAFSourceMetadata   = SharedSourceMetadata + ETAFOnlyMetadata
+EboxSourceMetadata   = SharedSourceMetadata
+
+TextStyle =
+  :font-family :font-size :font-weight :font-style
+  :color :background-color
+  :text-decoration-line :text-decoration-color :text-decoration-style
+  :wrap-mode (word | grapheme | none)
+
+BoxFrame =
+  :outer
+  :width/:min-width/:max-width
+  :height/:min-height/:max-height
+  :box-sizing
+  margin/padding shorthands and logical/physical longhands
+  border shorthands and width/style/color longhands
+  :overflow :visibility
+  inherited standard text style source such as font/color
+  non-inherited surface source such as :background-color
+
+NormalConfig = :text-align
+
+RowConfig = :item-gap :cross-align
+ColumnConfig = :item-gap :cross-align
+
+FlexConfig =
+  :flex-direction :flex-wrap :flex-flow
+  :justify-content :align-items :align-content
+  :gap :row-gap :column-gap
+
+GridConfig =
+  :grid-template-columns :grid-template-rows
+  :grid-auto-columns :grid-auto-rows :grid-auto-flow
+  :justify-items :align-items :justify-content :align-content
+  :gap :row-gap :column-gap
+
+FlexParticipation =
+  :order :flex :flex-grow :flex-shrink :flex-basis :align-self
+
+GridParticipation =
+  :order :grid-column :grid-row :align-self :justify-self
+```
+
+The six visual forms are produced only through composition:
+
+```text
+text   = SurfaceSourceMetadata + TextStyle + one String
+box    = SurfaceSourceMetadata + BoxFrame + NormalConfig + ParentParticipation + children
+row    = SurfaceSourceMetadata + BoxFrame + RowConfig + ParentParticipation + children
+column = SurfaceSourceMetadata + BoxFrame + ColumnConfig + ParentParticipation + children
+flex   = SurfaceSourceMetadata + BoxFrame + FlexConfig + ParentParticipation + children
+grid   = SurfaceSourceMetadata + BoxFrame + GridConfig + ParentParticipation + children
+```
+
+`SurfaceSourceMetadata` resolves to ETAFSourceMetadata on an ETAF surface and to
+EboxSourceMetadata on a standalone Ebox surface. `:item-gap` and `:cross-align` are Ebox
+Row/Column extensions, not CSS `gap`/`align-items`: the former inserts fixed spacing
+along the main axis; the latter accepts `start|center|end|stretch` and controls the cross
+axis. Flex/Grid `:gap` retains standard CSS shorthand semantics and expands to both
+row-gap and column-gap.
+
+The final direct parent selects `ParentParticipation` as Default,
+FlexParticipation, or GridParticipation. A candidate cannot carry mutually exclusive
+Flex-only and Grid-only fields simultaneously. Text accepts neither BoxFrame,
+LayoutConfig, nor Participation; wrap it in an explicit Box when those capabilities are
+required. The Ebox DSL does not accept ETAFOnlyMetadata.
+
+### 3.2 Naming Layers and Backend Projection
+
+Names in the author layer belong to four namespaces: CSS, ETAF, Ebox, and the optional
+Emacs adapter. A standard CSS name is adopted only when its applicable objects, value
+grammar, defaults/inheritance, impact, and observable behavior match CSS or form an
+explicit subset. A capability that is conceptually similar but semantically different
+retains a precise ETAF/Ebox name; familiarity does not justify an incorrect standard
+name.
+
+The target public API classifies historical and backend names as follows:
+
+```text
+:bgcolor          → exact alias of :background-color
+:font-height      → removed from core; optional Emacs adapter source only
+:font-slant       → exact alias of :font-style with identical value grammar
+:border-top-p     → retained Ebox boolean shorthand for top width/style
+:grid-column-span → Ebox positive-integer shorthand for :grid-column (span N)
+:grid-row-span    → Ebox positive-integer shorthand for :grid-row (span N)
+:face             → not a core canonical property
+:display          → private Ebox/Emacs lowering field
+:content          → private legacy runtime storage field
+```
+
+`:wrap-mode` is not equivalent to CSS `white-space`, `overflow-wrap`, `word-break`, or
+`line-break`. It therefore remains the sole public name in the Ebox namespace, with its
+value restricted to `word`, `grapheme`, or `none`. If complete, semantically equivalent
+CSS properties are implemented in the future, one explicit migration must replace it;
+the two naming systems must not be retained indefinitely.
+
+Standard CSS shorthands have exactly one expansion rule, including `:margin`,
+`:padding`, `:border`, `:gap`, `:flex`, `:flex-flow`, `:grid-column`, and `:grid-row`.
+The canonical registry uses namespaced IDs such as `ebox/font-size` and
+`ebox/background-color`; authors write only keywords and never see internal IDs.
+
+Every definition records its naming domain and relationship to standards explicitly:
+
+```text
+PropertyDefinition {
+  authorName
+  canonicalId
+  aliases
+  namespace: css | etaf | ebox | emacs-adapter
+  standardReference
+  semanticSubset
+  acceptedContexts
+  valueGrammar
+  initial
+  inherits
+  impactSet
+  owner
+  projections
+}
+```
+
+An alias must have exactly the same contexts, value grammar, owner, impact, and
+projections as its canonical property, and it cannot transform the value. A shorthand
+performs one-to-many expansion; an adapter source resolves a composite backend value.
+An alias resolves to canonicalId immediately at the parse entry point, so computed
+style, caches, diff, Ebox, TP, and Rust never see it. PropertyDefinition registration
+rejects canonical/alias collisions. Writing both the canonical name and an alias—or
+repeating an alias—in the same declaration is an error rather than an implicit
+last-wins rule. The source spelling may be retained only in diagnostic provenance.
+
+Property references list aliases under the canonical property, for example:
+
+```text
+background-color
+  Canonical: :background-color
+  Aliases:   :bgcolor
+```
+
+They do not list `bgcolor` as a second capability. In the first phase, aliases are
+registered by the owning package's schema; process-global user aliases are not exposed.
+An upper-level package that needs an alias must scope it to its own schema and must not
+pollute the global Ebox visual-property domain.
+
+`:border-top-p` is not an alias but a retained Ebox boolean shorthand: `t` expands to
+`:border-top-width 1` + `:border-top-style solid`, while `nil` expands to width 0 + style
+none. Color comes independently from `:border-top-color`, `:border-color`, or the default
+foreground. Use standard `:border-top` or its longhands when full control is required.
+Mixing `:border-top-p` with its width/style outputs in the same declaration is an error;
+different cascade sources still override one another normally through ECSS.
+
+`:grid-column-span` and `:grid-row-span` are likewise not aliases. They accept only a
+positive integer and respectively expand to the corresponding Grid shorthand's `span N`
+value; mixing either with `:grid-column` or `:grid-row` in the same declaration is an
+error. `:font-slant` is an exact alias only when its value grammar is identical to
+`:font-style`. The Emacs face-height semantics of `:font-height` must not masquerade as
+CSS `font-size`.
+
+The Emacs text property names `face`, `display`, `keymap`, `mouse-face`, `help-echo`,
+`invisible`, `line-prefix`, `wrap-prefix`, and sticky properties belong only to the final
+adapter. Ebox core, ETAF Runtime, ECSS, and Rust neither produce nor consume these names
+directly. Reuse of a named Emacs face, when needed, is available only through an
+optional adapter's explicit `:emacs-face` source input. That input immediately resolves
+to standard font/paint facts and computes their impact; the raw face symbol does not
+enter the canonical IR.
+
+A typical projection is:
+
+```text
+:font-weight bold
+  → ebox/font-weight, impact {geometry, paint}
+  → Ebox Text measurement weight
+  + TP face-weight contribution
+  → Emacs adapter emits face :weight
+
+:width 120
+  → ebox/width, impact {geometry}
+  → Ebox GeometryPatch
+  → Emacs adapter may emit display space width
+```
+
+### 3.3 Unified Property Facts and Projection Layer
+
+The unified layer is not a direct `author keyword → Emacs text property` dictionary.
+One property may affect both measurement and paint; several properties may merge into
+one Emacs `face`; and a `display` produced by layout may have no direct author property.
+The internal stages must therefore distinguish:
+
+```text
+CanonicalDeclaration {
+  propertyId
+  specifiedValue
+  sourceSpelling
+  sourceProvenance
+}
+
+SelectorSubjectFact {
+  classList
+  id
+  semanticSourceHandle
+}
+
+RuntimeMetadataFact {
+  propertyId
+  value
+  sourceHandle
+}
+
+ComputedPropertyFact {
+  propertyId
+  computedValue
+  winningProvenance
+  impactSet
+  sourceHandle
+}
+
+ProjectionPlan {
+  metadataFacts
+  measurementFacts
+  geometryFacts
+  paintFacts
+}
+```
+
+Normalization parses author input once and simultaneously produces immutable
+CanonicalDeclaration, SelectorSubjectFact, and RuntimeMetadataFact artifacts.
+`:class/:id` do not enter CSS declarations; SelectorSubjectFact constructs the ECSS subject
+directly before cascade. Selector and semantic projection share the same parsed source
+value for `:id` rather than rereading the plist independently. ECSS cascade/inheritance
+receives SelectorSubjectFact + declarations and produces immutable
+ComputedPropertyFact artifacts. `:key`, `:ref`, `:on-*`, and similar properties do not
+enter ECSS and appear only in RuntimeMetadataFact. “Materialize once” means that each
+stage produces its own immutable artifact once, not that one object mutates across
+stages.
+
+A pure property projector consumes computed-style facts and metadata facts and generates
+ProjectionPlan according to the PropertyDefinition owner/impact/projections fields.
+Every consumer references the same fact rather than reparsing or copying its computed
+value. The TP paint projector is the only module that converts paintFacts into
+ContributionPlan. The ETAF semantic projector converts metadataFacts into
+Runtime/SemanticPlan.
+
+A registry is not one process-global universal table. Each owning package supplies an
+immutable SchemaRegistry conforming to the same schema protocol; a surface composes a
+SurfaceSchemaSet:
+
+```text
+ETAF SurfaceSchemaSet = ETAF registry + Ebox registry
+Ebox SurfaceSchemaSet = Ebox registry
+ETAF + Emacs adapter  = ETAF registry + Ebox registry + adapter registry
+```
+
+Each canonicalId has exactly one owning definition. Canonical/alias collisions are
+checked when composing the SchemaSet. This avoids both reverse dependencies and
+duplicate sources of truth.
+
+Logical modules remain small and complete:
+
+- package property schema: a package-scoped PropertyDefinition registry;
+- SurfaceSchemaSet: conflict-free composition of package registries;
+- property normalizer: author names, shorthands, and value grammar;
+- property projector: computed/metadata facts → backend-neutral ProjectionPlan;
+- Ebox layout projector: measurement/geometry facts → LayoutPlan;
+- TP paint projector: paint facts → ContributionPlan;
+- ETAF semantic projector: metadata facts → Runtime/SemanticPlan;
+- Emacs adapter: GeometryPatch + PaintPatch + SemanticPlan → text-property operations.
+
+Consequently, an Ebox canonical node stores no paint-only field; TP stores no geometry;
+the Emacs adapter does not reinterpret CSS; and Rust receives only canonical facts/plans,
+not `face`, `display`, or an Elisp plist. Debugging and performance tools must expose the
+complete chain, for example:
+
+```text
+:font-weight
+→ ebox/font-weight
+→ {geometry, paint}
+→ measurement/font-weight + paint/font-weight
+→ face :weight
+```
 
 ## 4. Module Owners
 
@@ -563,6 +898,27 @@ The Playground `.etaf` manifest belongs to the Playground. If a general compiler
 in the future, it must lower to the same View/Component contract and must not create a
 second Runtime.
 
+### 4.6 Public Surfaces Layered by Consumer
+
+- Ordinary ETAF users use only `etaf-view`, Component, Text/Box forms, ETAF metadata/
+  events, canonical CSS-aligned properties, explicitly listed ETAF/Ebox extensions such
+  as `:outer` and `:wrap-mode`, and parse-time aliases; they do not call Ebox, TP, or the
+  Emacs adapter.
+- Standalone Ebox users use inert data forms with the same visual structural vocabulary
+  through `ebox-build`; they do not own Component, slot, expr, or lifecycle.
+- Framework integrators use `ebox-text-create`, `ebox-box-create`, typed LayoutConfig,
+  RangeAnchor, and the TP contribution contract; they do not reconstruct DSL, pass
+  shorthands, or run a second cascade.
+- The optional Emacs adapter is an explicit opt-in, independent schema namespace. Only
+  a surface that loads the adapter accepts `:emacs-face`; otherwise normalization
+  reports the unknown namespace/property precisely.
+- `ebox--*`, `etaf--*`, `tp--*`, `:ebox-type`, `:node-id`, `:region-id`, Emacs text
+  properties, and runtime storage fields are all private.
+
+The user guide describes only the first layer; the Ebox DSL guide describes the second;
+the integration reference describes the third; only architecture documentation
+describes canonical IR, identity owners, impact projection, and the commit protocol.
+
 ## 5. Dependency Direction
 
 ```text
@@ -624,6 +980,21 @@ scans already completed by Rust.
 The final gates must cover:
 
 - structural equivalence of Text/Box/Fragment;
+- rejection of canonical/alias collisions when package registries compose a
+  SurfaceSchemaSet;
+- exact aliases disappear after normalization, while each shorthand expands exactly
+  once and conflicts with its owned outputs in the same declaration;
+- the optional adapter namespace is accepted only by explicitly opted-in surfaces and
+  reports a precise error when the adapter is not loaded;
+- CanonicalDeclaration, SelectorSubjectFact, RuntimeMetadataFact, and
+  ComputedPropertyFact remain immutable across stages, and the selector subject is
+  produced exactly once before cascade;
+- ProjectionPlan contains only paintFacts, and only the TP projector may produce
+  ContributionPlan;
+- Row/Column accept only the `:item-gap/:cross-align` extensions rather than borrowing
+  the different semantics of CSS `:gap/:align-items`;
+- a multi-impact computed value such as geometry + paint materializes once and is
+  referenced by both paths;
 - strings normalize only to Text, and both author DSLs reject `box :content`;
 - Text is always inline and has exactly one string payload; nested, empty, or multiple
   payloads are errors;
@@ -677,6 +1048,7 @@ Non-goals:
 - making Flex/Grid item an author node, visual wrapper, or independent identity;
 - allowing applications to inject raw Ebox Nodes into View;
 - making layout modes Components or a second set of Runtime nodes;
-- retaining old Host aliases or optional shorthand spellings in Core;
+- retaining old Host/layout-form aliases in Core; property aliases follow only the
+  unified mechanism in Section 3.2;
 - allowing Playground, UI, or database packages to own Core protocols;
 - adding App precompilation artifacts before real compile cost and runtime benefit exist.
