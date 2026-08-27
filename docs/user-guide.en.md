@@ -612,6 +612,8 @@ Enable the generic recorder around any application workload, then open its
 ordinary `tabulated-list-mode` panel:
 
 ```elisp
+(require 'etaf-performance)
+;; In a buffer with a mounted ETAF Runtime:
 (etaf-performance-mode 1)
 (etaf-performance-show)
 ```
@@ -620,23 +622,26 @@ Run `M-x etaf-performance-clear` before the measured reproduction.  Afterwards,
 press `c` in the panel, or run `M-x etaf-performance-copy-report`, to copy the
 environment, summary, operation, GC, and stage data.  Press `w`, or run
 `M-x etaf-performance-export`, to save the same portable report as an `.eld`
-file.  The report and panel header include power source, low-power mode, and
-system load alongside the ordinary Emacs/display environment.
+file.  The report and panel header include power source, low-power mode,
+native-JIT state, and system load alongside the ordinary Emacs/display
+environment.
 
-The recorder creates bounded operation records for public interaction,
-lifecycle, Data, Resource, and viewport boundaries.  Loaded Ebox, TP, and
-SQLite functions contribute nested coarse stages without depending on ETAF.
-Each stage reports inclusive and exclusive milliseconds; failures and quits
-are recorded and then re-signaled unchanged.
+The recorder only consumes public Runtime observer reports and installs no
+advice.  Runtime Event, Action, mount, flush, and unmount boundaries create
+bounded operation records.  Ebox, TP, Data, Resource, and SQLite may contribute
+flat provider stages, ordered by sequence, inside the same operation.  Stages
+may overlap and are therefore not reported as exclusive/self time; failures and
+quits are recorded and then re-signaled unchanged.
 
 `etaf-performance-summary` calculates grouped p50/p95/max statistics only when
-requested.  `etaf-performance-operation-stage-summary` ranks the package
-categories of one recorded operation by exclusive time.
+requested.  `etaf-performance-operation-stage-summary` groups the flat stages
+of one recorded operation by provider category.
 
-Use `etaf-performance-register-stage` for a temporary package-specific detail
-probe.  Use `etaf-performance-with-operation` for application work that does
-not enter through a built-in public boundary.  Disable the mode when the
-capture is complete; all installed advice is removed.
+Use `etaf-performance-call-operation` or `etaf-performance-with-operation` for
+application work that does not enter through a built-in public boundary.  Both
+delegate to the same Runtime operation boundary.  Disable the mode when the
+capture is complete; this only detaches the Runtime observer and does not
+rewrite any function.
 
 ## 14. Public API map
 
@@ -655,7 +660,7 @@ capture is complete; all installed advice is removed.
 | Resource | `etaf-resource`, `etaf-resource-result`, `etaf-error-boundary-run` | Own loader state and cleanup |
 | Official UI | `require 'etaf-ui`, `etaf-button`, `etaf-checkbox`, `etaf-number-input`, `etaf-label`, `etaf-panel`, `etaf-data-grid` | Use ready-made Components |
 | Playground | `etaf-playground-open`, `etaf-playground-open-ui`, `etaf-playground-close`, `ebox-playground-open`, `ebox-playground-close` | Explore the corresponding layer interactively |
-| Performance | `etaf-performance-mode`, `etaf-performance-show`, `etaf-performance-copy-report`, `etaf-performance-export`, `etaf-performance-environment-data`, `etaf-performance-records`, `etaf-performance-summary`, `etaf-performance-operation-stage-summary`, `etaf-performance-with-operation`, `etaf-performance-register-stage` | Attribute generic operation latency across loaded packages and share reports |
+| Performance | `etaf-performance-start`, `etaf-performance-stop`, `etaf-performance-mode`, `etaf-performance-show`, `etaf-performance-copy-report`, `etaf-performance-export`, `etaf-performance-environment-data`, `etaf-performance-records`, `etaf-performance-summary`, `etaf-performance-operation-stage-summary`, `etaf-performance-call-operation`, `etaf-performance-with-operation` | Attribute generic operation latency through public observers and share reports |
 
 Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, `etaf-ref`, and event callbacks at first. The remaining APIs are additive capabilities, not prerequisites for understanding the core grammar.
 

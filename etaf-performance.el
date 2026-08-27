@@ -1,12 +1,13 @@
-;;; etaf-performance.el --- Cross-package ETAF performance records -*- lexical-binding: t; -*-
+;;; etaf-performance.el --- Optional ETAF operation recorder -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;;; Commentary:
 
-;; This opt-in recorder follows one user-visible ETAF operation through the
-;; reactive, data, Ebox, and TP layers.  Other packages remain independent:
-;; instrumentation is attached here, after those packages are loaded.
+;; This optional package records the flat provider reports emitted by one
+;; mounted ETAF Runtime.  It has no advice registry and owns no timing path:
+;; operation boundaries and durations come exclusively from the Runtime
+;; observer contract.
 
 ;;; Code:
 
@@ -15,9 +16,10 @@
 (require 'ring)
 (require 'seq)
 (require 'tabulated-list)
+(require 'etaf-runtime)
 
 (defgroup etaf-performance nil
-  "Operation and stage timing for ETAF applications."
+  "Operation timing reports emitted by ETAF runtimes."
   :group 'etaf)
 
 (defcustom etaf-performance-max-records 200
@@ -25,129 +27,33 @@
   :type 'integer
   :group 'etaf-performance)
 
-(defconst etaf-performance-report-format-version 1
+(defconst etaf-performance-report-format-version 2
   "Current portable performance report format version.")
 
 (cl-defstruct (etaf-performance-stage
                (:constructor etaf-performance--stage-create))
-  "One timed stage inside an ETAF operation.
-All duration fields are milliseconds."
-  id category function detail depth start-time end-time inclusive exclusive
-  status)
+  "One flat provider report belonging to an operation."
+  sequence provider category name duration status metadata)
 
 (cl-defstruct (etaf-performance-operation
                (:constructor etaf-performance--operation-create))
-  "One bounded, user-visible ETAF operation record.
-ELAPSED is milliseconds; START-TIME and END-TIME are wall-clock seconds."
-  id parent-id kind label runtime-id buffer-name generation-before generation-after
-  start-time end-time elapsed status
-  gc-count-before gc-count-after gc-elapsed-before gc-elapsed-after metadata
-  stages)
+  "One completed Runtime operation and its ordered provider reports."
+  id kind label runtime-id buffer-name generation-before generation-after
+  elapsed status gc-count gc-elapsed metadata stages)
 
-(cl-defstruct (etaf-performance--stage-frame
-               (:constructor etaf-performance--stage-frame-create))
-  id category function detail depth start-time (child-time 0.0))
+(cl-defstruct (etaf-performance--attachment
+               (:constructor etaf-performance--attachment-create))
+  sink pending-keys)
 
 (defvar etaf-performance--record-ring nil)
-(defvar etaf-performance--next-operation-id 0)
-(defvar etaf-performance--next-stage-id 0)
-(defvar etaf-performance--current-operation nil)
-(defvar etaf-performance--stage-stack nil)
-(defvar etaf-performance--installed-advices nil)
-(defvar etaf-performance-mode nil)
+(defvar etaf-performance--pending (make-hash-table :test #'equal))
+(defvar etaf-performance--attachments (make-hash-table :test #'eq))
+(defvar-local etaf-performance--mode-runtime nil)
 
-(defconst etaf-performance--operation-functions
-  '((etaf-dispatch-event event)
-    (etaf-dispatch action)
-    (etaf-runtime-mount mount)
-    (etaf-runtime-flush flush)
-    (etaf-runtime-unmount unmount)
-    (etaf-data-load data-load)
-    (etaf-data-source-load-page data-prepare)
-    (etaf-data-mutate data-mutate)
-    (etaf-resource-load resource-load)
-    (ebox-surface-update-buffer-viewport viewport)
-    (ebox-rerender-buffer-with-context rerender)
-    (etaf-focus focus)
-    (etaf-focus-next focus)
-    (etaf-focus-previous focus)
-    (etaf-activate activate)
-    (etaf-activate-mouse activate))
-  "Coarse functions that begin visible operation records.")
-
-(defvar etaf-performance--stage-functions
-  '((etaf--runtime-component-overlay runtime owner-overlay)
-    (etaf--runtime-render-root-turn runtime root-turn)
-    (etaf--runtime-build-generation runtime generation)
-    (etaf--runtime-render-dirty-component runtime component-effect)
-    (etaf--runtime-render-dirty-host-properties runtime host-property-effect)
-    (etaf--runtime-render-dirty-range runtime range-effect)
-    (etaf--runtime-render-dirty-inline-range runtime inline-range-effect)
-    (etaf--runtime-render-dirty-slot-range runtime slot-range-effect)
-    (etaf-compiler-instantiate compiler blueprint-instantiate)
-    (etaf-sqlite--call sqlite call)
-    (etaf-sqlite--transaction sqlite transaction)
-    (etaf-sqlite--select-items sqlite query)
-    (etaf-sqlite--mutate sqlite mutate)
-    (ebox-incremental-consume-candidate ebox candidate)
-    (ebox-incremental--prepare-logical-candidate ebox candidate-preparation)
-    (ebox-incremental--candidate-logical-root ebox candidate-root)
-    (ebox-incremental--candidate-local-index-delta ebox index-delta)
-    (ebox-incremental--candidate-copy-index-table ebox index-table-copy)
-    (ebox-incremental--candidate-dirty-set-from-touched ebox dirty-diff)
-    (ebox-incremental--candidate-map-native-postorder ebox native-postorder)
-    (ebox-incremental--candidate-range-ref-overlay ebox range-index)
-    (ebox-incremental--candidate-structural-caches ebox structural-cache)
-    (ebox-incremental--prepare-declarative-runtime ebox runtime-preparation)
-    (ebox-incremental--candidate-layout-snapshots ebox snapshot-seed)
-    (ebox-incremental--candidate-state ebox candidate-state)
-    (ebox-incremental--surface-commit-input ebox owner-proof)
-    (ebox-incremental--mixed-owner-proof ebox mixed-owner-proof)
-    (ebox-incremental--formatting-context-reflow-proof ebox context-proof)
-    (ebox-incremental--common-runtime-ancestor-id ebox common-ancestor)
-    (ebox-incremental--formatting-context-reflow-fast-eligible-p
-     ebox context-eligibility)
-    (ebox-incremental--cached-layout-snapshot-details ebox snapshot-details)
-    (ebox-incremental--layout-owner-plan ebox owner-plan)
-    (ebox-incremental--span-patch-projection-proof ebox span-proof)
-    (ebox-incremental--allocation-closure-proof ebox allocation-proof)
-    (ebox-incremental--two-owner-allocation-proof ebox allocation-union-proof)
-    (ebox-surface--cascade-local-owner-proof-p ebox cascade-proof)
-    (ebox-incremental--layout-owner-report ebox owner-report)
-    (ebox-incremental--surface-state-overrides ebox state-overrides)
-    (ebox-surface-update-buffer-scoped ebox scoped-publication)
-    (ebox-surface--project ebox projection)
-    (ebox-surface--projection-start ebox projection-start)
-    (ebox-surface--style-state-table ebox style-state-copy)
-    (ebox-tree-subject-index ebox selector-subject-index)
-    (ebox-surface--project-native-stable-node-table ebox native-object-reuse)
-    (ebox-surface--mixed-owner-output ebox mixed-owner-output)
-    (ebox-surface--rendered-fragments ebox fragments)
-    (ebox-surface--render-candidate ebox candidate-render)
-    (ebox-surface--surface-plan ebox surface-plan)
-    (ebox-surface--native-patch-result ebox native-patch-result)
-    (ebox-native-commit-render ebox native-commit)
-    (ebox-native-commit-context-axes-stable-p ebox native-axes-proof)
-    (ebox-native-commit--apply-fragment-style-delta
-     ebox fragment-style-delta)
-    (ebox-native-reflow--compile-layout-package compiler layout-ir)
-    (ebox-native-reflow--compile-retained-layout-package
-     compiler retained-layout-ir)
-    (ebox-native-reflow--materialize-layout-tape ebox tape-decode)
-    (ebox-surface--native-owned-ranges ebox native-ownership)
-    (ebox-surface--owned-ranges ebox ownership-ranges)
-    (ebox-commit ebox commit)
-    (ebox-render-to-buffer ebox render-to-buffer)
-    (tp-surface-update-scoped tp scoped-update)
-    (tp-object-reuse-subtree tp object-subtree-reuse)
-    (tp--prepare-surface tp prepare)
-    (tp-commit-batch-result-create tp batch-result)
-    (tp--prepare-commit-batch tp prepare-batch)
-    (tp--commit-batch-retained-mount-state tp mount-proof)
-    (tp--retain-candidate-mount-state tp retain-mounts)
-    (tp--validate-retained-batch-precommit tp retained-precommit)
-    (tp--publish-one-surface tp publication))
-  "Cross-package coarse stages installed only while recording is enabled.")
+(defconst etaf-performance--report-context-keys
+  '(:format-version :operation-id :sequence :runtime-id :buffer-name
+    :provider :stage :status :duration-ms)
+  "Flat report keys represented by typed recorder fields.")
 
 (defun etaf-performance-records ()
   "Return a newest-first copy of completed performance records."
@@ -162,47 +68,60 @@ ELAPSED is milliseconds; START-TIME and END-TIME are wall-clock seconds."
            (rank (max 1 (ceiling (* percentile (length ordered))))))
       (nth (1- rank) ordered))))
 
-;;;###autoload
-(defun etaf-performance-operation-stage-summary (operation)
-  "Return stage-category timing summaries for OPERATION.
+(defun etaf-performance--provider-category (provider)
+  "Return the public recorder category for PROVIDER."
+  (if (eq provider 'etaf) 'runtime provider))
 
-Each result plist contains `:category', `:count', `:inclusive-ms', and
-`:exclusive-ms'.  Results are sorted by decreasing exclusive time.  Inclusive
-totals may overlap because they preserve nested span semantics; exclusive
-totals partition the recorded work."
+(defun etaf-performance--report-metadata (report)
+  "Return REPORT fields not represented by typed recorder fields."
+  (let (metadata)
+    (while report
+      (let ((key (pop report))
+            (value (pop report)))
+        (unless (memq key etaf-performance--report-context-keys)
+          (setq metadata (append metadata (list key (copy-tree value)))))))
+    metadata))
+
+(defun etaf-performance--stage-from-report (report)
+  "Create one flat recorder stage from provider REPORT."
+  (let ((provider (plist-get report :provider)))
+    (etaf-performance--stage-create
+     :sequence (plist-get report :sequence)
+     :provider provider
+     :category (etaf-performance--provider-category provider)
+     :name (plist-get report :stage)
+     :duration (plist-get report :duration-ms)
+     :status (plist-get report :status)
+     :metadata (etaf-performance--report-metadata report))))
+
+(defun etaf-performance-operation-stage-summary (operation)
+  "Summarize flat provider stages in OPERATION by category.
+
+Each result contains `:category', `:count', and `:duration-ms'.  Provider
+durations may overlap and are therefore never presented as exclusive time."
   (unless (etaf-performance-operation-p operation)
     (signal 'wrong-type-argument
             (list 'etaf-performance-operation-p operation)))
   (let ((table (make-hash-table :test #'eq)) result)
     (dolist (stage (etaf-performance-operation-stages operation))
       (let* ((category (etaf-performance-stage-category stage))
-             (value (or (gethash category table) (vector 0 0.0 0.0))))
-        (aset value 0 (1+ (aref value 0)))
-        (aset value 1 (+ (aref value 1)
-                         (etaf-performance-stage-inclusive stage)))
-        (aset value 2 (+ (aref value 2)
-                         (etaf-performance-stage-exclusive stage)))
-        (puthash category value table)))
+             (entry (or (gethash category table) (cons 0 0.0))))
+        (setcar entry (1+ (car entry)))
+        (setcdr entry (+ (cdr entry)
+                         (etaf-performance-stage-duration stage)))
+        (puthash category entry table)))
     (maphash
-     (lambda (category value)
-       (push (list :category category :count (aref value 0)
-                   :inclusive-ms (aref value 1)
-                   :exclusive-ms (aref value 2))
+     (lambda (category entry)
+       (push (list :category category :count (car entry)
+                   :duration-ms (cdr entry))
              result))
      table)
-    (sort result
-          (lambda (left right)
-            (> (plist-get left :exclusive-ms)
-               (plist-get right :exclusive-ms))))))
+    (sort result (lambda (left right)
+                   (> (plist-get left :duration-ms)
+                      (plist-get right :duration-ms))))))
 
-;;;###autoload
 (defun etaf-performance-summary (&optional records)
-  "Summarize completed RECORDS by operation kind and label.
-
-RECORDS defaults to `etaf-performance-records'.  Each result plist contains
-`:kind', `:label', `:count', `:min-ms', `:p50-ms', `:p95-ms', `:max-ms', and
-`:mean-ms'.  Summary calculation happens on demand, never in the measured hot
-path."
+  "Summarize completed RECORDS by operation kind and label."
   (let ((groups (make-hash-table :test #'equal)) result)
     (dolist (operation (or records (etaf-performance-records)))
       (let ((key (cons (etaf-performance-operation-kind operation)
@@ -222,52 +141,207 @@ path."
               :mean-ms (/ (apply #'+ samples) (float (length samples))))
         result))
      groups)
-    (sort result
-          (lambda (left right)
-            (> (plist-get left :p95-ms) (plist-get right :p95-ms))))))
+    (sort result (lambda (left right)
+                   (> (plist-get left :p95-ms)
+                      (plist-get right :p95-ms))))))
+
+(defun etaf-performance--retain (operation)
+  "Retain completed OPERATION under the configured bound."
+  (let ((limit (max 0 etaf-performance-max-records)))
+    (if (zerop limit)
+        (setq etaf-performance--record-ring nil)
+      (unless (and etaf-performance--record-ring
+                   (= (ring-size etaf-performance--record-ring) limit))
+        (let ((existing (etaf-performance-records)))
+          (setq etaf-performance--record-ring (make-ring limit))
+          (dolist (record (reverse (seq-take existing limit)))
+            (ring-insert etaf-performance--record-ring record))))
+      (ring-insert etaf-performance--record-ring operation))))
+
+(defun etaf-performance--final-report-p (report)
+  "Return non-nil when REPORT closes one Runtime operation."
+  (and (eq (plist-get report :provider) 'etaf)
+       (eq (plist-get report :stage) 'runtime-operation)))
+
+(defun etaf-performance--operation-from-reports (reports)
+  "Create one completed operation from ordered flat REPORTS."
+  (let* ((ordered
+          (sort reports
+                (lambda (left right)
+                  (< (plist-get left :sequence)
+                     (plist-get right :sequence)))))
+         (final (car (last ordered))))
+    (etaf-performance--operation-create
+     :id (plist-get final :operation-id)
+     :kind (plist-get final :kind)
+     :label (plist-get final :label)
+     :runtime-id (plist-get final :runtime-id)
+     :buffer-name (plist-get final :buffer-name)
+     :generation-before (plist-get final :generation-before)
+     :generation-after (plist-get final :generation-after)
+     :elapsed (plist-get final :duration-ms)
+     :status (plist-get final :status)
+     :gc-count (or (plist-get final :gc-count) 0)
+     :gc-elapsed (or (plist-get final :gc-duration-ms) 0.0)
+     :metadata (etaf-performance--report-metadata final)
+     :stages (mapcar #'etaf-performance--stage-from-report ordered))))
+
+(defun etaf-performance--pending-key (report)
+  "Return the Runtime and operation correlation key for REPORT."
+  (cons (plist-get report :runtime-id)
+        (plist-get report :operation-id)))
+
+(defun etaf-performance--capture (runtime report)
+  "Capture one flat REPORT emitted by RUNTIME."
+  (let* ((attachment (gethash runtime etaf-performance--attachments))
+         (key (etaf-performance--pending-key report))
+         (reports (cons (copy-tree report)
+                        (gethash key etaf-performance--pending))))
+    (when attachment
+      (cl-pushnew key (etaf-performance--attachment-pending-keys attachment)
+                  :test #'equal))
+    (if (etaf-performance--final-report-p report)
+        (progn
+          (remhash key etaf-performance--pending)
+          (when attachment
+            (setf (etaf-performance--attachment-pending-keys attachment)
+                  (delete key
+                          (etaf-performance--attachment-pending-keys
+                           attachment))))
+          (etaf-performance--retain
+           (etaf-performance--operation-from-reports reports))
+          (when (eq (plist-get report :kind) 'unmount)
+            (remhash runtime etaf-performance--attachments)))
+      (puthash key reports etaf-performance--pending)))
+  nil)
+
+(defun etaf-performance--discard-pending (attachment)
+  "Discard unfinished records owned by ATTACHMENT."
+  (dolist (key (etaf-performance--attachment-pending-keys attachment))
+    (remhash key etaf-performance--pending))
+  (setf (etaf-performance--attachment-pending-keys attachment) nil))
+
+;;;###autoload
+(defun etaf-performance-start (runtime)
+  "Attach the recorder to mounted RUNTIME and return RUNTIME.
+
+Attachment is idempotent for this recorder.  A Runtime already owned by a
+  different observer is rejected rather than replaced."
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (let* ((attachment (gethash runtime etaf-performance--attachments))
+         (owned-sink (and attachment
+                          (etaf-performance--attachment-sink attachment))))
+    (cond
+     (owned-sink
+      (unless (etaf-runtime-compare-and-set-observer
+               runtime owned-sink owned-sink)
+        (error "ETAF recorder no longer owns the Runtime observer"))
+      runtime)
+     (t
+      (when attachment
+        (remhash runtime etaf-performance--attachments))
+      (let* ((sink (lambda (report)
+                     (etaf-performance--capture runtime report)))
+             (new (etaf-performance--attachment-create
+                   :sink sink :pending-keys nil)))
+        (unless (etaf-runtime-compare-and-set-observer runtime nil sink)
+          (error "ETAF runtime already has a different observer"))
+        (puthash runtime new etaf-performance--attachments)
+        runtime)))))
+
+;;;###autoload
+(defun etaf-performance-stop (runtime)
+  "Detach this recorder from RUNTIME and return RUNTIME.
+
+If another observer replaced the recorder sink, leave that observer intact."
+  (unless (etaf-runtime-p runtime)
+    (signal 'wrong-type-argument (list 'etaf-runtime-p runtime)))
+  (when-let* ((attachment
+               (gethash runtime etaf-performance--attachments)))
+    (let ((sink (etaf-performance--attachment-sink attachment)))
+      (condition-case nil
+          (etaf-runtime-compare-and-set-observer runtime sink nil)
+        (etaf-runtime-error nil)))
+    (etaf-performance--discard-pending attachment)
+    (remhash runtime etaf-performance--attachments))
+  runtime)
+
+;;;###autoload
+(defun etaf-performance-call-operation (runtime kind label function)
+  "Call FUNCTION as KIND and LABEL through RUNTIME's operation boundary."
+  (etaf-runtime-call-operation runtime kind label function))
+
+(cl-defmacro etaf-performance-with-operation
+    ((runtime kind label) &rest body)
+  "Evaluate BODY through RUNTIME's canonical operation boundary."
+  (declare (indent 1) (debug ((form form form) body)))
+  `(etaf-performance-call-operation
+    ,runtime ,kind ,label (lambda () ,@body)))
+
+;;;###autoload
+(define-minor-mode etaf-performance-mode
+  "Record operations for the Runtime mounted in the current buffer."
+  :init-value nil
+  :lighter " ETAF-Perf"
+  (if etaf-performance-mode
+      (let ((runtime (etaf-runtime-for-buffer (current-buffer))))
+        (unless runtime
+          (setq etaf-performance-mode nil)
+          (user-error "Current buffer has no mounted ETAF runtime"))
+        (condition-case condition
+            (progn
+              (etaf-performance-start runtime)
+              (setq etaf-performance--mode-runtime runtime))
+          (error
+           (setq etaf-performance-mode nil)
+           (signal (car condition) (cdr condition)))))
+    (when etaf-performance--mode-runtime
+      (etaf-performance-stop etaf-performance--mode-runtime)
+      (setq etaf-performance--mode-runtime nil))))
+
+;;;###autoload
+(defun etaf-performance-clear ()
+  "Clear completed and unfinished performance records."
+  (interactive)
+  (setq etaf-performance--record-ring nil)
+  (clrhash etaf-performance--pending)
+  (when-let* ((panel (get-buffer "*ETAF Performance*")))
+    (with-current-buffer panel
+      (when (derived-mode-p 'etaf-performance-panel-mode)
+        (tabulated-list-revert))))
+  nil)
 
 (defun etaf-performance--stage-report-data (stage)
-  "Return portable report data for performance STAGE."
-  (list :id (etaf-performance-stage-id stage)
+  "Return portable report data for STAGE."
+  (list :sequence (etaf-performance-stage-sequence stage)
+        :provider (etaf-performance-stage-provider stage)
         :category (etaf-performance-stage-category stage)
-        :function (etaf-performance-stage-function stage)
-        :detail (etaf-performance-stage-detail stage)
-        :depth (etaf-performance-stage-depth stage)
-        :inclusive-ms (etaf-performance-stage-inclusive stage)
-        :exclusive-ms (etaf-performance-stage-exclusive stage)
-        :status (etaf-performance-stage-status stage)))
+        :stage (etaf-performance-stage-name stage)
+        :duration-ms (etaf-performance-stage-duration stage)
+        :status (etaf-performance-stage-status stage)
+        :metadata (copy-tree (etaf-performance-stage-metadata stage))))
 
 (defun etaf-performance--operation-report-data (operation)
-  "Return portable report data for performance OPERATION."
-  (list
-   :id (etaf-performance-operation-id operation)
-   :parent-id (etaf-performance-operation-parent-id operation)
-   :kind (etaf-performance-operation-kind operation)
-   :label (etaf-performance-operation-label operation)
-   :runtime-id (etaf-performance-operation-runtime-id operation)
-   :buffer-name (etaf-performance-operation-buffer-name operation)
-   :generation-before
-   (etaf-performance-operation-generation-before operation)
-   :generation-after
-   (etaf-performance-operation-generation-after operation)
-   :started-at
-   (format-time-string "%Y-%m-%dT%H:%M:%S%z"
-                       (seconds-to-time
-                        (etaf-performance-operation-start-time operation)))
-   :elapsed-ms (etaf-performance-operation-elapsed operation)
-   :status (etaf-performance-operation-status operation)
-   :gc-count-delta
-   (- (etaf-performance-operation-gc-count-after operation)
-      (etaf-performance-operation-gc-count-before operation))
-   :gc-elapsed-ms
-   (* 1000.0
-      (- (etaf-performance-operation-gc-elapsed-after operation)
-         (etaf-performance-operation-gc-elapsed-before operation)))
-   :metadata (copy-tree (etaf-performance-operation-metadata operation))
-   :stage-summary (etaf-performance-operation-stage-summary operation)
-   :stages
-   (mapcar #'etaf-performance--stage-report-data
-           (etaf-performance-operation-stages operation))))
+  "Return portable report data for OPERATION."
+  (list :id (etaf-performance-operation-id operation)
+        :kind (etaf-performance-operation-kind operation)
+        :label (etaf-performance-operation-label operation)
+        :runtime-id (etaf-performance-operation-runtime-id operation)
+        :buffer-name (etaf-performance-operation-buffer-name operation)
+        :generation-before
+        (etaf-performance-operation-generation-before operation)
+        :generation-after
+        (etaf-performance-operation-generation-after operation)
+        :elapsed-ms (etaf-performance-operation-elapsed operation)
+        :status (etaf-performance-operation-status operation)
+        :gc-count (etaf-performance-operation-gc-count operation)
+        :gc-duration-ms (etaf-performance-operation-gc-elapsed operation)
+        :metadata (copy-tree (etaf-performance-operation-metadata operation))
+        :stage-summary
+        (etaf-performance-operation-stage-summary operation)
+        :stages
+        (mapcar #'etaf-performance--stage-report-data
+                (etaf-performance-operation-stages operation))))
 
 (defun etaf-performance--parse-darwin-power-state
     (battery-output custom-output)
@@ -324,25 +398,23 @@ BATTERY-OUTPUT identifies the active source; CUSTOM-OUTPUT contains settings."
         (list (window-body-width nil t) (window-body-height nil t))
         :gc-cons-threshold gc-cons-threshold
         :gc-cons-percentage gc-cons-percentage
+        :native-comp-jit-compilation
+        (and (boundp 'native-comp-jit-compilation)
+             native-comp-jit-compilation)
         :load-average (load-average t)
         :power-state (etaf-performance--power-state)))
 
 ;;;###autoload
 (defun etaf-performance-report-data (&optional records)
-  "Return a portable report for completed performance RECORDS.
-
-RECORDS defaults to `etaf-performance-records'.  Operations are returned in
-capture order, oldest first.  The report contains only plain Lisp data so it
-can be copied, saved, and read in another Emacs process."
+  "Return a portable report for completed performance RECORDS."
   (let ((records (or records (etaf-performance-records))))
-    (list
-     :format-version etaf-performance-report-format-version
-     :generated-at (format-time-string "%Y-%m-%dT%H:%M:%S%z")
-     :environment (etaf-performance-environment-data)
-     :summary (etaf-performance-summary records)
-     :operations
-     (mapcar #'etaf-performance--operation-report-data
-             (reverse (copy-sequence records))))))
+    (list :format-version etaf-performance-report-format-version
+          :generated-at (format-time-string "%Y-%m-%dT%H:%M:%S%z")
+          :environment (etaf-performance-environment-data)
+          :summary (etaf-performance-summary records)
+          :operations
+          (mapcar #'etaf-performance--operation-report-data
+                  (reverse (copy-sequence records))))))
 
 ;;;###autoload
 (defun etaf-performance-report-string (&optional records)
@@ -365,8 +437,8 @@ can be copied, saved, and read in another Emacs process."
 (defun etaf-performance-export (file)
   "Export all retained performance records to FILE.
 
-When called interactively, suggest a timestamped `.eld' file in
-`default-directory'.  Refuse to overwrite an existing file."
+When called interactively, suggest a timestamped `.eld' file.  Refuse to
+overwrite an existing file."
   (interactive
    (list
     (read-file-name
@@ -375,478 +447,50 @@ When called interactively, suggest a timestamped `.eld' file in
       (format "etaf-performance-%s.eld"
               (format-time-string "%Y%m%d-%H%M%S"))
       default-directory))))
-  (let* ((record-count (length (etaf-performance-records)))
-         (report (etaf-performance-report-string)))
+  (let ((report (etaf-performance-report-string)))
     (write-region report nil file nil 'silent nil 'excl)
     (message "Exported %d ETAF performance operations to %s"
-             record-count (abbreviate-file-name file))
+             (length (etaf-performance-records))
+             (abbreviate-file-name file))
     file))
-
-(defun etaf-performance-clear ()
-  "Clear all completed performance records."
-  (interactive)
-  ;; Keep correlation IDs monotonic even if an active operation clears history.
-  (setq etaf-performance--record-ring nil)
-  (when-let* ((panel (get-buffer "*ETAF Performance*")))
-    (with-current-buffer panel
-      (when (derived-mode-p 'etaf-performance-panel-mode)
-        (tabulated-list-revert))))
-  nil)
-
-(defun etaf-performance--now ()
-  "Return a wall-clock timestamp as floating-point seconds."
-  (float-time))
-
-(defun etaf-performance--runtime-p (value)
-  "Return non-nil when VALUE is an ETAF Runtime."
-  (and (fboundp 'etaf-runtime-p) (etaf-runtime-p value)))
-
-(defun etaf-performance--runtime-for-buffer (buffer)
-  "Return the Runtime mounted in BUFFER, without signaling."
-  (and buffer (fboundp 'etaf-runtime-for-buffer)
-       (ignore-errors (etaf-runtime-for-buffer buffer))))
-
-(defun etaf-performance--runtime-from-call (function arguments result after)
-  "Resolve Runtime for FUNCTION call using ARGUMENTS, RESULT, and AFTER."
-  (let ((first (car arguments)))
-    (cond
-     ((eq function 'etaf-runtime-mount)
-      (when after (etaf-performance--runtime-for-buffer result)))
-     ((etaf-performance--runtime-p first) first)
-     ((memq function '(etaf-runtime-flush etaf-runtime-unmount
-                       etaf-focus etaf-focus-next etaf-focus-previous
-                       etaf-activate))
-      (or (and first (etaf-performance--runtime-for-buffer first))
-          (and (boundp 'etaf--current-runtime) etaf--current-runtime)
-          (etaf-performance--runtime-for-buffer (current-buffer))))
-     ((eq function 'etaf-activate-mouse)
-      (and (boundp 'etaf--current-runtime) etaf--current-runtime))
-     ((eq function 'etaf-dispatch)
-      (if (etaf-performance--runtime-p first)
-          first
-        (and (boundp 'etaf--current-runtime) etaf--current-runtime)))
-     ((memq function '(ebox-surface-update-buffer-viewport
-                       ebox-rerender-buffer-with-context))
-      (etaf-performance--runtime-for-buffer first))
-     (t
-      (and (boundp 'etaf--current-runtime) etaf--current-runtime)))))
-
-(defun etaf-performance--buffer (runtime function arguments result after)
-  "Resolve operation buffer from RUNTIME and call metadata.
-FUNCTION received ARGUMENTS and produced RESULT when AFTER is non-nil."
-  (cond
-   ((and runtime (fboundp 'etaf-runtime-buffer))
-    (ignore-errors (etaf-runtime-buffer runtime)))
-   ((eq function 'etaf-runtime-mount)
-    (let ((value (if after result (car arguments))))
-      (cond ((bufferp value) value)
-            ((stringp value) (get-buffer value)))))
-   ((memq function '(ebox-surface-update-buffer-viewport
-                     ebox-rerender-buffer-with-context))
-    (get-buffer (car arguments)))
-   (t nil)))
-
-(defun etaf-performance--generation (runtime)
-  "Return RUNTIME's committed generation, or nil."
-  (and runtime (fboundp 'etaf-runtime-generation)
-       (ignore-errors (etaf-runtime-generation runtime))))
-
-(defun etaf-performance--runtime-id (runtime)
-  "Return RUNTIME's stable scalar mount identity, or nil."
-  (and runtime (fboundp 'etaf-runtime-mount-epoch)
-       (ignore-errors (etaf-runtime-mount-epoch runtime))))
-
-(defun etaf-performance--buffer-name (buffer)
-  "Return BUFFER's name snapshot, or nil."
-  (cond ((bufferp buffer) (buffer-name buffer))
-        ((stringp buffer) buffer)
-        (t nil)))
-
-(defun etaf-performance--label (function arguments)
-  "Return a concise label for FUNCTION called with ARGUMENTS."
-  (pcase function
-    ('etaf-dispatch-event
-     (format "%s %S" (nth 2 arguments) (nth 1 arguments)))
-    ('etaf-dispatch
-     (format "%S" (if (etaf-performance--runtime-p (car arguments))
-                       (nth 1 arguments)
-                     (car arguments))))
-    ('etaf-runtime-mount (format "%s" (car arguments)))
-    ('etaf-runtime-flush "manual flush")
-    ('etaf-runtime-unmount "unmount")
-    ('etaf-data-load "data load")
-    ('etaf-data-source-load-page
-     (format "data prepare page %s/%s"
-             (or (nth 2 arguments) 1) (or (nth 3 arguments) 20)))
-    ('etaf-data-mutate (format "data %S" (nth 1 arguments)))
-    ('etaf-resource-load "resource load/reload")
-    ('ebox-surface-update-buffer-viewport
-     (format "viewport %sx%s" (nth 1 arguments) (or (nth 2 arguments) "-")))
-    ('ebox-rerender-buffer-with-context
-     (format "rerender %sx%s" (nth 1 arguments) (or (nth 2 arguments) "-")))
-    ('etaf-focus (format "focus %S" (nth 1 arguments)))
-    ('etaf-focus-next "next")
-    ('etaf-focus-previous "previous")
-    ('etaf-activate-mouse "mouse")
-    ('etaf-activate "keyboard")
-    (_ (symbol-name function))))
-
-(defun etaf-performance--retain (operation)
-  "Retain completed OPERATION under the configured bound."
-  (let ((limit (max 0 etaf-performance-max-records)))
-    (if (zerop limit)
-        (setq etaf-performance--record-ring nil)
-      (unless (and etaf-performance--record-ring
-                   (= (ring-size etaf-performance--record-ring) limit))
-        (let ((existing (etaf-performance-records)))
-          (setq etaf-performance--record-ring (make-ring limit))
-          (dolist (record (reverse (seq-take existing limit)))
-            (ring-insert etaf-performance--record-ring record))))
-      (ring-insert etaf-performance--record-ring operation))))
-
-(defun etaf-performance--call-operation
-    (original function kind arguments &optional label runtime buffer)
-  "Call ORIGINAL as operation FUNCTION of KIND with ARGUMENTS.
-Optional LABEL, RUNTIME, and BUFFER override inferred metadata."
-  (if (not etaf-performance-mode)
-      (apply original arguments)
-    (let* ((runtime-before
-            (or runtime
-                (etaf-performance--runtime-from-call
-                 function arguments nil nil)))
-           (buffer-before
-            (or buffer
-                (etaf-performance--buffer
-                 runtime-before function arguments nil nil)))
-           (start (etaf-performance--now))
-           (gc-count-before gcs-done)
-           (gc-elapsed-before gc-elapsed)
-           (operation
-            (etaf-performance--operation-create
-             :id (cl-incf etaf-performance--next-operation-id)
-             :parent-id (and etaf-performance--current-operation
-                             (etaf-performance-operation-id
-                              etaf-performance--current-operation))
-             :kind kind :label (or label
-                                   (etaf-performance--label
-                                    function arguments))
-             :runtime-id (etaf-performance--runtime-id runtime-before)
-             :buffer-name (etaf-performance--buffer-name buffer-before)
-             :generation-before
-             (etaf-performance--generation runtime-before)
-             :start-time start :gc-count-before gc-count-before
-             :gc-elapsed-before gc-elapsed-before))
-           (etaf-performance--current-operation operation)
-           (etaf-performance--stage-stack nil)
-           (completed nil)
-           (quit-p nil)
-           result)
-      (unwind-protect
-          (condition-case condition
-              (prog1 (setq result (apply original arguments))
-                (setq completed t))
-            (quit
-             (setq quit-p t)
-             (signal (car condition) (cdr condition))))
-        (let* ((end (etaf-performance--now))
-               (runtime-after
-                (or (etaf-performance--runtime-from-call
-                     function arguments result t)
-                    runtime-before))
-               (buffer-after
-                (or (etaf-performance--buffer
-                     runtime-after function arguments result t)
-                    buffer-before)))
-          (setf (etaf-performance-operation-runtime-id operation)
-                (etaf-performance--runtime-id runtime-after)
-                (etaf-performance-operation-buffer-name operation)
-                (etaf-performance--buffer-name buffer-after)
-                (etaf-performance-operation-generation-after operation)
-                (etaf-performance--generation runtime-after)
-                (etaf-performance-operation-end-time operation) end
-                (etaf-performance-operation-elapsed operation)
-                (* 1000.0 (- end start))
-                (etaf-performance-operation-status operation)
-                (cond (completed 'success) (quit-p 'quit) (t 'error))
-                (etaf-performance-operation-gc-count-after operation) gcs-done
-                (etaf-performance-operation-gc-elapsed-after operation)
-                gc-elapsed
-                (etaf-performance-operation-stages operation)
-                (sort (etaf-performance-operation-stages operation)
-                      (lambda (left right)
-                        (< (etaf-performance-stage-id left)
-                           (etaf-performance-stage-id right)))))
-          (etaf-performance--retain operation)))
-      result)))
-
-;;;###autoload
-(defun etaf-performance-call-operation
-    (kind label function &optional runtime buffer)
-  "Call FUNCTION as a recorded operation and return its exact result.
-KIND and LABEL identify the operation.  Optional RUNTIME and BUFFER attach
-framework metadata without constraining FUNCTION's implementation.  FUNCTION
-should close over any arguments it needs.  Errors and quits are re-signaled."
-  (unless (functionp function)
-    (signal 'wrong-type-argument (list 'functionp function)))
-  (etaf-performance--call-operation
-   function 'etaf-performance-call-operation kind nil label runtime buffer))
-
-(cl-defmacro etaf-performance-with-operation
-    ((kind label &optional runtime buffer) &rest body)
-  "Evaluate BODY as a recorded operation and return its exact result.
-KIND, LABEL, optional RUNTIME, and optional BUFFER are evaluated once."
-  (declare (indent 1) (debug ((form form &optional form form) body)))
-  `(etaf-performance-call-operation
-    ,kind ,label (lambda () ,@body) ,runtime ,buffer))
-
-(defun etaf-performance--make-operation-advice (function kind)
-  "Return an around advice closure for operation FUNCTION and KIND."
-  (lambda (original &rest arguments)
-    (etaf-performance--call-operation original function kind arguments)))
-
-(defun etaf-performance--call-stage
-    (original function category detail arguments)
-  "Call ORIGINAL as stage FUNCTION in CATEGORY with DETAIL and ARGUMENTS."
-  (if (not etaf-performance--current-operation)
-      (apply original arguments)
-    (let* ((start (etaf-performance--now))
-           (frame
-            (etaf-performance--stage-frame-create
-             :id (cl-incf etaf-performance--next-stage-id)
-             :category category :function function :detail detail
-             :depth (length etaf-performance--stage-stack)
-             :start-time start))
-           (parent (car etaf-performance--stage-stack))
-           (etaf-performance--stage-stack
-            (cons frame etaf-performance--stage-stack))
-           (completed nil)
-           (quit-p nil)
-           result)
-      (unwind-protect
-          (condition-case condition
-              (prog1 (setq result (apply original arguments))
-                (setq completed t))
-            (quit
-             (setq quit-p t)
-             (signal (car condition) (cdr condition))))
-        (let* ((end (etaf-performance--now))
-               (inclusive (* 1000.0 (- end start)))
-               (exclusive
-                (max 0.0 (- inclusive
-                            (etaf-performance--stage-frame-child-time frame)))))
-          (when parent
-            (cl-incf (etaf-performance--stage-frame-child-time parent)
-                     inclusive))
-          (when completed
-            (etaf-performance--capture-stage-result
-             etaf-performance--current-operation function result))
-          (push
-           (etaf-performance--stage-create
-            :id (etaf-performance--stage-frame-id frame)
-            :category category :function function :detail detail
-            :depth (etaf-performance--stage-frame-depth frame)
-            :start-time start :end-time end :inclusive inclusive
-            :exclusive exclusive
-            :status (cond (completed 'success) (quit-p 'quit) (t 'error)))
-           (etaf-performance-operation-stages
-            etaf-performance--current-operation))))
-      result)))
-
-(defun etaf-performance--compact-ebox-report (report)
-  "Return stable scalar diagnostics from public Ebox REPORT."
-  (when (listp report)
-    (list :strategy (plist-get report :strategy)
-          :projection-kind (plist-get report :projection-kind)
-          :dirty-count (plist-get report :dirty-count)
-          :owner-count (length (plist-get report :owner-ids))
-          :patch-count (plist-get report :patch-count)
-          :tp-scope-count (plist-get report :tp-scope-count)
-          :tp-text-operations (plist-get report :tp-text-operations)
-          :tp-property-operations (plist-get report :tp-property-operations)
-          :tp-full-root (and (plist-get report :tp-full-root) t)
-          :tp-scope-fallback (and (plist-get report :tp-scope-fallback) t)
-          :native-frame-kind (plist-get report :native-frame-kind)
-          :timing (copy-tree (plist-get report :timing)))))
-
-(defun etaf-performance--capture-stage-result (operation function result)
-  "Attach public FUNCTION RESULT diagnostics to OPERATION."
-  (when (eq function 'ebox-commit)
-    (setf (etaf-performance-operation-metadata operation)
-          (plist-put (etaf-performance-operation-metadata operation)
-                     :ebox
-                     (etaf-performance--compact-ebox-report result)))))
-
-(defun etaf-performance--make-stage-advice (function category detail)
-  "Return an around advice closure for stage FUNCTION CATEGORY and DETAIL."
-  (lambda (original &rest arguments)
-    (etaf-performance--call-stage
-     original function category detail arguments)))
-
-(defun etaf-performance--install-one (function advice)
-  "Install ADVICE around FUNCTION once and remember it."
-  (let ((installed
-         (cl-find function etaf-performance--installed-advices :key #'car)))
-    (cond
-     ((and installed (advice-member-p (cdr installed) function)) nil)
-     (installed
-      ;; Reloading a package replaces its advised symbol-function.  Reattach
-      ;; the exact tracked closure so disable/unregister can still remove it.
-      (advice-add function :around (cdr installed)))
-     (t
-      (advice-add function :around advice)
-      (push (cons function advice) etaf-performance--installed-advices)))))
-
-(defun etaf-performance--uninstall-function (function)
-  "Remove recorder advice installed on FUNCTION."
-  (when-let* ((entry (assq function etaf-performance--installed-advices)))
-    (advice-remove function (cdr entry))
-    (setq etaf-performance--installed-advices
-          (delq entry etaf-performance--installed-advices))))
-
-;;;###autoload
-(defun etaf-performance-register-stage (function category &optional detail)
-  "Register FUNCTION as a timed stage in CATEGORY.
-DETAIL defaults to FUNCTION.  Registration is safe before or after the
-package defining FUNCTION is loaded.  Return FUNCTION."
-  (unless (symbolp function)
-    (signal 'wrong-type-argument (list 'symbolp function)))
-  (unless (symbolp category)
-    (signal 'wrong-type-argument (list 'symbolp category)))
-  (when (assq function etaf-performance--operation-functions)
-    (error "ETAF performance operation boundary cannot be a stage: %S"
-           function))
-  (let ((detail (or detail function)))
-    (unless (symbolp detail)
-      (signal 'wrong-type-argument (list 'symbolp detail)))
-    (setq etaf-performance--stage-functions
-          (cons (list function category detail)
-                (assq-delete-all function
-                                 etaf-performance--stage-functions)))
-    (etaf-performance--uninstall-function function)
-    (when (and etaf-performance-mode (fboundp function))
-      (etaf-performance--install-one
-       function
-       (etaf-performance--make-stage-advice function category detail))))
-  function)
-
-;;;###autoload
-(defun etaf-performance-unregister-stage (function)
-  "Unregister timed stage FUNCTION and remove its installed advice."
-  (when (assq function etaf-performance--operation-functions)
-    (error "ETAF performance operation boundary is not a registered stage: %S"
-           function))
-  (setq etaf-performance--stage-functions
-        (assq-delete-all function etaf-performance--stage-functions))
-  (etaf-performance--uninstall-function function)
-  function)
-
-(defun etaf-performance--install-loaded-advices (&optional _file)
-  "Install configured advices whose functions are currently loaded."
-  (when etaf-performance-mode
-    (dolist (entry etaf-performance--operation-functions)
-      (when (fboundp (car entry))
-        (etaf-performance--install-one
-         (car entry)
-         (etaf-performance--make-operation-advice
-          (car entry) (nth 1 entry)))))
-    (dolist (entry etaf-performance--stage-functions)
-      (when (fboundp (car entry))
-        (etaf-performance--install-one
-         (car entry)
-         (etaf-performance--make-stage-advice
-          (car entry) (nth 1 entry) (nth 2 entry)))))))
-
-(defun etaf-performance--uninstall-advices ()
-  "Remove every operation and stage advice installed by this recorder."
-  (dolist (entry etaf-performance--installed-advices)
-    (advice-remove (car entry) (cdr entry)))
-  (setq etaf-performance--installed-advices nil))
-
-;;;###autoload
-(define-minor-mode etaf-performance-mode
-  "Globally record ETAF operations and cross-package performance stages."
-  :global t
-  :init-value nil
-  :lighter " ETAF-Perf"
-  (if etaf-performance-mode
-      (progn
-        (add-hook 'after-load-functions
-                  #'etaf-performance--install-loaded-advices)
-        (etaf-performance--install-loaded-advices))
-    (remove-hook 'after-load-functions
-                 #'etaf-performance--install-loaded-advices)
-    (etaf-performance--uninstall-advices)))
 
 (defun etaf-performance--format-object (value)
   "Format VALUE compactly for the performance table."
-  (cond ((bufferp value) (buffer-name value))
-        ((null value) "-")
-        (t (format "%s" value))))
-
-(defun etaf-performance--format-report (operation)
-  "Return compact public backend metadata for OPERATION."
-  (if-let* ((report (plist-get (etaf-performance-operation-metadata operation)
-                              :ebox)))
-      (format "%s/%s d:%s o:%s tp:%s/%s/%s%s"
-              (or (plist-get report :strategy) "-")
-              (or (plist-get report :projection-kind) "-")
-              (or (plist-get report :dirty-count) 0)
-              (or (plist-get report :owner-count) 0)
-              (or (plist-get report :tp-scope-count) 0)
-              (or (plist-get report :tp-text-operations) 0)
-              (or (plist-get report :tp-property-operations) 0)
-              (if (or (plist-get report :tp-full-root)
-                      (plist-get report :tp-scope-fallback))
-                  " fallback"
-                ""))
-    "-"))
+  (if (null value) "-" (format "%s" value)))
 
 (defun etaf-performance--tabulated-entries ()
-  "Return tabulated entries for retained operations and their stages."
+  "Return tabulated entries for retained operations and flat stages."
   (let (entries)
     (dolist (operation (reverse (etaf-performance-records)))
       (let ((id (etaf-performance-operation-id operation)))
         (push
          (list (cons 'operation id)
-               (vector
-                (number-to-string id)
-                (etaf-performance--format-object
-                 (etaf-performance-operation-parent-id operation))
-                (symbol-name (etaf-performance-operation-kind operation))
-                (or (etaf-performance-operation-label operation) "")
-                "operation" "-" "0"
-                (format "%.3f" (etaf-performance-operation-elapsed operation))
-                "-" (symbol-name (etaf-performance-operation-status operation))
-                (etaf-performance--format-object
-                 (etaf-performance-operation-buffer-name operation))
-                (format "%s→%s"
-                        (etaf-performance--format-object
-                         (etaf-performance-operation-generation-before operation))
-                        (etaf-performance--format-object
-                         (etaf-performance-operation-generation-after operation)))
-                (etaf-performance--format-report operation)
-                (format "%d/%.3fms"
-                        (- (etaf-performance-operation-gc-count-after operation)
-                           (etaf-performance-operation-gc-count-before operation))
-                        (* 1000.0
-                           (- (etaf-performance-operation-gc-elapsed-after operation)
-                              (etaf-performance-operation-gc-elapsed-before operation))))))
+               (vector (number-to-string id)
+                       (symbol-name (etaf-performance-operation-kind operation))
+                       (or (etaf-performance-operation-label operation) "")
+                       "operation" "-" "-"
+                       (format "%.3f"
+                               (etaf-performance-operation-elapsed operation))
+                       (symbol-name
+                        (etaf-performance-operation-status operation))
+                       (etaf-performance--format-object
+                        (etaf-performance-operation-buffer-name operation))))
          entries)
         (dolist (stage (etaf-performance-operation-stages operation))
           (push
-           (list (cons id (etaf-performance-stage-id stage))
+           (list (cons id (etaf-performance-stage-sequence stage))
                  (vector
-                  (format "%s.%s" id (etaf-performance-stage-id stage))
-                  (number-to-string id) "stage"
-                  (concat (make-string (* 2 (etaf-performance-stage-depth stage)) ?\s)
-                          (symbol-name (etaf-performance-stage-detail stage)))
+                  (format "%s.%s" id
+                          (etaf-performance-stage-sequence stage))
+                  "stage"
+                  (symbol-name (etaf-performance-stage-name stage))
                   (symbol-name (etaf-performance-stage-category stage))
-                  (symbol-name (etaf-performance-stage-function stage))
-                  (number-to-string (etaf-performance-stage-depth stage))
-                  (format "%.3f" (etaf-performance-stage-inclusive stage))
-                  (format "%.3f" (etaf-performance-stage-exclusive stage))
+                  (symbol-name (etaf-performance-stage-provider stage))
+                  (number-to-string
+                   (etaf-performance-stage-sequence stage))
+                  (format "%.3f" (etaf-performance-stage-duration stage))
                   (symbol-name (etaf-performance-stage-status stage))
-                  "-" "-" "-" "-"))
+                  "-"))
            entries))))
     (nreverse entries)))
 
@@ -862,16 +506,13 @@ package defining FUNCTION is loaded.  Return FUNCTION."
             (or (plist-get power :low-power-mode) 'unknown)
             (or load 0.0))))
 
-(define-derived-mode etaf-performance-panel-mode tabulated-list-mode "ETAF-Performance"
-  "Display ETAF operation and nested stage timing records.
-
-Press `c' to copy a complete report or `w' to export it to a file."
+(define-derived-mode etaf-performance-panel-mode
+  tabulated-list-mode "ETAF-Performance"
+  "Display ETAF operations and their flat provider reports."
   (setq tabulated-list-format
-        [("ID" 9 t) ("Parent" 7 t) ("Type" 10 t) ("Label / Detail" 24 t)
-         ("Category" 12 t) ("Function" 34 t) ("Depth" 6 t)
-         ("Inclusive ms" 13 t) ("Exclusive ms" 13 t) ("Status" 8 t)
-         ("Buffer" 18 t) ("Generation" 12 t) ("Backend report" 40 t)
-         ("GC delta" 14 t)])
+        [("ID" 9 t) ("Type" 10 t) ("Operation / Stage" 26 t)
+         ("Category" 12 t) ("Provider" 12 t) ("Sequence" 9 t)
+         ("Duration ms" 13 t) ("Status" 8 t) ("Buffer" 20 t)])
   (setq tabulated-list-padding 2
         tabulated-list-entries #'etaf-performance--tabulated-entries
         header-line-format (etaf-performance--panel-environment-line))

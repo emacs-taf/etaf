@@ -42,12 +42,15 @@ Define a Component:
 
 ## Performance records
 
-ETAF includes an opt-in, application-neutral timing recorder.  It recognizes
-public Event, Action, mount, flush, focus, Data, Resource, and viewport
-operations, then correlates coarse ETAF, Ebox, TP, and SQLite stages when those
-packages are loaded.
+ETAF provides an independent, opt-in, application-neutral timing recorder.  It
+consumes public Runtime observer reports without advice or private cross-package
+probes.  Runtime operations such as Event, Action, mount, flush, and unmount are
+recorded automatically; Ebox, TP, Data, Resource, and SQLite provider stages
+inside the same operation are correlated by sequence.
 
 ```elisp
+(require 'etaf-performance)
+;; In a buffer with a mounted ETAF Runtime:
 (etaf-performance-mode 1)
 ;; Use any mounted ETAF application normally.
 (etaf-performance-show)
@@ -58,30 +61,24 @@ reproducing the operations, press `c` in the panel (or run
 `M-x etaf-performance-copy-report`) to copy a complete report.  Press `w` (or
 run `M-x etaf-performance-export`) to save the same report as an `.eld` file.
 The portable report includes the Emacs/display environment, power source,
-low-power mode, system load, grouped p50/p95/max, individual operations, GC
-deltas, and nested stages.  The panel header exposes the same environment
-context so a machine-wide slowdown is not mistaken for one package hotspot.
+low-power mode, native-JIT state, system load, grouped p50/p95/max, individual
+operations, GC deltas, and ordered provider stages.  The panel header exposes
+the same environment context so a machine-wide slowdown is not mistaken for
+one package hotspot.
 
-The `*ETAF Performance*` panel shows operation IDs and parent operations,
-generation changes, total latency, GC deltas, and nested stage inclusive/self
-time.  Records are bounded by `etaf-performance-max-records`; disabling the
-mode removes all recorder advice.  `etaf-performance-summary` computes
-operation p50/p95/max statistics on demand, while
-`etaf-performance-operation-stage-summary` ranks one operation's package
-categories by exclusive time.
-
-The default registry deliberately uses coarse package boundaries to keep the
-measured application representative.  A package or application can add a
-temporary detail probe without coupling itself to an example:
-
-```elisp
-(etaf-performance-register-stage
- 'my-package-expensive-step 'application 'expensive-step)
-```
+The `*ETAF Performance*` panel shows operation IDs, generation changes, total
+latency, GC deltas, and each flat provider stage in sequence.  Provider stages
+may overlap, so they are not presented as exclusive/self time.  Records are
+bounded by `etaf-performance-max-records`; disabling the mode only detaches the
+Runtime observer and never rewrites functions.  `etaf-performance-summary`
+computes operation p50/p95/max statistics on demand, while
+`etaf-performance-operation-stage-summary` groups one operation's flat stages
+by provider category.
 
 Use `etaf-performance-call-operation` or
 `etaf-performance-with-operation` to trace an arbitrary operation that has no
-built-in public boundary.
+built-in public boundary.  Both delegate to the same Runtime operation boundary;
+they do not create a second timer.
 
 ## Executable examples
 

@@ -605,6 +605,8 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
 对任意应用负载启用通用记录器，然后打开普通的 `tabulated-list-mode` 面板：
 
 ```elisp
+(require 'etaf-performance)
+;; 在已挂载 ETAF Runtime 的 buffer 中：
 (etaf-performance-mode 1)
 (etaf-performance-show)
 ```
@@ -612,21 +614,23 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
 正式复现前执行 `M-x etaf-performance-clear`。复现后在面板按 `c`，或者执行
 `M-x etaf-performance-copy-report`，可把环境、汇总、operation、GC 和阶段数据
 完整复制到剪贴板；按 `w` 或执行 `M-x etaf-performance-export` 可导出 `.eld`
-文件。报告和面板 header 还会显示电源来源、低功耗模式与系统负载。这两种报告
-都可以直接发送给分析者。
+文件。报告和面板 header 还会显示电源来源、低功耗模式、native JIT 状态与系统
+负载。这两种报告都可以直接发送给分析者。
 
-记录器会为公共交互、lifecycle、Data、Resource 和 viewport 边界创建有界的
-operation 记录。已加载的 Ebox、TP 与 SQLite 可以贡献嵌套的粗粒度阶段，
-但不需要反向依赖 ETAF。每个阶段同时报告 inclusive 与 exclusive 毫秒；
-error 和 quit 会先被记录，再保持原条件继续抛出。
+记录器只消费 Runtime 的公共 observer 报告，不安装 advice。Runtime 的 Event、
+Action、mount、flush 和 unmount 会创建有界 operation 记录；同一 operation 内，
+Ebox、TP、Data、Resource 与 SQLite 可以贡献按 sequence 排列的 flat provider
+阶段。阶段可能重叠，因此不声称 exclusive/self 时间；error 和 quit 会先被记录，
+再保持原条件继续抛出。
 
 `etaf-performance-summary` 只在请求时计算分组后的 p50/p95/max；
-`etaf-performance-operation-stage-summary` 会按 exclusive 时间排列某条记录
-中的包级阶段。
+`etaf-performance-operation-stage-summary` 会按 provider category 汇总某条记录
+中的 flat 阶段。
 
-使用 `etaf-performance-register-stage` 临时加入包级细节探针。没有经过内置
-公共边界的应用操作可以使用 `etaf-performance-with-operation`。采集结束后
-关闭 mode，所有已安装 advice 都会被移除。
+没有经过内置公共边界的应用操作可以使用
+`etaf-performance-call-operation`/`etaf-performance-with-operation`；它们直接委托
+同一个 Runtime operation 边界。采集结束后关闭 mode，只解除当前 Runtime 的
+observer，不修改任何函数。
 
 ## 14. 公共 API 速查
 
@@ -645,7 +649,7 @@ error 和 quit 会先被记录，再保持原条件继续抛出。
 | Resource | `etaf-resource`、`etaf-resource-result`、`etaf-error-boundary-run` | 管理 loader 状态和 cleanup |
 | 官方 UI | `require 'etaf-ui`、`etaf-button`、`etaf-checkbox`、`etaf-number-input`、`etaf-label`、`etaf-panel`、`etaf-data-grid` | 使用现成 Component |
 | Playground | `etaf-playground-open`、`etaf-playground-open-ui`、`etaf-playground-close`、`ebox-playground-open`、`ebox-playground-close` | 探索对应层 |
-| 性能分析 | `etaf-performance-mode`、`etaf-performance-show`、`etaf-performance-copy-report`、`etaf-performance-export`、`etaf-performance-environment-data`、`etaf-performance-records`、`etaf-performance-summary`、`etaf-performance-operation-stage-summary`、`etaf-performance-with-operation`、`etaf-performance-register-stage` | 跨已加载包定位通用 operation 的耗时并分享报告 |
+| 性能分析 | `etaf-performance-start`、`etaf-performance-stop`、`etaf-performance-mode`、`etaf-performance-show`、`etaf-performance-copy-report`、`etaf-performance-export`、`etaf-performance-environment-data`、`etaf-performance-records`、`etaf-performance-summary`、`etaf-performance-operation-stage-summary`、`etaf-performance-call-operation`、`etaf-performance-with-operation` | 通过公共 observer 定位通用 operation 的耗时并分享报告 |
 
 大多数应用一开始只需要 `etaf-view`、`etaf-mount`、`etaf-define-component`、`etaf-ref` 和事件 callback。其余 API 都是可选能力，不是理解核心语法的前置条件。
 

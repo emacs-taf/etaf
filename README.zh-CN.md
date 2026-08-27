@@ -42,12 +42,14 @@ Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
 
 ## 性能记录面板
 
-ETAF 内置了一个按需启用、与具体应用无关的性能记录器。它自动识别公共
-Event、Action、mount、flush、focus、Data、Resource 和 viewport 操作；当
-Ebox、TP、SQLite 等包已加载时，还会把这些包的粗粒度阶段关联到同一个
-operation。
+ETAF 提供一个独立、按需加载、与具体应用无关的性能记录器。它消费 Runtime
+公共 observer 报告，不使用 advice 或私有跨包探针。Event、Action、mount、flush
+和 unmount 等 Runtime operation 会自动记录；同一 operation 内的 Ebox、TP、Data、
+Resource 和 SQLite 等 provider 阶段按 sequence 关联到同一条记录。
 
 ```elisp
+(require 'etaf-performance)
+;; 在已挂载 ETAF Runtime 的 buffer 中：
 (etaf-performance-mode 1)
 ;; 正常操作任意已挂载的 ETAF 应用。
 (etaf-performance-show)
@@ -56,28 +58,21 @@ operation。
 交互采集时先执行 `M-x etaf-performance-clear`，复现一组操作后，在面板按
 `c`（或执行 `M-x etaf-performance-copy-report`）即可把完整报告复制到剪贴板；
 按 `w`（或执行 `M-x etaf-performance-export`）可保存为 `.eld` 文件。报告包含
-Emacs/显示环境、电源来源、低功耗模式、系统负载、分组 p50/p95/max、每次
-operation、GC 增量和嵌套阶段；面板 header 也显示同一环境信息，避免把整机降频
-误判成某个包的热点。
+Emacs/显示环境、电源来源、低功耗模式、native JIT 状态、系统负载、分组
+p50/p95/max、每次 operation、GC 增量和有序 provider 阶段；面板 header 也显示
+同一环境信息，避免把整机降频误判成某个包的热点。
 
-`*ETAF Performance*` 面板会显示 operation ID 与父 operation、generation
-变化、总耗时、GC 增量，以及嵌套阶段的 inclusive/self 耗时。记录数量由
-`etaf-performance-max-records` 限制；关闭 mode 会移除全部记录 advice。
+`*ETAF Performance*` 面板会显示 operation ID、generation 变化、总耗时、GC
+增量，以及 flat provider 阶段的顺序和各自耗时。provider 阶段可能重叠，因此
+不会伪装成 exclusive/self 时间。记录数量由 `etaf-performance-max-records`
+限制；关闭 mode 只会解除当前 Runtime 的 observer，不修改任何函数。
 `etaf-performance-summary` 会按需计算 operation 的 p50/p95/max，
-`etaf-performance-operation-stage-summary` 则按 exclusive 耗时排列单次
-operation 的包级阶段。
-
-默认注册表刻意只记录包级粗边界，避免分析工具明显改变被测应用。任意包或
-应用可以临时增加更细的探针，不需要绑定某个示例：
-
-```elisp
-(etaf-performance-register-stage
- 'my-package-expensive-step 'application 'expensive-step)
-```
+`etaf-performance-operation-stage-summary` 则按 provider category 汇总单次
+operation 的 flat 阶段。
 
 没有内置公共边界的任意操作，可以使用
 `etaf-performance-call-operation` 或 `etaf-performance-with-operation`
-包裹。
+包裹；它们直接委托同一个 Runtime operation 边界，不建立第二套计时器。
 
 ## 可执行示例
 
