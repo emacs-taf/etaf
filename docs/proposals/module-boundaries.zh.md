@@ -26,6 +26,10 @@ Text、Box、Component；Fragment、布局细节和底层包通过渐进披露�
 (grid PROPS CHILD...)
 ```
 
+Component 只有一个语义模型，但有两个互斥的定义 frontend：`:view` 使用上述 DSL，
+`:render` 使用普通 Elisp 和唯一函数 `etaf-node`。完整作者契约见
+[component-definition.zh.md](component-definition.zh.md)。
+
 `row/column/flex/grid` 都只是 Box 的布局形式。用户属性分为 metadata、语义/事件、
 视觉样式和 parent participation；采用语义一致的标准 CSS 名称、少量明确的
 ETAF/Ebox 个性属性和少量 parse-time alias。用户不接触 Ebox/TP/Emacs backend。
@@ -146,7 +150,8 @@ AuthorNode = String
 `String` 规范化为 Text；五个 Box form 规范化为带对应 typed Layout 的 Box。form
 名称不进入
 Runtime identity、diff、style、layout 或 paint 协议。ETAF 另外增加 Fragment、
-ComponentCall、`expr` 和 `slot`；Ebox DSL 不拥有这些语义。
+ComponentCall、文本插值 `expr`、slot 和结构 directive；Ebox DSL 不拥有这些语义。
+代码 frontend 的 `etaf-node` 直接构造同一种 typed View，不重新解析 DSL。
 
 两层作者语法共享结构词汇和规范化结果，不要求共享求值环境：ETAF property 是
 Elisp expression；`.ebox` DSL 是数据 form。quote 和 expression 的差异只属于
@@ -156,7 +161,9 @@ Flex/Grid item 是 material child Box 在父 formatting context 中获得的角�
 另一种 View 或父子边类型。participation 属性存储在 child Box，合法性、计算和
 dirty propagation 由直接父 Flex/Grid Box 拥有。
 
-`expr` 和 `slot` 是计算/投影机制，不是视觉节点。目标公共 View 不接受原始 Ebox
+`expr` 和 `slot` 是文本计算/投影机制，不是视觉节点。DSL 结构变化由
+`:if/:else-if/:else/:for` 表达；代码 frontend 使用普通 Elisp control。目标公共 View
+不接受原始 Ebox
 节点；缺失的渲染能力必须先形成有类型、有 identity/impact 契约的 View/Ebox 能力，
 不能通过 opaque escape 绕过框架语义。
 
@@ -179,7 +186,7 @@ dirty propagation 由直接父 Flex/Grid Box 拥有。
 
 ```text
 ETAF TextForm = (text TEXT-PROP VALUE)
-VALUE         = String | (expr :value Expr<String>)
+VALUE         = String | (expr Expr<String>)
 
 Ebox TextForm = (text TEXT-PROP String)
 ```
@@ -218,7 +225,8 @@ Text :fixed inline
 
 因此 inline-flex 写为 `(flex :outer 'inline ...)`，不是新节点类型。`:outer` 是所有
 Box author form 的公共属性；layout config 由对应 form 的闭集属性构造。需要动态
-切换 layout 时，由 `expr` 选择不同 View form，而不是把 `:layout` 当普通动态样式。
+切换 layout 时，DSL 由结构 directive 选择不同 View form，代码 frontend 由普通
+Elisp control 选择不同 `etaf-node` tag；不能把 `:layout` 当普通动态样式。
 Canonical Box 使用 typed Layout variant；不公开 `:inner` 或 Ebox
 `(:display (block flow))` 后端表示。
 
@@ -745,7 +753,9 @@ Elisp plist。调试与性能工具必须能显示完整链路，例如：
 
 `etaf-component`：
 
-- 定义 Component props、`:view`、`:setup`、`:styles`；
+- 定义 Component props、互斥的 `:view`/`:render`、返回 opaque state 的 `:setup`、
+  唯一显式 accessor `etaf-state` 和 `:styles`；
+- 定义 `etaf-node` 代码 frontend 与同一 typed View ABI 的边界；
 - 不调度 Runtime，不调用 Ebox。
 
 `etaf-runtime`：
@@ -871,7 +881,7 @@ Playground 的 `.etaf` manifest 属于 Playground。未来通用 compiler 若存
 
 ### 4.6 按使用者分层的公共面
 
-- 普通 ETAF 用户只使用 `etaf-view`、Component、Text/Box form、ETAF metadata/
+- 普通 ETAF 用户只使用 `etaf-view` 或 `etaf-node`、Component、Text/Box form、ETAF metadata/
   events、canonical CSS-aligned properties，以及明确列出的 ETAF/Ebox extensions
   （如 `:outer`、`:wrap-mode`）和 parse-time aliases；不调用 Ebox/TP/Emacs adapter。
 - 独立 Ebox 用户通过 `ebox-build` 使用同一视觉结构词汇的 inert data form；不拥有
