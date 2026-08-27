@@ -55,12 +55,6 @@
 (defvar etaf-test-nested-range-present nil)
 (defvar etaf-test-nested-range-source nil)
 (defvar etaf-test-nested-range-evals 0)
-(defvar etaf-test-inline-a nil)
-(defvar etaf-test-inline-b nil)
-(defvar etaf-test-inline-a-evals 0)
-(defvar etaf-test-inline-b-evals 0)
-(defvar etaf-test-inline-component-renders 0)
-(defvar etaf-test-inline-updated-count 0)
 (defvar etaf-test-inline-shared nil)
 (defvar etaf-test-inline-shared-evals 0)
 (defvar etaf-test-inline-branch-mode nil)
@@ -83,10 +77,6 @@
 (defvar etaf-test-fragment-range-evals 0)
 (defvar etaf-test-fragment-owner-renders 0)
 (defvar etaf-test-fragment-source nil)
-(defvar etaf-test-raw-source nil)
-(defvar etaf-test-raw-key-source nil)
-(defvar etaf-test-raw-evals 0)
-(defvar etaf-test-raw-owner-renders 0)
 (defvar etaf-test-transparent-source nil)
 (defvar etaf-test-transparent-renders 0)
 (defvar etaf-test-transparent-parent-renders 0)
@@ -128,19 +118,12 @@
   (pcase (etaf-value etaf-test-unsupported-range-source)
     ('component
      (etaf--view-call 'etaf-test-badge (list :label "component") nil))
-    ('raw (etaf--raw-ebox-create
-           :thunk (lambda () (ebox-create :content "raw"))))
     ('deep-component
      (etaf--view-call
       'column (list :key 'outer)
       (list (etaf--component-call-create
              :spec etaf-test-badge--etaf-component-definition
              :props (list :label "deep") :slots nil))))
-    ('deep-raw
-     (etaf--view-call
-      'column (list :key 'outer)
-      (list (etaf--raw-ebox-create
-             :thunk (lambda () (ebox-create :content "deep-raw"))))))
     ('deep-expr-component
      (etaf--view-call
       'column (list :key 'outer)
@@ -383,23 +366,6 @@
        :children (list (etaf--view-call 'text (list :key 'static) (list "S"))
                        range)))))
 
-(etaf-define-component etaf-test-inline-owner ()
-  "Render two independently reactive inline expression sites."
-  :setup
-  (progn
-    (etaf-on-updated (lambda () (cl-incf etaf-test-inline-updated-count)))
-    (lambda ()
-      (cl-incf etaf-test-inline-component-renders)
-      (etaf-view
-       (text "A"
-             (expr :value
-                   (progn (cl-incf etaf-test-inline-a-evals)
-                          (etaf-value etaf-test-inline-a)))
-             "B"
-             (expr :value
-                   (progn (cl-incf etaf-test-inline-b-evals)
-                          (etaf-value etaf-test-inline-b))))))))
-
 (etaf-define-component etaf-test-inline-shared-hosts ()
   "Render one shared source in two distinct text Hosts."
   :view
@@ -544,18 +510,6 @@
       (fragment
        (expr :value (etaf-test--fragment-range-items)))))))
 
-(etaf-define-component etaf-test-raw-range-owner ()
-  "Own one material raw Ebox Range."
-  :setup
-  (lambda ()
-    (cl-incf etaf-test-raw-owner-renders)
-    (etaf-view
-     (column
-      (raw-ebox
-       :value (progn
-                (cl-incf etaf-test-raw-evals)
-                (ebox-create :content (etaf-value etaf-test-raw-source)))
-       :key (etaf-value etaf-test-raw-key-source))))))
 
 (etaf-define-component etaf-test-transparent-owner ()
   "Render a transparent fragment sequence."
@@ -698,15 +652,13 @@
 (etaf-define-component etaf-test-inline-styled-owner ()
   "Render a styled inline expression beside a side-effecting Host prop."
   :view
-  (text :color (progn (cl-incf etaf-test-inline-host-prop-calls) "red")
-        "P"
-        (expr :value
-              (progn
-                (cl-incf etaf-test-inline-styled-evals)
-                (etaf-view
-                 (text :face 'bold
-                       (expr :value
-                             (etaf-value etaf-test-inline-styled-source))))))))
+  (box :color (progn (cl-incf etaf-test-inline-host-prop-calls) "red")
+   "P"
+   (text :font-weight 'bold
+         (expr :value
+               (progn
+                 (cl-incf etaf-test-inline-styled-evals)
+                 (etaf-value etaf-test-inline-styled-source))))))
 
 (etaf-define-component etaf-test-range-input-priority (&key marker)
   "Render fixed Range structure whose item reads MARKER and a reactive source."
@@ -762,7 +714,7 @@
 (etaf-define-component etaf-test-badge (&key label)
   "Render LABEL as a small semantic test Component."
   :view
-  (text :face 'bold (expr :value label)))
+  (text :font-weight 'bold (expr :value label)))
 
 (etaf-define-component etaf-list (&key label)
   "Render LABEL using the collision-safe `list-view' alias."
@@ -774,8 +726,8 @@
   :view
   (column
    (text (expr :value title))
-   (slot :name 'header (text :face 'shadow "Default header"))
-   (slot (text :face 'shadow "Default body"))))
+   (slot :name 'header (text :font-weight 'shadow "Default header"))
+   (slot (text :font-weight 'shadow "Default body"))))
 
 (etaf-define-component etaf-test-named-slot-consumer ()
   "Render the named header slot for forwarding tests."
@@ -1218,7 +1170,7 @@
 (ert-deftest etaf-view-property-region-precedes-children ()
   "Reject a property that appears after a structural child."
   (should-error
-   (macroexpand '(etaf-view (text "Hello" :face 'bold)))
+   (macroexpand '(etaf-view (text "Hello" :font-weight 'bold)))
    :type 'etaf-view-syntax-error))
 
 (ert-deftest etaf-view-ordinary-control-flow-belongs-in-expr ()
@@ -1229,16 +1181,16 @@
 
 (ert-deftest etaf-view-quote-is-not-needed-for-structure ()
   "Construct an unquoted structural View and preserve quoted data values."
-  (let ((view (etaf-view (text :face 'bold "Hello"))))
+  (let ((view (etaf-view (text :font-weight 'bold "Hello"))))
     (should (etaf--view-node-p view))
-    (should (equal 'bold (plist-get (etaf--view-node-props view) :face)))
+    (should (equal 'bold (plist-get (etaf--view-node-props view) :font-weight)))
     (should (equal "Hello" (etaf-test--render-text view)))))
 
 (ert-deftest etaf-view-attribute-values-are-ordinary-elisp ()
   "Evaluate an attribute expression without an extra evaluation wrapper."
   (let ((face 'bold)
         (label "Ready"))
-    (let ((view (etaf-view (text :face face (expr :value label)))))
+    (let ((view (etaf-view (text :font-weight face (expr :value label)))))
       (should (equal "Ready" (etaf-test--render-text view))))))
 
 (ert-deftest etaf-view-expr-evaluates-control-flow ()
@@ -1318,18 +1270,18 @@
           (etaf-test--render-text
            (etaf-view (column (text "A") (text "B")))))))
 
-(ert-deftest etaf-view-box-lowers-outer-and-layout-to-ebox ()
-  "Lower canonical Box axes through Ebox's public Box DSL."
+(ert-deftest etaf-view-box-forms-lower-outer-and-layout-to-ebox ()
+  "Lower each Box form to one typed Box with its selected Layout."
   (let ((row
          (etaf-render
           (etaf-view
-           (box :outer 'inline :layout 'row
+           (row :outer 'inline
                 (text "A")
                 (text "B")))))
         (column
          (etaf-render
           (etaf-view
-           (box :outer 'block :layout 'column
+           (column :outer 'block
                 (text "A")
                 (text "B"))))))
     (should (equal (ebox--computed-display row) '(inline row)))
@@ -1352,7 +1304,7 @@
           (etaf-mount
            buffer-name
            (etaf-view
-            (box :layout 'row
+            (row
                  (text (expr :value (etaf-value source)))
                  (text "B"))))
           (should (string-match-p "AB" (etaf-test--buffer-text buffer-name)))
@@ -1371,7 +1323,9 @@
                  :grid-template-columns '((20) (20))
                  (text "A")
                  (text "B"))))))
-    (should (eq (plist-get node :ebox-type) 'grid))
+    (should (ebox-box-node-p node))
+    (should (eq (ebox-layout-config-kind (ebox-box-node-layout node))
+                'grid))
     (should (string-match-p "A" (substring-no-properties (ebox-render node))))
     (should (string-match-p "B" (substring-no-properties (ebox-render node))))))
 
@@ -1475,43 +1429,50 @@
 (ert-deftest etaf-styles-have-root-class-and-inline-precedence ()
   "Apply component styles only at matching scope and preserve inline props."
   (let* ((node (etaf-render (etaf-view (etaf-test-styled-card))))
-         (content-node (plist-get node :ebox-content-node))
-         (children (plist-get content-node :children))
+         (children (ebox-box-node-children node))
          (title (car children))
          (body (cadr children)))
-    (should (equal "inline-title" (ebox-get title :color)))
-    (should (equal "title-bg" (ebox-get title :bgcolor)))
-    (should (equal "style-root" (ebox-get node :color)))
-    (should-not (ebox-get body :color))))
+    (should (equal "inline-title"
+                   (ebox-style-node-specified-value title :color)))
+    (should (equal "title-bg"
+                   (ebox-style-node-specified-value title :bgcolor)))
+    (should (equal "style-root"
+                   (ebox-style-node-specified-value node :color)))
+    (should-not (ebox-style-node-specified-value body :color))))
 
 (ert-deftest etaf-nil-host-props-allow-component-styles ()
   "Treat an explicit nil Host style property as unspecified."
   (let ((node (etaf-render (etaf-view (etaf-test-nil-style-host)))))
-    (should (equal "style-color" (ebox-get node :color)))))
+    (should (equal "style-color"
+                   (ebox-style-node-specified-value node :color)))))
 
 (ert-deftest etaf-style-rules-preserve-first-default-with-inline-protection ()
   "Keep the first matching Component default without overriding inline props."
   (let ((node (etaf-render (etaf-view (etaf-test-style-rule-order)))))
-    (should (equal "base-color" (ebox-get node :color))))
+    (should (equal "base-color"
+                   (ebox-style-node-specified-value node :color))))
   (let ((node (etaf-render
                (etaf-view
                 (etaf-test-style-rule-order :color "inline-color")))))
-    (should (equal "inline-color" (ebox-get node :color)))))
+    (should (equal "inline-color"
+                   (ebox-style-node-specified-value node :color)))))
 
 (ert-deftest etaf-styles-stop-at-nested-component-boundaries ()
   "Keep a parent Component selector outside nested Component internals."
   (let ((node (etaf-render (etaf-view (etaf-test-styled-parent)))))
-    (should-not (ebox-get node :color))))
+    (should-not (ebox-style-node-specified-value node :color))))
 
 (ert-deftest etaf-styles-follow-caller-owned-slot-content ()
   "Keep caller styles on slot content projected by a child Component."
   (let ((node (etaf-render (etaf-view (etaf-test-styled-slot-parent)))))
-    (should (equal "parent-color" (ebox-get node :color)))))
+    (should (equal "parent-color"
+                   (ebox-style-node-specified-value node :color)))))
 
 (ert-deftest etaf-styles-keep-child-owned-slot-fallback-pure ()
   "Keep child styles on fallback content authored by that Component."
   (let ((node (etaf-render (etaf-view (etaf-test-styled-fallback-child)))))
-    (should (equal "child-color" (ebox-get node :color)))))
+    (should (equal "child-color"
+                   (ebox-style-node-specified-value node :color)))))
 
 (ert-deftest etaf-mounted-styles-keep-child-owned-slot-fallback ()
   "Keep child styles on fallback content through the Runtime path."
@@ -1521,7 +1482,7 @@
           (etaf-mount buffer-name (etaf-view (etaf-test-styled-fallback-child)))
           (should
            (equal "child-color"
-                  (ebox-get
+                  (ebox-style-node-specified-value
                    (etaf-runtime-root-node
                     (etaf-runtime-for-buffer buffer-name))
                    :color))))
@@ -1538,7 +1499,7 @@
           (etaf-mount buffer-name (etaf-view (etaf-test-styled-parent)))
           (should
            (null
-            (ebox-get
+            (ebox-style-node-specified-value
              (etaf-runtime-root-node
               (etaf-runtime-for-buffer buffer-name))
              :color))))
@@ -1555,8 +1516,11 @@
           (etaf-mount buffer-name (etaf-view (etaf-test-themed-text)))
           (let* ((runtime (etaf-runtime-for-buffer buffer-name))
                  (node (etaf-runtime-root-node runtime)))
-            (should (equal "theme-color" (ebox-get node :color)))
-            (should (equal "theme-bg" (ebox-get node :bgcolor)))))
+            (should (equal "theme-color"
+                           (ebox-style-node-specified-value node :color)))
+            (should (equal "theme-bg"
+                           (ebox-style-node-specified-value
+                            node :bgcolor)))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name)))
@@ -1570,7 +1534,7 @@
           (etaf-mount buffer-name
                       (etaf-view (etaf-test-themed-style-token)))
           (should (equal "token-color"
-                         (ebox-get
+                         (ebox-style-node-specified-value
                           (etaf-runtime-root-node
                            (etaf-runtime-for-buffer buffer-name))
                           :color))))
@@ -1679,21 +1643,23 @@
                       (plist-get (tp-paint-slot-spec value) :background)
                     value)))
               (let ((slot
-                     (plist-get (ebox-host-node 'theme-atomic-panel)
-                                :bgcolor)))
+                     (ebox-style-node-specified-value
+                      (ebox-host-node 'theme-atomic-panel) :bgcolor)))
                 (should (equal "#FFFFFF" (background slot)))
                 (etaf-dispatch-event runtime 'theme-atomic-toggle 'press)
                 (let ((semantic
                        (plist-get
                         (etaf-runtime-host-props-for
                          runtime 'theme-atomic-panel)
-                        :bgcolor))
-                      (backend
-                       (plist-get (ebox-host-node 'theme-atomic-panel)
-                                  :bgcolor)))
-                  (should (eq slot semantic))
-                  (should (eq slot backend))
-                  (should (equal "#111111" (background slot))))
+                        :bgcolor)))
+                  (should (equal "#111111" (background semantic))))
+                (with-current-buffer buffer-name
+                  (should
+                   (cl-some
+                    (lambda (entry)
+                      (equal "#111111"
+                             (plist-get (cadr entry) :background)))
+                    face-remapping-alist)))
                 (should (string-match-p
                          "Dark" (etaf-test--buffer-text buffer-name)))))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
@@ -1756,14 +1722,15 @@
    (etaf-theme-resolve-palette '(:ink "red") 'sepia)
    :type 'etaf-context-error))
 
-(ert-deftest etaf-text-supports-inline-propertized-runs ()
-  "Lower nested text Hosts to one Ebox content surface with text properties."
+(ert-deftest etaf-box-composes-adjacent-styled-text-runs ()
+  "Represent styled runs as sibling Text nodes, never a nested Text tree."
   (let* ((node (etaf-render
                 (etaf-view
-                 (text "Hello " (text :face 'bold "world") "!"))))
-         (content (ebox-get node :content)))
+                 (box "Hello " (text :font-weight 'bold "world") "!"))))
+         (content (ebox-render node)))
     (should (equal "Hello world!" (substring-no-properties content)))
-    (should (eq 'bold (get-text-property 6 'face content)))
+    (should (equal '(:weight bold)
+                   (get-text-property 6 'face content)))
     (should-not (get-text-property 0 'face content))))
 
 (ert-deftest etaf-runtime-retains-setup-and-reactively-commits ()
@@ -2326,16 +2293,6 @@ Event composition is a Runtime contract, not a UI-library helper contract."
     (should-not (etaf--runtime-range-owned-by-rendered-component-p
                  runtime generation range))))
 
-(ert-deftest etaf-view-raw-ebox-is-an-explicit-backend-escape ()
-  "Lower a public Ebox node only through the explicit raw escape."
-  (let ((node
-         (etaf-render
-          (etaf-view
-           (raw-ebox
-            :key 7
-            :value (ebox-create :content "Backend"))))))
-    (should (equal "Backend" (ebox-get node :content)))
-    (should (= 7 (ebox-get node :key)))))
 
 (ert-deftest etaf-stateful-props-update-without-rerunning-setup ()
   "Track a reactive root prop while retaining one Component setup Scope."
@@ -3474,8 +3431,8 @@ Event composition is a Runtime contract, not a UI-library helper contract."
       (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-direct-range-rejects-step4b-output-without-reownership ()
-  "Reject direct Component/raw output while retaining Range-only dependency."
-  (dolist (unsupported '(component raw deep-component deep-raw
+  "Reject direct Component output while retaining Range-only dependency."
+  (dolist (unsupported '(component deep-component
                          deep-expr-component))
     (let ((buffer-name (format " *etaf-range-unsupported-%S*" unsupported))
           (etaf-test-unsupported-range-source (etaf-ref 'host)))
@@ -3605,120 +3562,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
-(ert-deftest etaf-runtime-inline-effect-replaces-only-containing-host ()
-  "Update one inline site beside 500 unrelated Components with one Host commit."
-  (let* ((buffer-name " *etaf-inline-host-update-test*")
-         (etaf-test-inline-a (etaf-ref "0"))
-         (etaf-test-inline-b (etaf-ref "0"))
-         (etaf-test-inline-a-evals 0) (etaf-test-inline-b-evals 0)
-         (etaf-test-inline-component-renders 0)
-         (etaf-test-inline-updated-count 0)
-         (etaf-test-retained-render-counts (make-hash-table :test #'eql))
-         (cells (cl-loop repeat 500 collect (etaf-ref 0)))
-         (host-replaces 0) (range-replaces 0) (commits 0)
-         (view
-          (etaf--view-call
-           'column nil
-           (cons (etaf--view-call 'etaf-test-inline-owner
-                                  (list :key 'owner) nil)
-                 (cl-loop for cell in cells for index from 0
-                          collect
-                          (etaf--view-call
-                           'etaf-test-retained-leaf
-                           (list :key index :label index :cell cell) nil))))))
-    (unwind-protect
-        (progn
-          (etaf-mount buffer-name view)
-          (setq etaf-test-inline-a-evals 0 etaf-test-inline-b-evals 0
-                etaf-test-inline-component-renders 0
-                etaf-test-inline-updated-count 0)
-          (clrhash etaf-test-retained-render-counts)
-          (let ((old-host (symbol-function 'ebox-candidate-replace-host-ref))
-                (old-range (symbol-function 'ebox-candidate-replace-range-ref))
-                (old-commit (symbol-function 'ebox-commit))
-                (runtime (etaf-runtime-for-buffer buffer-name)))
-            (cl-letf (((symbol-function 'ebox-candidate-replace-host-ref)
-                       (lambda (&rest args)
-                         (cl-incf host-replaces) (apply old-host args)))
-                      ((symbol-function 'ebox-candidate-replace-range-ref)
-                       (lambda (&rest args)
-                         (cl-incf range-replaces) (apply old-range args)))
-                      ((symbol-function 'ebox-commit)
-                       (lambda (&rest args)
-                         (cl-incf commits) (apply old-commit args))))
-              (let ((before (etaf-runtime-generation runtime)))
-                (setf (etaf-value etaf-test-inline-a) "1")
-                (should (= 1 (- (etaf-runtime-generation runtime) before)))))
-            (should (= 1 etaf-test-inline-a-evals))
-            (should (zerop etaf-test-inline-b-evals))
-            (should (zerop etaf-test-inline-component-renders))
-            (should (zerop (hash-table-count etaf-test-retained-render-counts)))
-            (should (= 1 host-replaces))
-            (should (zerop range-replaces))
-            (should (= 1 commits))
-            (should (= 1 etaf-test-inline-updated-count))
-            (should (string-match-p "A1B0"
-                                    (etaf-test--buffer-text buffer-name)))
-            (let* ((generation (etaf-runtime-current-generation runtime))
-                   (effect-id (car (etaf--generation-source-effects
-                                    generation etaf-test-inline-a)))
-                   (inline (etaf--generation-effect-semantic
-                            generation effect-id))
-                   (host-id (etaf--semantic-inline-range-parent-id inline))
-                   (component-id
-                    (etaf--pvec-get (etaf-generation-parent-table generation)
-                                    host-id))
-                   (component
-                    (etaf--pvec-get (etaf-generation-semantic-nodes generation)
-                                    component-id)))
-              (should (eq 'inline
-                          (etaf--generation-effect-kind
-                           (etaf--generation-effect generation effect-id))))
-              (should (integerp host-id))
-              (should (etaf--semantic-component-p component))
-              (should (integerp (etaf--semantic-component-parent-id component)))
-              (should (= host-id
-                         (etaf--pvec-get
-                          (etaf-generation-parent-table generation)
-                          (etaf--semantic-inline-range-semantic-id inline)))))))
-      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
-        (etaf-unmount runtime))
-      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
-(ert-deftest etaf-runtime-inline-effects-coalesce-per-host ()
-  "Coalesce two inline effects in one Host and split two distinct Hosts."
-  (let ((buffer-name " *etaf-inline-coalesce-test*")
-        (etaf-test-inline-a (etaf-ref "0"))
-        (etaf-test-inline-b (etaf-ref "0"))
-        (etaf-test-inline-a-evals 0) (etaf-test-inline-b-evals 0)
-        (etaf-test-inline-updated-count 0)
-        (host-replaces 0) (commits 0))
-    (unwind-protect
-        (progn
-          (etaf-mount buffer-name (etaf-view (etaf-test-inline-owner)))
-          (setq etaf-test-inline-a-evals 0 etaf-test-inline-b-evals 0
-                etaf-test-inline-updated-count 0)
-          (let ((old-host (symbol-function 'ebox-candidate-replace-host-ref))
-                (old-commit (symbol-function 'ebox-commit))
-                (runtime (etaf-runtime-for-buffer buffer-name)))
-            (cl-letf (((symbol-function 'ebox-candidate-replace-host-ref)
-                       (lambda (&rest args)
-                         (cl-incf host-replaces) (apply old-host args)))
-                      ((symbol-function 'ebox-commit)
-                       (lambda (&rest args)
-                         (cl-incf commits) (apply old-commit args))))
-              (etaf-runtime-event-begin runtime)
-              (setf (etaf-value etaf-test-inline-a) "1")
-              (setf (etaf-value etaf-test-inline-b) "2")
-              (etaf-runtime-event-end runtime))
-            (should (= 1 etaf-test-inline-a-evals))
-            (should (= 1 etaf-test-inline-b-evals))
-            (should (= 1 host-replaces))
-            (should (= 1 commits))
-            (should (= 1 etaf-test-inline-updated-count))))
-      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
-        (etaf-unmount runtime))
-      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))
+(ert-deftest etaf-runtime-shared-inline-source-updates-distinct-text-hosts ()
+  "Publish two distinct Text hosts that read one shared source in one commit."
   (let ((buffer-name " *etaf-inline-two-host-test*")
         (etaf-test-inline-shared (etaf-ref "0"))
         (etaf-test-inline-shared-evals 0)
@@ -4110,71 +3956,6 @@ Event composition is a Runtime contract, not a UI-library helper contract."
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
-(ert-deftest etaf-runtime-material-raw-ebox-is-one-opaque-range-owner ()
-  "Update raw value and key through one opaque Range effect."
-  (let ((buffer-name " *etaf-raw-range-test*")
-        (etaf-test-raw-source (etaf-ref "A"))
-        (etaf-test-raw-key-source (etaf-ref 'a))
-        (root-source (etaf-ref 0))
-        (range-replaces 0) (commits 0))
-    (setq etaf-test-raw-evals 0 etaf-test-raw-owner-renders 0)
-    (unwind-protect
-        (progn
-          (etaf-mount
-           buffer-name
-           (lambda ()
-             (etaf-value root-source)
-             (etaf--view-call 'etaf-test-raw-range-owner
-                              (list :key 'owner) nil)))
-          (setq etaf-test-raw-evals 0 etaf-test-raw-owner-renders 0)
-          (let ((runtime (etaf-runtime-for-buffer buffer-name))
-                (old-range (symbol-function 'ebox-candidate-replace-range-ref))
-                (old-commit (symbol-function 'ebox-commit)))
-            (cl-letf (((symbol-function 'ebox-candidate-replace-range-ref)
-                       (lambda (&rest args)
-                         (cl-incf range-replaces) (apply old-range args)))
-                      ((symbol-function 'ebox-commit)
-                       (lambda (&rest args)
-                         (cl-incf commits) (apply old-commit args))))
-              (etaf-runtime-event-begin runtime)
-              (setf (etaf-value etaf-test-raw-source) "B")
-              (setf (etaf-value etaf-test-raw-key-source) 'b)
-              (etaf-runtime-event-end runtime)))
-          (should (= 1 etaf-test-raw-evals))
-          (should (zerop etaf-test-raw-owner-renders))
-          (should (= 1 range-replaces))
-          (should (= 1 commits))
-          (should (string-match-p "B" (etaf-test--buffer-text buffer-name)))
-          (setf (etaf-value root-source) 1)
-          (should (= 1 etaf-test-raw-evals))
-          (should (string-match-p "B" (etaf-test--buffer-text buffer-name)))
-          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
-                 (generation (etaf-runtime-current-generation runtime))
-                 (effect-id (car (etaf--generation-source-effects
-                                  generation etaf-test-raw-source)))
-                 (semantic (etaf--generation-effect-semantic
-                            generation effect-id)))
-            (should (eq 'raw
-                        (etaf--generation-effect-kind
-                         (etaf--generation-effect generation effect-id))))
-            (should-not (etaf--semantic-host-p semantic))
-            (should (eq 'b
-                        (plist-get (etaf--semantic-range-output-signature semantic)
-                                   :key)))
-            (let ((committed generation)
-                  (before (etaf-test--buffer-text buffer-name)))
-              (cl-letf (((symbol-function 'accept-change-group)
-                         (lambda (&rest _)
-                           (error "injected raw Range final accept failure"))))
-                (should-error
-                 (setf (etaf-value etaf-test-raw-source) "C") :type 'error))
-              (should (eq committed (etaf-runtime-current-generation runtime)))
-              (should (equal before (etaf-test--buffer-text buffer-name))))
-            (etaf-runtime-flush runtime)
-            (should (string-match-p "C" (etaf-test--buffer-text buffer-name)))))
-      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
-        (etaf-unmount runtime))
-      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-root-effect-owns-one-semantic-root-range ()
   "Publish Root changes through one semantic Root Range and root replacement."

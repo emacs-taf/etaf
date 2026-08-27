@@ -163,13 +163,14 @@ RUNTIME is the mounted Runtime to activate, or nil for the current buffer."
   (let (candidates)
     (dolist (entry (etaf-runtime-host-props-entries runtime))
       (let ((host-ref (car entry)) (props (cdr entry)))
-       (let ((tab-index (plist-get props :tab-index))
-             (bounds (ebox-host-ref-bounds
-                      (etaf-runtime-buffer runtime) host-ref)))
-         (when (and (numberp tab-index) (>= tab-index 0)
-                    (not (plist-get props :disabled)) bounds)
-           (push (list tab-index (car bounds) (cdr bounds) host-ref)
-                 candidates)))))
+        (let ((tab-index (plist-get props :tab-index)))
+          (when (and (numberp tab-index) (>= tab-index 0)
+                     (not (plist-get props :disabled)))
+            (when-let* ((bounds
+                         (ebox-host-ref-bounds
+                          (etaf-runtime-buffer runtime) host-ref)))
+              (push (list tab-index (car bounds) (cdr bounds) host-ref)
+                    candidates))))))
     (sort candidates #'etaf--focus-candidate-before-p)))
 
 ;;;###autoload

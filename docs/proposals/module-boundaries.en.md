@@ -70,7 +70,11 @@ AuthorView
   ↓ parse / desugar / string normalization
 NormalizedView = Text | Box | Fragment | ComponentCall
   ↓ ETAF Runtime resolves ComponentCall
-Resolved candidate + computed properties
+Resolved candidate + source facts
+  ↓ exactly one style adapter is selected for the current surface
+  ETAF Style Adapter | Ebox Standalone Style Adapter
+  ↓ ECSS selector / cascade / inheritance (exactly once)
+Computed property facts + impact sets
   ├─ structure/geometry impact
   │    ↓ Fragment projection preserves RangeAnchors
   │  CanonicalEboxInput = Forest<TextNode | BoxNode> + RangeAnchors
@@ -78,8 +82,7 @@ Resolved candidate + computed properties
   │  LayoutPlan → GeometryPatch
   │
   └─ paint impact
-       ↓ source-specific contribution adapter
-       (ETAF: etaf-theme-tp; standalone Ebox: ebox-surface-tp)
+       ↓ shared property projector
      TP ContributionPlan → PaintPatch
 
 GeometryPatch and PaintPatch join the existing TP transaction
@@ -315,6 +318,21 @@ TextNode, while `ebox-box-create` accepts a typed Layout variant and constructs 
 BoxNode. Constructors accept neither author forms nor a flat bag of properties spanning
 multiple layouts. The ETAF Renderer calls them directly; it does not reconstruct DSL.
 
+`:class`, `:id`, and author `:key` all belong to the source layer, but `:key` is an
+identity fact and never enters visual source. Standalone Ebox DSL and ETAF View produce
+isomorphic StyleSourceFact values; each surface selects exactly one adapter to invoke
+ECSS. ETAF Style Adapter owns Component-scope assembly and stylesheet lifetime on an
+ETAF surface, while Ebox Standalone Style Adapter owns them on a standalone surface.
+Both reuse the same ECSS implementation and Ebox property registry/projector, so one
+surface never runs cascade twice. The same parsed `:id` fact may also project to ETAF
+semantic metadata, but it is not reparsed or recascaded.
+
+Typed Text/Box constructors accept only an opaque `sourceHandle` plus already-computed
+owned facts. They neither accept nor retain `:class/:id/:key`, and Ebox
+measurement/layout core never reads source metadata. StyleEnvironment belongs to the
+current surface/runtime and must not be implemented as a process-global stylesheet or
+metadata table.
+
 The target public port does not retain untyped `(ebox-create :content ...)`. If the
 runtime fuses a Text payload into adjacent Box storage for performance, that optimization
 may occur only after canonical Text identity, range, and impact have been established,
@@ -486,7 +504,6 @@ TextStyle =
   :font-family :font-size :font-weight :font-style
   :color :background-color
   :text-decoration-line :text-decoration-color :text-decoration-style
-  :wrap-mode (word | grapheme | none)
 
 BoxFrame =
   :outer
@@ -495,6 +512,7 @@ BoxFrame =
   :box-sizing
   margin/padding shorthands and logical/physical longhands
   border shorthands and width/style/color longhands
+  :wrap-mode (word | char | kp | none)
   :overflow :visibility
   inherited standard text style source such as font/color
   non-inherited surface source such as :background-color
@@ -571,9 +589,18 @@ The target public API classifies historical and backend names as follows:
 
 `:wrap-mode` is not equivalent to CSS `white-space`, `overflow-wrap`, `word-break`, or
 `line-break`. It therefore remains the sole public name in the Ebox namespace, with its
-value restricted to `word`, `grapheme`, or `none`. If complete, semantically equivalent
+value restricted to `word`, `char`, `kp`, or `none`. `char` breaks only at complete
+grapheme-cluster boundaries, while `kp` selects Knuth–Plass paragraph layout. If complete, semantically equivalent
 CSS properties are implemented in the future, one explicit migration must replace it;
 the two naming systems must not be retained indefinitely.
+
+Only Box author forms accept `:wrap-mode`; it specifies the soft-wrapping policy for
+that Box's content. Text forms do not expose a second author path. During computation,
+the Box policy is inherited as Text measurement input: Text executes line breaking but
+does not own the declaration. `none` disables only automatic soft breaks and preserves
+explicit newlines. The independent `:overflow` property decides what happens after
+layout when unbroken content exceeds the Box; wrapping never implies clipping or
+scrolling.
 
 Standard CSS shorthands have exactly one expansion rule, including `:margin`,
 `:padding`, `:border`, `:gap`, `:flex`, `:flex-flow`, `:grid-column`, and `:grid-row`.
@@ -677,7 +704,22 @@ CanonicalDeclaration {
 SelectorSubjectFact {
   classList
   id
-  semanticSourceHandle
+  sourceHandle
+}
+
+StyleSourceFact {
+  sourceHandle
+  selectorSubjectFact
+  declarations
+  scopeHandle
+  provenance
+}
+
+StyleEnvironment {
+  stylesheet
+  schemaSet
+  scopeIndex
+  computedCache
 }
 
 RuntimeMetadataFact {
@@ -706,8 +748,10 @@ Normalization parses author input once and simultaneously produces immutable
 CanonicalDeclaration, SelectorSubjectFact, and RuntimeMetadataFact artifacts.
 `:class/:id` do not enter CSS declarations; SelectorSubjectFact constructs the ECSS subject
 directly before cascade. Selector and semantic projection share the same parsed source
-value for `:id` rather than rereading the plist independently. ECSS cascade/inheritance
-receives SelectorSubjectFact + declarations and produces immutable
+value for `:id` rather than rereading the plist independently. ETAF Style Adapter and
+Ebox Standalone Style Adapter produce isomorphic StyleSourceFact values, but exactly one
+adapter assembles StyleEnvironment for a surface. ECSS cascade/inheritance then receives
+SelectorSubjectFact + declarations and produces immutable
 ComputedPropertyFact artifacts. `:key`, `:ref`, `:on-*`, and similar properties do not
 enter ECSS and appear only in RuntimeMetadataFact. “Materialize once” means that each
 stage produces its own immutable artifact once, not that one object mutates across
@@ -787,16 +831,25 @@ complete chain, for example:
 `etaf-renderer`:
 
 - is the only ETAF → Ebox lowering adapter;
-- converts the structure/geometry projection of ResolvedView into a
-  CanonicalEboxInput forest, RangeAnchors, and typed measurement/geometry properties;
+- consumes computed/projection facts already produced by ETAF Style Adapter and turns
+  the structure/geometry projection into CanonicalEboxInput forest, RangeAnchors, and
+  typed Ebox facts;
+- does not rerun selector/cascade or copy a second computed visual representation;
 - does not execute Component lifecycle or access Ebox private state.
+
+`etaf-style` (a logical module that may remain in the same distribution):
+
+- owns Component-style scope assembly and one independent StyleEnvironment per
+  Runtime/Surface, including its lifetime;
+- uses Ebox's public property registry/projector and invokes ECSS directly for the one
+  cascade on an ETAF surface;
+- does not measure, lay out, write buffers, or own Runtime commit authority.
 
 `etaf-theme-tp`:
 
-- is the only adapter from ETAF/ECSS computed paint contributions to TP;
-- produces ContributionPlan without measuring, laying out, or owning TP priority/commit
-  authority;
-- does not call `etaf-renderer` geometry lowering for a paint-only candidate.
+- is only the optional TP-palette to ETAF semantic Theme token/value adapter;
+- does not produce ContributionPlan, participate in selector/cascade, or own paint
+  commit authority.
 
 Theme semantic tokens and inheritance belong to ETAF Context. TP does not own business
 meaning such as “dark theme.”
@@ -806,6 +859,10 @@ meaning such as “dark theme.”
 Ebox owns:
 
 - normalization of String/Text/Box and layout-sugar expansion in the Ebox DSL;
+- the canonical Ebox property registry and pure computed-fact to geometry/paint-fact
+  projector;
+- a Standalone Style Adapter used only by standalone Ebox surfaces; it invokes ECSS
+  directly, while the ETAF typed path bypasses it and never runs a second cascade;
 - contextual validation, parent-layout consumption, and dirty propagation of child Box
   participation;
 - typed TextNode/BoxNode constructors and canonical property schemas;
@@ -817,11 +874,11 @@ Ebox owns:
 Ebox does not understand Component, slot, Context, Action, Behavior, Data, or Resource,
 and does not determine paint-contribution priority.
 
-Author paint from the standalone Ebox DSL is projected by the `ebox-surface` TP adapter
-into an inline ContributionPlan. It and ETAF's `etaf-theme-tp` are two source adapters
-that consume the same public TP contribution contract. Neither puts paint-only
-properties back into CanonicalEboxInput, nor owns TP priority, journal, or commit
-authority.
+ETAF Style Adapter and Ebox Standalone Style Adapter share the same pure property
+projector. The former handles ETAF Theme/Component/state/inline provenance; the latter
+handles standalone Ebox inline/stylesheet provenance. They never coexist on one surface,
+never put paint-only properties back into CanonicalEboxInput, and never own TP priority,
+journal, or commit authority.
 
 `ebox-build` exclusively owns parsing/desugaring author forms. `ebox-text-create` and
 `ebox-box-create` accept already evaluated canonical parameters and validate only typed
@@ -908,7 +965,8 @@ second Runtime.
   through `ebox-build`; they do not own Component, slot, expr, or lifecycle.
 - Framework integrators use `ebox-text-create`, `ebox-box-create`, typed LayoutConfig,
   RangeAnchor, and the TP contribution contract; they do not reconstruct DSL, pass
-  shorthands, or run a second cascade.
+  shorthands, or run a second cascade. Typed constructors accept only an opaque
+  `sourceHandle`, not source-layer `:class/:id/:key`.
 - The optional Emacs adapter is an explicit opt-in, independent schema namespace. Only
   a surface that loads the adapter accepts `:emacs-face`; otherwise normalization
   reports the unknown namespace/property precisely.
@@ -928,11 +986,12 @@ etaf-playground ─────▶ ETAF + optional UI/SQLite
 ebox-playground ─────▶ Ebox only
 etaf-performance ────▶ public observation boundaries only
 
-ETAF Renderer ───────▶ ECSS computed properties
-Ebox style pipeline ─▶ ECSS computed-properties port
+ETAF Style Adapter ──▶ ECSS + Ebox property registry/projector
+Ebox Standalone Style Adapter ─▶ ECSS + same registry/projector
+ETAF Renderer ───────▶ Ebox typed core port
 ETAF Runtime  ───────▶ Ebox/TP transaction participants
-etaf-theme-tp ───────▶ TP contribution contract
-Ebox surface ────────▶ TP inline contribution + transaction participant
+etaf-theme-tp ───────▶ ETAF semantic Theme values only
+Ebox surface ────────▶ TP contribution + transaction participant
 ```
 
 Reverse dependencies are forbidden: Ebox does not depend on ETAF; TP does not parse

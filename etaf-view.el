@@ -65,15 +65,8 @@
   token
   fallback)
 
-(cl-defstruct (etaf--raw-ebox
-               (:constructor etaf--raw-ebox-create))
-  "Explicit escape carrying an already-built public Ebox node."
-  token
-  thunk
-  key-thunk)
-
 (defconst etaf--host-names
-  '(text box fragment container row column stack flex grid spacer)
+  '(text box fragment row column flex grid)
   "Minimal unstyled Hosts implemented by ETAF core.
 
 Product Components such as Button belong to `etaf-ui'; they are not added to
@@ -364,8 +357,6 @@ SLOT-MODE distinguishes Component-owned projections from call-site inputs."
     (etaf--compile-expr-form (cdr form)))
    ((and (consp form) (eq (car form) 'slot))
     (etaf--compile-slot-form (cdr form) slot-mode))
-   ((and (consp form) (eq (car form) 'raw-ebox))
-    (etaf--compile-view-form form slot-mode))
    ((and (consp form) (symbolp (car form)))
     (when (etaf--ordinary-expression-head-p (car form))
       (etaf--syntax-error
@@ -394,24 +385,6 @@ SLOT-MODE distinguishes Component-owned projections from call-site inputs."
     ;; the Component definition macro, so the public macro defaults to
     ;; projection mode.  An unowned projection simply uses its fallback.
     (etaf--compile-slot-form (cdr form) slot-mode))
-   ((eq (car form) 'raw-ebox)
-    (let ((parts (etaf--parse-attributes-and-children (cdr form))))
-      (when (cdr parts)
-        (etaf--syntax-error "Raw-ebox accepts :value, optional :key, and no children"))
-      (let ((props (car parts)))
-        (unless (and (plist-member props :value)
-                     (cl-every #'keywordp (cl-loop for (key _value) on props by #'cddr collect key)))
-          (etaf--syntax-error "Raw-ebox requires :value"))
-        (let ((allowed '(:value :key))
-              (token (gensym "etaf-raw-site-")))
-          (dolist (key (cl-loop for (key _value) on props by #'cddr collect key))
-            (unless (memq key allowed)
-              (etaf--syntax-error "Raw-ebox does not accept %S" key)))
-          `(etaf--raw-ebox-create
-            :token ',token
-            :thunk (lambda () ,(plist-get props :value))
-            :key-thunk ,(when (plist-member props :key)
-                          `(lambda () ,(plist-get props :key))))))))
    (t
     (let* ((parts (etaf--parse-attributes-and-children (cdr form)))
            (props (car parts))
@@ -496,6 +469,9 @@ ordinary Elisp expressions.  `expr' is the only computation bridge in the
             (mapcar #'etaf--normalize-structural-child children))))
     (cond
      ((eq entry etaf--host-marker)
+      (when (and (eq host-name 'text) (/= (length children) 1))
+        (etaf--syntax-error
+         "Text requires exactly one string or expr payload"))
       (when (plist-member props :key)
         (etaf--validate-key
          (etaf--resolve-property-value (plist-get props :key))))

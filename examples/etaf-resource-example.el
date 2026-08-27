@@ -25,11 +25,11 @@
 (defun etaf-resource-example--header ()
   "Return the Resource example header."
   (etaf-view
-   (box :layout 'column :width '(680) :padding '(1 (18)) :border "#8F432F"
+   (column :width '(680) :padding '(1 (18)) :border "#8F432F"
     :bgcolor "#FFFDF8" :text-align 'center
-    (text :color "#8F432F" :face 'bold
+    (text :color "#8F432F" :font-weight 'bold
           "BEST PRACTICE  /  RESOURCE LIFECYCLE")
-    (text :face 'bold "Service health")
+    (text :font-weight 'bold "Service health")
     (text :color "#66706A"
           "Loader errors become explicit state; cleanup stays scoped."))))
 
@@ -41,9 +41,9 @@
          (border (if success "#6D8A73" "#C97252"))
          (ink (if success "#24422D" "#6B3020")))
     (etaf-view
-     (box :layout 'column :width '(680) :padding '(2 (18)) :border border
+     (column :width '(680) :padding '(2 (18)) :border border
       :bgcolor surface :color ink :text-align 'center
-      (text :face 'bold
+      (text :font-weight 'bold
             (expr :value (upcase (symbol-name status))))
       (text (expr :value (etaf-resource-example--message resource)))
       (text :color "#66706A"
@@ -53,28 +53,28 @@
 (defun etaf-resource-example--actions (resource fail-next)
   "Return action controls for RESOURCE and FAIL-NEXT."
   (etaf-view
-   (box :layout 'flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
-    (text :flex-grow 1 :flex-shrink 1 :flex-basis '(200)
-          :min-width '(180) :padding '(1 (12))
-          :border "#4E7890" :bgcolor "#D9EAF2" :face 'bold
-          :text-align 'center :ref 'resource-reload :role 'button
-          :use (list (etaf-focusable))
-          :on-press (lambda () (etaf-resource-load resource))
-          "RELOAD")
-    (text :flex-grow 1 :flex-shrink 1 :flex-basis '(200)
-          :min-width '(180) :padding '(1 (12))
-          :border "#C97252" :bgcolor "#F1D4C9" :face 'bold
-          :text-align 'center :ref 'resource-fail :role 'button
-          :use (list (etaf-focusable))
-          :on-press (lambda ()
-                      (etaf-set-value fail-next t)
-                      (etaf-resource-load resource))
-          "SIMULATE FAILURE"))))
+   (flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
+    (box :flex-grow 1 :flex-shrink 1 :flex-basis '(200)
+         :min-width '(180) :padding '(1 (12))
+         :border "#4E7890" :bgcolor "#D9EAF2" :font-weight 'bold
+         :text-align 'center :ref 'resource-reload :role 'button
+         :use (list (etaf-focusable))
+         :on-press (lambda () (etaf-resource-load resource))
+     (text "RELOAD"))
+    (box :flex-grow 1 :flex-shrink 1 :flex-basis '(200)
+         :min-width '(180) :padding '(1 (12))
+         :border "#C97252" :bgcolor "#F1D4C9" :font-weight 'bold
+         :text-align 'center :ref 'resource-fail :role 'button
+         :use (list (etaf-focusable))
+         :on-press (lambda ()
+                     (etaf-set-value fail-next t)
+                     (etaf-resource-load resource))
+     (text "SIMULATE FAILURE")))))
 
 (defun etaf-resource-example--view (resource fail-next cleanup-count)
   "Return the example View for RESOURCE, FAIL-NEXT, and CLEANUP-COUNT."
   (etaf-view
-   (box :layout 'column :width '(680) :color "#252A2E" :bgcolor "#F8F5EE"
+   (column :width '(680) :color "#252A2E" :bgcolor "#F8F5EE"
     (expr :value (etaf-resource-example--header))
     (box :height 1)
     (expr :value
@@ -82,9 +82,10 @@
     (box :height 1)
     (expr :value (etaf-resource-example--actions resource fail-next))
     (box :height 1)
-    (text :width '(680) :padding '(1 (16)) :border "#8D887F"
-          :color "#4D5651" :bgcolor "#EEEAE2"
-          "Scope rule: reload releases the old value; unmount releases the last one"))))
+    (box :width '(680) :padding '(1 (16)) :border "#8D887F"
+         :color "#4D5651" :bgcolor "#EEEAE2"
+     (text
+      "Scope rule: reload releases the old value; unmount releases the last one")))))
 
 (etaf-define-component etaf-resource-example-app ()
   "Render a reloadable Resource with visible cleanup and error state."

@@ -79,7 +79,7 @@
       (list (list :kind 'expr :path path :hole index :static-p nil)
             (append programs
                     (list `(lambda () ,(etaf--parse-expr-form (cdr form))))))))
-   ((memq (car form) '(slot raw-ebox)) nil)
+   ((eq (car form) 'slot) nil)
    ((etaf--ordinary-expression-head-p (car form)) nil)
    (t
     (let* ((parts (etaf--parse-attributes-and-children (cdr form)))

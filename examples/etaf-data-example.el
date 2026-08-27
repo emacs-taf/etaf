@@ -52,35 +52,35 @@
          (status (plist-get task :status))
          (host-ref (intern (format "data-task-%d" identity))))
     (etaf-view
-     (box :layout 'flex :width '(718) :flex-flow '(row nowrap) :gap '(0 (10))
+     (flex :width '(718) :flex-flow '(row nowrap) :gap '(0 (10))
       :padding '(1 (12)) :border "#6D8A73"
       :bgcolor (if selected "#DCEBDD" "#FFFDF8")
       :ref host-ref :role 'button :use (list (etaf-focusable))
       :on-press (lambda ()
                   (etaf-dispatch 'etaf-data-example-toggle
                                  controller identity))
-      (text :width '(36) :face 'bold
-            :color (if selected "#2F6B43" "#8D887F")
-            (expr :value (if selected "●" "○")))
-      (text :flex-grow 1 :flex-shrink 1 :flex-basis '(390)
-            :min-width '(280)
-            (expr :value (plist-get task :title)))
-      (text :width '(96) :color "#66706A"
-            (expr :value (plist-get task :owner)))
-      (text :width '(84) :face 'bold :text-align 'right
-            :color (if (eq status 'done) "#2F6B43" "#9B4A34")
-            (expr :value (upcase (symbol-name status))))))))
+      (box :width '(36) :font-weight 'bold
+           :color (if selected "#2F6B43" "#8D887F")
+       (text (expr :value (if selected "●" "○"))))
+      (box :flex-grow 1 :flex-shrink 1 :flex-basis '(390)
+           :min-width '(280)
+       (text (expr :value (plist-get task :title))))
+      (box :width '(96) :color "#66706A"
+       (text (expr :value (plist-get task :owner))))
+      (box :width '(84) :font-weight 'bold :text-align 'right
+           :color (if (eq status 'done) "#2F6B43" "#9B4A34")
+       (text (expr :value (upcase (symbol-name status)))))))))
 
 (defun etaf-data-example--header (controller)
   "Return the summary header for CONTROLLER."
   (let ((total (etaf-value (etaf-data-total controller)))
         (selection (etaf-value (etaf-data-selection controller))))
     (etaf-view
-     (box :layout 'column :width '(720) :padding '(1 (18)) :border "#8F432F"
+     (column :width '(720) :padding '(1 (18)) :border "#8F432F"
       :bgcolor "#FFFDF8" :text-align 'center
-      (text :color "#8F432F" :face 'bold
+      (text :color "#8F432F" :font-weight 'bold
             "BEST PRACTICE  /  DATA OWNERSHIP")
-      (text :face 'bold "Task controller")
+      (text :font-weight 'bold "Task controller")
       (text :color "#66706A"
             (expr :value
                   (format "%d records · %d selected" total
@@ -91,17 +91,17 @@
   "Return a filter LABEL for CONTROLLER using HOST-REF and QUERY.
 Use BORDER and BACKGROUND for its semantic color family."
   (etaf-view
-   (text :padding '(1 (12)) :border border :bgcolor background
-         :face 'bold :ref host-ref :role 'button
-         :use (list (etaf-focusable))
-         :on-press (lambda ()
-                     (etaf-data-example--filter controller query))
-         (expr :value label))))
+   (box :padding '(1 (12)) :border border :bgcolor background
+        :font-weight 'bold :ref host-ref :role 'button
+        :use (list (etaf-focusable))
+        :on-press (lambda ()
+                    (etaf-data-example--filter controller query))
+    (text (expr :value label)))))
 
 (defun etaf-data-example--toolbar (controller next-id)
   "Return the action toolbar for CONTROLLER and NEXT-ID."
   (etaf-view
-   (box :layout 'flex :width '(720) :flex-flow '(row wrap) :gap '(1 (10))
+   (flex :width '(720) :flex-flow '(row wrap) :gap '(1 (10))
     (expr :value (etaf-data-example--filter-control
                   controller "ALL" 'data-filter-all nil
                   "#4E7890" "#D9EAF2"))
@@ -111,13 +111,13 @@ Use BORDER and BACKGROUND for its semantic color family."
     (expr :value (etaf-data-example--filter-control
                   controller "DONE" 'data-filter-done '(:status done)
                   "#6D8A73" "#DCEBDD"))
-    (text :padding '(1 (12)) :border "#7A6B95" :bgcolor "#E7E2F1"
-          :face 'bold :ref 'data-add :role 'button
-          :use (list (etaf-focusable))
-          :on-press (lambda ()
-                      (etaf-dispatch 'etaf-data-example-add
-                                     controller next-id))
-          "+ ADD TASK"))))
+    (box :padding '(1 (12)) :border "#7A6B95" :bgcolor "#E7E2F1"
+         :font-weight 'bold :ref 'data-add :role 'button
+         :use (list (etaf-focusable))
+         :on-press (lambda ()
+                     (etaf-dispatch 'etaf-data-example-add
+                                    controller next-id))
+     (text "+ ADD TASK")))))
 
 (defun etaf-data-example--rows (controller)
   "Return the loaded task rows for CONTROLLER."
@@ -127,24 +127,26 @@ Use BORDER and BACKGROUND for its semantic color family."
                   (etaf-data-example--row controller task))
                 items)
       (etaf-view
-       (text :width '(720) :padding '(2 (16))
-             :border "#8D887F" :bgcolor "#EEEAE2"
-             :text-align 'center "No matching tasks.")))))
+       (box :width '(720) :padding '(2 (16))
+            :border "#8D887F" :bgcolor "#EEEAE2"
+            :text-align 'center
+        (text "No matching tasks."))))))
 
 (defun etaf-data-example--view (controller next-id)
   "Return the Data example View for CONTROLLER and NEXT-ID."
   (etaf-view
-   (box :layout 'column :width '(720) :color "#252A2E" :bgcolor "#F8F5EE"
+   (column :width '(720) :color "#252A2E" :bgcolor "#F8F5EE"
     (expr :value (etaf-data-example--header controller))
     (box :height 1)
     (expr :value (etaf-data-example--toolbar controller next-id))
     (box :height 1)
-    (box :layout 'column :width '(720)
+    (column :width '(720)
      (expr :value (etaf-data-example--rows controller)))
     (box :height 1)
-    (text :width '(720) :padding '(1 (16)) :border "#8D887F"
-          :color "#4D5651" :bgcolor "#EEEAE2"
-          "Owner rule: create in setup, mutate through Data, stop on unmount"))))
+    (box :width '(720) :padding '(1 (16)) :border "#8D887F"
+         :color "#4D5651" :bgcolor "#EEEAE2"
+     (text
+      "Owner rule: create in setup, mutate through Data, stop on unmount")))))
 
 (etaf-define-component etaf-data-example-app ()
   "Render a memory-backed task application with owned cleanup."

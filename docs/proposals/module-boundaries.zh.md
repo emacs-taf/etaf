@@ -63,7 +63,11 @@ AuthorView
   ↓ parse / desugar / string normalization
 NormalizedView = Text | Box | Fragment | ComponentCall
   ↓ ETAF Runtime resolves ComponentCall
-Resolved candidate + computed properties
+Resolved candidate + source facts
+  ↓ 当前 surface 只选择一个 style adapter
+  ETAF Style Adapter | Ebox Standalone Style Adapter
+  ↓ ECSS selector / cascade / inheritance（恰好一次）
+Computed property facts + impact sets
   ├─ structure/geometry impact
   │    ↓ Fragment projection preserves RangeAnchors
   │  CanonicalEboxInput = Forest<TextNode | BoxNode> + RangeAnchors
@@ -71,8 +75,7 @@ Resolved candidate + computed properties
   │  LayoutPlan → GeometryPatch
   │
   └─ paint impact
-       ↓ source-specific contribution adapter
-       (ETAF: etaf-theme-tp; standalone Ebox: ebox-surface-tp)
+       ↓ shared property projector
      TP ContributionPlan → PaintPatch
 
 GeometryPatch and PaintPatch join the existing TP transaction
@@ -289,6 +292,19 @@ constructor：`ebox-text-create` 构造 TextNode，`ebox-box-create` 接收一�
 Layout variant 并构造 BoxNode。constructor 不接受作者 form 或扁平的跨 layout
 属性袋；ETAF Renderer 直接调用它们，不重新拼 DSL。
 
+`:class`、`:id` 和作者 `:key` 都属于来源层，但 `:key` 是 identity fact，不能进入
+visual source。独立 Ebox DSL 与 ETAF View 都产生同构的 StyleSourceFact；每个 surface
+只能选择一个 adapter 调用 ECSS。ETAF surface 由 ETAF Style Adapter 拥有 Component
+scope 的装配和 stylesheet 生命周期，独立 Ebox surface 由 Ebox Standalone Style
+Adapter 拥有；两者复用同一个 ECSS 实现、同一个 Ebox property registry/projector，
+不会在同一 surface 上运行两次 cascade。`:id` 的同一 parsed fact 可以并行投影到
+ETAF semantic metadata，但不能因此重新解析或重新 cascade。
+
+typed Text/Box constructor 只接收 opaque `sourceHandle` 与已经计算完成的 owned facts，
+不接收或保存 `:class/:id/:key`；Ebox measurement/layout core 也不读取 source metadata。
+StyleEnvironment 属于当前 surface/runtime，不能实现为 process-global stylesheet 或
+metadata table。
+
 目标公共端口不保留无 kind 的 `(ebox-create :content ...)`。若运行时为了性能把
 Text payload 融合进相邻 Box 存储，该优化只能发生在 canonical Text identity、
 range 和 impact 已建立之后，并且必须可逆地保留这些事实；私有存储编码不能成为
@@ -439,7 +455,6 @@ TextStyle =
   :font-family :font-size :font-weight :font-style
   :color :background-color
   :text-decoration-line :text-decoration-color :text-decoration-style
-  :wrap-mode (word | grapheme | none)
 
 BoxFrame =
   :outer
@@ -448,6 +463,7 @@ BoxFrame =
   :box-sizing
   margin/padding shorthands and logical/physical longhands
   border shorthands and width/style/color longhands
+  :wrap-mode (word | char | kp | none)
   :overflow :visibility
   inherited standard text style source such as font/color
   non-inherited surface source such as :background-color
@@ -519,9 +535,15 @@ Box。Ebox DSL 不接受 ETAFOnlyMetadata。
 ```
 
 `:wrap-mode` 不与 CSS `white-space`、`overflow-wrap`、`word-break` 或 `line-break`
-等价，因此保留为 Ebox namespace 的唯一公共名称，值限定为 `word`、`grapheme`、
-`none`。如果未来实现完整且语义一致的 CSS 属性，应以一次明确迁移替换它，而不是
+等价，因此保留为 Ebox namespace 的唯一公共名称，值限定为 `word`、`char`、`kp`、
+`none`。`char` 在实现中按完整字素簇断行，避免拆开组合字符；`kp` 使用
+Knuth–Plass 段落排版。如果未来实现完整且语义一致的 CSS 属性，应以一次明确迁移替换它，而不是
 长期同时保留两套名称。
+
+`:wrap-mode` 只由 Box 作者声明，表示该 Box 内容的软换行策略；Text form 不接受
+它。计算阶段把 Box 的策略继承为 Text 测量输入，Text 负责执行断行，但不拥有第二
+条作者配置路径。`none` 只禁止自动软换行，显式换行仍保留；排版后的越界由独立的
+`:overflow` 决定，不能用 wrap 语义暗示裁剪或滚动。
 
 标准 CSS shorthand 只有一套展开规则，例如 `:margin`、`:padding`、`:border`、
 `:gap`、`:flex`、`:flex-flow`、`:grid-column` 和 `:grid-row`。canonical registry 使用
@@ -620,6 +642,21 @@ SelectorSubjectFact {
   sourceProvenance
 }
 
+StyleSourceFact {
+  sourceHandle
+  selectorSubjectFact
+  declarations
+  scopeHandle
+  provenance
+}
+
+StyleEnvironment {
+  stylesheet
+  schemaSet
+  scopeIndex
+  computedCache
+}
+
 RuntimeMetadataFact {
   propertyId
   value
@@ -646,7 +683,9 @@ normalization 对 author input 只解析一次，并同时产生 immutable
 CanonicalDeclaration、SelectorSubjectFact 和 RuntimeMetadataFact。`:class/:id` 不
 进入 CSS declarations；SelectorSubjectFact 在 cascade 前直接构造 ECSS subject。
 `:id` 的同一个 parsed source value 由 selector 与 semantic projection 共享，不各自
-重读 plist。ECSS cascade/inheritance 接收 SelectorSubjectFact + declarations，产生
+重读 plist。ETAF Style Adapter 与 Ebox Standalone Style Adapter 产生同构
+StyleSourceFact，但一个 surface 只由其中一个 adapter 组装 StyleEnvironment；ECSS
+cascade/inheritance 接收 SelectorSubjectFact + declarations，产生
 immutable ComputedPropertyFact。`:key`、`:ref`、`:on-*` 等不进入 ECSS，只进入
 RuntimeMetadataFact。这里的“一次 materialize”指每个阶段只生成一次自己的
 immutable artifact，不是让同一对象跨阶段变异。
@@ -720,15 +759,23 @@ Elisp plist。调试与性能工具必须能显示完整链路，例如：
 `etaf-renderer`：
 
 - 是唯一 ETAF → Ebox 的 lowering adapter；
-- 把 ResolvedView 的 structure/geometry projection 转换为 CanonicalEboxInput forest、
-  RangeAnchors 和 typed measurement/geometry props；
+- 消费 ETAF Style Adapter 已产生的 computed/projection facts，把 structure/geometry
+  projection 转换为 CanonicalEboxInput forest、RangeAnchors 与 typed Ebox facts；
+- 不重新运行 selector/cascade，也不复制第二份 computed visual properties；
 - 不执行 Component lifecycle，不访问 Ebox 私有状态。
+
+`etaf-style`（逻辑模块，可与发行包同仓）：
+
+- 拥有 Component style scope 的装配、每个 Runtime/Surface 独立的 StyleEnvironment
+  及其生命周期；
+- 使用 Ebox 公开的 property registry/projector，直接调用 ECSS 完成 ETAF surface
+  唯一一次 cascade；
+- 不测量、不布局、不写 buffer，也不拥有 Runtime commit authority。
 
 `etaf-theme-tp`：
 
-- 是 ETAF/ECSS computed paint contribution → TP 的唯一 adapter；
-- 产生 ContributionPlan，不测量、不布局、不拥有 TP priority/commit authority；
-- paint-only candidate 不调用 `etaf-renderer` 的 geometry lowering。
+- 只是可选的 TP palette → ETAF semantic Theme token/value adapter；
+- 不生成 ContributionPlan，不参与 selector/cascade，也不拥有 paint 提交权限。
 
 Theme 的语义 token 和继承属于 ETAF Context。TP 不拥有“暗色主题”等业务意义。
 
@@ -737,6 +784,9 @@ Theme 的语义 token 和继承属于 ETAF Context。TP 不拥有“暗色主题
 Ebox 拥有：
 
 - Ebox DSL 的 String/Text/Box 规范化和布局糖展开；
+- Ebox canonical property registry 及 computed fact → geometry/paint fact 的纯 projector；
+- 仅供独立 Ebox surface 使用的 Standalone Style Adapter；该 adapter 直接调用 ECSS，
+  但 ETAF typed path 必须绕过它，不能运行第二次 cascade；
 - child Box participation 的上下文验证、父布局消费和 dirty propagation；
 - typed TextNode/BoxNode constructor 及 canonical 属性 schema；
 - Text 测量、换行和行布局；
@@ -747,10 +797,10 @@ Ebox 拥有：
 Ebox 不理解 Component、slot、Context、Action、Behavior、Data 或 Resource，也不
 决定 paint contribution 的优先级。
 
-独立 Ebox DSL 的 author paint 由 `ebox-surface` 的 TP adapter 投影为 inline
-ContributionPlan；它与 ETAF 的 `etaf-theme-tp` 是两条来源 adapter，共同消费 TP
-公开 contribution contract。两者都不把 paint-only 属性塞回 CanonicalEboxInput，
-也不拥有 TP priority、journal 或 commit authority。
+ETAF Style Adapter 与 Ebox Standalone Style Adapter 共用同一个纯 property projector；
+前者处理 ETAF Theme/Component/state/inline provenance，后者处理独立 Ebox inline/
+stylesheet provenance。两者不在同一 surface 并存，不把 paint-only 属性塞回
+CanonicalEboxInput，也不拥有 TP priority、journal 或 commit authority。
 
 `ebox-build` 独占作者 form 的 parse/desugar；`ebox-text-create` 与
 `ebox-box-create` 接收已经求值的 canonical 参数，只验证 typed node invariant。
@@ -828,7 +878,8 @@ Playground 的 `.etaf` manifest 属于 Playground。未来通用 compiler 若存
   Component、slot、expr 或 lifecycle。
 - 框架集成者使用 `ebox-text-create`、`ebox-box-create`、typed LayoutConfig、
   RangeAnchor 和 TP contribution contract；不重新拼 DSL、不传 shorthand、不运行
-  第二次 cascade。
+  第二次 cascade。typed constructor 只接收 opaque `sourceHandle`，不接收来源层
+  `:class/:id/:key`。
 - optional Emacs adapter 是显式 opt-in 的独立 schema namespace；只有加载 adapter
   的 surface 才接受 `:emacs-face`，否则 normalization 精确报未知 namespace/property。
 - `ebox--*`、`etaf--*`、`tp--*`、`:ebox-type`、`:node-id`、`:region-id`、Emacs
@@ -846,11 +897,12 @@ etaf-playground ─────▶ ETAF + optional UI/SQLite
 ebox-playground ─────▶ Ebox only
 etaf-performance ────▶ public observation boundaries only
 
-ETAF Renderer ───────▶ ECSS computed properties
-Ebox style pipeline ─▶ ECSS computed-properties port
+ETAF Style Adapter ──▶ ECSS + Ebox property registry/projector
+Ebox Standalone Style Adapter ─▶ ECSS + same registry/projector
+ETAF Renderer ───────▶ Ebox typed core port
 ETAF Runtime  ───────▶ Ebox/TP transaction participants
-etaf-theme-tp ───────▶ TP contribution contract
-Ebox surface ────────▶ TP inline contribution + transaction participant
+etaf-theme-tp ───────▶ ETAF semantic Theme values only
+Ebox surface ────────▶ TP contribution + transaction participant
 ```
 
 禁止反向依赖：Ebox 不依赖 ETAF；TP 不解析 View；ECSS 不写 buffer；UI 不调用

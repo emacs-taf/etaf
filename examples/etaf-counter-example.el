@@ -28,37 +28,37 @@
 (defun etaf-counter-example--header (title)
   "Return the counter header for TITLE."
   (etaf-view
-   (box :layout 'column :class "hero"
+   (column :class "hero"
     (text :class "eyebrow" "BEST PRACTICE  /  RETAINED STATE")
-    (text :face 'bold (expr :value title))
+    (text :font-weight 'bold (expr :value title))
     (text :color "#66706A"
           "State belongs to setup; rendering only reads it."))))
 
 (defun etaf-counter-example--metrics (count double status)
   "Return metric cards for COUNT, DOUBLE, and STATUS."
   (etaf-view
-   (box :layout 'flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
-    (text :class "metric"
-          (expr :value (format "COUNT  %d" (etaf-value count))))
-    (text :class "metric"
-          (expr :value (format "DOUBLE  %d" (etaf-value double))))
-    (text :class "metric"
-          (expr :value (format "STATE  %s" (etaf-value status)))))))
+   (flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
+    (box :class "metric"
+     (text (expr :value (format "COUNT  %d" (etaf-value count)))))
+    (box :class "metric"
+     (text (expr :value (format "DOUBLE  %d" (etaf-value double)))))
+    (box :class "metric"
+     (text (expr :value (format "STATE  %s" (etaf-value status))))))))
 
 (defun etaf-counter-example--action (count label host-ref operation)
   "Return one COUNT action named LABEL using HOST-REF and OPERATION."
   (etaf-view
-   (text :class "action" :ref host-ref :role 'button
+   (box :class "action" :ref host-ref :role 'button
          :use (list (etaf-focusable))
          :on-press (lambda ()
                      (etaf-dispatch 'etaf-counter-example-update
                                     count operation))
-         (expr :value label))))
+    (text (expr :value label)))))
 
 (defun etaf-counter-example--actions (count)
   "Return the action group for COUNT."
   (etaf-view
-   (box :layout 'flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
+   (flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
     (expr :value
           (etaf-counter-example--action
            count "−  DECREMENT" 'counter-decrement 'decrement))
@@ -76,13 +76,13 @@
    ("&" :width (680) :color "#252A2E" :bgcolor "#F8F5EE")
    (".hero" :width (680) :padding (1 (18)) :border "#8F432F"
     :bgcolor "#FFFDF8" :text-align center)
-   (".eyebrow" :color "#8F432F" :face bold)
+   (".eyebrow" :color "#8F432F" :font-weight bold)
    (".metric" :flex-grow 1 :flex-shrink 1 :flex-basis (200)
     :min-width (180) :padding (1 (14)) :border "#6D8A73"
     :bgcolor "#DCEBDD" :text-align center)
    (".action" :flex-grow 1 :flex-shrink 1 :flex-basis (160)
     :min-width (140) :padding (1 (12)) :border "#4E7890"
-    :bgcolor "#D9EAF2" :text-align center :face bold)
+    :bgcolor "#D9EAF2" :text-align center :font-weight bold)
    (".note" :width (680) :padding (1 (16)) :border "#8D887F"
     :color "#4D5651" :bgcolor "#EEEAE2"))
   :setup
@@ -96,7 +96,7 @@
                   :name 'counter-status)))
     (lambda ()
       (etaf-view
-       (box :layout 'column
+       (column
         (expr :value (etaf-counter-example--header title))
         (box :height 1)
         (expr :value
@@ -104,8 +104,9 @@
         (box :height 1)
         (expr :value (etaf-counter-example--actions count))
         (box :height 1)
-        (text :class "note"
-              "Public path: Event → Action → Ref → Computed → Runtime commit"))))))
+        (box :class "note"
+         (text
+          "Public path: Event → Action → Ref → Computed → Runtime commit")))))))
 
 ;;;###autoload
 (defun etaf-counter-example-view ()
