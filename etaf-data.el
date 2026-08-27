@@ -12,6 +12,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'etaf-observer)
 (require 'etaf-reactive)
 
 (define-error 'etaf-data-error "Invalid ETAF data operation")
@@ -48,16 +49,22 @@ CAPABILITIES is a plist.  `:load' is required and receives QUERY, PAGE, and
 PAGE-SIZE.  It must return a plist containing at least `:items', and may return
 `:total', `:page', and `:page-size'.  `:mutate' is optional and receives
 OPERATION and PAYLOAD.  `:dispose' is optional and runs when the owning
-controller stops."
+controller stops.  `:provider' may name the source in observation reports and
+defaults to `data'."
   (let ((load (plist-get capabilities :load))
         (mutate (plist-get capabilities :mutate))
-        (dispose (plist-get capabilities :dispose)))
+        (dispose (plist-get capabilities :dispose))
+        (provider (plist-get capabilities :provider)))
     (unless (functionp load)
       (signal 'wrong-type-argument (list 'functionp load)))
     (dolist (entry `((:mutate . ,mutate)
                     (:dispose . ,dispose)))
       (when (and (cdr entry) (not (functionp (cdr entry))))
         (signal 'wrong-type-argument (list 'functionp (cdr entry)))))
+    (when (and (plist-member capabilities :provider)
+               (not (and provider (symbolp provider)
+                         (not (keywordp provider)))))
+      (signal 'wrong-type-argument (list 'symbolp provider)))
     (append (list :etaf-data-source t) capabilities)))
 
 (defun etaf-data-source-p (value)
@@ -74,6 +81,25 @@ controller stops."
     (when (and required-p (not (functionp function)))
       (error "ETAF Data source lacks %S capability" key))
     function))
+
+(defun etaf-data--source-provider (source)
+  "Return SOURCE's observation provider, defaulting to `data'."
+  (or (plist-get source :provider) 'data))
+
+(defun etaf-data--source-load (source query page page-size)
+  "Invoke SOURCE load capability for QUERY, PAGE, and PAGE-SIZE."
+  (etaf-observer-with-stage
+      ((etaf-data--source-provider source) 'load
+       :page page :page-size page-size)
+    (funcall (etaf-data--source-function source :load t)
+             query page page-size)))
+
+(defun etaf-data--source-mutate (source operation payload)
+  "Invoke SOURCE mutation OPERATION with PAYLOAD."
+  (etaf-observer-with-stage
+      ((etaf-data--source-provider source) 'mutate :operation operation)
+    (funcall (etaf-data--source-function source :mutate t)
+             operation payload)))
 
 (defun etaf-data--record-value (record key)
   "Return RECORD value at KEY for plist, alist, or hash table records."
@@ -155,6 +181,7 @@ and `reset'."
              current))))
     (etaf-data-source
      :name name
+     :provider 'memory
      :load (lambda (query page page-size)
              (let* ((all (etaf-value records))
                     (filtered (funcall query-function query all)))
@@ -213,9 +240,10 @@ and `reset'."
 QUERY is passed through unchanged.  PAGE and PAGE-SIZE default to 1 and 20.
 This public preparation boundary performs no reactive publication; callers may
 use its result as `:initial-result' for `etaf-data-controller'."
-  (etaf-data--normalize-result
-   (funcall (etaf-data--source-function source :load t)
-            query (max 1 (or page 1)) (max 1 (or page-size 20)))))
+  (let ((page (max 1 (or page 1)))
+        (page-size (max 1 (or page-size 20))))
+    (etaf-data--normalize-result
+     (etaf-data--source-load source query page page-size))))
 
 (defun etaf-data--apply-load-success (controller request-id result)
   "Publish successful RESULT for CONTROLLER when REQUEST-ID is current."
@@ -381,11 +409,11 @@ load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive."
         (etaf-data--apply-load-success
          controller
          request-id
-         (funcall (etaf-data--source-function
-                   (etaf-data--controller-source controller) :load t)
-                  (etaf-value (etaf-data--controller-query controller))
-                  (etaf-value (etaf-data--controller-page controller))
-                  (etaf-value (etaf-data--controller-page-size controller))))
+         (etaf-data--source-load
+          (etaf-data--controller-source controller)
+          (etaf-value (etaf-data--controller-query controller))
+          (etaf-value (etaf-data--controller-page controller))
+          (etaf-value (etaf-data--controller-page-size controller))))
       (error
        (etaf-data--apply-error controller request-id err)
        (signal (car err) (cdr err))))))
@@ -408,9 +436,9 @@ source mutation result after the reload succeeds."
     (setf (etaf-value (etaf-data--controller-error controller)) nil)
     (condition-case err
         (let ((result
-               (funcall (etaf-data--source-function
-                         (etaf-data--controller-source controller) :mutate t)
-                        operation payload)))
+               (etaf-data--source-mutate
+                (etaf-data--controller-source controller)
+                operation payload)))
           (etaf-data-load controller)
           result)
       (error

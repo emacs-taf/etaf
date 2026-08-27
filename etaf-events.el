@@ -15,6 +15,7 @@
 (require 'etaf-runtime)
 
 (defvar etaf--current-runtime)
+(defvar etaf--observer-context)
 
 (declare-function etaf-runtime-require-mounted "etaf-runtime" (&optional runtime))
 (declare-function etaf-runtime-p "etaf-runtime" (value))
@@ -28,6 +29,9 @@
 (declare-function etaf-runtime-set-focus-ref "etaf-runtime" (runtime host-ref))
 (declare-function etaf-runtime-event-begin "etaf-runtime" (runtime))
 (declare-function etaf-runtime-event-end "etaf-runtime" (runtime))
+(declare-function etaf-runtime-observer "etaf-runtime" (runtime))
+(declare-function etaf-runtime-call-operation
+                  "etaf-runtime" (runtime kind label function))
 (declare-function ebox-call-with-render-burst
                   "ebox-buffer-backend" (function &rest arguments))
 
@@ -61,9 +65,9 @@
 
   When PAYLOAD-P is non-nil, pass PAYLOAD as the callback's only argument;
 otherwise call the local callback with no arguments."
+  (setq runtime (etaf-runtime-require-mounted runtime))
   (let ((dispatch
          (lambda ()
-           (setq runtime (etaf-runtime-require-mounted runtime))
            (let ((callback (etaf--event-handler runtime host-ref kind)))
              (unless callback
                (signal 'etaf-event-error
@@ -79,7 +83,12 @@ otherwise call the local callback with no arguments."
                        (funcall callback payload)
                      (funcall callback))
                  (etaf-runtime-event-end runtime)))))))
-    (ebox-call-with-render-burst dispatch)))
+    (if (or etaf--observer-context (etaf-runtime-observer runtime))
+        (etaf-runtime-call-operation
+         runtime 'event
+         (format "%s %S" (etaf-event-kind kind) host-ref)
+         (lambda () (ebox-call-with-render-burst dispatch)))
+      (ebox-call-with-render-burst dispatch))))
 
 ;;;###autoload
 (defun etaf-host-ref-bounds (runtime host-ref)

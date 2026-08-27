@@ -2410,6 +2410,130 @@ Event composition is a Runtime contract, not a UI-library helper contract."
       (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
+(ert-deftest etaf-runtime-observer-covers-initial-publication ()
+  "Observed mount emits TP, Ebox, then one final ETAF operation report."
+  (let ((buffer-name " *etaf-observed-mount-test*") reports)
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer-name (etaf-view (box "Observed"))
+           (list :observer
+                 (lambda (report) (push report reports))))
+          (setq reports (nreverse reports))
+          (should (equal (mapcar (lambda (report)
+                                   (plist-get report :provider))
+                                 reports)
+                         '(tp ebox etaf)))
+          (should (equal (mapcar (lambda (report)
+                                   (plist-get report :sequence))
+                                 reports)
+                         '(1 2 3)))
+          (should (equal (delete-dups
+                          (mapcar (lambda (report)
+                                    (plist-get report :operation-id))
+                                  reports))
+                         '(1)))
+          (let ((final (car (last reports))))
+            (should (eq (plist-get final :stage) 'runtime-operation))
+            (should (eq (plist-get final :kind) 'mount))
+            (should (eq (plist-get final :status) 'success))
+            (should (= (plist-get final :generation-before) 0))
+            (should (= (plist-get final :generation-after) 1))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-runtime-set-observer runtime nil)
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-runtime-observer-flattens-nested-event-and-detaches ()
+  "Nested event/flush work shares one operation and detach stops reports."
+  (let ((buffer-name " *etaf-observed-event-test*") reports)
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name
+                      (etaf-view (etaf-test-event-batch-nested)))
+          (let ((runtime (etaf-runtime-for-buffer buffer-name)))
+            (etaf-runtime-set-observer
+             runtime (lambda (report) (push report reports)))
+            (etaf-dispatch-event
+             runtime 'event-batch-nested-outer 'press)
+            (setq reports (nreverse reports))
+            (should (equal (mapcar (lambda (report)
+                                     (plist-get report :provider))
+                                   reports)
+                           '(tp ebox etaf)))
+            (should (= 1 (cl-count 'etaf reports
+                                   :key (lambda (report)
+                                          (plist-get report :provider)))))
+            (should (= 1 (length
+                          (delete-dups
+                           (mapcar (lambda (report)
+                                     (plist-get report :operation-id))
+                                   reports)))))
+            (should (equal "Outer Inner nested"
+                           (etaf-test--buffer-text buffer-name)))
+            (should-not (etaf-runtime-set-observer runtime nil))
+            (setq reports nil)
+            (etaf-dispatch-event
+             runtime 'event-batch-nested-outer 'press)
+            (should-not reports)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-runtime-observer-noop-and-failure-cannot-change-state ()
+  "No-op observation and observer errors preserve exact committed state."
+  (let ((buffer-name " *etaf-observed-noop-test*") reports)
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name (etaf-view (etaf-test-event-batch-noop)))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (generation (etaf-runtime-generation runtime))
+                 (before (with-current-buffer buffer-name (buffer-string))))
+            (etaf-runtime-set-observer
+             runtime
+             (lambda (report)
+               (push report reports)
+               (error "observer failure")))
+            (etaf-dispatch-event runtime 'event-batch-noop 'press)
+            (should (= generation (etaf-runtime-generation runtime)))
+            (should (equal-including-properties
+                     before (with-current-buffer buffer-name (buffer-string))))
+            (should (= 1 (length reports)))
+            (should (eq (plist-get (car reports) :provider) 'etaf))
+            (should (cl-find 'observer
+                             (etaf-runtime-diagnostics runtime)
+                             :key (lambda (entry)
+                                    (plist-get entry :phase))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-runtime-set-observer runtime nil)
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-runtime-observer-compare-and-set-preserves-foreign-owner ()
+  "Observer consumers replace only the exact sink they own."
+  (let ((buffer-name " *etaf-observer-owner-test*")
+        (first #'ignore)
+        (second (lambda (_report) nil)))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name (etaf-view (box "Observer owner")))
+          (let ((runtime (etaf-runtime-for-buffer buffer-name)))
+            (should (etaf-runtime-compare-and-set-observer runtime nil first))
+            (should-not
+             (etaf-runtime-compare-and-set-observer runtime nil second))
+            (should (etaf-runtime-compare-and-set-observer runtime first second))
+            (should-not
+             (etaf-runtime-compare-and-set-observer runtime first nil))
+            (should (etaf-runtime-compare-and-set-observer runtime second nil))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-runtime-set-observer runtime nil)
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
 (ert-deftest etaf-pvec-put-many-preserves-values-and-shares-untouched-branches ()
   "Batch persistent-vector updates match sequential puts and share untouched paths."
   (let* ((untouched-id (* 31 (expt 2 30)))

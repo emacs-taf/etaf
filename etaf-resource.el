@@ -12,6 +12,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'etaf-observer)
 (require 'etaf-reactive)
 
 (define-error 'etaf-resource-error "Invalid ETAF Resource operation"
@@ -142,9 +143,10 @@ wrong Resource usage continue to signal normally."
   (let (result error-data)
     (condition-case err
         (setq result
-              (etaf-scope-run
-               (etaf-resource-scope resource)
-               (etaf-resource-loader resource)))
+              (etaf-observer-with-stage ('resource 'load)
+                (etaf-scope-run
+                 (etaf-resource-scope resource)
+                 (etaf-resource-loader resource))))
       (error (setq error-data err)))
     (if error-data
         (etaf--resource-set-state resource 'error nil error-data)

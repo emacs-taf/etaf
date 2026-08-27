@@ -18,6 +18,7 @@
 (require 'etaf-renderer)
 (require 'etaf-context)
 (require 'etaf-behavior)
+(require 'etaf-observer)
 
 (declare-function etaf--render-value-list "etaf-renderer" (value path))
 (declare-function etaf--apply-inline-style-rules "etaf-renderer" (node styles &optional root-p))
@@ -47,6 +48,8 @@
 (defvar etaf--render-style-stack)
 (defvar etaf--render-parent-style-stack)
 (defvar etaf--current-context)
+(defvar gcs-done)
+(defvar gc-elapsed)
 
 (define-error 'etaf-runtime-error "ETAF runtime error")
 
@@ -326,6 +329,8 @@ the sequential `etaf--pvec-put' contract."
   flushing-p
   pending-p
   diagnostics
+  observer
+  (next-operation-id 0)
   (event-depth 0)
   dirty-effect-queue-tail)
 
@@ -1086,6 +1091,104 @@ effect-to-source edges.  It is intentionally immutable and suitable as an
   "Return the dynamically active Runtime, or nil outside a Runtime."
   etaf--current-runtime)
 
+(defun etaf--runtime-forward-ebox-report (_buffer report)
+  "Forward accepted Ebox or TP REPORT into the active Runtime operation."
+  (etaf-observer-emit report))
+
+(defun etaf--runtime-record-observer-diagnostic (runtime diagnostic)
+  "Record contained observer DIAGNOSTIC on RUNTIME."
+  (push (append (list :phase 'observer) (copy-tree diagnostic))
+        (etaf-runtime-diagnostics runtime))
+  nil)
+
+(defun etaf-runtime-call-operation (runtime kind label function)
+  "Call FUNCTION as one observed RUNTIME operation.
+KIND is a stable symbol and LABEL is a user-facing string.  Nested calls for
+the same Runtime reuse the active operation.  Calls for another Runtime own a
+separate operation.  Return FUNCTION's exact result and re-signal its exact
+error or quit."
+  (unless (and (etaf-runtime-p runtime)
+               (etaf-runtime-mounted-p runtime))
+    (signal 'etaf-runtime-error (list "ETAF runtime is not mounted")))
+  (unless (and (symbolp kind) kind)
+    (signal 'wrong-type-argument (list 'symbolp kind)))
+  (unless (stringp label)
+    (signal 'wrong-type-argument (list 'stringp label)))
+  (unless (functionp function)
+    (signal 'wrong-type-argument (list 'functionp function)))
+  (let* ((runtime-id (etaf-runtime-mount-epoch runtime))
+         (current etaf--observer-context)
+         (same-runtime
+          (and current
+               (= runtime-id
+                  (etaf--observer-context-runtime-id current))))
+         (observer (etaf-runtime-observer runtime)))
+    (cond
+     (same-runtime
+      (funcall function))
+     ((null observer)
+      ;; A different Runtime must not leak provider reports into the outer
+      ;; operation merely because its own observer is disabled.
+      (let ((etaf--observer-context nil))
+        (funcall function)))
+     (t
+      (let* ((operation-id
+              (1+ (or (etaf-runtime-next-operation-id runtime) 0)))
+             (generation-before (etaf-runtime-generation runtime))
+             (started (float-time))
+             (gc-count-before gcs-done)
+             (gc-elapsed-before gc-elapsed)
+             (status 'error)
+             (context
+              (etaf--observer-context-create
+               :sink observer
+               :operation-id operation-id
+               :runtime-id runtime-id
+               :buffer-name (buffer-name (etaf-runtime-buffer runtime))
+               :diagnostic
+               (lambda (diagnostic)
+                 (etaf--runtime-record-observer-diagnostic
+                  runtime diagnostic))))
+             result)
+        (setf (etaf-runtime-next-operation-id runtime) operation-id)
+        (etaf--observer-call-with-context
+         context
+         (lambda ()
+           (unwind-protect
+               (condition-case condition
+                   (prog1 (setq result (funcall function))
+                     (setq status 'success))
+                 (quit
+                  (setq status 'quit)
+                  (signal (car condition) (cdr condition))))
+             (etaf-observer-emit
+              (list
+               :provider 'etaf
+               :stage 'runtime-operation
+               :kind kind
+               :label (copy-sequence label)
+               :generation-before generation-before
+               :generation-after (etaf-runtime-generation runtime)
+               :status status
+               :duration-ms
+               (max 0.0 (* 1000.0 (- (float-time) started)))
+               :gc-count (- gcs-done gc-count-before)
+               :gc-duration-ms
+               (max 0.0
+                    (* 1000.0 (- gc-elapsed gc-elapsed-before))))))))
+        result)))))
+
+(cl-defmacro etaf--runtime-with-operation ((runtime kind label) &rest body)
+  "Evaluate BODY in RUNTIME operation KIND and LABEL when observed."
+  (declare (indent 1) (debug ((form form form) body)))
+  (let ((runtime-value (make-symbol "runtime")))
+    `(let ((,runtime-value ,runtime))
+       (if (and (null etaf--observer-context)
+                (null (etaf-runtime-observer ,runtime-value)))
+           (progn ,@body)
+         (etaf-runtime-call-operation
+          ,runtime-value ,kind ,label (lambda () ,@body))))))
+
 (defun etaf-runtime-set-focus-ref (runtime host-ref)
   "Set RUNTIME's focused Host reference to HOST-REF and return it."
   (setf (etaf-runtime-focus-ref runtime) host-ref)
@@ -1127,6 +1230,44 @@ when the requested boundary is no longer mounted."
       (signal 'etaf-runtime-error
               (list "ETAF runtime is not mounted")))
     runtime))
+
+;;;###autoload
+(defun etaf-runtime-set-observer (runtime observer-or-nil)
+  "Set mounted RUNTIME's observer to OBSERVER-OR-NIL and return it.
+The observer receives one immutable flat report argument.  Nil detaches the
+Runtime from its Ebox surface.  Replacing observation during an active
+operation is rejected so the operation keeps one stable sink."
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (unless (or (null observer-or-nil) (functionp observer-or-nil))
+    (signal 'wrong-type-argument (list 'functionp observer-or-nil)))
+  (unless (eq observer-or-nil (etaf-runtime-observer runtime))
+    (when (and etaf--observer-context
+               (= (etaf-runtime-mount-epoch runtime)
+                  (etaf--observer-context-runtime-id
+                   etaf--observer-context)))
+      (error "ETAF observer cannot change during an active operation"))
+    (ebox-buffer-set-observer
+     (etaf-runtime-buffer runtime)
+     (and observer-or-nil #'etaf--runtime-forward-ebox-report))
+    (setf (etaf-runtime-observer runtime) observer-or-nil))
+  observer-or-nil)
+
+;;;###autoload
+(defun etaf-runtime-compare-and-set-observer (runtime expected replacement)
+  "Replace RUNTIME observer EXPECTED with REPLACEMENT atomically.
+
+EXPECTED and REPLACEMENT are functions or nil.  Return non-nil only when the
+current observer is `eq' to EXPECTED; in that case REPLACEMENT is installed
+through the ordinary observer boundary.  A mismatch leaves the Runtime
+untouched.  This lets optional consumers detach only the sink they own without
+reading Runtime storage fields."
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (dolist (observer (list expected replacement))
+    (unless (or (null observer) (functionp observer))
+      (signal 'wrong-type-argument (list 'functionp observer))))
+  (when (eq expected (etaf-runtime-observer runtime))
+    (etaf-runtime-set-observer runtime replacement)
+    t))
 
 (defun etaf--runtime-watch-scheduler (runtime job _flush)
   "Run watcher JOB while RUNTIME remains mounted."
@@ -4975,7 +5116,10 @@ RENDERED-IDENTITIES names the Component render participants."
                    (etaf--runtime-participant-publish participant))
                  (lambda (_report)
                    (etaf--runtime-participant-rollback participant))))
-            (ebox-render-to-buffer (etaf-runtime-buffer runtime) next-root)
+            (ebox-render-to-buffer
+             (etaf-runtime-buffer runtime) next-root
+             (when (etaf-runtime-observer runtime)
+               (list :observer #'etaf--runtime-forward-ebox-report)))
             (etaf--runtime-participant-publish participant))
           (etaf--runtime-complete-generation
            runtime old-generation candidate-generation)
@@ -5018,8 +5162,8 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
           (etaf--runtime-evaluate-root-candidate runtime))
     (etaf--runtime-render-effect runtime)))
 
-(defun etaf--runtime-request-flush (runtime)
-  "Synchronously flush RUNTIME, or mark one follow-up flush while busy."
+(defun etaf--runtime-request-flush-now (runtime)
+  "Flush RUNTIME now, or mark one follow-up flush while busy."
   (when (etaf-runtime-mounted-p runtime)
     (if (or (> (etaf-runtime-event-depth runtime) 0)
             (etaf-runtime-flushing-p runtime))
@@ -5050,6 +5194,11 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
                     (etaf--runtime-render-root-turn runtime t)))))
           (setf (etaf-runtime-flushing-p runtime) nil))))))
 
+(defun etaf--runtime-request-flush (runtime)
+  "Flush RUNTIME within one optional Runtime operation boundary."
+  (etaf--runtime-with-operation (runtime 'flush "reactive flush")
+    (etaf--runtime-request-flush-now runtime)))
+
 ;;;###autoload
 (defun etaf-runtime-flush (&optional runtime)
   "Flush mounted RUNTIME immediately and return its root Ebox node."
@@ -5057,8 +5206,8 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
     (etaf--runtime-request-flush runtime)
     (etaf-runtime-root-node runtime)))
 
-(defun etaf--runtime-mount-now (buffer-or-name view)
-  "Mount VIEW into BUFFER-OR-NAME and return the live buffer."
+(defun etaf--runtime-mount-now (buffer-or-name view observer)
+  "Mount VIEW with optional OBSERVER into BUFFER-OR-NAME."
   (let* ((buffer (get-buffer-create buffer-or-name))
          (old (gethash buffer etaf--runtime-table)))
     (when old
@@ -5087,6 +5236,7 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
                      :theme-paint-slots (make-hash-table :test #'eq)
                      :behaviors (make-hash-table :test #'equal)
                      :behavior-resource-keys (make-hash-table :test #'equal)
+                     :observer observer
                      :root-dirty-p t)))
       (puthash buffer runtime etaf--runtime-table)
       (let ((route (etaf-runtime-route-create
@@ -5097,25 +5247,28 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
         (puthash (etaf-runtime-mount-epoch runtime) runtime
                  etaf--runtime-route-registry))
       (condition-case err
-          (progn
+          (etaf--runtime-with-operation
+              (runtime 'mount
+                       (format "mount %s" (buffer-name buffer)))
             (etaf--runtime-begin-candidate runtime)
             (setf (etaf-runtime-flushing-p runtime) t
                   (etaf-runtime-root-view-cache runtime)
                   (etaf--runtime-evaluate-root-candidate runtime))
             (unwind-protect
                 (etaf--runtime-render-effect runtime)
-              (setf (etaf-runtime-flushing-p runtime) nil)))
+              (setf (etaf-runtime-flushing-p runtime) nil))
+            (when (etaf-runtime-pending-p runtime)
+              (setf (etaf-runtime-pending-p runtime) nil)
+              (etaf--runtime-request-flush runtime))
+            (when (fboundp 'etaf-events-enable-input)
+              (etaf-events-enable-input buffer))
+            buffer)
         ((error quit)
          (remhash buffer etaf--runtime-table)
          (remhash (etaf-runtime-mount-epoch runtime)
                   etaf--runtime-route-registry)
          (etaf-scope-stop scope)
          (signal (car err) (cdr err))))
-      (when (etaf-runtime-pending-p runtime)
-        (setf (etaf-runtime-pending-p runtime) nil)
-        (etaf--runtime-request-flush runtime))
-      (when (fboundp 'etaf-events-enable-input)
-        (etaf-events-enable-input buffer))
       buffer)))
 
 (defun etaf--runtime-validate-mount-options (options)
@@ -5126,7 +5279,7 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
         (unless tail
           (error "ETAF mount option %S has no value" key))
         (pop tail)
-        (unless (memq key '(:viewport-width :viewport-height))
+        (unless (memq key '(:viewport-width :viewport-height :observer))
           (error "Unknown ETAF mount option: %S" key)))))
   (when-let* ((width (plist-get options :viewport-width)))
     (unless (and (numberp width) (> width 0))
@@ -5134,6 +5287,11 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
   (when-let* ((height (plist-get options :viewport-height)))
     (unless (and (numberp height) (> height 0))
       (error "ETAF mount :viewport-height must be positive: %S" height)))
+  (when (and (plist-member options :observer)
+             (not (or (null (plist-get options :observer))
+                      (functionp (plist-get options :observer)))))
+    (signal 'wrong-type-argument
+            (list 'functionp (plist-get options :observer))))
   options)
 
 ;;;###autoload
@@ -5141,18 +5299,18 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
   "Mount VIEW into BUFFER-OR-NAME and return the live buffer.
 Setup, reactive publication, Ebox rendering, and lifecycle work share one
 framework render-burst allocation budget when the installed Ebox supports it.
-OPTIONS may provide `:viewport-width' in pixels and `:viewport-height' in
-lines, allowing the first publication to use its final layout context instead
-of requiring an immediate viewport rerender."
+OPTIONS may provide `:viewport-width' in pixels, `:viewport-height' in lines,
+and `:observer' as a one-argument flat-report sink.  The observer is installed
+before the first Ebox publication."
   (setq options (etaf--runtime-validate-mount-options options))
   (let ((ebox-viewport-width (plist-get options :viewport-width))
         (ebox-viewport-height (plist-get options :viewport-height)))
     (ebox-call-with-render-burst
-     #'etaf--runtime-mount-now buffer-or-name view)))
+     #'etaf--runtime-mount-now buffer-or-name view
+     (plist-get options :observer))))
 
-;;;###autoload
-(defun etaf-runtime-unmount (&optional runtime)
-  "Unmount RUNTIME and dispose its Component scopes."
+(defun etaf--runtime-unmount-now (runtime)
+  "Unmount RUNTIME and dispose its Component scopes now."
   (let ((runtime (etaf-runtime-require-mounted runtime)))
     (setf (etaf-runtime-mounted-p runtime) nil)
     (when (fboundp 'etaf-events-disable-input)
@@ -5183,6 +5341,24 @@ of requiring an immediate viewport rerender."
     (clrhash (etaf-runtime-instances runtime))
     (clrhash (etaf-runtime-resource-registry runtime))
     runtime))
+
+;;;###autoload
+(defun etaf-runtime-unmount (&optional runtime)
+  "Unmount RUNTIME, report the operation, and detach its observer."
+  (let* ((runtime (etaf-runtime-require-mounted runtime))
+         (observer (etaf-runtime-observer runtime))
+         (buffer (etaf-runtime-buffer runtime)))
+    (unwind-protect
+        (etaf--runtime-with-operation (runtime 'unmount "unmount")
+          (etaf--runtime-unmount-now runtime))
+      (when observer
+        (condition-case condition
+            (when (buffer-live-p buffer)
+              (ebox-buffer-set-observer buffer nil))
+          ((error quit)
+           (etaf--runtime-record-observer-diagnostic
+            runtime (list :kind 'detach-failure :condition condition))))
+        (setf (etaf-runtime-observer runtime) nil)))))
 
 ;;;###autoload
 (defun etaf-unmount (&optional runtime)

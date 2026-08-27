@@ -14,6 +14,11 @@
 (require 'etaf-runtime)
 
 (defvar etaf--current-runtime)
+(defvar etaf--observer-context)
+
+(declare-function etaf-runtime-observer "etaf-runtime" (runtime))
+(declare-function etaf-runtime-call-operation
+                  "etaf-runtime" (runtime kind label function))
 
 (define-error 'etaf-action-error "Invalid ETAF Action")
 
@@ -77,8 +82,14 @@ RUNTIME ACTION ...)'.  Action functions receive Runtime first."
     (unless spec
       (signal 'etaf-action-error
               (list (format "Unknown ETAF Action: %S" action))))
-    (let ((etaf--current-runtime runtime))
-      (apply (etaf-action-spec-function spec) runtime arguments))))
+    (if (or etaf--observer-context (etaf-runtime-observer runtime))
+        (etaf-runtime-call-operation
+         runtime 'action (format "%S" action)
+         (lambda ()
+           (let ((etaf--current-runtime runtime))
+             (apply (etaf-action-spec-function spec) runtime arguments))))
+      (let ((etaf--current-runtime runtime))
+        (apply (etaf-action-spec-function spec) runtime arguments)))))
 
 ;;;###autoload
 (defun etaf-action-undefine (name)

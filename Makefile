@@ -1,8 +1,8 @@
 EMACS ?= emacs
 LOAD_PATH = -L . -L examples -L ../ebox -L ../tp -L ../ecss
-SOURCES = etaf-view.el etaf-compiler.el etaf-component.el etaf-reactive.el etaf-context.el etaf-theme-tp.el etaf-resource.el etaf-data.el etaf-renderer.el etaf-runtime.el etaf-behavior.el etaf-actions.el etaf-events.el etaf-performance.el etaf.el
+SOURCES = etaf-view.el etaf-compiler.el etaf-component.el etaf-reactive.el etaf-observer.el etaf-context.el etaf-theme-tp.el etaf-resource.el etaf-data.el etaf-renderer.el etaf-runtime.el etaf-behavior.el etaf-actions.el etaf-events.el etaf-performance.el etaf.el
 EXAMPLES = examples/etaf-counter-example.el examples/etaf-data-example.el examples/etaf-resource-example.el
-TESTS = tests/etaf-tests.el tests/etaf-compiler-tests.el tests/etaf-resource-tests.el tests/etaf-data-tests.el tests/etaf-theme-tp-tests.el tests/etaf-examples-tests.el tests/etaf-performance-tests.el
+TESTS = tests/etaf-tests.el tests/etaf-compiler-tests.el tests/etaf-resource-tests.el tests/etaf-data-tests.el tests/etaf-theme-tp-tests.el tests/etaf-examples-tests.el tests/etaf-observer-tests.el tests/etaf-performance-tests.el
 
 .PHONY: test compile load checkdoc docs-check check clean
 

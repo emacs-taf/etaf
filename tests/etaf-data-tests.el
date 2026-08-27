@@ -6,6 +6,7 @@
 
 (require 'ert)
 (require 'etaf-data)
+(require 'etaf-observer)
 
 (defconst etaf-data-test-records
   '((:id 1 :name "Ada" :group "compiler")
@@ -324,5 +325,95 @@
                   :type 'etaf-data-stopped-error)
     (should-error (etaf-data-set-page controller 2)
                   :type 'etaf-data-stopped-error)))
+
+(ert-deftest etaf-data-observes-source-capabilities-once-in-call-order ()
+  "Report source load and mutation without timing controller publication."
+  (let* ((source (etaf-data-memory-source '((:id 1)) :id-key :id))
+         (controller (etaf-data-controller source))
+         reports
+         diagnostics
+         (context
+          (etaf--observer-context-create
+           :sink (lambda (report) (push report reports))
+           :operation-id 41
+           :runtime-id 7
+           :buffer-name nil
+           :diagnostic (lambda (diagnostic) (push diagnostic diagnostics)))))
+    (unwind-protect
+        (progn
+          (etaf--observer-call-with-context
+           context
+           (lambda ()
+             (etaf-data-load controller)
+             (etaf-data-mutate controller 'insert '(:id 2))))
+          (setq reports (nreverse reports))
+          (should-not diagnostics)
+          (should (equal '(load mutate load)
+                         (mapcar (lambda (report)
+                                   (plist-get report :stage))
+                                 reports)))
+          (should (equal '(memory memory memory)
+                         (mapcar (lambda (report)
+                                   (plist-get report :provider))
+                                 reports)))
+          (should (equal '(1 nil 1)
+                         (mapcar (lambda (report)
+                                   (plist-get report :page))
+                                 reports)))
+          (should (eq 'insert (plist-get (cadr reports) :operation)))
+          (should (equal '((:id 1) (:id 2))
+                         (etaf-value (etaf-data-items controller))))
+          (should (eq 'success (etaf-value
+                                (etaf-data-status controller)))))
+      (etaf-data-stop controller))))
+
+(ert-deftest etaf-data-observed-source-error-preserves-controller-state ()
+  "Report a source error and preserve the ordinary Data error contract."
+  (let* ((source (etaf-data-source
+                  :load (lambda (&rest _args) (error "unavailable"))))
+         (controller (etaf-data-controller source))
+         reports
+         (context
+          (etaf--observer-context-create
+           :sink (lambda (report) (push report reports))
+           :operation-id 42
+           :runtime-id 7
+           :buffer-name nil
+           :diagnostic #'ignore)))
+    (unwind-protect
+        (progn
+          (should-error
+           (etaf--observer-call-with-context
+            context (lambda () (etaf-data-load controller)))
+           :type 'error)
+          (should (= 1 (length reports)))
+          (should (eq 'data (plist-get (car reports) :provider)))
+          (should (eq 'load (plist-get (car reports) :stage)))
+          (should (eq 'error (plist-get (car reports) :status)))
+          (should (eq 'error (etaf-value (etaf-data-status controller))))
+          (should (string-match-p
+                   "unavailable"
+                   (cadr (etaf-value (etaf-data-error controller))))))
+      (etaf-data-stop controller))))
+
+(ert-deftest etaf-data-source-rejects-invalid-observation-provider ()
+  "Require an explicit source provider to be a non-nil symbol."
+  (should-error
+   (etaf-data-source :provider nil
+                     :load (lambda (&rest _args) (list :items nil)))
+   :type 'wrong-type-argument)
+  (should-error
+   (etaf-data-source :provider 7
+                     :load (lambda (&rest _args) (list :items nil)))
+   :type 'wrong-type-argument))
+
+(ert-deftest etaf-data-unobserved-source-call-bypasses-stage-runtime ()
+  "Keep the standalone source path free of observation work."
+  (let ((source (etaf-data-memory-source '((:id 1)) :id-key :id)))
+    (cl-letf (((symbol-function 'etaf--observer-call-stage)
+               (lambda (&rest _args)
+                 (ert-fail "unobserved Data call entered stage runtime"))))
+      (should (equal '((:id 1))
+                     (plist-get (etaf-data-source-load-page source) :items))))))
 
 ;;; etaf-data-tests.el ends here
