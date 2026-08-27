@@ -2526,7 +2526,9 @@ need to know how Behavior attributes are merged."
                 (etaf--rendering-range-p t)
                 (etaf--active-effect nil)
                 (etaf--render-phase-p t))
-            (setq nodes (etaf--render-value-list value path))))
+            (setq nodes
+                  (etaf--runtime-render-range-items
+                   value path expr keyed-snapshot))))
         (let* ((item-host-ids
                 (copy-sequence
                  (gethash semantic-id
@@ -2829,6 +2831,37 @@ The candidate uses resolved VALUE, DEPS, and NODES."
           (signal 'etaf-runtime-error
                   (list "Invalid keyed Range program snapshot")))
         snapshot))))
+
+(defun etaf--runtime-keyed-range-item-path (path key)
+  "Return stable PATH below one keyed Range item KEY."
+  (append path (list (list :range-item (copy-tree key)))))
+
+(defun etaf--runtime-render-range-items (value path expr snapshot)
+  "Render normalized Range VALUE at PATH using optional keyed SNAPSHOT.
+EXPR supplies the key function.  Keyed item paths encode stable keys rather
+than transient positions, so reordering changes geometry without changing any
+generated descendant Host reference."
+  (if (null snapshot)
+      (etaf--render-value-list value path)
+    (let ((items (plist-get snapshot :items))
+          (key-function (etaf--expr-range-key expr))
+          (seen (make-hash-table :test #'equal)))
+      (unless (= (length value) (length items))
+        (signal 'etaf-runtime-error
+                (list "Keyed Range item/output cardinality mismatch")))
+      (cl-mapcan
+       (lambda (output item)
+         (let ((key (funcall key-function item)))
+           (unless key
+             (signal 'etaf-runtime-error
+                     (list "Keyed Range key must be non-nil")))
+           (when (gethash key seen)
+             (signal 'etaf-runtime-error
+                     (list "Keyed Range keys must be unique" key)))
+           (puthash key t seen)
+           (etaf--render-value-list
+            output (etaf--runtime-keyed-range-item-path path key))))
+       value items))))
 
 (defun etaf--runtime-keyed-range-metadata
     (expr snapshot item-host-ids)
@@ -4205,8 +4238,8 @@ Generation, including its effects and Host contributions."
                           (rendered
                            (etaf--render-value-list
                             value
-                            (append (etaf--semantic-range-path range)
-                                    (list index)))))
+                            (etaf--runtime-keyed-range-item-path
+                             (etaf--semantic-range-path range) key))))
                      (unless (= (length rendered) 1)
                        (signal 'etaf-runtime-error
                                (list "Keyed Range item must render one Host"
