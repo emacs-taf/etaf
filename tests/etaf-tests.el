@@ -3060,14 +3060,12 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (cl-labels
                   ((walk (parent-id)
                      (dolist (child-id
-                              (etaf--pvec-get
-                               (etaf-generation-children-table generation)
-                               parent-id))
+                              (etaf--generation-child-ids
+                               generation parent-id))
                        (should (integerp child-id))
                        (should (= parent-id
-                                  (etaf--pvec-get
-                                   (etaf-generation-parent-table generation)
-                                   child-id)))
+                                  (etaf--generation-parent-id
+                                   generation child-id)))
                        (walk child-id))))
                 (walk 0)))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
@@ -3150,9 +3148,8 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                      (parent-id (etaf--semantic-range-parent-id range)))
                 (setq static-records
                       (cl-loop for child-id in
-                               (etaf--pvec-get
-                                (etaf-generation-children-table generation)
-                                parent-id)
+                               (etaf--generation-child-ids
+                                generation parent-id)
                                unless (= child-id range-id)
                                collect
                                (cons child-id
@@ -3552,12 +3549,11 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                     (should-not (etaf--pvec-get
                                  (etaf-generation-semantic-nodes new-generation)
                                  semantic-id))
-                    (should-not (etaf--pvec-get
-                                 (etaf-generation-parent-table new-generation)
-                                 semantic-id))
-                    (should-not (etaf--pvec-get
-                                 (etaf-generation-children-table new-generation)
-                                 semantic-id))))))))
+                    (should-not
+                     (etaf--generation-parent-id new-generation semantic-id))
+                    (should-not
+                     (etaf--generation-child-ids
+                      new-generation semantic-id))))))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
@@ -3904,10 +3900,10 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (let ((generation (etaf-runtime-current-generation runtime)))
                 (should-not (etaf--pvec-get
                              (etaf-generation-semantic-nodes generation) item-id))
-                (should-not (etaf--pvec-get
-                             (etaf-generation-parent-table generation) item-id))
-                (should-not (etaf--pvec-get
-                             (etaf-generation-children-table generation) item-id))))))
+                (should-not
+                 (etaf--generation-parent-id generation item-id))
+                (should-not
+                 (etaf--generation-child-ids generation item-id))))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
@@ -3988,8 +3984,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                  (generation (etaf-runtime-current-generation runtime))
                  (root (etaf--pvec-get
                         (etaf-generation-semantic-nodes generation) 0))
-                 (range-id (car (etaf--pvec-get
-                                 (etaf-generation-children-table generation) 0)))
+                 (range-id (car (etaf--generation-child-ids generation 0)))
                  (range (etaf--pvec-get
                          (etaf-generation-semantic-nodes generation) range-id)))
             (should (etaf--semantic-root-p root))
