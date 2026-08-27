@@ -78,7 +78,8 @@
        (string-prefix-p "on-" (substring (symbol-name property) 1))))
 
 (defun etaf--generated-host-ref (props path &optional site-token)
-  "Return the explicit or generated opaque Host reference."
+  "Return PROPS' explicit Host reference or one generated for PATH.
+SITE-TOKEN replaces PATH as the generated call-site identity when non-nil."
   (or (plist-get props :ref)
       (list 'etaf-host (or site-token (copy-sequence path)))))
 
@@ -326,7 +327,8 @@ the ordinary layout lowering path instead."
    (t nil)))
 
 (defun etaf--ebox-properties (props path &optional site-token)
-  "Project ETAF PROPS at PATH to canonical Ebox author facts."
+  "Project ETAF PROPS at PATH to canonical Ebox author facts.
+SITE-TOKEN supplies the stable generated Host identity when non-nil."
   (let* ((source-props (etaf--resolve-property-plist props))
          (props (copy-sequence source-props))
          ebox-props)
@@ -441,7 +443,7 @@ the ordinary layout lowering path instead."
                     props etaf--ebox-source-fields)))))
 
 (defun etaf--ebox-box-node (tag props children)
-  "Return one typed Ebox BoxNode TAG over canonical CHILDREN."
+  "Return one typed Ebox BoxNode TAG with PROPS over canonical CHILDREN."
   (let* ((declarations (etaf--ebox-declarations tag props))
          (layout (etaf--ebox-layout-config tag props declarations))
          (outer (if (plist-member props :outer)

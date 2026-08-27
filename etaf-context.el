@@ -177,7 +177,8 @@ also accepted and remains tracked by the current render effect."
         validated))))
 
 (defun etaf--theme-source (&optional default)
-  "Return the inherited Theme source without reading its reactive value."
+  "Return the inherited Theme source, using DEFAULT when none is provided.
+This does not read the source's reactive value."
   (etaf-inject 'theme default))
 
 (defun etaf--theme-source-value (source &optional default tracked-p)

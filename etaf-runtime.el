@@ -373,7 +373,8 @@ the sequential `etaf--pvec-put' contract."
 
 (defun etaf--runtime-theme-paint-value
     (runtime property token source resolved)
-  "Return RUNTIME's stable paint slot for PROPERTY TOKEN and RESOLVED value."
+  "Return RUNTIME's stable paint slot for PROPERTY TOKEN from SOURCE.
+RESOLVED is the current projected paint value."
   (if (not (and runtime
                 (etaf--runtime-theme-paint-property-p property)
                 (or (etaf-ref-p source) (etaf-computed-p source))))
@@ -1384,7 +1385,8 @@ reading Runtime storage fields."
 
 (defun etaf--runtime-register-host
     (runtime props path &optional site-token old-semantic)
-  "Register PROPS contributions for one semantic Host at PATH.
+  "Register PROPS contributions in RUNTIME for one semantic Host at PATH.
+SITE-TOKEN supplies its stable author call-site identity when non-nil.
 OLD-SEMANTIC supplies the already-read committed Host, when any."
   (let ((host-ref (etaf--generated-host-ref props path site-token))
         (tail props)
@@ -4017,7 +4019,7 @@ Generation, including its effects and Host contributions."
     found))
 
 (defun etaf--runtime-render-dirty-host-properties (runtime effect semantic)
-  "Resolve one reactive Host SEMANTIC into RUNTIME's candidate graph."
+  "Resolve EFFECT for Host SEMANTIC into RUNTIME's candidate graph."
   (let* ((base
           (or (gethash (etaf--semantic-host-semantic-id semantic)
                        (etaf-runtime-candidate-graph-nodes runtime))
@@ -4258,7 +4260,9 @@ Generation, including its effects and Host contributions."
 
 (defun etaf--runtime-render-keyed-range
     (runtime effect range component instance)
-  "Render only changed items in dirty keyed RANGE, or return nil."
+  "Render EFFECT's changed items in keyed RANGE for RUNTIME.
+COMPONENT and INSTANCE supply the retained owner environment.  Return nil when
+the range is not eligible for keyed incremental rendering."
   (let* ((expr (etaf--generation-effect-target effect))
          (snapshot-function (and (etaf--expr-p expr)
                                  (etaf--expr-range-snapshot expr)))
