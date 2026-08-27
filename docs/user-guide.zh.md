@@ -625,7 +625,8 @@ Ebox、TP、Data、Resource 与 SQLite 可以贡献按 sequence 排列的 flat p
 
 `etaf-performance-summary` 只在请求时计算分组后的 p50/p95/max；
 `etaf-performance-operation-stage-summary` 会按 provider category 汇总某条记录
-中的 flat 阶段。
+中的 flat 阶段。`etaf-performance-records` 返回 operation/stage 的防御性快照，
+调用方修改返回值不会影响保留的历史。
 
 没有经过内置公共边界的应用操作可以使用
 `etaf-performance-call-operation`/`etaf-performance-with-operation`；它们直接委托

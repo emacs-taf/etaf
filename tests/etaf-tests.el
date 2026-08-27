@@ -2534,6 +2534,21 @@ Event composition is a Runtime contract, not a UI-library helper contract."
       (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
+(ert-deftest etaf-runtime-killed-buffer-unmounts-owned-scope ()
+  "Killing a mounted buffer follows the ordinary Runtime unmount path."
+  (let* ((buffer-name (generate-new-buffer-name " *etaf-kill-runtime-test*"))
+         runtime scope buffer)
+    (etaf-mount buffer-name (etaf-view (box "Kill Runtime")))
+    (setq buffer (get-buffer buffer-name)
+          runtime (etaf-runtime-for-buffer buffer)
+          scope (etaf-runtime-scope runtime))
+    (should (etaf-effect-scope-active-p scope))
+    (kill-buffer buffer)
+    (should-not (buffer-live-p buffer))
+    (should-not (etaf-runtime-mounted-p runtime))
+    (should-not (etaf-effect-scope-active-p scope))
+    (should-not (gethash buffer etaf--runtime-table))))
+
 (ert-deftest etaf-pvec-put-many-preserves-values-and-shares-untouched-branches ()
   "Batch persistent-vector updates match sequential puts and share untouched paths."
   (let* ((untouched-id (* 31 (expt 2 30)))

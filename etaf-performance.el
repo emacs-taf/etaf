@@ -55,10 +55,68 @@
     :provider :stage :status :duration-ms)
   "Flat report keys represented by typed recorder fields.")
 
+(defun etaf-performance--copy-value (value)
+  "Return a defensive recorder snapshot of VALUE."
+  (cond
+   ((stringp value) (copy-sequence value))
+   ((consp value)
+    (cons (etaf-performance--copy-value (car value))
+          (etaf-performance--copy-value (cdr value))))
+   ((vectorp value)
+    (apply #'vector
+           (mapcar #'etaf-performance--copy-value (append value nil))))
+   ((hash-table-p value)
+    (let ((copy (copy-hash-table value)))
+      (clrhash copy)
+      (maphash (lambda (key item)
+                 (puthash (etaf-performance--copy-value key)
+                          (etaf-performance--copy-value item)
+                          copy))
+               value)
+      copy))
+   (t value)))
+
+(defun etaf-performance--copy-stage (stage)
+  "Return an isolated snapshot of recorder STAGE."
+  (etaf-performance--stage-create
+   :sequence (etaf-performance-stage-sequence stage)
+   :provider (etaf-performance-stage-provider stage)
+   :category (etaf-performance-stage-category stage)
+   :name (etaf-performance-stage-name stage)
+   :duration (etaf-performance-stage-duration stage)
+   :status (etaf-performance-stage-status stage)
+   :metadata
+   (etaf-performance--copy-value (etaf-performance-stage-metadata stage))))
+
+(defun etaf-performance--copy-operation (operation)
+  "Return an isolated snapshot of recorder OPERATION."
+  (etaf-performance--operation-create
+   :id (etaf-performance-operation-id operation)
+   :kind (etaf-performance-operation-kind operation)
+   :label (etaf-performance--copy-value
+           (etaf-performance-operation-label operation))
+   :runtime-id (etaf-performance-operation-runtime-id operation)
+   :buffer-name (etaf-performance--copy-value
+                 (etaf-performance-operation-buffer-name operation))
+   :generation-before
+   (etaf-performance-operation-generation-before operation)
+   :generation-after
+   (etaf-performance-operation-generation-after operation)
+   :elapsed (etaf-performance-operation-elapsed operation)
+   :status (etaf-performance-operation-status operation)
+   :gc-count (etaf-performance-operation-gc-count operation)
+   :gc-elapsed (etaf-performance-operation-gc-elapsed operation)
+   :metadata
+   (etaf-performance--copy-value
+    (etaf-performance-operation-metadata operation))
+   :stages (mapcar #'etaf-performance--copy-stage
+                   (etaf-performance-operation-stages operation))))
+
 (defun etaf-performance-records ()
-  "Return a newest-first copy of completed performance records."
+  "Return newest-first immutable snapshots of completed records."
   (if etaf-performance--record-ring
-      (ring-elements etaf-performance--record-ring)
+      (mapcar #'etaf-performance--copy-operation
+              (ring-elements etaf-performance--record-ring))
     nil))
 
 (defun etaf-performance--percentile (samples percentile)
@@ -79,7 +137,9 @@
       (let ((key (pop report))
             (value (pop report)))
         (unless (memq key etaf-performance--report-context-keys)
-          (setq metadata (append metadata (list key (copy-tree value)))))))
+          (setq metadata
+                (append metadata
+                        (list key (etaf-performance--copy-value value)))))))
     metadata))
 
 (defun etaf-performance--stage-from-report (report)
@@ -319,7 +379,9 @@ If another observer replaced the recorder sink, leave that observer intact."
         :stage (etaf-performance-stage-name stage)
         :duration-ms (etaf-performance-stage-duration stage)
         :status (etaf-performance-stage-status stage)
-        :metadata (copy-tree (etaf-performance-stage-metadata stage))))
+        :metadata
+        (etaf-performance--copy-value
+         (etaf-performance-stage-metadata stage))))
 
 (defun etaf-performance--operation-report-data (operation)
   "Return portable report data for OPERATION."
@@ -336,7 +398,9 @@ If another observer replaced the recorder sink, leave that observer intact."
         :status (etaf-performance-operation-status operation)
         :gc-count (etaf-performance-operation-gc-count operation)
         :gc-duration-ms (etaf-performance-operation-gc-elapsed operation)
-        :metadata (copy-tree (etaf-performance-operation-metadata operation))
+        :metadata
+        (etaf-performance--copy-value
+         (etaf-performance-operation-metadata operation))
         :stage-summary
         (etaf-performance-operation-stage-summary operation)
         :stages

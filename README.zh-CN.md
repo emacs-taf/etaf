@@ -68,7 +68,8 @@ p50/p95/max、每次 operation、GC 增量和有序 provider 阶段；面板 hea
 限制；关闭 mode 只会解除当前 Runtime 的 observer，不修改任何函数。
 `etaf-performance-summary` 会按需计算 operation 的 p50/p95/max，
 `etaf-performance-operation-stage-summary` 则按 provider category 汇总单次
-operation 的 flat 阶段。
+operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage 的防御性
+快照，调用方修改返回值不会改写已保留的历史。
 
 没有内置公共边界的任意操作，可以使用
 `etaf-performance-call-operation` 或 `etaf-performance-with-operation`

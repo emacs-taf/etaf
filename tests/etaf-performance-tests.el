@@ -123,6 +123,23 @@
         (when-let* ((buffer (get-buffer buffer-name)))
           (kill-buffer buffer))))))
 
+(ert-deftest etaf-performance-killed-buffer-releases-runtime-attachment ()
+  "Direct buffer death unmounts Runtime and releases recorder ownership."
+  (etaf-performance-test--isolated
+    (let ((buffer-name (generate-new-buffer-name " *etaf-performance-kill*"))
+          runtime buffer)
+      (etaf-mount buffer-name (etaf-view (box "Kill")))
+      (setq buffer (get-buffer buffer-name)
+            runtime (etaf-runtime-for-buffer buffer))
+      (etaf-performance-start runtime)
+      (should (gethash runtime etaf-performance--attachments))
+      (kill-buffer buffer)
+      (should-not (buffer-live-p buffer))
+      (should-not (etaf-runtime-mounted-p runtime))
+      (should-not (gethash runtime etaf-performance--attachments))
+      (should-error (etaf-performance-start runtime)
+                    :type 'etaf-runtime-error))))
+
 (ert-deftest etaf-performance-groups-flat-reports-in-sequence-order ()
   "One ETAF final report retains one ordered, categorized operation."
   (etaf-performance-test--isolated
@@ -190,6 +207,34 @@
           (should (= 2 (length records)))
           (should (> (etaf-performance-operation-id (car records))
                      (etaf-performance-operation-id (cadr records)))))))))
+
+(ert-deftest etaf-performance-records-return-deep-snapshots ()
+  "Caller mutation cannot alter retained operations or stages."
+  (etaf-performance-test--isolated
+    (etaf-performance-test--with-runtime (runtime buffer-name)
+      (etaf-performance-start runtime)
+      (etaf-performance-call-operation
+       runtime 'snapshot "stable label"
+       (lambda ()
+         (etaf-observer-emit
+          '(:provider data :stage load :duration-ms 1.0
+            :detail ("stable")))
+         'result))
+      (let* ((operation (car (etaf-performance-records)))
+             (stage (car (etaf-performance-operation-stages operation)))
+             (detail (car (plist-get
+                           (etaf-performance-stage-metadata stage) :detail))))
+        (setf (etaf-performance-operation-label operation) "changed"
+              (etaf-performance-stage-name stage) 'changed)
+        (aset detail 0 ?X))
+      (let* ((operation (car (etaf-performance-records)))
+             (stage (car (etaf-performance-operation-stages operation))))
+        (should (equal "stable label"
+                       (etaf-performance-operation-label operation)))
+        (should (eq 'load (etaf-performance-stage-name stage)))
+        (should (equal '("stable")
+                       (plist-get (etaf-performance-stage-metadata stage)
+                                  :detail)))))))
 
 (ert-deftest etaf-performance-summary-uses-flat-duration ()
   "Summaries expose percentiles and overlapping provider durations honestly."

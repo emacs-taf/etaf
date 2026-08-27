@@ -73,7 +73,8 @@ bounded by `etaf-performance-max-records`; disabling the mode only detaches the
 Runtime observer and never rewrites functions.  `etaf-performance-summary`
 computes operation p50/p95/max statistics on demand, while
 `etaf-performance-operation-stage-summary` groups one operation's flat stages
-by provider category.
+by provider category.  `etaf-performance-records` returns defensive operation
+and stage snapshots; caller mutation cannot rewrite retained history.
 
 Use `etaf-performance-call-operation` or
 `etaf-performance-with-operation` to trace an arbitrary operation that has no

@@ -854,6 +854,11 @@ Component owner to absorb them."
   (make-hash-table :test #'eql :weakness 'value)
   "Mount epoch -> live Runtime weak-value registry.")
 
+(defun etaf--runtime-kill-buffer ()
+  "Unmount the ETAF Runtime owned by the current buffer before it dies."
+  (when-let* ((runtime (gethash (current-buffer) etaf--runtime-table)))
+    (etaf-runtime-unmount runtime)))
+
 (defun etaf--runtime-enqueue-effect (runtime effect-id)
   "Append EFFECT-ID once to RUNTIME's stable FIFO work queue."
   (unless (gethash effect-id (etaf-runtime-dirty-effect-ids runtime))
@@ -5243,6 +5248,8 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
                      :observer observer
                      :root-dirty-p t)))
       (puthash buffer runtime etaf--runtime-table)
+      (with-current-buffer buffer
+        (add-hook 'kill-buffer-hook #'etaf--runtime-kill-buffer nil t))
       (let ((route (etaf-runtime-route-create
                     :runtime-id (etaf-runtime-mount-epoch runtime)
                     :mount-epoch (etaf-runtime-mount-epoch runtime)
@@ -5268,6 +5275,10 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
               (etaf-events-enable-input buffer))
             buffer)
         ((error quit)
+         (when (buffer-live-p buffer)
+           (with-current-buffer buffer
+             (remove-hook 'kill-buffer-hook
+                          #'etaf--runtime-kill-buffer t)))
          (remhash buffer etaf--runtime-table)
          (remhash (etaf-runtime-mount-epoch runtime)
                   etaf--runtime-route-registry)
@@ -5316,6 +5327,9 @@ before the first Ebox publication."
 (defun etaf--runtime-unmount-now (runtime)
   "Unmount RUNTIME and dispose its Component scopes now."
   (let ((runtime (etaf-runtime-require-mounted runtime)))
+    (when (buffer-live-p (etaf-runtime-buffer runtime))
+      (with-current-buffer (etaf-runtime-buffer runtime)
+        (remove-hook 'kill-buffer-hook #'etaf--runtime-kill-buffer t)))
     (setf (etaf-runtime-mounted-p runtime) nil)
     (when (fboundp 'etaf-events-disable-input)
       (etaf-events-disable-input (etaf-runtime-buffer runtime)))

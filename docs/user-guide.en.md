@@ -635,7 +635,9 @@ quits are recorded and then re-signaled unchanged.
 
 `etaf-performance-summary` calculates grouped p50/p95/max statistics only when
 requested.  `etaf-performance-operation-stage-summary` groups the flat stages
-of one recorded operation by provider category.
+of one recorded operation by provider category.  `etaf-performance-records`
+returns defensive operation and stage snapshots; caller mutation cannot alter
+retained history.
 
 Use `etaf-performance-call-operation` or `etaf-performance-with-operation` for
 application work that does not enter through a built-in public boundary.  Both
