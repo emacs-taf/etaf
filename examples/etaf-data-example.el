@@ -76,15 +76,16 @@
   (let ((total (etaf-value (etaf-data-total controller)))
         (selection (etaf-value (etaf-data-selection controller))))
     (etaf-view
-     (column :width '(720) :padding '(1 (18)) :border "#8F432F"
+     (box :width '(720) :padding '(1 (18)) :border "#8F432F"
       :bgcolor "#FFFDF8" :text-align 'center
-      (text :color "#8F432F" :font-weight 'bold
-            "BEST PRACTICE  /  DATA OWNERSHIP")
-      (text :font-weight 'bold "Task controller")
-      (text :color "#66706A"
-            (expr :value
-                  (format "%d records · %d selected" total
-                          (length selection))))))))
+      (column
+       (text :color "#8F432F" :font-weight 'bold
+             "BEST PRACTICE  /  DATA OWNERSHIP")
+       (text :font-weight 'bold "Task controller")
+       (text :color "#66706A"
+             (expr :value
+                   (format "%d records · %d selected" total
+                           (length selection)))))))))
 
 (defun etaf-data-example--filter-control
     (controller label host-ref query border background)

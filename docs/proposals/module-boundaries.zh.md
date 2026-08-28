@@ -402,7 +402,7 @@ ETAF 也不提供 `spacer` 类型。没有子节点的 Box 就是空 Box。
 
 | Owner | 属性类别 | 代表属性 |
 | --- | --- | --- |
-| ETAF Runtime metadata | identity/语义/事件/Behavior | `:key`、`:ref`、`:role`、`:aria-*`、`:on-*`、`:use` |
+| ETAF Runtime metadata | identity/语义/事件/Behavior | `:key`、`:ref`、`:role`、`:disabled`、`:tab-index`、`:aria-*`、`:on-*`、`:use` |
 | ECSS author style source | selector/inline declarations | `:class`、`:id`、style declarations |
 | Ebox TextNode | canonical 文本测量 | font metrics、wrap policy、intrinsic constraints |
 | Ebox BoxNode | 外部/内部布局 | `:outer`、typed Layout variant |
@@ -455,7 +455,7 @@ Layout 和 child participation 时只验证最终 candidate，任何失败保留
 
 ```text
 SharedSourceMetadata = :key :class :id
-ETAFOnlyMetadata     = :ref :role :aria-* :on-* :use
+ETAFOnlyMetadata     = :ref :role :disabled :tab-index :aria-* :on-* :use
 ETAFSourceMetadata   = SharedSourceMetadata + ETAFOnlyMetadata
 EboxSourceMetadata   = SharedSourceMetadata
 
@@ -602,6 +602,12 @@ schema scope，不能污染全局 Ebox visual property domain。
 颜色由 `:border-top-color`/`:border-color`/默认前景提供。需要完整控制时使用标准
 `:border-top` 或 longhands。同一声明混写 `:border-top-p` 与其 width/style 输出必须
 报错；不同 cascade source 仍按 ECSS 正常覆盖。
+
+Border 的 canonical width 始终是非负整数像素，`style=none` 的 used width 为 0。
+成功的 adapter projection 必须精确，不允许把声明宽度降成 boolean 或字符列。当前
+Emacs 文本 adapter 可精确表达任意左右像素宽度和 0/1px 上下线；更厚的上下边框在
+publication 前明确报告 capability error 并保留旧 generation，不静默近似。Core
+仍保留完整四边 width/style/color fact，后续 pixel-coordinate adapter 可扩大成功域。
 
 `:grid-column-span`/`:grid-row-span` 同样不是 alias；它们只接受正整数并分别展开
 为对应 Grid shorthand 的 `span N` value，与 `:grid-column`/`:grid-row` 在同一声明

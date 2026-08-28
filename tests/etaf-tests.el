@@ -737,8 +737,8 @@
   :view
   (column
    (text (expr :value title))
-   (slot :name 'header (text :font-weight 'shadow "Default header"))
-   (slot (text :font-weight 'shadow "Default body"))))
+   (slot :name 'header (text :color "#777777" "Default header"))
+   (slot (text :color "#777777" "Default body"))))
 
 (etaf-define-component etaf-test-named-slot-consumer ()
   "Render the named header slot for forwarding tests."
@@ -1204,6 +1204,34 @@
     (let ((view (etaf-view (text :font-weight face (expr :value label)))))
       (should (equal "Ready" (etaf-test--render-text view))))))
 
+(ert-deftest etaf-host-metadata-uses-the-frozen-runtime-grammar ()
+  "Semantic metadata should validate before it reaches Runtime or Ebox."
+  (should
+   (equal "Valid"
+          (etaf-test--render-text
+           (etaf-view
+            (text :ref 'status :role 'status :aria-live 'polite
+                  :on-press #'ignore "Valid")))))
+  (dolist (view
+           (list (etaf-view (text :ref 1.5 "bad"))
+                 (etaf-view (text :role '(button) "bad"))
+                 (etaf-view (text :aria-live [polite] "bad"))
+                 (etaf-view (text :on-press "bad" "bad"))
+                 (etaf-view (text :use 1 "bad"))
+                 (etaf-view (text :disabled 1 "bad"))
+                 (etaf-view (text :tab-index 1.5 "bad"))
+                 (etaf-view (text :face 'bold "bad"))
+                 (etaf-view (text :surface-properties '(help-echo "bad")
+                                  "bad"))
+                 (etaf-view (box (text :face 'bold "bad")))
+                 (etaf-view
+                  (box (text :surface-properties '(help-echo "bad")
+                             "bad")))))
+    (should-error (etaf-test--render-text view)
+                  :type 'etaf-renderer-error))
+  (should-error (etaf-view (text :content "bad"))
+                :type 'etaf-view-syntax-error))
+
 (ert-deftest etaf-view-expr-evaluates-control-flow ()
   "Use the sole child computation bridge for ordinary control flow."
   (let ((checked t))
@@ -1226,13 +1254,16 @@
                 (when open
                   (etaf-view (text "Details")))))))))))
 
-(ert-deftest etaf-view-expr-can-return-a-sequence ()
-  "Flatten a sequence returned by `expr' into the surrounding Host."
-  (should
-   (equal "AB"
-          (etaf-test--render-text
-           (etaf-view
-            (text (expr :value (list "A" "B"))))))))
+(ert-deftest etaf-text-expr-requires-one-string ()
+  "Reject structural and sequence values at the Text interpolation boundary."
+  (dolist (view
+           (list
+            (etaf-view (text (expr :value (list "A" "B"))))
+            (etaf-view
+             (text
+              (expr :value (etaf-view (text :face 'bold "B")))))))
+    (should-error (etaf-test--render-text view)
+                  :type 'etaf-renderer-error)))
 
 (ert-deftest etaf-view-normalizes-box-string-child-to-text ()
   "Normalize a static Box string child to one Text View."
@@ -1301,6 +1332,20 @@
                    '(block column)))
     (should (equal (substring-no-properties (ebox-render row)) "AB"))
     (should (equal (substring-no-properties (ebox-render column)) "A\nB"))))
+
+(ert-deftest etaf-box-frame-and-axis-properties-share-the-cascade ()
+  "ETAF inline outer and RowConfig facts should outrank stylesheet rules."
+  (let ((ebox-style-stylesheet (ecss-stylesheet-create)))
+    (ebox-style-add-rule ".axis" '(:outer block :item-gap 0))
+    (let* ((input
+            (etaf-render
+             (etaf-view
+              (row :class "axis" :outer 'inline :item-gap 2
+                   (text "A") (text "B")))))
+           (root (etaf-test--input-root input))
+           (props (ebox-layout-config-props (ebox-box-node-layout root))))
+      (should (equal (ebox--computed-display root) '(inline row)))
+      (should (= (plist-get props :item-gap) 2)))))
 
 (ert-deftest etaf-view-box-rejects-invalid-layout ()
   "Reject an invalid canonical Box layout before publication."
@@ -1575,17 +1620,17 @@
          (etaf-theme-token
           :ui-border
           (etaf-theme-token :line "#AAAAAA")
-          (lambda (color) (list (list 1) 'solid color)))))
+          (lambda (color) (list 1 'solid color)))))
     (should
-     (equal '((1) solid "#202020")
+     (equal '(1 solid "#202020")
             (etaf--theme-token-resolve-from-theme
              token '(:ui-border "#202020" :line "#101010"))))
     (should
-     (equal '((1) solid "#101010")
+     (equal '(1 solid "#101010")
             (etaf--theme-token-resolve-from-theme
              token '(:line "#101010"))))
     (should
-     (equal '((1) solid "#AAAAAA")
+     (equal '(1 solid "#AAAAAA")
             (etaf--theme-token-resolve-from-theme token nil)))))
 
 (ert-deftest etaf-theme-token-updates-host-property-without-component-render ()
@@ -1614,6 +1659,15 @@
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
+
+(ert-deftest etaf-theme-border-reuses-the-ebox-value-grammar ()
+  "Theme border slots must not maintain a second border parser."
+  (should (equal (etaf--theme-border-paint-parts "#334155")
+                 '(implicit "#334155")))
+  (should (equal (etaf--theme-border-paint-parts '(2 solid "#334155"))
+                 '((2 solid) "#334155")))
+  (should-not (etaf--theme-border-paint-parts '(2 dashed "#334155")))
+  (should-not (etaf--theme-border-paint-parts '((2) solid "#334155"))))
 
 (ert-deftest etaf-theme-paint-slot-rolls-back-with-generation-failure ()
   "A failed generation promotion must restore the committed paint plane."
@@ -1887,7 +1941,7 @@
            (etaf-view
             (text
              :ref 'interactive
-             :use (list (etaf-test-cleanup-behavior))
+             :use 'etaf-test-cleanup-behavior
              :on-press (lambda () (etaf-dispatch 'etaf-test-action))
              "Press")))
           (let ((runtime (etaf-runtime-for-buffer buffer-name)))

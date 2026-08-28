@@ -432,7 +432,7 @@ inapplicable combinations are errors.
 
 | Owner | Property category | Representative properties |
 | --- | --- | --- |
-| ETAF Runtime metadata | identity/semantics/events/Behavior | `:key`, `:ref`, `:role`, `:aria-*`, `:on-*`, `:use` |
+| ETAF Runtime metadata | identity/semantics/events/Behavior | `:key`, `:ref`, `:role`, `:disabled`, `:tab-index`, `:aria-*`, `:on-*`, `:use` |
 | ECSS author style source | selector/inline declarations | `:class`, `:id`, style declarations |
 | Ebox TextNode | canonical text measurement | font metrics, wrap policy, intrinsic constraints |
 | Ebox BoxNode | external/internal layout | `:outer`, typed Layout variant |
@@ -496,7 +496,7 @@ or impact rules.
 
 ```text
 SharedSourceMetadata = :key :class :id
-ETAFOnlyMetadata     = :ref :role :aria-* :on-* :use
+ETAFOnlyMetadata     = :ref :role :disabled :tab-index :aria-* :on-* :use
 ETAFSourceMetadata   = SharedSourceMetadata + ETAFOnlyMetadata
 EboxSourceMetadata   = SharedSourceMetadata
 
@@ -655,6 +655,14 @@ none. Color comes independently from `:border-top-color`, `:border-color`, or th
 foreground. Use standard `:border-top` or its longhands when full control is required.
 Mixing `:border-top-p` with its width/style outputs in the same declaration is an error;
 different cascade sources still override one another normally through ECSS.
+
+Canonical border widths are always nonnegative integer pixels, and `style=none` has a
+used width of zero. Every successful adapter projection must be exact; it may not collapse
+width to a boolean or character column. The current Emacs text adapter can exactly express
+arbitrary left/right widths and 0/1px top/bottom lines. Thicker horizontal borders raise a
+capability error before publication and preserve the old generation instead of degrading
+silently. Core retains all four width/style/color facts so a future pixel-coordinate adapter
+can widen the success domain.
 
 `:grid-column-span` and `:grid-row-span` are likewise not aliases. They accept only a
 positive integer and respectively expand to the corresponding Grid shorthand's `span N`

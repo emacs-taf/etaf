@@ -57,8 +57,8 @@ Do not split a file merely to create a shorter name. Split only when a stable re
 - Attribute values are ordinary Elisp expressions.
 - The only child computation bridge is `(expr :value ELISP-EXPRESSION)`.
 - A dynamic View returned by Elisp is constructed with `(etaf-view ...)` inside `expr`; quoted structural data is never executed.
-- Core Hosts are `text`, `fragment`, `container`, `row`, `column`, `stack`, `flex`, `grid`, and `spacer`.
-- `raw-ebox` accepts only `:value` and optional `:key` and remains opaque to ETAF semantics.
+- The six visible Host forms are `text`, `box`, `row`, `column`, `flex`, and `grid`; `fragment`, `slot`, and `expr` are transparent framework structure.
+- There is no raw Ebox View escape hatch. Framework integrations use Ebox's evaluated typed-constructor port outside the author DSL.
 
 ### 4.2 Component and slots
 
@@ -69,7 +69,7 @@ Do not split a file merely to create a shorter name. Split only when a stable re
 - Trailing children are `slots.default`; named slot input uses `(slot :name 'NAME CHILD...)`.
 - Default outlet shorthand is `(slot)` or `(slot FALLBACK...)`.
 - Slot names are stable, non-keyword symbols only.
-- `:key` is identity metadata, not a business prop: Component calls use it for retained identity, while Hosts and `raw-ebox` forward it as an Ebox node key.
+- `:key` is identity metadata, not a business prop: Component calls use it for retained identity, while Hosts project the same parsed fact into the Ebox source index.
 
 ### 4.3 Runtime and non-visual capabilities
 

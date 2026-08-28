@@ -19,7 +19,7 @@ Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
 ```elisp
 (etaf-view
  (column
-  (text :face 'bold "Hello")
+  (text :font-weight 'bold "Hello")
   (text
    :color "#687386"
    (expr :value (if ready "Ready" "Waiting")))))
@@ -31,7 +31,7 @@ Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
 (etaf-define-component status-label (&key label)
   "Render a status label."
   :view
-  (text :face 'bold (expr :value label)))
+  (text :font-weight 'bold (expr :value label)))
 
 (etaf-mount
  "*etaf-demo*"

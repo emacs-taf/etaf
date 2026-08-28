@@ -12,10 +12,12 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'subr-x)
 (require 'ebox)
 (require 'etaf-view)
 (require 'etaf-component)
 (require 'etaf-context)
+(require 'etaf-behavior)
 
 (declare-function etaf--runtime-render-component "etaf-runtime" (runtime call path))
 
@@ -52,10 +54,67 @@
 (define-error 'etaf-renderer-error "ETAF rendering error")
 
 (defconst etaf--semantic-props
-  '(:class :id :role :disabled :tab-index :ref :use :aria-label
-    :aria-description :on-press :on-key-down :on-mouse-down :on-mouse-drag
-    :on-wheel :on-input :on-focus :on-blur)
+  '(:class :id :role :disabled :tab-index :ref :use)
   "ETAF semantic properties that are not Ebox box properties.")
+
+(defun etaf--aria-property-p (property)
+  "Return non-nil when PROPERTY is in the ETAF aria namespace."
+  (and (keywordp property)
+       (string-prefix-p ":aria-" (symbol-name property))))
+
+(defun etaf--semantic-property-p (property)
+  "Return non-nil when PROPERTY belongs to ETAF Runtime metadata."
+  (or (memq property etaf--semantic-props)
+      (etaf--aria-property-p property)
+      (etaf--event-property-p property)))
+
+(defun etaf--behavior-source-p (value)
+  "Return non-nil when VALUE has the public `:use' source grammar."
+  (or (null value)
+      (symbolp value)
+      (etaf-behavior-spec-p value)
+      (and (proper-list-p value)
+           (cl-every (lambda (entry)
+                       (or (symbolp entry) (etaf-behavior-spec-p entry)))
+                     value))))
+
+(defun etaf--validate-semantic-properties (props)
+  "Return PROPS after validating ETAF Runtime-owned metadata values."
+  (cl-loop for (property value) on props by #'cddr
+           do
+           (cond
+            ((eq property :ref)
+             (unless (or (null value) (symbolp value) (functionp value))
+               (signal 'etaf-renderer-error
+                       (list ":ref must be a symbol, function, or nil"))))
+            ((eq property :role)
+             (unless (or (null value) (symbolp value) (stringp value))
+               (signal 'etaf-renderer-error
+                       (list ":role must be a symbol, string, or nil"))))
+            ((etaf--aria-property-p property)
+             (unless (or (null value) (stringp value) (numberp value)
+                         (symbolp value))
+               (signal 'etaf-renderer-error
+                       (list (format "%S has an invalid semantic value"
+                                     property)))))
+            ((etaf--event-property-p property)
+             (unless (or (null value) (functionp value))
+               (signal 'etaf-renderer-error
+                       (list (format "%S must be a function or nil"
+                                     property)))))
+            ((eq property :disabled)
+             (unless (memq value '(nil t))
+               (signal 'etaf-renderer-error
+                       (list ":disabled must be boolean"))))
+            ((eq property :tab-index)
+             (unless (or (null value) (integerp value))
+               (signal 'etaf-renderer-error
+                       (list ":tab-index must be an integer or nil"))))
+            ((eq property :use)
+             (unless (etaf--behavior-source-p value)
+               (signal 'etaf-renderer-error
+                       (list ":use must be a Behavior symbol, spec, or proper list"))))))
+  props)
 
 (defvar etaf--render-runtime nil
   "Runtime currently lowering a View tree, or nil for a pure render.")
@@ -263,63 +322,22 @@ tokens, not Ebox Host properties, and therefore are not materialized here."
 
 (defun etaf--theme-ebox-property-p (key)
   "Return non-nil when Theme KEY is a known Ebox property.
-The public `ebox-property-rules' table is the shared property vocabulary;
+The immutable Ebox schema registry is the sole shared property vocabulary;
 custom Theme tokens remain Context data and are never copied onto Hosts."
   (and (keywordp key)
-       (boundp 'ebox-property-rules)
-       (assq key ebox-property-rules)))
-
-(defun etaf--inline-text-surface-properties (props)
-  "Return text properties represented by inline text PROPS."
-  (let ((surface (copy-sequence (or (plist-get props :surface-properties) nil))))
-    (when (plist-member props :face)
-      (setq surface (append surface (list 'face (plist-get props :face)))))
-    (when (plist-member props :color)
-      (setq surface (append surface
-                             (list 'foreground (plist-get props :color)))))
-    (when (plist-member props :bgcolor)
-      (setq surface (append surface
-                             (list 'background (plist-get props :bgcolor)))))
-    surface))
-
-(defun etaf--apply-inline-surface-properties (content surface)
-  "Return CONTENT with resolved inline SURFACE properties applied."
-  (let ((result (copy-sequence content)))
-    (when (and surface (not (zerop (length result))))
-      (add-text-properties 0 (length result) surface result))
-    result))
+       (ebox-style-schema-id key)))
 
 (defun etaf--inline-text-content (value)
   "Return `(SUCCESS . STRING)' for inline-compatible text VALUE.
 
-Nested `text' Hosts become propertized runs in one Ebox content surface.
-Other View Hosts and Components return a failed result so the caller can use
-the ordinary layout lowering path instead."
+Only strings and `expr' values that resolve to strings are compatible.  View
+structure must use the ordinary typed lowering path."
   (cond
    ((stringp value) (cons t value))
    ((etaf--expr-p value)
-    (etaf--inline-text-content (funcall (etaf--expr-thunk value))))
-   ((etaf--view-node-p value)
-    (if (eq (etaf--view-node-name value) 'text)
-        (let ((children (etaf--view-node-children value))
-              (result "")
-              (valid-p t))
-          (dolist (child children)
-            (pcase (etaf--inline-text-content child)
-              (`(t . ,content) (setq result (concat result content)))
-              (_ (setq valid-p nil))))
-          (if valid-p
-              (let ((surface
-                     (etaf--inline-text-surface-properties
-                      (etaf--resolve-property-plist
-                       (etaf--view-node-props value)))))
-                (when surface
-                  (setq result (copy-sequence result))
-                  (unless (zerop (length result))
-                    (add-text-properties 0 (length result) surface result)))
-                (cons t result))
-            (cons nil nil)))
-      (cons nil nil)))
+    (let ((result (funcall (etaf--expr-thunk value))))
+      (if (stringp result) (cons t result) (cons nil nil))))
+   ((etaf--view-node-p value) (cons nil nil))
    ((proper-list-p value)
     (let ((result "")
           (valid-p t))
@@ -334,10 +352,7 @@ the ordinary layout lowering path instead."
   "Return non-nil when VALUE can be owned by mounted inline effects."
   (cond
    ((or (null value) (stringp value) (etaf--expr-p value)) t)
-   ((etaf--view-node-p value)
-    (and (eq (etaf--view-node-name value) 'text)
-         (cl-every #'etaf--inline-text-structural-p
-                   (etaf--view-node-children value))))
+   ((etaf--view-node-p value) nil)
     ((proper-list-p value)
      (cl-every #'etaf--inline-text-structural-p value))
     (t nil)))
@@ -357,6 +372,7 @@ the ordinary layout lowering path instead."
   "Project ETAF PROPS at PATH to canonical Ebox author facts.
 SITE-TOKEN supplies the stable generated Host identity when non-nil."
   (let* ((source-props (etaf--resolve-property-plist props))
+         (_validated (etaf--validate-semantic-properties source-props))
          (props (copy-sequence source-props))
          ebox-props)
     (while props
@@ -370,9 +386,8 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
          ((eq key :content)
           (signal 'etaf-renderer-error
                   (list "Use View children for content, not :content")))
-         ((or (and (memq key etaf--semantic-props)
+         ((or (and (etaf--semantic-property-p key)
                    (not (memq key '(:class :id))))
-              (etaf--event-property-p key)
               (eq key :styles))
           nil)
          (t
@@ -405,12 +420,6 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
 (defconst etaf--ebox-layout-config-cache-limit 128
   "Maximum typed LayoutConfig entries retained across renders.")
 
-(defun etaf--ebox-keep-properties (props names)
-  "Return PROPS whose keys occur in NAMES."
-  (cl-loop for (key value) on props by #'cddr
-           when (memq key names)
-           append (list key value)))
-
 (defun etaf--ebox-remove-properties (props names)
   "Return PROPS without keys in NAMES."
   (cl-loop for (key value) on props by #'cddr
@@ -420,12 +429,9 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
 (defun etaf--ebox-declarations (tag props)
   "Compile TAG style declarations from canonical ETAF PROPS once."
   (let* ((style-props
-          (etaf--ebox-remove-properties
+         (etaf--ebox-remove-properties
            props
-           (append etaf--ebox-source-fields
-                   (unless (eq tag 'text) '(:outer))
-                   (when (memq tag '(row column))
-                     '(:item-gap :cross-align)))))
+           etaf--ebox-source-fields))
          (key (cons tag style-props))
          (missing (make-symbol "etaf-ebox-declarations-missing"))
          (cached (gethash key etaf--ebox-declaration-cache missing)))
@@ -438,16 +444,14 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
         (puthash (copy-tree key) compiled etaf--ebox-declaration-cache)
         compiled))))
 
-(defun etaf--ebox-layout-config (tag props declarations)
-  "Return TAG LayoutConfig from PROPS and normalized DECLARATIONS."
+(defun etaf--ebox-layout-config (tag declarations)
+  "Return TAG LayoutConfig from normalized DECLARATIONS."
   (let* ((layout-props
-          (if (memq tag '(row column))
-              (etaf--ebox-keep-properties props '(:item-gap :cross-align))
-            (ebox-style-declaration-properties
-             declarations
-             (lambda (property)
-               (memq (plist-get property :name)
-                     (ebox-layout-config-property-names tag))))))
+          (ebox-style-declaration-properties
+           declarations
+           (lambda (property)
+             (memq (plist-get property :name)
+                   (ebox-layout-config-property-names tag)))))
          (key (cons tag layout-props))
          (config (gethash key etaf--ebox-layout-config-cache)))
     (or config
@@ -488,7 +492,7 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
     (signal 'etaf-renderer-error
             (list "ETAF Box lowering requires one source builder")))
   (let* ((declarations (etaf--ebox-declarations tag props))
-         (layout (etaf--ebox-layout-config tag props declarations))
+         (layout (etaf--ebox-layout-config tag declarations))
          (outer (if (plist-member props :outer)
                     (plist-get props :outer)
                   'block))
@@ -703,8 +707,7 @@ multi-root forest; a single material root is returned unchanged."
                     (etaf--inline-text-structural-p children)
                     (etaf--runtime-render-inline-content
                      etaf--render-runtime semantic-id children child-path)))
-              (flat (unless runtime-inline
-                      (cl-mapcan #'etaf--flatten-view-value children)))
+              (flat (unless runtime-inline children))
               (inline (if runtime-inline
                           (cons t (car runtime-inline))
                         (etaf--inline-text-content flat))))

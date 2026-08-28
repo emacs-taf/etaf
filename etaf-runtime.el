@@ -32,10 +32,6 @@
                   "etaf-renderer" (nodes source-identity))
 (declare-function etaf--ebox-import-input "etaf-renderer" (input))
 (declare-function etaf--ebox-input-for-nodes "etaf-renderer" (nodes))
-(declare-function etaf--inline-text-surface-properties
-                  "etaf-renderer" (props))
-(declare-function etaf--apply-inline-surface-properties
-                  "etaf-renderer" (content surface))
 (declare-function etaf-events-enable-input "etaf-events" (buffer))
 (declare-function etaf-events-disable-input "etaf-events" (buffer))
 (declare-function ebox-range-ref-present-p "ebox" (buffer-or-name range-ref))
@@ -365,13 +361,16 @@ the sequential `etaf--pvec-put' contract."
 
 (defun etaf--theme-border-paint-parts (value)
   "Return `(SHAPE COLOR)' for a stable color-only Ebox border VALUE."
-  (cond
-   ((stringp value) (list 'implicit value))
-   ((and (proper-list-p value) (= (length value) 3)
-         (memq (nth 1 value)
-               '(none hidden dotted dashed solid double groove ridge
-                      inset outset)))
-    (list (list (copy-tree (nth 0 value)) (nth 1 value)) (nth 2 value)))))
+  (condition-case nil
+      (let* ((declarations
+              (ebox-style-compile-declarations (list :border value) t))
+             (width (plist-get declarations 'ebox/border-top-width))
+             (style (plist-get declarations 'ebox/border-top-style))
+             (color (plist-get declarations 'ebox/border-top-color)))
+        (if (stringp value)
+            (list 'implicit color)
+          (list (list width style) color)))
+    (error nil)))
 
 (defun etaf--runtime-theme-paint-value
     (runtime property token source resolved)
@@ -1435,7 +1434,7 @@ OLD-SEMANTIC supplies the already-read committed Host, when any."
     (while tail
       (let ((key (pop tail))
             (value (pop tail)))
-        (when (and value (memq key etaf--semantic-props))
+        (when (and value (etaf--semantic-property-p key))
           (setq semantic-p t))
         (when (and (keywordp key)
                    (string-prefix-p ":on-" (symbol-name key))
@@ -1446,7 +1445,7 @@ OLD-SEMANTIC supplies the already-read committed Host, when any."
         (while old-props
           (let ((key (pop old-props))
                 (value (pop old-props)))
-            (when (and value (memq key etaf--semantic-props))
+            (when (and value (etaf--semantic-property-p key))
               (setq old-semantic-p t))
             (when (and (keywordp key)
                        (string-prefix-p ":on-" (symbol-name key))
@@ -1496,8 +1495,7 @@ OLD-SEMANTIC supplies the already-read committed Host, when any."
 (defun etaf--runtime-host-property-effect-p (property)
   "Return non-nil when PROPERTY can update without changing Host identity."
   (and (keywordp property)
-       (or (and (boundp 'ebox-property-rules)
-                (assq property ebox-property-rules))
+       (or (ebox-style-schema-id property)
            (memq property '(:class)))
        (not (memq property '(:key :ref :use)))
        (not (string-prefix-p ":on-" (symbol-name property)))))
@@ -1623,17 +1621,32 @@ receive an independent Host effect."
 (defun etaf--runtime-behavior-specs (value)
   "Normalize `:use' VALUE to a list of Behavior specs."
   (setq value (etaf--resolve-property-value value))
-  (cond
-   ((null value) nil)
-   ((etaf-behavior-spec-p value) (list value))
-   ((proper-list-p value)
-    (unless (cl-every #'etaf-behavior-spec-p value)
+  (cl-labels
+      ((resolve
+        (entry)
+        (cond
+         ((etaf-behavior-spec-p entry) entry)
+         ((and (symbolp entry) (fboundp entry))
+          (let ((spec (funcall entry)))
+            (unless (etaf-behavior-spec-p spec)
+              (signal 'etaf-behavior-error
+                      (list (format "Behavior constructor %S returned %S"
+                                    entry spec))))
+            spec))
+         ((symbolp entry)
+          (signal 'etaf-behavior-error
+                  (list (format "Unknown Behavior constructor: %S" entry))))
+         (t
+          (signal 'etaf-behavior-error
+                  (list (format "Invalid :use entry: %S" entry)))))))
+    (cond
+     ((null value) nil)
+     ((or (symbolp value) (etaf-behavior-spec-p value))
+      (list (resolve value)))
+     ((proper-list-p value) (mapcar #'resolve value))
+     (t
       (signal 'etaf-behavior-error
-              (list "Each :use entry must be a Behavior spec")))
-    value)
-   (t
-    (signal 'etaf-behavior-error
-            (list ":use must evaluate to a Behavior spec or list")))))
+              (list ":use must be a Behavior symbol, spec, or proper list"))))))
 
 (defun etaf--runtime-target-value-equal-p (left right)
   "Compare LEFT and RIGHT with reactive/function identity rules."
@@ -3130,33 +3143,14 @@ generated descendant Host reference."
     (nreverse result)))
 
 (defun etaf--runtime-inline-value-string (value surface)
-  "Resolve inline VALUE to one string under inherited SURFACE properties."
-  (cond
-   ((null value) "")
-   ((stringp value)
-    (etaf--apply-inline-surface-properties value surface))
-   ((etaf--expr-p value)
-    (etaf--runtime-inline-value-string
-     (funcall (etaf--expr-thunk value)) surface))
-   ((etaf--view-node-p value)
-    (unless (eq (etaf--view-node-name value) 'text)
-      (signal 'etaf-runtime-error
-              (list "Inline expr requires Step4b non-text output")))
-    (let* ((props (etaf--resolve-property-plist
-                   (etaf--view-node-props value)))
-           (inner (etaf--inline-text-surface-properties props))
-           (content
-            (mapconcat
-             (lambda (child)
-               (etaf--runtime-inline-value-string child inner))
-             (etaf--view-node-children value) "")))
-      (etaf--apply-inline-surface-properties content surface)))
-   ((proper-list-p value)
-    (mapconcat (lambda (item)
-                 (etaf--runtime-inline-value-string item surface))
-               value ""))
-   (t (signal 'etaf-runtime-error
-              (list "Inline expr requires Step4b output")))))
+  "Return inline VALUE when it is a string.
+SURFACE is retained in the Range record for ABI stability but never applies
+raw Emacs properties; Text presentation is projected by Ebox."
+  (ignore surface)
+  (if (stringp value)
+      value
+    (signal 'etaf-runtime-error
+            (list "Text expr must resolve to one string"))))
 
 (defun etaf--runtime-render-inline-range
     (runtime host-id expr path surface)
@@ -3245,24 +3239,14 @@ generated descendant Host reference."
           (cond
            ((null value) nil)
            ((stringp value)
-            (let ((text (etaf--apply-inline-surface-properties value inherited)))
-              (push text parts) (push text strings)))
+            (push value parts) (push value strings))
            ((etaf--expr-p value)
             (let ((entry (etaf--runtime-render-inline-range
                           runtime host-id value current-path inherited)))
               (push (car entry) parts) (push (cdr entry) strings)))
            ((etaf--view-node-p value)
-            (unless (eq (etaf--view-node-name value) 'text)
-              (signal 'etaf-runtime-error
-                      (list "Inline text requires Step4b Host output")))
-            (let* ((props (etaf--resolve-property-plist
-                           (etaf--view-node-props value)))
-                   (inner (append (etaf--inline-text-surface-properties props)
-                                  inherited))
-                   (index 0))
-              (dolist (child (etaf--view-node-children value))
-                (walk child (append current-path (list index)) inner)
-                (cl-incf index))))
+            (signal 'etaf-runtime-error
+                    (list "Text payload cannot contain a View node")))
            ((proper-list-p value)
             (let ((index 0))
               (dolist (item value)

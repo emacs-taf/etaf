@@ -57,8 +57,8 @@
 - 属性值是普通 Elisp 表达式。
 - 唯一的子节点计算桥接是 `(expr :value ELISP-EXPRESSION)`。
 - Elisp 返回动态 View 时，在 `expr` 中用 `(etaf-view ...)` 构造；被 quote 的结构数据永远不会被执行。
-- Core Host 是 `text`、`fragment`、`container`、`row`、`column`、`stack`、`flex`、`grid` 和 `spacer`。
-- `raw-ebox` 只接受 `:value` 和可选 `:key`，并且对 ETAF 语义保持 opaque。
+- 六个可见 Host form 是 `text`、`box`、`row`、`column`、`flex`、`grid`；`fragment`、`slot`、`expr` 是透明的框架结构。
+- View 作者 DSL 不提供 raw Ebox 逃生口；框架集成在作者 DSL 之外使用 Ebox evaluated typed-constructor 端口。
 
 ### 4.2 Component 与 slot
 
@@ -69,7 +69,7 @@
 - 尾部 children 是 `slots.default`；命名 slot 输入使用 `(slot :name 'NAME CHILD...)`。
 - 默认 outlet 简写是 `(slot)` 或 `(slot FALLBACK...)`。
 - Slot name 只能是稳定的、非 keyword 的 symbol。
-- `:key` 是 identity metadata，不是业务 prop：Component 调用用它选择 retained identity，Host 和 `raw-ebox` 则把它作为 Ebox node key 向下传递。
+- `:key` 是 identity metadata，不是业务 prop：Component 调用用它选择 retained identity，Host 则把同一个解析后的事实投影到 Ebox source index。
 
 ### 4.3 Runtime 与非视觉能力
 

@@ -27,7 +27,7 @@ Properties come first and children come last. `etaf-view` receives an unquoted s
 ```elisp
 (etaf-view
  (column
-  (text :face 'bold "Hello")
+  (text :font-weight 'bold "Hello")
   (text :color "#687386" "Welcome to ETAF")))
 ```
 
@@ -38,7 +38,7 @@ Mount it into an Emacs buffer:
  "*etaf-hello*"
  (etaf-view
   (column
-   (text :face 'bold "Hello")
+   (text :font-weight 'bold "Hello")
    (text "This is a text application."))))
 ```
 
@@ -62,7 +62,7 @@ that viewport directly instead of immediately rerendering:
 ```elisp
 (ebox-render
  (etaf-render
-  (etaf-view (text :face 'bold "Pure View"))))
+  (etaf-view (text :font-weight 'bold "Pure View"))))
 ```
 
 Use `etaf-mount` whenever a View contains a stateful Component, reactive data, events, or lifecycle.
@@ -78,8 +78,8 @@ Attribute values are ordinary Elisp expressions. They do not need an extra `expr
       (label "Theme"))
   (etaf-view
    (text
-    :face (if dark 'light 'dark)
-    :color "#F4F6FB"
+    :color (if dark "#F4F6FB" "#1F2328")
+    :background-color "#20242B"
     (expr :value label))))
 ```
 
@@ -92,7 +92,7 @@ The child region is structural. `expr` is the one explicit bridge for ordinary E
   (expr
    :value
    (when open
-     (etaf-view (text :face 'italic "Details"))))))
+     (etaf-view (text :font-style 'italic "Details"))))))
 ```
 
 `expr` accepts exactly `:value` and no children. Its result can be a string, View, sequence, or `nil`. `if`, `when`, `cond`, `let`, `mapcar`, and `cl-loop` remain normal Elisp inside the value.
@@ -103,7 +103,7 @@ Quote has one ordinary Elisp meaning:
 - Quote literal symbols and data lists when Elisp requires data.
 - Use `(etaf-view ...)` inside an expression when the expression must construct a View.
 
-For example, `'bold` is the face symbol, while `'(text "data")` is only data and will not render. A dynamic View must be written as `(etaf-view (text "data"))`.
+For example, `'bold` is the `:font-weight` symbol, while `'(text "data")` is only data and will not render. A dynamic View must be written as `(etaf-view (text "data"))`.
 
 The core `grid` Host is the two-dimensional layout choice:
 
@@ -113,16 +113,16 @@ The core `grid` Host is the two-dimensional layout choice:
  (etaf-view
   (grid
    :width '(640)
-   :grid-template-columns '((200) 1fr)
+   :grid-template-columns '((200) (fr 1))
    :grid-template-rows '(1 1)
    :gap '(1 (12))
-   (text :face 'bold "Name")
+   (text :font-weight 'bold "Name")
    (text "Value")
    (text "Ada")
    (text "Lovelace"))))
 ```
 
-Use `auto`, `(fr FACTOR)`, symbols such as `1fr`, `(minmax MIN MAX)`, and `(repeat COUNT TRACK)` in track templates. `:grid-auto-columns` and `:grid-auto-rows` size implicit tracks; `:grid-auto-flow` accepts `row` or `column`. Children may use `:grid-column`, `:grid-row`, `:grid-column-span`, and `:grid-row-span`; Ebox performs measurement, placement, and item/content alignment. The optional native backend falls back to the Elisp Ebox renderer for Grid trees.
+Use `auto`, `min-content`, `max-content`, `(fr FACTOR)`, `(minmax MIN MAX)`, and `(repeat COUNT TRACK-LIST)` in track templates. `:grid-auto-columns` and `:grid-auto-rows` size implicit tracks; `:grid-auto-flow` accepts `row` or `column`. Children may use `:grid-column`, `:grid-row`, `:grid-column-span`, and `:grid-row-span`; Ebox performs measurement, placement, and item/content alignment. The optional native backend falls back to the Elisp Ebox renderer for Grid trees.
 
 ## 4. Define a Component
 
@@ -133,7 +133,7 @@ The beginner form is a stateless `:view` Component:
   "Render a status label."
   :view
   (text
-   :face 'bold
+   :font-weight 'bold
    (expr :value label)))
 
 (etaf-mount
@@ -176,7 +176,7 @@ Use `:setup` when the Component owns local state:
     (lambda ()
       (etaf-view
        (column
-        (text :face 'bold (expr :value title))
+        (text :font-weight 'bold (expr :value title))
         (text (expr :value (format "Count: %d" (etaf-value count))))
         (text
          :role 'button
@@ -219,8 +219,8 @@ Trailing children are the anonymous/default slot:
   "Render a titled panel."
   :view
   (column
-   (text :face 'bold (expr :value title))
-   (slot (text :face 'shadow "No content"))))
+   (text :font-weight 'bold (expr :value title))
+   (slot (text :color "#687386" "No content"))))
 
 (etaf-view
  (panel
@@ -236,8 +236,8 @@ Named slots use `:name` and must use a stable non-keyword symbol:
   :view
   (column
    (slot :name 'header
-         (text :face 'bold (expr :value title)))
-   (slot (text :face 'shadow "No body"))))
+         (text :font-weight 'bold (expr :value title)))
+   (slot (text :color "#687386" "No body"))))
 
 (etaf-view
  (card
@@ -259,8 +259,8 @@ Static Component styles use one declaration form:
   (styles
    ("&"
     :padding (1 2)
-    :border ((1) solid "#687386"))
-   (".title" :face bold)
+    :border (1 solid "#687386"))
+   (".title" :font-weight bold)
    (".danger" :color "#FF6B6B"))
   :view
   (column
@@ -559,16 +559,7 @@ Loader errors are stored in `etaf-resource-error`; cleanup/type errors remain vi
    nil))
 ```
 
-The only low-level escape is `raw-ebox`:
-
-```elisp
-(etaf-view
- (raw-ebox
-  :key 'manual-node
-  :value (ebox-create :content "Backend node")))
-```
-
-Use it only when the normal Host and Component lowering path cannot express a real Ebox requirement. The returned Node is opaque to ETAF semantics.
+The public View grammar accepts Hosts and Components, not raw Ebox Nodes. Framework integrations that need the lower-level port use Ebox's typed TextNode and BoxNode constructors directly; application Views remain on the normal Host and Component lowering path.
 
 ## 12. Playgrounds
 
@@ -669,7 +660,7 @@ Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, 
 ## 15. Common mistakes
 
 - Put every property before the first child.
-- Use `:face 'bold`, not `:face :bold`; a face is an Elisp symbol value, not a property keyword.
+- Use `:font-weight 'bold`, not `:font-weight :bold`; the weight is an Elisp symbol value, not a property keyword.
 - Do not quote a structural View form.
 - Use `expr :value` for `if`, `when`, `let`, `mapcar`, or a View returned by ordinary Elisp.
 - Use `(slot)` or `(slot FALLBACK...)` for the default outlet; use `:name 'header` for named slot content.

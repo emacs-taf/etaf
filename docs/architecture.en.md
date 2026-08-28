@@ -45,7 +45,6 @@ These are mechanisms rather than additional visual node types:
 - `watch` observes reactive state.
 - `Context` provides inherited dependencies.
 - `Data` owns application-data state and source requests.
-- `raw-ebox` is the explicit low-level escape at the ETAF/Ebox boundary.
 
 ## 3. The unified View grammar
 
@@ -62,7 +61,7 @@ Properties must be complete before the first child. A child can be a string, a n
 (etaf-view
  (column
   :class "welcome"
-  (text :face 'bold "Hello")
+  (text :font-weight 'bold "Hello")
   (text
    :color "#687386"
    (expr :value (if ready "Ready" "Waiting")))))
@@ -78,12 +77,12 @@ not be interleaved.
 The rule is simple:
 
 1. Structural View positions are not quoted. This includes `etaf-view`, Hosts, Component calls, children, slot forms, and static Component styles.
-2. Elisp expression positions follow normal Elisp evaluation. This includes attribute values, `:key`, `:on-*`, `:use`, `expr :value`, `:setup`, Context values, Behavior constructors, Actions, and `raw-ebox :value`.
+2. Elisp expression positions follow normal Elisp evaluation. This includes attribute values, `:key`, `:on-*`, `:use`, `expr :value`, `:setup`, Context values, Behavior constructors, and Actions.
 
 ```elisp
 (etaf-view
  (text
-  :face (if dark 'light 'dark)
+  :color (if dark "#F4F6FB" "#1F2328")
   (expr :value label)))
 
 (etaf-view
@@ -92,7 +91,7 @@ The rule is simple:
    :value
    (when open
      (etaf-view
-      (text :face 'bold "Details"))))))
+      (text :font-weight 'bold "Details"))))))
 ```
 
 `'bold` is an ordinary Elisp literal symbol. `'(text "Details")` is ordinary data, not a View; use `(etaf-view (text "Details"))` when an Elisp expression must construct a View. ETAF does not run `eval` on quoted View data and does not add separate literal/eval nodes.
@@ -138,7 +137,7 @@ The Component definition is the current structure/style/behavior boundary. Keep 
   "Render a status label."
   :view
   (text
-   :face 'bold
+   :font-weight 'bold
    (expr :value label)))
 ```
 
@@ -165,7 +164,7 @@ The Component definition is the current structure/style/behavior boundary. Keep 
 
 `:setup` runs once for a retained Component instance and must return a zero-argument render function. Re-render reads current props and refs without rerunning setup. Setup is the owner for local refs, computed values, watches, Effects, and cleanup registration.
 
-`:key` is stable identity metadata, not a business prop. On a Component call it selects the retained Component instance within the sibling scope; on a Host or `raw-ebox` it is forwarded as the Ebox node key. If a render candidate fails, the Runtime restores the previous instance, handlers, behaviors, and buffer.
+`:key` is stable identity metadata, not a business prop. On a Component call it selects the retained Component instance within the sibling scope; on a Host it is forwarded as the Ebox node key. If a render candidate fails, the Runtime restores the previous instance, handlers, behaviors, and buffer.
 
 In View syntax, canonical Component names may omit the `etaf-` prefix. If the short name would collide with an Elisp function, special form, or Host, the registry assigns a semantic `-view` alias. Ordinary Elisp APIs such as `etaf-value`, `etaf-ref`, and `etaf-mount` always keep their prefix.
 
@@ -193,7 +192,7 @@ Named content uses the same structural shape:
 ```elisp
 (card
  :title "Account"
- (slot :name 'header (text :face 'bold "Account settings"))
+ (slot :name 'header (text :font-weight 'bold "Account settings"))
  (text "Card body"))
 ```
 
@@ -201,13 +200,13 @@ Inside a Component View, the default outlet and its fallback are:
 
 ```elisp
 (slot)
-(slot (text :face 'shadow "No content"))
+(slot (text :color "#687386" "No content"))
 ```
 
 The explicit normalized spelling is:
 
 ```elisp
-(slot :name 'default (text :face 'shadow "No content"))
+(slot :name 'default (text :color "#687386" "No content"))
 ```
 
 Named slot names are stable non-keyword symbols. Strings, numbers, variables, and runtime expressions are rejected because a slot name is part of retained structure. A named input may appear only once. An explicitly empty input `(slot :name 'header)` suppresses the outlet fallback. Slot forms do not create Ebox wrappers.
@@ -240,16 +239,7 @@ Strings are the smallest text View and lower to Ebox content. Nested `text` View
 
 ETAF's Renderer is the only framework module that calls Ebox. It uses Ebox public constructors, property readers, host-reference queries, and publication APIs. Ebox does not know about Components, slots, Actions, Context, Behaviors, or Data.
 
-`raw-ebox` is the one deliberate escape:
-
-```elisp
-(etaf-view
- (raw-ebox
-  :key 'backend-row
-  :value (ebox-create :content "Low-level")))
-```
-
-It accepts only `:value` and optional `:key`. The returned Ebox Node remains opaque and does not receive Component props, slots, events, or Behaviors. Using it transfers measurement, identity, rollback, and backend responsibility to the caller.
+The public View grammar does not accept raw Ebox Nodes. Framework integrations construct canonical TextNode and BoxNode values through Ebox's typed integration port, while ordinary ETAF applications stay on Hosts and Components. This keeps measurement, identity, and rollback ownership inside one lowering path.
 
 ## 7. Runtime and reactive state
 
@@ -470,6 +460,5 @@ Before adding a new concept, choose the smallest existing owner:
 | Cross-depth dependency | Context |
 | Request or mutation state | Data / Resource |
 | Geometry or layout algorithm | Ebox |
-| Low-level backend escape | `raw-ebox` |
 
 Add a new public concept only when an existing owner cannot express the behavior, the new owner can state identity/lifecycle/error/rollback rules, and a public-path test can prove it. This keeps the model small while retaining full Elisp expressiveness.

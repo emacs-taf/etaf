@@ -45,7 +45,6 @@ ETAF 是面向文本应用的统一 View 与 Component 层。Elisp 仍然是完�
 - `watch` 观察响应式状态。
 - `Context` 提供继承的依赖。
 - `Data` 管理应用数据状态和数据源请求。
-- `raw-ebox` 是 ETAF/Ebox 边界上的明确底层出口。
 
 ## 3. 统一 View 语法
 
@@ -62,7 +61,7 @@ ATTRIBUTE = :KEY VALUE
 (etaf-view
  (column
   :class "welcome"
-  (text :face 'bold "Hello")
+  (text :font-weight 'bold "Hello")
   (text
    :color "#687386"
    (expr :value (if ready "Ready" "Waiting")))))
@@ -77,12 +76,12 @@ ATTRIBUTE = :KEY VALUE
 规则只有两条：
 
 1. 结构性 View 位置不需要 quote，包括 `etaf-view`、Host、Component 调用、子节点、slot 和静态 Component styles。
-2. Elisp 表达式位置遵循普通 Elisp 求值，包括属性值、`:key`、`:on-*`、`:use`、`expr :value`、`:setup`、Context 值、Behavior 构造器、Action 以及 `raw-ebox :value`。
+2. Elisp 表达式位置遵循普通 Elisp 求值，包括属性值、`:key`、`:on-*`、`:use`、`expr :value`、`:setup`、Context 值、Behavior 构造器和 Action。
 
 ```elisp
 (etaf-view
  (text
-  :face (if dark 'light 'dark)
+  :color (if dark "#F4F6FB" "#1F2328")
   (expr :value label)))
 
 (etaf-view
@@ -91,7 +90,7 @@ ATTRIBUTE = :KEY VALUE
    :value
    (when open
      (etaf-view
-      (text :face 'bold "Details"))))))
+      (text :font-weight 'bold "Details"))))))
 ```
 
 `'bold` 是普通 Elisp 字面量 symbol。`'(text "Details")` 只是普通数据，不是 View；当 Elisp 表达式需要构造 View 时，使用 `(etaf-view (text "Details"))`。ETAF 不会对被 quote 的 View 数据再次 `eval`，也不增加单独的 literal/eval 节点。
@@ -137,7 +136,7 @@ Component definition 是当前结构/样式/行为边界：动态状态、Action
   "Render a status label."
   :view
   (text
-   :face 'bold
+   :font-weight 'bold
    (expr :value label)))
 ```
 
@@ -164,7 +163,7 @@ Component definition 是当前结构/样式/行为边界：动态状态、Action
 
 `:setup` 对一个 retained Component instance 只运行一次，并且必须返回零参数 render 函数。重新渲染读取当前 props 和 ref，不重新运行 setup。setup 负责局部 ref、computed、watch、Effect 和 cleanup 的创建。
 
-`:key` 是稳定的 identity metadata，不是业务 prop。放在 Component 调用上时，它选择同级作用域内要保留的 Component instance；放在 Host 或 `raw-ebox` 上时，它会作为 Ebox node key 向下传递。候选渲染失败时，Runtime 恢复旧 instance、handlers、Behaviors 和 buffer。
+`:key` 是稳定的 identity metadata，不是业务 prop。放在 Component 调用上时，它选择同级作用域内要保留的 Component instance；放在 Host 上时，它会作为 Ebox node key 向下传递。候选渲染失败时，Runtime 恢复旧 instance、handlers、Behaviors 和 buffer。
 
 在 View 语法中，Component 的规范名称可以省略 `etaf-` 前缀。如果短名称会与 Elisp 函数、special form 或 Host 冲突，注册表会分配语义明确的 `-view` alias。普通 Elisp API，例如 `etaf-value`、`etaf-ref` 和 `etaf-mount`，始终保留前缀。
 
@@ -192,7 +191,7 @@ children 只是匿名/默认 slot 的便捷写法，不是第二套内容模型�
 ```elisp
 (card
  :title "Account"
- (slot :name 'header (text :face 'bold "Account settings"))
+ (slot :name 'header (text :font-weight 'bold "Account settings"))
  (text "Card body"))
 ```
 
@@ -200,13 +199,13 @@ children 只是匿名/默认 slot 的便捷写法，不是第二套内容模型�
 
 ```elisp
 (slot)
-(slot (text :face 'shadow "No content"))
+(slot (text :color "#687386" "No content"))
 ```
 
 完整的内部规范写法是：
 
 ```elisp
-(slot :name 'default (text :face 'shadow "No content"))
+(slot :name 'default (text :color "#687386" "No content"))
 ```
 
 对用户来说，优先使用前两个简写；只有需要明确名字时才写 `:name`。Slot 名称必须是稳定的、非 keyword 的 symbol。字符串、数字、变量和运行时表达式都会被拒绝，因为 slot 名称属于 retained 结构。同名输入只能出现一次。显式空输入 `(slot :name 'header)` 会抑制 outlet fallback。Slot form 不创建 Ebox wrapper。
@@ -239,16 +238,7 @@ text · fragment · container · row · column · stack · flex · grid · space
 
 ETAF 的 Renderer 是唯一调用 Ebox 的框架模块，并且只使用 Ebox 公共构造器、属性读取器、Host 引用查询和发布 API。Ebox 不理解 Component、slot、Action、Context、Behavior 或 Data。
 
-`raw-ebox` 是唯一明确的底层出口：
-
-```elisp
-(etaf-view
- (raw-ebox
-  :key 'backend-row
-  :value (ebox-create :content "Low-level")))
-```
-
-它只接受 `:value` 和可选的 `:key`。返回的 Ebox Node 保持 opaque，不获得 Component props、slot、事件或 Behavior 语义。使用它意味着调用方承担 measurement、identity、rollback 和 backend 契约。
+公共 View 语法不接受裸 Ebox Node。框架集成层通过 Ebox 的 typed integration port 构造规范的 TextNode 和 BoxNode；普通 ETAF 应用只使用 Host 与 Component。这样 measurement、identity 和 rollback 始终由同一条 lowering 路径负责。
 
 ## 7. Runtime 与响应式状态
 
@@ -464,6 +454,5 @@ registry 决定当前 authority。失败 candidate 只移除 staged Behavior res
 | 跨层级依赖 | Context |
 | 请求或变更状态 | Data / Resource |
 | 几何或布局算法 | Ebox |
-| 低层 backend 出口 | `raw-ebox` |
 
 只有在现有 owner 无法表达、能够明确 identity/lifecycle/error/rollback 规则，并且可以用公共路径测试证明时，才增加新的公共概念。这样既保留完整的 Elisp 表达能力，又让用户模型保持干净。

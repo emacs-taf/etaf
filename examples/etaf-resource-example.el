@@ -25,13 +25,14 @@
 (defun etaf-resource-example--header ()
   "Return the Resource example header."
   (etaf-view
-   (column :width '(680) :padding '(1 (18)) :border "#8F432F"
+   (box :width '(680) :padding '(1 (18)) :border "#8F432F"
     :bgcolor "#FFFDF8" :text-align 'center
-    (text :color "#8F432F" :font-weight 'bold
-          "BEST PRACTICE  /  RESOURCE LIFECYCLE")
-    (text :font-weight 'bold "Service health")
-    (text :color "#66706A"
-          "Loader errors become explicit state; cleanup stays scoped."))))
+    (column
+     (text :color "#8F432F" :font-weight 'bold
+           "BEST PRACTICE  /  RESOURCE LIFECYCLE")
+     (text :font-weight 'bold "Service health")
+     (text :color "#66706A"
+           "Loader errors become explicit state; cleanup stays scoped.")))))
 
 (defun etaf-resource-example--status (resource cleanup-count)
   "Return the status card for RESOURCE and CLEANUP-COUNT."
@@ -41,14 +42,15 @@
          (border (if success "#6D8A73" "#C97252"))
          (ink (if success "#24422D" "#6B3020")))
     (etaf-view
-     (column :width '(680) :padding '(2 (18)) :border border
+     (box :width '(680) :padding '(2 (18)) :border border
       :bgcolor surface :color ink :text-align 'center
-      (text :font-weight 'bold
-            (expr :value (upcase (symbol-name status))))
-      (text (expr :value (etaf-resource-example--message resource)))
-      (text :color "#66706A"
-            (expr :value
-                  (format "CLEANUPS  %d" (etaf-value cleanup-count))))))))
+      (column
+       (text :font-weight 'bold
+             (expr :value (upcase (symbol-name status))))
+       (text (expr :value (etaf-resource-example--message resource)))
+       (text :color "#66706A"
+             (expr :value
+                   (format "CLEANUPS  %d" (etaf-value cleanup-count)))))))))
 
 (defun etaf-resource-example--actions (resource fail-next)
   "Return action controls for RESOURCE and FAIL-NEXT."

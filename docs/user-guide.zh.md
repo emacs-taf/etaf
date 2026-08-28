@@ -27,7 +27,7 @@ ETAF 依赖独立的 Ebox 包。开发时把核心检出目录放入 `load-path`
 ```elisp
 (etaf-view
  (column
-  (text :face 'bold "Hello")
+  (text :font-weight 'bold "Hello")
   (text :color "#687386" "Welcome to ETAF")))
 ```
 
@@ -38,7 +38,7 @@ ETAF 依赖独立的 Ebox 包。开发时把核心检出目录放入 `load-path`
  "*etaf-hello*"
  (etaf-view
   (column
-   (text :face 'bold "Hello")
+   (text :font-weight 'bold "Hello")
    (text "This is a text application."))))
 ```
 
@@ -62,7 +62,7 @@ Headless host 或已经知道最终布局上下文的调用方，可以通过可
 ```elisp
 (ebox-render
  (etaf-render
-  (etaf-view (text :face 'bold "Pure View"))))
+  (etaf-view (text :font-weight 'bold "Pure View"))))
 ```
 
 View 含有状态型 Component、响应式数据、事件或生命周期时，使用 `etaf-mount`。
@@ -78,8 +78,8 @@ View 含有状态型 Component、响应式数据、事件或生命周期时，�
       (label "Theme"))
   (etaf-view
    (text
-    :face (if dark 'light 'dark)
-    :color "#F4F6FB"
+    :color (if dark "#F4F6FB" "#1F2328")
+    :background-color "#20242B"
     (expr :value label))))
 ```
 
@@ -92,7 +92,7 @@ View 含有状态型 Component、响应式数据、事件或生命周期时，�
   (expr
    :value
    (when open
-     (etaf-view (text :face 'italic "Details"))))))
+     (etaf-view (text :font-style 'italic "Details"))))))
 ```
 
 `expr` 只接受 `:value`，不能有子节点。返回值可以是字符串、View、序列或 `nil`。`if`、`when`、`cond`、`let`、`mapcar` 和 `cl-loop` 仍然是 value 中的普通 Elisp。
@@ -103,7 +103,7 @@ quote 只有普通 Elisp 的含义：
 - 字面量 symbol 和数据列表在 Elisp 需要时才 quote。
 - Elisp 表达式需要构造 View 时，在其中使用 `(etaf-view ...)`。
 
-例如 `'bold` 是 face symbol，而 `'(text "data")` 只是数据，不会渲染。动态 View 必须写成 `(etaf-view (text "data"))`。
+例如 `'bold` 是 `:font-weight` 的 symbol 值，而 `'(text "data")` 只是数据，不会渲染。动态 View 必须写成 `(etaf-view (text "data"))`。
 
 核心 `grid` Host 用于二维布局：
 
@@ -113,16 +113,16 @@ quote 只有普通 Elisp 的含义：
  (etaf-view
   (grid
    :width '(640)
-   :grid-template-columns '((200) 1fr)
+   :grid-template-columns '((200) (fr 1))
    :grid-template-rows '(1 1)
    :gap '(1 (12))
-   (text :face 'bold "Name")
+   (text :font-weight 'bold "Name")
    (text "Value")
    (text "Ada")
    (text "Lovelace"))))
 ```
 
-轨道模板支持 `auto`、`(fr FACTOR)`、`1fr` 等符号、`(minmax MIN MAX)` 和 `(repeat COUNT TRACK)`。`:grid-auto-columns` 与 `:grid-auto-rows` 负责隐式轨道尺寸；`:grid-auto-flow` 支持 `row` 或 `column`。子节点可以使用 `:grid-column`、`:grid-row`、`:grid-column-span` 和 `:grid-row-span`；测量、放置以及 item/content 对齐由 Ebox 完成。可选 native backend 不支持 Grid 时会回退到 Elisp Ebox renderer。
+轨道模板支持 `auto`、`min-content`、`max-content`、`(fr FACTOR)`、`(minmax MIN MAX)` 和 `(repeat COUNT TRACK-LIST)`。`:grid-auto-columns` 与 `:grid-auto-rows` 负责隐式轨道尺寸；`:grid-auto-flow` 支持 `row` 或 `column`。子节点可以使用 `:grid-column`、`:grid-row`、`:grid-column-span` 和 `:grid-row-span`；测量、放置以及 item/content 对齐由 Ebox 完成。可选 native backend 不支持 Grid 时会回退到 Elisp Ebox renderer。
 
 ## 4. 定义 Component
 
@@ -133,7 +133,7 @@ quote 只有普通 Elisp 的含义：
   "Render a status label."
   :view
   (text
-   :face 'bold
+   :font-weight 'bold
    (expr :value label)))
 
 (etaf-mount
@@ -176,7 +176,7 @@ Component 自己拥有状态时使用 `:setup`：
     (lambda ()
       (etaf-view
        (column
-        (text :face 'bold (expr :value title))
+        (text :font-weight 'bold (expr :value title))
         (text (expr :value (format "Count: %d" (etaf-value count))))
         (text
          :role 'button
@@ -219,8 +219,8 @@ Setup 对 retained instance 只执行一次，返回的 render 函数在更新�
   "Render a titled panel."
   :view
   (column
-   (text :face 'bold (expr :value title))
-   (slot (text :face 'shadow "No content"))))
+   (text :font-weight 'bold (expr :value title))
+   (slot (text :color "#687386" "No content"))))
 
 (etaf-view
  (panel
@@ -236,8 +236,8 @@ Setup 对 retained instance 只执行一次，返回的 render 函数在更新�
   :view
   (column
    (slot :name 'header
-         (text :face 'bold (expr :value title)))
-   (slot (text :face 'shadow "No body"))))
+         (text :font-weight 'bold (expr :value title)))
+   (slot (text :color "#687386" "No body"))))
 
 (etaf-view
  (card
@@ -259,8 +259,8 @@ Setup 对 retained instance 只执行一次，返回的 render 函数在更新�
   (styles
    ("&"
     :padding (1 2)
-    :border ((1) solid "#687386"))
-   (".title" :face bold)
+    :border (1 solid "#687386"))
+   (".title" :font-weight bold)
    (".danger" :color "#FF6B6B"))
   :view
   (column
@@ -553,16 +553,7 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
    nil))
 ```
 
-唯一的低层出口是 `raw-ebox`：
-
-```elisp
-(etaf-view
- (raw-ebox
-  :key 'manual-node
-  :value (ebox-create :content "Backend node")))
-```
-
-只有普通 Host 和 Component lowering 无法表达真实 Ebox 需求时才使用它；返回的 Node 对 ETAF 语义保持 opaque。
+公共 View 语法只接受 Host 和 Component，不接受裸 Ebox Node。需要更低层端口的框架集成直接使用 Ebox typed TextNode 和 BoxNode constructor；应用 View 始终走普通 Host/Component lowering 路径。
 
 ## 12. Playgrounds
 
@@ -657,7 +648,7 @@ observer，不修改任何函数。
 ## 15. 常见错误
 
 - 所有属性必须放在第一个子节点之前。
-- 使用 `:face 'bold`，不要使用 `:face :bold`；face 是 Elisp symbol 值，不是属性 keyword。
+- 使用 `:font-weight 'bold`，不要使用 `:font-weight :bold`；weight 是 Elisp symbol 值，不是属性 keyword。
 - 结构性 View form 不要 quote。
 - `if`、`when`、`let`、`mapcar` 或 Elisp 返回 View 时，使用 `expr :value`。
 - 默认 outlet 使用 `(slot)` 或 `(slot FALLBACK...)`；命名内容使用 `:name 'header`。

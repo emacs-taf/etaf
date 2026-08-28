@@ -28,11 +28,12 @@
 (defun etaf-counter-example--header (title)
   "Return the counter header for TITLE."
   (etaf-view
-   (column :class "hero"
-    (text :class "eyebrow" "BEST PRACTICE  /  RETAINED STATE")
-    (text :font-weight 'bold (expr :value title))
-    (text :color "#66706A"
-          "State belongs to setup; rendering only reads it."))))
+   (box :class "hero"
+    (column
+     (text :class "eyebrow" "BEST PRACTICE  /  RETAINED STATE")
+     (text :font-weight 'bold (expr :value title))
+     (text :color "#66706A"
+           "State belongs to setup; rendering only reads it.")))))
 
 (defun etaf-counter-example--metrics (count double status)
   "Return metric cards for COUNT, DOUBLE, and STATUS."
