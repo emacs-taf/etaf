@@ -1,0 +1,31 @@
+#!/usr/bin/expect -f
+
+# Keep macOS screencapture attached to a real PTY.  Redirecting its stdin to
+# /dev/null makes current macOS builds stop recording immediately.
+
+set maximum_seconds 600
+
+if {$argc != 1} {
+    puts stderr "usage: record-screen.exp OUTPUT"
+    exit 2
+}
+
+set output [lindex $argv 0]
+spawn -noecho /usr/sbin/screencapture -v -D 1 -x $output
+set deadline [expr {[clock seconds] + $maximum_seconds}]
+
+trap {
+    send -- "q"
+    expect eof
+    exit 0
+} {SIGTERM SIGINT}
+
+while {1} {
+    after 1000
+    if {[clock seconds] >= $deadline} {
+        send -- "q"
+        expect eof
+        puts stderr "screen recording exceeded $maximum_seconds seconds"
+        exit 1
+    }
+}
