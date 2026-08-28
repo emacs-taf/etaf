@@ -57,7 +57,8 @@
   spec
   identity
   scope
-  render-function
+  state
+  (setup-complete-p nil)
   context
   mounted-hooks
   updated-hooks
@@ -88,10 +89,10 @@
 
 (cl-defstruct (etaf--semantic-range (:constructor etaf--semantic-range-create))
   semantic-id identity effect-id kind parent-id component-id token range-ref
-  path caller-style-stack output-signature deps artifact-key item-host-ids
+  path caller-style-stack output-signature deps artifact-key item-root-ids
   item-identity-index context-deps
-  keyed-context-signature keyed-item-signatures keyed-item-id-index
-  keyed-key-order
+  keyed-context-signature keyed-item-signatures keyed-item-root-id-index
+  keyed-item-node-span-index keyed-key-order
   (composition-version 0))
 
 (cl-defstruct (etaf--semantic-inline-range
@@ -103,7 +104,7 @@
                (:constructor etaf--semantic-slot-range-create))
   semantic-id identity effect-id parent-id owner-component-id
   consumer-component-id token name range-ref path style-stack
-  output-signature deps artifact-key item-host-ids item-identity-index
+  output-signature deps artifact-key item-root-ids item-identity-index
   context-deps
   (composition-version 0))
 
@@ -165,9 +166,9 @@ the operation preserves committed values and removal semantics."
    ((etaf--semantic-host-p semantic)
     (etaf--semantic-host-child-ids semantic))
    ((etaf--semantic-range-p semantic)
-    (etaf--semantic-range-item-host-ids semantic))
+    (etaf--semantic-range-item-root-ids semantic))
    ((etaf--semantic-slot-range-p semantic)
-    (etaf--semantic-slot-range-item-host-ids semantic))))
+    (etaf--semantic-slot-range-item-root-ids semantic))))
 
 (defun etaf--generation-parent-id (generation semantic-id)
   "Return SEMANTIC-ID's parent directly from GENERATION's semantic node."
@@ -1350,6 +1351,16 @@ reading Runtime storage fields."
           (funcall function))
       (let ((etaf--current-runtime runtime)
             (etaf--current-component-instance instance)
+            (etaf--current-component-state
+             (and instance (etaf--component-instance-state instance)))
+            (etaf--current-component-setup-defined-p
+             (and instance
+                  (not (null (etaf--component-spec-setup
+                              (etaf--component-instance-spec instance))))))
+            (etaf--current-component-setup-complete-p
+             (and instance
+                  (etaf--component-instance-setup-complete-p instance)))
+            (etaf--component-phase 'render)
             (etaf--current-component-identity identity)
             (etaf--current-component-semantic-id component-id)
             (etaf--current-component-props props)
@@ -1842,6 +1853,17 @@ need to know how Behavior attributes are merged."
         (append (butlast path) (list :key key))
       path)))
 
+(defun etaf--runtime-component-business-props (call)
+  "Return CALL props without framework-owned identity metadata."
+  (let ((tail (etaf--component-call-props call))
+        result)
+    (while tail
+      (let ((key (pop tail))
+            (value (pop tail)))
+        (unless (eq key :key)
+          (setq result (append result (list key value))))))
+    result))
+
 (defun etaf--runtime-owned-slots (slots)
   "Attach current caller ownership to unowned normalized SLOTS."
   (mapcar
@@ -1875,7 +1897,8 @@ need to know how Behavior attributes are merged."
          (etaf--component-instance-create
           :spec spec
           :identity identity
-         :scope (etaf-effect-scope :name identity)
+          :scope (let ((etaf--render-phase-p nil))
+                   (etaf-effect-scope :name identity))
           :context (etaf--context-create :parent etaf--current-context)
           :resource-key resource-key)))
     (push instance (etaf-runtime-candidate-created runtime))
@@ -1923,6 +1946,12 @@ need to know how Behavior attributes are merged."
              (etaf--component-instance-context instance))))
       (let ((etaf--current-runtime runtime)
           (etaf--current-component-instance instance)
+          (etaf--current-component-state
+           (etaf--component-instance-state instance))
+          (etaf--current-component-setup-defined-p (not (null setup)))
+          (etaf--current-component-setup-complete-p
+           (etaf--component-instance-setup-complete-p instance))
+          (etaf--component-phase 'render)
           (etaf--current-component-identity identity)
           (etaf--current-component-props props)
           (etaf--current-component-slots slots)
@@ -1935,31 +1964,34 @@ need to know how Behavior attributes are merged."
             (cons (etaf--component-spec-styles spec)
                   (append path (list :view))))))
       (when (and setup
-                 (null (etaf--component-instance-render-function instance)))
-        (let ((render-function
+                 (not (etaf--component-instance-setup-complete-p instance)))
+        (let ((state
                (etaf-scope-run
                 (etaf--component-instance-scope instance)
                 (lambda ()
                   (let ((etaf--runtime-dependency-collector nil)
                         (etaf--tracking-enabled-p nil)
-                        (etaf--active-effect nil))
+                        (etaf--active-effect nil)
+                        (etaf--render-phase-p nil)
+                        (etaf--component-phase 'setup))
                     (funcall setup props slots)))
                 :watch-scheduler
                 (lambda (job phase)
                   (etaf--runtime-watch-scheduler runtime job phase)))))
-          (unless (functionp render-function)
+          (when (functionp state)
             (signal 'etaf-runtime-error
                     (list (format
-                           "Component %S :setup must return a render function"
+                           "Component %S :setup returned a function"
                            (etaf--component-spec-name spec)))))
-          (setf (etaf--component-instance-render-function instance)
-                render-function)))
-      (let* ((render-function
-              (or (etaf--component-instance-render-function instance)
-                  (etaf--component-spec-render spec)))
-             (rendered (if setup
-                           (funcall render-function)
-                         (funcall render-function props slots)))
+          (setf (etaf--component-instance-state instance) state
+                (etaf--component-instance-setup-complete-p instance) t
+                etaf--current-component-state state
+                etaf--current-component-setup-complete-p t)))
+      (let* ((render-function (etaf--component-spec-render spec))
+             (rendered
+              (etaf--validate-component-render-result
+               (funcall render-function props slots)
+               (etaf--component-spec-name spec)))
              (transparent-p
               (and (not (eq old-publication-kind 'material))
                    (etaf--runtime-transparent-output-p rendered)))
@@ -2131,7 +2163,7 @@ need to know how Behavior attributes are merged."
            :output-signature (copy-tree rendered) :deps nil
            :artifact-key (list (1+ (etaf-runtime-generation runtime))
                                'component-output effect-id)
-           :item-host-ids child-ids :item-identity-index item-index)))
+           :item-root-ids child-ids :item-identity-index item-index)))
     (dolist (child-id child-ids)
       (when-let* ((child (gethash child-id
                                  (etaf-runtime-candidate-graph-nodes runtime))))
@@ -2158,7 +2190,7 @@ need to know how Behavior attributes are merged."
         (dolist (old-id
                  (etaf--runtime-generation-descendant-ids
                   (etaf-runtime-current-generation runtime)
-                  (etaf--semantic-range-item-host-ids old-range)))
+                  (etaf--semantic-range-item-root-ids old-range)))
           (unless (gethash old-id new-set)
             (push old-id
                   (etaf-runtime-candidate-removed-semantic-ids runtime))))))
@@ -2226,6 +2258,7 @@ need to know how Behavior attributes are merged."
                         (cl-incf (etaf-runtime-next-effect-id runtime))))
          (semantic-id (or (and old (etaf--semantic-component-semantic-id old))
                           (cl-incf (etaf-runtime-next-semantic-id runtime))))
+         (input-props (etaf--runtime-component-business-props call))
          props input-deps render-deps context-deps slot-retargeted-p)
     (unless (etaf-context-owner-id (etaf--component-instance-context instance))
       (setf (etaf-context-owner-id (etaf--component-instance-context instance))
@@ -2239,7 +2272,7 @@ need to know how Behavior attributes are merged."
           (etaf--active-effect nil)
           (etaf--render-phase-p t))
       (setq props
-            (etaf--resolve-property-plist (etaf--component-call-props call))))
+            (etaf--resolve-property-plist input-props)))
     (puthash semantic-id
              (list :identity identity :instance instance :props props :slots slots)
              (etaf-runtime-candidate-component-envs runtime))
@@ -2263,7 +2296,8 @@ need to know how Behavior attributes are merged."
                       (not (equal-including-properties
                             slots (etaf--semantic-component-slots old))))))
         (progn
-          (when (etaf-runtime-candidate-full-rebuild-p runtime)
+          (when (or (etaf-runtime-candidate-full-rebuild-p runtime)
+                    etaf--rendering-range-p)
             (etaf--runtime-carry-committed-subtree runtime old-generation old))
           (if (eq (etaf--semantic-component-publication-kind old) 'transparent)
               (let* ((range
@@ -2356,7 +2390,7 @@ need to know how Behavior attributes are merged."
                    :resource-key
                    (copy-tree (etaf--component-instance-resource-key instance))
                    :props (copy-tree props) :slots (copy-tree slots)
-                   :input-props (copy-tree (etaf--component-call-props call))
+                   :input-props (copy-tree input-props)
                    :input-slots (copy-tree slots)
                    :output-signature (copy-tree output-signature)
                    :artifact-key (and (not transparent-p) effect-id)
@@ -2588,9 +2622,9 @@ need to know how Behavior attributes are merged."
                 ((etaf--semantic-host-p semantic)
                  (etaf--semantic-host-child-ids semantic))
                 ((etaf--semantic-range-p semantic)
-                 (etaf--semantic-range-item-host-ids semantic))
+                 (etaf--semantic-range-item-root-ids semantic))
                 ((etaf--semantic-slot-range-p semantic)
-                 (etaf--semantic-slot-range-item-host-ids semantic))
+                 (etaf--semantic-slot-range-item-root-ids semantic))
                 (t nil))))
     (unless (and (etaf--semantic-host-p semantic)
                  (etaf--semantic-range-p
@@ -2708,6 +2742,7 @@ need to know how Behavior attributes are merged."
                         (copy-sequence
                          (etaf--runtime-range-nodes runtime candidate))))))
       (if (and old
+             (not etaf--rendering-component-effect-p)
              (not (gethash effect-id (etaf-runtime-dirty-effect-ids runtime))))
         (progn
           (puthash identity semantic-id
@@ -2721,7 +2756,7 @@ need to know how Behavior attributes are merged."
                  (apply #'ebox-child-range range-ref
                         (copy-sequence
                          (etaf--runtime-range-nodes runtime old))))))
-      (let (deps context-deps value nodes keyed-snapshot)
+      (let (deps context-deps value nodes keyed-snapshot range-render)
         (let ((collector
                (lambda (source) (cl-pushnew source deps :test #'eq))))
           (let ((etaf--runtime-dependency-collector collector)
@@ -2731,11 +2766,13 @@ need to know how Behavior attributes are merged."
                                context-deps :test #'equal)))
                 (etaf--active-effect nil)
                 (etaf--render-phase-p t))
+            (setq keyed-snapshot
+                  (etaf--runtime-keyed-range-snapshot expr))
             (setq value
                   (etaf--runtime-normalize-range-value
-                   (funcall (etaf--expr-thunk expr))))
-            (setq keyed-snapshot
-                  (etaf--runtime-keyed-range-snapshot expr)))
+                   (if keyed-snapshot
+                       (etaf--keyed-program-outputs expr keyed-snapshot)
+                     (funcall (etaf--expr-thunk expr))))))
           (puthash identity semantic-id
                    (etaf-runtime-candidate-identity-entries runtime))
           (etaf--runtime-candidate-add-child
@@ -2751,19 +2788,22 @@ need to know how Behavior attributes are merged."
                 (etaf--rendering-range-p t)
                 (etaf--active-effect nil)
                 (etaf--render-phase-p t))
-            (setq nodes
+            (setq range-render
                   (etaf--runtime-render-range-items
-                   value path expr keyed-snapshot))))
-        (let* ((item-host-ids
+                   value path expr keyed-snapshot)
+                  nodes (plist-get range-render :nodes))))
+        (let* ((item-root-ids
                 (copy-sequence
                  (gethash semantic-id
                           (etaf-runtime-candidate-graph-children runtime))))
                (all-item-ids
-                (etaf--runtime-candidate-descendant-ids runtime item-host-ids))
+                (etaf--runtime-candidate-descendant-ids runtime item-root-ids))
                (item-index (make-hash-table :test #'equal))
                (keyed
                 (etaf--runtime-keyed-range-metadata
-                 expr keyed-snapshot item-host-ids))
+                 expr keyed-snapshot
+                 (plist-get range-render :item-root-groups)
+                 (plist-get range-render :item-node-counts)))
                (record
                (etaf--semantic-range-create
                 :semantic-id semantic-id :identity identity :effect-id effect-id
@@ -2776,30 +2816,23 @@ need to know how Behavior attributes are merged."
                 :context-deps (nreverse context-deps)
                 :artifact-key (cons (1+ (etaf-runtime-generation runtime))
                                     effect-id)
-                :item-host-ids item-host-ids
+                :item-root-ids item-root-ids
                 :item-identity-index item-index
                 :keyed-context-signature (plist-get keyed :context)
                 :keyed-item-signatures (plist-get keyed :signatures)
-                :keyed-item-id-index (plist-get keyed :id-index)
+                :keyed-item-root-id-index (plist-get keyed :root-id-index)
+                :keyed-item-node-span-index
+                (plist-get keyed :node-span-index)
                 :keyed-key-order (plist-get keyed :keys))))
-          (unless (= (length nodes) (length item-host-ids))
-            (signal 'etaf-runtime-error
-                    (list "Direct child Range items must be Host Views"
-                          (length nodes) (length item-host-ids))))
-          (dolist (item-id all-item-ids)
-            (let ((item (gethash item-id
-                                 (etaf-runtime-candidate-graph-nodes runtime))))
-              (unless (etaf--semantic-host-p item)
-                (signal 'etaf-runtime-error
-                        (list "Direct child Range items must be Host Views")))
-              (puthash (etaf--semantic-host-identity item) item-id item-index)))
+          (etaf--runtime-index-range-item-identities
+           runtime all-item-ids item-index)
           (when old
             (let ((new-set (make-hash-table :test #'eql)))
               (dolist (item-id all-item-ids) (puthash item-id t new-set))
               (dolist (old-id
                        (etaf--runtime-generation-descendant-ids
                         old-generation
-                        (etaf--semantic-range-item-host-ids old)))
+                        (etaf--semantic-range-item-root-ids old)))
               (unless (gethash old-id new-set)
                 (push old-id
                       (etaf-runtime-candidate-removed-semantic-ids runtime))))))
@@ -2937,7 +2970,7 @@ The candidate uses resolved VALUE, DEPS, and NODES."
            :output-signature (copy-tree value) :deps deps
            :context-deps context-deps
            :artifact-key (cons (1+ (etaf-runtime-generation runtime)) effect-id)
-           :item-host-ids item-host-ids :item-identity-index item-index)))
+           :item-root-ids item-host-ids :item-identity-index item-index)))
     (dolist (item-id all-item-ids)
       (let ((item (gethash item-id
                            (etaf-runtime-candidate-graph-nodes runtime))))
@@ -2950,7 +2983,7 @@ The candidate uses resolved VALUE, DEPS, and NODES."
         (dolist (item-id all-item-ids) (puthash item-id t new-set))
         (dolist (old-item-id
                  (etaf--runtime-generation-descendant-ids
-                  generation (etaf--semantic-slot-range-item-host-ids old)))
+                  generation (etaf--semantic-slot-range-item-root-ids old)))
           (unless (gethash old-item-id new-set)
             (push old-item-id
                   (etaf-runtime-candidate-removed-semantic-ids runtime))))))
@@ -3021,6 +3054,9 @@ The candidate uses resolved VALUE, DEPS, and NODES."
   (cond
    ((null value) nil)
    ((stringp value) (list value))
+   ((or (etaf--component-call-p value)
+        (etaf--slot-projection-p value))
+    (list value))
    ((etaf--expr-p value)
     (etaf--runtime-normalize-range-value (funcall (etaf--expr-thunk value))))
    ((etaf--view-node-p value)
@@ -3040,7 +3076,9 @@ The candidate uses resolved VALUE, DEPS, and NODES."
 
 (defun etaf--runtime-keyed-range-snapshot (expr)
   "Return EXPR's validated keyed Range snapshot, or nil."
-  (when-let* ((snapshot-function (etaf--expr-range-snapshot expr)))
+  (if (eq (etaf--expr-kind expr) 'keyed-list)
+      (etaf--keyed-program-snapshot expr)
+    (when-let* ((snapshot-function (etaf--expr-range-snapshot expr)))
     (let ((key-function (etaf--expr-range-key expr))
           (item-function (etaf--expr-range-item expr))
           (snapshot (funcall snapshot-function)))
@@ -3052,7 +3090,18 @@ The candidate uses resolved VALUE, DEPS, and NODES."
                      (proper-list-p (plist-get snapshot :items)))
           (signal 'etaf-runtime-error
                   (list "Invalid keyed Range program snapshot")))
-        snapshot))))
+        snapshot)))))
+
+(defun etaf--runtime-keyed-range-keys (expr snapshot)
+  "Return validated keys for EXPR aligned with keyed SNAPSHOT items."
+  (or (plist-get snapshot :keys)
+      (let ((key-function (etaf--expr-range-key expr)))
+        (unless (functionp key-function)
+          (signal 'etaf-runtime-error
+                  (list "Keyed Range lacks a key function")))
+        (mapcar (lambda (item)
+                  (etaf--validate-key (funcall key-function item)))
+                (plist-get snapshot :items)))))
 
 (defun etaf--runtime-keyed-range-item-path (path key)
   "Return stable PATH below one keyed Range item KEY."
@@ -3062,59 +3111,104 @@ The candidate uses resolved VALUE, DEPS, and NODES."
   "Render normalized Range VALUE at PATH using optional keyed SNAPSHOT.
 EXPR supplies the key function.  Keyed item paths encode stable keys rather
 than transient positions, so reordering changes geometry without changing any
-generated descendant Host reference."
+generated descendant identity.  Return a plist containing flat backend NODES
+and, for keyed input, the semantic root groups and backend node counts owned by
+each logical item."
   (if (null snapshot)
-      (etaf--render-value-list value path)
+      (list :nodes (etaf--render-value-list value path))
     (let ((items (plist-get snapshot :items))
-          (key-function (etaf--expr-range-key expr))
-          (seen (make-hash-table :test #'equal)))
-      (unless (= (length value) (length items))
+          (keys (etaf--runtime-keyed-range-keys expr snapshot))
+          (seen (make-hash-table :test #'equal))
+          nodes root-groups node-counts)
+      (unless (and (= (length value) (length items))
+                   (= (length items) (length keys)))
         (signal 'etaf-runtime-error
                 (list "Keyed Range item/output cardinality mismatch")))
-      (cl-mapcan
-       (lambda (output item)
-         (let ((key (funcall key-function item)))
-           (unless key
-             (signal 'etaf-runtime-error
-                     (list "Keyed Range key must be non-nil")))
+      (cl-mapc
+       (lambda (output _item key)
+         (let ((key (etaf--validate-key key)))
            (when (gethash key seen)
              (signal 'etaf-runtime-error
                      (list "Keyed Range keys must be unique" key)))
            (puthash key t seen)
-           (etaf--render-value-list
-            output (etaf--runtime-keyed-range-item-path path key))))
-       value items))))
+           (let* ((before
+                   (length
+                    (gethash etaf--current-semantic-parent-id
+                             (etaf-runtime-candidate-graph-children
+                              etaf--render-runtime))))
+                  (rendered
+                   (etaf--render-value-list
+                    output (etaf--runtime-keyed-range-item-path path key)))
+                  (children
+                   (gethash etaf--current-semantic-parent-id
+                            (etaf-runtime-candidate-graph-children
+                             etaf--render-runtime)))
+                  (roots (copy-sequence (nthcdr before children))))
+             (setq nodes (nconc nodes rendered))
+             (push roots root-groups)
+             (push (length rendered) node-counts))))
+       value items keys)
+      (list :nodes nodes
+            :item-root-groups (nreverse root-groups)
+            :item-node-counts (nreverse node-counts)))))
 
 (defun etaf--runtime-keyed-range-metadata
-    (expr snapshot item-host-ids)
-  "Return retained metadata for EXPR SNAPSHOT aligned to ITEM-HOST-IDS."
+    (expr snapshot item-root-groups item-node-counts)
+  "Return retained metadata for EXPR SNAPSHOT and aligned item spans."
   (when snapshot
     (let ((items (plist-get snapshot :items))
-          (key-function (etaf--expr-range-key expr))
+          (snapshot-keys (etaf--runtime-keyed-range-keys expr snapshot))
           (signatures (make-hash-table :test #'equal))
-          (id-index (make-hash-table :test #'equal))
+          (root-id-index (make-hash-table :test #'equal))
+          (node-span-index (make-hash-table :test #'equal))
           (seen (make-hash-table :test #'equal))
+          (node-offset 0)
           keys)
-      (unless (= (length items) (length item-host-ids))
+      (unless (and (= (length items) (length item-root-groups))
+                   (= (length items) (length item-node-counts)))
         (signal 'etaf-runtime-error
-                (list "Keyed Range item/Host cardinality mismatch")))
+                (list "Keyed Range item/span cardinality mismatch")))
       (cl-mapc
-       (lambda (item host-id)
-         (let ((key (funcall key-function item)))
-           (unless key
-             (signal 'etaf-runtime-error
-                     (list "Keyed Range key must be non-nil")))
+       (lambda (item root-ids node-count key)
+         (let ((key (etaf--validate-key key)))
            (when (gethash key seen)
              (signal 'etaf-runtime-error
                      (list "Keyed Range keys must be unique" key)))
+           (unless (and (proper-list-p root-ids)
+                        (natnump node-count))
+             (signal 'etaf-runtime-error
+                     (list "Invalid keyed Range item span" key)))
            (puthash key t seen)
            (puthash key (copy-tree item) signatures)
-           (puthash key host-id id-index)
+           (puthash key (copy-sequence root-ids) root-id-index)
+           (puthash key (cons node-offset node-count) node-span-index)
+           (cl-incf node-offset node-count)
            (push key keys)))
-       items item-host-ids)
+       items item-root-groups item-node-counts
+       snapshot-keys)
       (list :context (copy-tree (plist-get snapshot :context))
-            :signatures signatures :id-index id-index
+            :signatures signatures
+            :root-id-index root-id-index
+            :node-span-index node-span-index
             :keys (nreverse keys)))))
+
+(defun etaf--runtime-index-range-item-identities
+    (runtime semantic-ids identity-index)
+  "Validate SEMANTIC-IDS and index their Host identities in IDENTITY-INDEX."
+  (dolist (semantic-id semantic-ids)
+    (let ((semantic
+           (gethash semantic-id
+                    (etaf-runtime-candidate-graph-nodes runtime))))
+      (unless (or (etaf--semantic-host-p semantic)
+                  (etaf--semantic-component-p semantic)
+                  (etaf--semantic-range-p semantic)
+                  (etaf--semantic-slot-range-p semantic)
+                  (etaf--semantic-inline-range-p semantic))
+        (signal 'etaf-runtime-error
+                (list "Invalid semantic root below Range" semantic-id)))
+      (when (etaf--semantic-host-p semantic)
+        (puthash (etaf--semantic-host-identity semantic)
+                 semantic-id identity-index)))))
 
 (defun etaf--runtime-candidate-descendant-ids (runtime roots)
   "Return ROOTS and all candidate semantic descendants in RUNTIME."
@@ -3147,10 +3241,12 @@ generated descendant Host reference."
 SURFACE is retained in the Range record for ABI stability but never applies
 raw Emacs properties; Text presentation is projected by Ebox."
   (ignore surface)
-  (if (stringp value)
-      value
+  (cond
+   ((null value) "")
+   ((stringp value) value)
+   (t
     (signal 'etaf-runtime-error
-            (list "Text expr must resolve to one string"))))
+            (list "Text expr must resolve to nil or one string")))))
 
 (defun etaf--runtime-render-inline-range
     (runtime host-id expr path surface)
@@ -3437,7 +3533,7 @@ raw Emacs properties; Text presentation is projected by Ebox."
            :path '(root) :caller-style-stack nil
            :output-signature (copy-tree (etaf-runtime-root-view-cache runtime))
            :deps (copy-sequence deps) :artifact-key nil
-           :item-host-ids children
+           :item-root-ids children
            :item-identity-index (make-hash-table :test #'equal))))
     (puthash identity semantic-id
              (etaf-runtime-candidate-identity-entries runtime))
@@ -4395,11 +4491,17 @@ the range is not eligible for keyed incremental rendering."
          (item-function (and (etaf--expr-p expr)
                              (etaf--expr-range-item expr)))
          (old-signatures (etaf--semantic-range-keyed-item-signatures range))
-         (old-id-index (etaf--semantic-range-keyed-item-id-index range))
+         (old-root-id-index
+          (etaf--semantic-range-keyed-item-root-id-index range))
+         (old-node-span-index
+          (etaf--semantic-range-keyed-item-node-span-index range))
          (old-keys (etaf--semantic-range-keyed-key-order range)))
-    (when (and snapshot-function key-function item-function
+    (when (and snapshot-function item-function
+               (or key-function (eq (etaf--expr-kind expr) 'keyed-list))
                (hash-table-p old-signatures)
-               (hash-table-p old-id-index) old-keys)
+               (hash-table-p old-root-id-index)
+               (hash-table-p old-node-span-index)
+               (proper-list-p old-keys))
       (let (deps context-deps snapshot)
         (let ((etaf--runtime-dependency-collector
                (lambda (source) (cl-pushnew source deps :test #'eq)))
@@ -4409,6 +4511,14 @@ the range is not eligible for keyed incremental rendering."
                              context-deps :test #'equal)))
               (etaf--current-runtime runtime)
               (etaf--current-component-instance instance)
+              (etaf--current-component-state
+               (etaf--component-instance-state instance))
+              (etaf--current-component-setup-defined-p
+               (not (null (etaf--component-spec-setup
+                           (etaf--component-instance-spec instance)))))
+              (etaf--current-component-setup-complete-p
+               (etaf--component-instance-setup-complete-p instance))
+              (etaf--component-phase 'render)
               (etaf--current-component-identity
                (etaf--semantic-component-identity component))
               (etaf--current-component-props
@@ -4423,6 +4533,8 @@ the range is not eligible for keyed incremental rendering."
         (when snapshot
           (let* ((generation (etaf-runtime-current-generation runtime))
                  (items (plist-get snapshot :items))
+                 (snapshot-keys
+                  (etaf--runtime-keyed-range-keys expr snapshot))
                  (context (plist-get snapshot :context))
                  (context-stable-p
                   (equal-including-properties
@@ -4430,18 +4542,27 @@ the range is not eligible for keyed incremental rendering."
                    (etaf--semantic-range-keyed-context-signature range)))
                  (old-input (etaf--runtime-range-input runtime range))
                  (old-nodes (ebox-canonical-input-roots old-input))
-                 (old-node-index (make-hash-table :test #'equal))
-                 (old-key-position (make-hash-table :test #'equal))
                  (seen (make-hash-table :test #'equal))
-                 nodes keys signatures reuse-map reused-roots)
-            (unless (= (length old-keys) (length old-nodes))
+                 (missing (make-symbol "etaf-keyed-span-missing"))
+                 (old-node-offset 0)
+                 (new-node-offset 0)
+                 nodes keys signatures reuse-map reused-roots
+                 item-root-groups item-node-counts)
+            (dolist (key old-keys)
+              (let ((span (gethash key old-node-span-index missing)))
+                (unless (and (consp span)
+                             (natnump (car span))
+                             (natnump (cdr span))
+                             (= (car span) old-node-offset)
+                             (<= (+ (car span) (cdr span))
+                                 (length old-nodes)))
+                  (signal 'etaf-runtime-error
+                          (list "Keyed Range retained node spans are invalid"
+                                key)))
+                (cl-incf old-node-offset (cdr span))))
+            (unless (= old-node-offset (length old-nodes))
               (signal 'etaf-runtime-error
                       (list "Keyed Range retained artifact is misaligned")))
-            (cl-mapc (lambda (key node)
-                       (puthash key node old-node-index))
-                     old-keys old-nodes)
-            (cl-loop for key in old-keys for index from 0
-                     do (puthash key index old-key-position))
             (let ((etaf--runtime-dependency-collector
                    (lambda (source) (cl-pushnew source deps :test #'eq)))
                   (etaf--context-inject-recorder
@@ -4465,18 +4586,20 @@ the range is not eligible for keyed incremental rendering."
                     (etaf--semantic-range-caller-style-stack range))))
               (cl-loop
                for item in items
+               for key in snapshot-keys
                for index from 0
                do
-               (let* ((key (funcall key-function item))
+               (let* ((key (etaf--validate-key key))
                       (old-signature (gethash key old-signatures))
-                      (old-id (gethash key old-id-index))
-                      (old-node (gethash key old-node-index))
+                      (old-root-ids
+                       (gethash key old-root-id-index missing))
+                      (old-node-span
+                       (gethash key old-node-span-index missing))
                       (reuse-p
-                       (and context-stable-p old-id old-node
+                       (and context-stable-p
+                            (not (eq old-root-ids missing))
+                            (not (eq old-node-span missing))
                             (equal-including-properties item old-signature))))
-                 (unless key
-                   (signal 'etaf-runtime-error
-                           (list "Keyed Range key must be non-nil")))
                  (when (gethash key seen)
                    (signal 'etaf-runtime-error
                            (list "Keyed Range keys must be unique" key)))
@@ -4484,43 +4607,75 @@ the range is not eligible for keyed incremental rendering."
                  (push key keys)
                  (push (copy-tree item) signatures)
                  (if reuse-p
-                     (let ((semantic
-                            (etaf--pvec-get
-                             (etaf-generation-semantic-nodes generation)
-                             old-id)))
-                       (unless (etaf--semantic-host-p semantic)
+                     (let* ((old-start (car old-node-span))
+                            (old-count (cdr old-node-span))
+                            (old-item-nodes
+                             (cl-subseq old-nodes old-start
+                                        (+ old-start old-count))))
+                       (unless (proper-list-p old-root-ids)
                          (signal 'etaf-runtime-error
-                                 (list "Keyed Range retained item is invalid"
+                                 (list "Keyed Range retained roots are invalid"
                                        key)))
-                       (etaf--runtime-candidate-add-child
-                        runtime (etaf--semantic-range-semantic-id range) old-id)
-                       (etaf--runtime-carry-committed-subtree
-                        runtime generation semantic)
-                       (push (cons index (gethash key old-key-position))
-                             reuse-map)
-                       (push old-node reused-roots)
-                       (push old-node nodes))
-                   (let* ((value
+                       (dolist (old-root-id old-root-ids)
+                         (let ((semantic
+                                (etaf--pvec-get
+                                 (etaf-generation-semantic-nodes generation)
+                                 old-root-id)))
+                           (unless semantic
+                             (signal 'etaf-runtime-error
+                                     (list "Keyed Range retained root is missing"
+                                           key old-root-id)))
+                           (etaf--runtime-candidate-add-child
+                            runtime (etaf--semantic-range-semantic-id range)
+                            old-root-id)
+                           (etaf--runtime-carry-committed-subtree
+                            runtime generation semantic)))
+                       (cl-loop for offset below old-count
+                                do (push
+                                    (cons (+ new-node-offset offset)
+                                          (+ old-start offset))
+                                    reuse-map))
+                       (setq nodes (nconc nodes old-item-nodes)
+                             reused-roots
+                             (nconc reused-roots
+                                    (copy-sequence old-item-nodes)))
+                       (push (copy-sequence old-root-ids) item-root-groups)
+                       (push old-count item-node-counts)
+                       (cl-incf new-node-offset old-count))
+                   (let* ((before
+                           (length
+                            (gethash
+                             (etaf--semantic-range-semantic-id range)
+                             (etaf-runtime-candidate-graph-children runtime))))
+                          (value
                            (etaf--runtime-normalize-range-value
                             (funcall item-function item context)))
                           (rendered
                            (etaf--render-value-list
                             value
                             (etaf--runtime-keyed-range-item-path
-                             (etaf--semantic-range-path range) key))))
-                     (unless (= (length rendered) 1)
-                       (signal 'etaf-runtime-error
-                               (list "Keyed Range item must render one Host"
-                                     key)))
-                     (push (car rendered) nodes)))))
+                             (etaf--semantic-range-path range) key)))
+                          (children
+                           (gethash
+                            (etaf--semantic-range-semantic-id range)
+                            (etaf-runtime-candidate-graph-children runtime)))
+                          (root-ids
+                           (copy-sequence (nthcdr before children)))
+                          (node-count (length rendered)))
+                     (setq nodes (nconc nodes rendered))
+                     (push root-ids item-root-groups)
+                     (push node-count item-node-counts)
+                     (cl-incf new-node-offset node-count)))))
             (ebox-canonical-input-import-roots
-             old-input (nreverse reused-roots) etaf--ebox-source-builder)
-            (list :nodes (nreverse nodes)
+             old-input reused-roots etaf--ebox-source-builder)
+            (list :nodes nodes
                   :snapshot snapshot
                   :value (list :keyed-range
                                (copy-tree context)
                                (nreverse keys)
                                (nreverse signatures))
+                  :item-root-groups (nreverse item-root-groups)
+                  :item-node-counts (nreverse item-node-counts)
                   :deps (nreverse deps)
                   :context-deps (nreverse context-deps)
                   :reuse-map (nreverse reuse-map)))))))))
@@ -4539,7 +4694,8 @@ the range is not eligible for keyed incremental rendering."
           (gethash (etaf--semantic-component-resource-key component)
                    (etaf-runtime-resource-registry runtime)))
          (builder (ebox-source-builder-create))
-         deps context-deps value nodes keyed-snapshot)
+         deps context-deps value nodes keyed-snapshot
+         item-root-groups item-node-counts)
     (let ((etaf--ebox-source-builder builder))
       (let ((keyed
              (etaf--runtime-render-keyed-range
@@ -4549,7 +4705,9 @@ the range is not eligible for keyed incremental rendering."
               context-deps (plist-get keyed :context-deps)
               value (plist-get keyed :value)
               nodes (plist-get keyed :nodes)
-              keyed-snapshot (plist-get keyed :snapshot))
+              keyed-snapshot (plist-get keyed :snapshot)
+              item-root-groups (plist-get keyed :item-root-groups)
+              item-node-counts (plist-get keyed :item-node-counts))
       (let ((collector
              (lambda (source) (cl-pushnew source deps :test #'eq))))
         (let ((etaf--runtime-dependency-collector collector)
@@ -4559,6 +4717,14 @@ the range is not eligible for keyed incremental rendering."
                            context-deps :test #'equal)))
             (etaf--current-runtime runtime)
             (etaf--current-component-instance instance)
+            (etaf--current-component-state
+             (etaf--component-instance-state instance))
+            (etaf--current-component-setup-defined-p
+             (not (null (etaf--component-spec-setup
+                         (etaf--component-instance-spec instance)))))
+            (etaf--current-component-setup-complete-p
+             (etaf--component-instance-setup-complete-p instance))
+            (etaf--component-phase 'render)
             (etaf--current-component-identity
              (etaf--semantic-component-identity component))
             (etaf--current-component-props
@@ -4599,36 +4765,27 @@ the range is not eligible for keyed incremental rendering."
              (copy-tree (etaf--semantic-range-caller-style-stack range))))
           (setq nodes (etaf--render-value-list
                        value (etaf--semantic-range-path range))))))
-    (let* ((item-host-ids
+    (let* ((item-root-ids
             (copy-sequence
              (gethash (etaf--semantic-range-semantic-id range)
                       (etaf-runtime-candidate-graph-children runtime))))
            (all-item-ids
-            (etaf--runtime-candidate-descendant-ids runtime item-host-ids))
+            (etaf--runtime-candidate-descendant-ids runtime item-root-ids))
            (item-index (make-hash-table :test #'equal))
            (keyed-metadata
             (and keyed-snapshot
                  (etaf--runtime-keyed-range-metadata
                   (etaf--generation-effect-target effect)
-                  keyed-snapshot item-host-ids)))
+                  keyed-snapshot item-root-groups item-node-counts)))
            (candidate (copy-sequence range)))
-      (unless (= (length nodes) (length item-host-ids))
-        (signal 'etaf-runtime-error
-                (list "Direct child Range items must be Host Views"
-                      (length nodes) (length item-host-ids))))
-      (dolist (item-id all-item-ids)
-        (let ((item (gethash item-id
-                             (etaf-runtime-candidate-graph-nodes runtime))))
-          (unless (etaf--semantic-host-p item)
-            (signal 'etaf-runtime-error
-                    (list "Direct child Range items must be Host Views")))
-          (puthash (etaf--semantic-host-identity item) item-id item-index)))
+      (etaf--runtime-index-range-item-identities
+       runtime all-item-ids item-index)
       (let ((new-set (make-hash-table :test #'eql)))
         (dolist (item-id all-item-ids) (puthash item-id t new-set))
         (dolist (old-id
                  (etaf--runtime-generation-descendant-ids
                   (etaf-runtime-current-generation runtime)
-                  (etaf--semantic-range-item-host-ids range)))
+                  (etaf--semantic-range-item-root-ids range)))
           (unless (gethash old-id new-set)
             (push old-id
                   (etaf-runtime-candidate-removed-semantic-ids runtime)))))
@@ -4638,14 +4795,16 @@ the range is not eligible for keyed incremental rendering."
             (etaf--semantic-range-artifact-key candidate)
             (cons (1+ (etaf-runtime-generation runtime))
                   (etaf--semantic-range-effect-id range))
-            (etaf--semantic-range-item-host-ids candidate) item-host-ids
+            (etaf--semantic-range-item-root-ids candidate) item-root-ids
             (etaf--semantic-range-item-identity-index candidate) item-index
             (etaf--semantic-range-keyed-context-signature candidate)
             (plist-get keyed-metadata :context)
             (etaf--semantic-range-keyed-item-signatures candidate)
             (plist-get keyed-metadata :signatures)
-            (etaf--semantic-range-keyed-item-id-index candidate)
-            (plist-get keyed-metadata :id-index)
+            (etaf--semantic-range-keyed-item-root-id-index candidate)
+            (plist-get keyed-metadata :root-id-index)
+            (etaf--semantic-range-keyed-item-node-span-index candidate)
+            (plist-get keyed-metadata :node-span-index)
             (etaf--semantic-range-keyed-key-order candidate)
             (plist-get keyed-metadata :keys)
             (etaf--semantic-range-composition-version candidate)
@@ -5440,6 +5599,7 @@ framework render-burst allocation budget when the installed Ebox supports it.
 OPTIONS may provide `:viewport-width' in pixels, `:viewport-height' in lines,
 and `:observer' as a one-argument flat-report sink.  The observer is installed
 before the first Ebox publication."
+  (etaf--assert-not-rendering 'mount-runtime)
   (setq options (etaf--runtime-validate-mount-options options))
   (let ((ebox-viewport-width (plist-get options :viewport-width))
         (ebox-viewport-height (plist-get options :viewport-height)))
@@ -5486,6 +5646,7 @@ before the first Ebox publication."
 ;;;###autoload
 (defun etaf-runtime-unmount (&optional runtime)
   "Unmount RUNTIME, report the operation, and detach its observer."
+  (etaf--assert-not-rendering 'unmount-runtime)
   (let* ((runtime (etaf-runtime-require-mounted runtime))
          (observer (etaf-runtime-observer runtime))
          (buffer (etaf-runtime-buffer runtime)))
@@ -5511,7 +5672,8 @@ before the first Ebox publication."
   "Run CALLBACK after the current Component is first published."
   (unless (functionp callback)
     (signal 'wrong-type-argument (list 'functionp callback)))
-  (unless etaf--current-component-instance
+  (unless (and etaf--current-component-instance
+               (eq etaf--component-phase 'setup))
     (error "ETAF-on-mounted requires Component setup"))
   (push callback
         (etaf--component-instance-mounted-hooks
@@ -5523,7 +5685,8 @@ before the first Ebox publication."
   "Run CALLBACK after the current Component participates in an update."
   (unless (functionp callback)
     (signal 'wrong-type-argument (list 'functionp callback)))
-  (unless etaf--current-component-instance
+  (unless (and etaf--current-component-instance
+               (eq etaf--component-phase 'setup))
     (error "ETAF-on-updated requires Component setup"))
   (push callback
         (etaf--component-instance-updated-hooks
@@ -5535,7 +5698,8 @@ before the first Ebox publication."
   "Run CALLBACK when the current Component is disposed."
   (unless (functionp callback)
     (signal 'wrong-type-argument (list 'functionp callback)))
-  (unless etaf--current-component-instance
+  (unless (and etaf--current-component-instance
+               (eq etaf--component-phase 'setup))
     (error "ETAF-on-unmounted requires Component setup"))
   (push callback
         (etaf--component-instance-unmounted-hooks

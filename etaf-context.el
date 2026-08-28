@@ -73,6 +73,7 @@ unchanged.")
 ;;;###autoload
 (defun etaf-provide (key value)
   "Provide VALUE under stable Context KEY to the current subtree."
+  (etaf--assert-not-rendering 'provide-context)
   (unless (etaf-context-p etaf--current-context)
     (error "ETAF provide requires Component setup or render context"))
   (puthash (etaf--context-key key) value

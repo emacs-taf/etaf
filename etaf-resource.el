@@ -93,6 +93,7 @@ disposed."
 The Resource owns a child Scope under SCOPE, or under the current active Scope
 when SCOPE is nil.  Without any parent Scope it creates a detached Scope.
 When IMMEDIATE is non-nil, load the Resource before returning it."
+  (etaf--assert-not-rendering 'create-resource)
   (unless (functionp loader)
     (signal 'wrong-type-argument (list 'functionp loader)))
   (let* ((parent (etaf--resource-parent-scope scope))
@@ -137,6 +138,7 @@ When IMMEDIATE is non-nil, load the Resource before returning it."
 
 Only LOADER errors are captured into Resource state.  Cleanup failures and
 wrong Resource usage continue to signal normally."
+  (etaf--assert-not-rendering 'load-resource)
   (etaf--resource-require-active resource)
   (etaf--resource-run-cleanup resource)
   (etaf--resource-set-state resource 'loading nil nil)
@@ -161,6 +163,7 @@ wrong Resource usage continue to signal normally."
 ;;;###autoload
 (defun etaf-resource-dispose (resource)
   "Dispose RESOURCE and return cleanup errors collected by its Scope."
+  (etaf--assert-not-rendering 'dispose-resource)
   (unless (etaf-resource-p resource)
     (signal 'wrong-type-argument (list 'etaf-resource-p resource)))
   (when (etaf-resource-active-p resource)

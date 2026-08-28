@@ -334,7 +334,8 @@ Only strings and `expr' values that resolve to strings are compatible.  View
 structure must use the ordinary typed lowering path."
   (cond
    ((stringp value) (cons t value))
-   ((etaf--expr-p value)
+   ((and (etaf--expr-p value)
+         (eq (etaf--expr-kind value) 'interpolation))
     (let ((result (funcall (etaf--expr-thunk value))))
       (if (stringp result) (cons t result) (cons nil nil))))
    ((etaf--view-node-p value) (cons nil nil))
@@ -351,7 +352,9 @@ structure must use the ordinary typed lowering path."
 (defun etaf--inline-text-structural-p (value)
   "Return non-nil when VALUE can be owned by mounted inline effects."
   (cond
-   ((or (null value) (stringp value) (etaf--expr-p value)) t)
+   ((or (null value) (stringp value)
+        (and (etaf--expr-p value)
+             (eq (etaf--expr-kind value) 'interpolation))) t)
    ((etaf--view-node-p value) nil)
     ((proper-list-p value)
      (cl-every #'etaf--inline-text-structural-p value))
@@ -360,7 +363,8 @@ structure must use the ordinary typed lowering path."
 (defun etaf--inline-text-dynamic-p (value)
   "Return non-nil when VALUE contains an inline `expr' update site."
   (cond
-   ((etaf--expr-p value) t)
+   ((and (etaf--expr-p value)
+         (eq (etaf--expr-kind value) 'interpolation)) t)
    ((etaf--view-node-p value)
     (cl-some #'etaf--inline-text-dynamic-p
              (etaf--view-node-children value)))
@@ -533,7 +537,25 @@ multi-root forest; a single material root is returned unchanged."
         (etaf--component-call-p value) (etaf--slot-projection-p value))
     (list value))
    ((etaf--expr-p value)
-    (etaf--flatten-view-value (funcall (etaf--expr-thunk value))))
+    (pcase (etaf--expr-kind value)
+      ('interpolation
+       (let ((resolved (funcall (etaf--expr-thunk value))))
+         (cond ((null resolved) nil)
+               ((stringp resolved) (list resolved))
+               (t
+                (signal 'etaf-renderer-error
+                        (list
+                         (format
+                          "Expr interpolation must return nil or string: %S"
+                          resolved)))))))
+      ('branch
+       (etaf--flatten-view-value (funcall (etaf--expr-thunk value))))
+      ('keyed-list
+       (let ((snapshot (etaf--keyed-program-snapshot value)))
+         (etaf--flatten-view-value
+          (etaf--keyed-program-outputs value snapshot))))
+      (_ (signal 'etaf-renderer-error
+                 (list (format "Unknown View program: %S" value))))))
    ((proper-list-p value)
     (cl-mapcan #'etaf--flatten-view-value value))
    (t
@@ -597,7 +619,8 @@ multi-root forest; a single material root is returned unchanged."
     (let ((etaf--current-component-props
            (etaf--component-call-props call))
           (etaf--current-component-slots
-           (etaf--component-call-slots call)))
+           (etaf--component-call-slots call))
+          (etaf--component-phase 'render))
       (let ((etaf--render-parent-style-stack etaf--render-style-stack)
             (etaf--render-style-stack
              (list (cons (etaf--component-spec-styles spec)
@@ -739,7 +762,8 @@ multi-root forest; a single material root is returned unchanged."
                         (let ((etaf--current-semantic-parent-id
                                (or semantic-id
                                    etaf--current-semantic-parent-id)))
-                          (if (and semantic-id (etaf--expr-p child)
+                          (if (and semantic-id
+                                   (etaf--structural-program-p child)
                                    (not etaf--rendering-range-p))
                               (let ((result
                                      (etaf--runtime-render-child-range

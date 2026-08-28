@@ -33,6 +33,7 @@
 
 (defun etaf-action-register (name function)
   "Register FUNCTION as named Action NAME and return NAME."
+  (etaf--assert-not-rendering 'register-action)
   (unless (and (symbolp name) (not (keywordp name)) (functionp function))
     (signal 'etaf-action-error
             (list (format "Invalid Action registration: %S" name))))
@@ -63,6 +64,7 @@ through `etaf-dispatch'."
 
 An explicit Runtime may be supplied as the first argument: `(etaf-dispatch
 RUNTIME ACTION ...)'.  Action functions receive Runtime first."
+  (etaf--assert-not-rendering 'dispatch-action)
   (let* ((explicit-runtime (etaf-runtime-p action))
          (runtime (if explicit-runtime
                       action
@@ -94,6 +96,7 @@ RUNTIME ACTION ...)'.  Action functions receive Runtime first."
 ;;;###autoload
 (defun etaf-action-undefine (name)
   "Remove named Action NAME and return NAME."
+  (etaf--assert-not-rendering 'undefine-action)
   (remhash name etaf--action-registry)
   name)
 

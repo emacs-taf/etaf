@@ -14,9 +14,12 @@
 (require 'gv)
 
 (define-error 'etaf-reactive-error "Invalid ETAF reactive operation")
+(define-error 'etaf-render-side-effect-error
+  "ETAF render must be side-effect free"
+  'etaf-reactive-error)
 (define-error 'etaf-render-write-error
   "ETAF state cannot be written while rendering"
-  'etaf-reactive-error)
+  'etaf-render-side-effect-error)
 
 (cl-defstruct (etaf-ref
                (:constructor etaf--ref-create))
@@ -92,6 +95,11 @@
 
 (defvar etaf--render-phase-p nil
   "Whether the current call is producing a View tree.")
+
+(defun etaf--assert-not-rendering (operation)
+  "Reject detectable side-effect OPERATION during pure render."
+  (when etaf--render-phase-p
+    (signal 'etaf-render-side-effect-error (list operation))))
 
 (defvar etaf--watch-scheduler nil
   "Scheduler for watchers created in the current Scope.
@@ -222,6 +230,7 @@ Runtime, watchers run synchronously.")
 SCHEDULER receives the effect when a dependency changes.  SCOPE defaults to
 the current Scope.  NAME optionally labels the effect.  ON-STOP runs once
 when the effect is disposed."
+  (etaf--assert-not-rendering 'create-effect)
   (unless (functionp function)
     (signal 'wrong-type-argument (list 'functionp function)))
   (let* ((owner (or scope etaf--active-scope))
@@ -294,6 +303,7 @@ of the run."
   "Create a writable shallow reactive cell containing INITIAL-VALUE.
 
 TEST optionally compares old and new values.  NAME is used in diagnostics."
+  (etaf--assert-not-rendering 'create-ref)
   (when (and test (not (functionp test)))
     (signal 'wrong-type-argument (list 'functionp test)))
   (etaf--ref-create :value initial-value
@@ -330,6 +340,7 @@ TEST optionally compares old and new values.  NAME is used in diagnostics."
 
 TEST optionally compares old and new values.  NAME optionally labels the
 computed value."
+  (etaf--assert-not-rendering 'create-computed)
   (unless (functionp getter)
     (signal 'wrong-type-argument (list 'functionp getter)))
   (when (and test (not (functionp test)))
@@ -398,6 +409,7 @@ computed value."
 IMMEDIATE calls CALLBACK for the initial value.  FLUSH is passed to the
 current Runtime scheduler.  TEST and NAME customize comparison and
 diagnostics.  Return a stop function."
+  (etaf--assert-not-rendering 'watch)
   (unless (functionp callback)
     (signal 'wrong-type-argument (list 'functionp callback)))
   (let* ((getter (etaf--watch-getter source))
@@ -444,6 +456,7 @@ diagnostics.  Return a stop function."
 
 FLUSH selects the Runtime scheduler boundary.  NAME optionally labels the
 effect.  If FUNCTION returns a function, it cleans up the previous run."
+  (etaf--assert-not-rendering 'watch-effect)
   (unless (functionp function)
     (signal 'wrong-type-argument (list 'functionp function)))
   (let (cleanup effect job)
@@ -466,6 +479,7 @@ effect.  If FUNCTION returns a function, it cleans up the previous run."
 ;;;###autoload
 (cl-defun etaf-effect-scope (&key detached name)
   "Create a Scope named NAME, owned by the current Scope unless DETACHED."
+  (etaf--assert-not-rendering 'create-scope)
   (let* ((parent (and (not detached) etaf--active-scope))
          (scope (etaf--effect-scope-create :parent parent :name name)))
     (when parent
@@ -492,6 +506,7 @@ effect.  If FUNCTION returns a function, it cleans up the previous run."
 ;;;###autoload
 (defun etaf-on-scope-dispose (function)
   "Register FUNCTION to run when the current Scope is disposed."
+  (etaf--assert-not-rendering 'register-scope-cleanup)
   (unless (functionp function)
     (signal 'wrong-type-argument (list 'functionp function)))
   (unless etaf--active-scope
@@ -502,6 +517,7 @@ effect.  If FUNCTION returns a function, it cleans up the previous run."
 ;;;###autoload
 (defun etaf-scope-stop (scope)
   "Dispose SCOPE and return cleanup errors collected during teardown."
+  (etaf--assert-not-rendering 'stop-scope)
   (when (and (etaf-effect-scope-p scope)
              (etaf-effect-scope-active-p scope))
     (setf (etaf-effect-scope-active-p scope) nil)

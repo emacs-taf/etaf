@@ -4,15 +4,15 @@
 
 ;;; Commentary:
 
-;; Components have one public definition boundary.  A stateless Component
-;; declares `:view'; a stateful Component declares `:setup' which runs once
-;; per retained instance and returns a render function.  Both forms produce
-;; the same normalized View tree and share props, slots, styles, and Context.
+;; Components have one public definition boundary with two strict authoring
+;; frontends: compiled `:view' DSL and ordinary Elisp `:render'.  Optional
+;; `:setup' runs once and returns opaque state read through `etaf-state'.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'etaf-view)
+(require 'etaf-compiler)
 
 (define-error 'etaf-component-definition-error
   "Invalid ETAF Component definition"
@@ -24,6 +24,22 @@
 
 (defvar etaf--raw-slot-read-p nil
   "Set while a Component render uses public raw slot accessors.")
+
+(defvar etaf--component-phase nil
+  "Dynamic Component phase, either `setup', `render', or nil.")
+
+(defvar etaf--current-component-state nil
+  "Opaque setup result supplied by the current Runtime Component context.")
+
+(defvar etaf--current-component-setup-defined-p nil
+  "Whether the current Component definition declares setup.")
+
+(defvar etaf--current-component-setup-complete-p nil
+  "Whether the current Component instance completed setup.")
+
+(defconst etaf--component-reserved-props
+  '(key if else-if else for)
+  "Framework names forbidden in Component business prop declarations.")
 
 (defun etaf--component-definition-error (format-string &rest arguments)
   "Signal a Component definition error from FORMAT-STRING and ARGUMENTS."
@@ -51,6 +67,9 @@
       (when (memq entry prop-names)
         (etaf--component-definition-error
          "Duplicate Component prop: %S" entry))
+      (when (memq entry etaf--component-reserved-props)
+        (etaf--component-definition-error
+         "Component prop %S is reserved by the View grammar" entry))
       (push entry prop-names))
     (nreverse prop-names)))
 
@@ -67,6 +86,23 @@ NAME is normally an ordinary symbol used by the `:setup' lexical shorthand.
 The function is also useful to code that deliberately avoids that shorthand."
   (plist-get etaf--current-component-props
              (etaf--component-prop-key name)))
+
+;;;###autoload
+(defun etaf-state ()
+  "Return the current Component instance's exact setup result.
+The accessor is valid only while rendering a Component that declares setup.
+A defined setup may return nil; setup presence is tracked independently."
+  (unless (and (eq etaf--component-phase 'render)
+               etaf--current-component-instance)
+    (etaf--component-definition-error
+     "etaf-state is available only during Component view/render"))
+  (unless etaf--current-component-setup-defined-p
+    (etaf--component-definition-error
+     "Current Component does not declare :setup"))
+  (unless etaf--current-component-setup-complete-p
+    (etaf--component-definition-error
+     "Current Component setup has not completed"))
+  etaf--current-component-state)
 
 ;;;###autoload
 (defun etaf-component-set-styles (name styles)
@@ -110,6 +146,9 @@ does not depend on ETAF's private registry flag."
 
 (defun etaf-current-slots ()
   "Return the current Component's normalized slot alist."
+  (unless (eq etaf--component-phase 'render)
+    (etaf--component-definition-error
+     "Slots are available only during Component view/render"))
   (setq etaf--raw-slot-read-p t)
   (mapcar (lambda (entry)
             (cons (car entry)
@@ -120,6 +159,9 @@ does not depend on ETAF's private registry flag."
 
 (defun etaf-current-slot (name &optional fallback)
   "Return the child list for slot NAME, or FALLBACK when it is absent."
+  (unless (eq etaf--component-phase 'render)
+    (etaf--component-definition-error
+     "Slots are available only during Component view/render"))
   (setq etaf--raw-slot-read-p t)
   (let ((entry (assq name etaf--current-component-slots)))
     (if entry
@@ -158,34 +200,48 @@ does not depend on ETAF's private registry flag."
                name key)))))))
   form)
 
+(defun etaf--component-form-contains-head-p (form heads)
+  "Return non-nil when executable FORM contains a call headed by HEADS."
+  (cond
+   ((atom form) nil)
+   ((memq (car form) '(quote function)) nil)
+   ((memq (car form) heads) t)
+   (t (cl-some (lambda (part)
+                 (etaf--component-form-contains-head-p part heads))
+               form))))
+
 ;;;###autoload
 (defmacro etaf-define-component (name arguments &rest clauses)
   "Define Component NAME from prop ARGUMENTS and CLAUSES.
 
-The definition boundary is intentionally small:
+Choose exactly one authoring frontend:
 
   (etaf-define-component NAME (&key PROPS)
+    [:setup SETUP]
     :view VIEW
     :styles (styles (SELECTOR ATTR ...)))
 
 or:
 
   (etaf-define-component NAME (&key PROPS)
-    :setup SETUP
+    [:setup SETUP]
+    :render ORDINARY-ELISP
     :styles (styles (SELECTOR ATTR ...)))
 
-`:view' is rendered for every update.  `:setup' runs once per retained
-Component instance and must return a zero-argument render function.  View
-forms do not use quote; ordinary Elisp belongs in `expr :value'."
+`:setup' runs once per retained identity and returns opaque state.  `:view'
+is unquoted DSL; `:render' is ordinary Elisp and constructs nodes with
+`etaf-node'."
   (declare (indent 2) (debug defun))
   (unless (symbolp name)
     (etaf--component-definition-error
      "Component name must be a symbol: %S" name))
   (let ((docstring (when (stringp (car clauses)) (pop clauses)))
         view-form
+        render-form
         setup-form
         styles-form
         saw-view
+        saw-render
         saw-setup
         saw-styles)
     (while clauses
@@ -202,6 +258,11 @@ forms do not use quote; ordinary Elisp belongs in `expr :value'."
              (etaf--component-definition-error
               "Component %S has duplicate :view" name))
            (setq view-form (pop clauses) saw-view t))
+          (:render
+           (when saw-render
+             (etaf--component-definition-error
+              "Component %S has duplicate :render" name))
+           (setq render-form (pop clauses) saw-render t))
           (:setup
            (when saw-setup
              (etaf--component-definition-error
@@ -215,31 +276,48 @@ forms do not use quote; ordinary Elisp belongs in `expr :value'."
           (_
            (etaf--component-definition-error
             "Unknown Component definition keyword %S" keyword)))))
-    (when (and saw-view saw-setup)
+    (when (and saw-view saw-render)
       (etaf--component-definition-error
-       "Component %S must choose :view or :setup, not both" name))
-    (unless (or saw-view saw-setup)
+       "Component %S must choose :view or :render, not both" name))
+    (unless (or saw-view saw-render)
       (etaf--component-definition-error
-       "Component %S requires exactly one of :view or :setup" name))
+       "Component %S requires exactly one of :view or :render" name))
+    (when (and saw-setup
+               (etaf--component-form-contains-head-p
+                setup-form '(etaf-view etaf-node)))
+      (etaf--component-definition-error
+       "Component %S :setup cannot construct View structure" name))
+    (when (and saw-setup
+               (consp setup-form)
+               (memq (car setup-form) '(lambda function)))
+      (etaf--component-definition-error
+       "Component %S :setup cannot return a render function" name))
+    (when (and saw-render
+               (etaf--component-form-contains-head-p render-form '(etaf-view)))
+      (etaf--component-definition-error
+       "Component %S :render cannot embed the DSL frontend" name))
     (let* ((props (etaf--parse-component-props arguments))
            (styles-form (etaf--validate-styles-form styles-form name))
            (definition-symbol
             (intern (format "%s--etaf-component-definition" name)))
            (render-lambda
-            (when saw-view
-              `(lambda (etaf--component-props etaf--component-slots)
-                 (let ((etaf--current-component-props etaf--component-props)
-                       (etaf--current-component-slots etaf--component-slots)
-                       (etaf--current-component-instance
-                        etaf--current-component-instance))
+            `(lambda (etaf--component-props etaf--component-slots)
+               (let ((etaf--current-component-props etaf--component-props)
+                     (etaf--current-component-slots etaf--component-slots)
+                     (etaf--component-phase 'render))
                    (cl-symbol-macrolet
                        ,(etaf--component-prop-symbol-macros props)
-                     ,(etaf--compile-view-form view-form :projection))))))
+                     ,(if saw-view
+                        (let ((etaf--compiling-component-props props))
+                          (etaf-compiler-expand-view
+                           view-form :projection))
+                      render-form)))))
            (setup-lambda
             (when saw-setup
-              `(lambda (etaf--component-props etaf--component-slots)
+              `(lambda (etaf--component-props _etaf--component-slots)
                  (let ((etaf--current-component-props etaf--component-props)
-                       (etaf--current-component-slots etaf--component-slots))
+                       (etaf--current-component-slots nil)
+                       (etaf--component-phase 'setup))
                    (cl-symbol-macrolet
                        ,(etaf--component-prop-symbol-macros props)
                      ,setup-form))))))

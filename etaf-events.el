@@ -65,6 +65,7 @@
 
   When PAYLOAD-P is non-nil, pass PAYLOAD as the callback's only argument;
 otherwise call the local callback with no arguments."
+  (etaf--assert-not-rendering 'dispatch-event)
   (setq runtime (etaf-runtime-require-mounted runtime))
   (let ((dispatch
          (lambda ()
