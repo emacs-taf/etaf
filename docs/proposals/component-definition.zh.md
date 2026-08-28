@@ -433,12 +433,13 @@ index key。
 - 声明只接受普通 symbol；
 - 每个 prop 对应同名 keyword，例如 `user` 对应 `:user`；
 - 未传 prop 的值为 nil；
-- 未声明 prop、重复 prop、奇数 plist 在调用边界报错；
+- 未声明为业务 prop、也不属于统一 Host schema 的名称在调用边界报错；
+- 重复 prop、重复 canonical Host property domain、奇数 plist 在调用边界报错；
 - props 在一次 render 中是只读 snapshot；
 - prop 更新不重新运行 setup，只触发依赖它的 render/patch；
 - `:key` 和 directive 不会进入 Component 业务 props；
-- Host 的 `:ref`、`:class`、`:id`、`:on-*`、`:use` 由 Host schema 解释；Component
-  只有显式声明同名 prop 时才接收对应 keyword，不做隐式 forwarding；
+- Component 显式声明的同名属性优先归入业务 props；其他合法 Ebox style/layout 属性
+  与 ETAF Host metadata 归入独立 attrs，并只透传到单一根 Host；
 - 第一版不增加另一套 required/default/type schema。需要校验时在 setup 或普通 helper
   中显式完成，后续只有真实重复证据才能扩展 prop declaration。
 
@@ -453,12 +454,40 @@ index key。
 | --- | --- | --- | --- | --- |
 | `:if/:else-if/:else/:for` | DSL directive | DSL directive | DSL directive | 全部拒绝 |
 | `:key` | framework identity | framework identity | framework identity | 同一 identity 规则 |
-| Host schema property/metadata | 按 Host schema | 只有显式 prop 同名时才是业务 prop | 拒绝 | 按实际 TAG kind |
+| Host schema property/metadata | 按 Host schema | 显式同名 prop 消费，否则进入 root attrs | 拒绝 | 按实际 TAG kind |
 | declared Component prop | 不适用 | 接受 | 拒绝 | 按实际 TAG kind |
 
 Component prop declaration 禁止 `key`、`if`、`else-if`、`else`、`for`。
-directive 在业务 prop 验证前剥离；`:key` 在 Component 调用前剥离。除此之外不按
-keyword 名称猜测 forwarding。
+directive 在业务 prop 验证前剥离；`:key` 单独进入 framework identity。剩余输入
+只通过统一 Ebox/ETAF Host schema 判定 attrs，不能由组件库复制属性白名单。
+
+### 7.2 单根 Host attrs 透传
+
+Component 调用输入规范化为四个互不重叠的域：
+
+```text
+declared props | Host attrs | :key | slots
+```
+
+attrs 遵守下面的不变量：
+
+- 单一根 Host：attrs 应用到该 Host；
+- 单一根 Component：attrs 沿根 Component 链继续传递；若下游显式声明同名 prop，
+  则由下游消费；
+- string 根：先规范化为 Text，再应用 attrs；
+- nil、slot projection 或 Fragment/多根结果：存在 attrs 时精确报错，不能猜目标；
+- `class` 合并并去重；
+- Ebox style/layout attrs 先按 canonical property domain 去重，调用方值覆盖组件视觉
+  默认值；
+- `role`、`ref`、`disabled`、`:on-*` 等 Runtime metadata 若与根 Host 已有值冲突，
+  精确报错；需要由 Component 管理的 metadata 应声明为业务 prop；
+- attrs 在调用方 Component 环境中求值，不能泄漏到被调用 Component 的 setup、
+  `etaf-state` 或业务 props；
+- 实际根 Host 仍通过 `ebox-style-property-accepted-p` 验证适用域，例如 Text 根不能
+  接收 Box padding。
+
+这条规则对应前端的 single-root fallthrough attribute，但 ETAF 只接受已注册的
+Host schema 名称；任意未知 keyword 仍然是错误。
 
 所有 Host、Component、Fragment、DSL `:for` item 与 `etaf-node` 使用同一 key
 契约：key 必须是非 nil symbol、integer 或 string；string 在 author boundary
@@ -1000,6 +1029,7 @@ grammar，也不要求 IR 保存 frontend provenance。
 | `(expr :value FORM)` | 当前实现 | 删除；只保留 `(expr FORM)` 文本插值。 |
 | `:if/:else-if/:else/:for` | 未实现 | 由 compiler lowering，Runtime 不接收 directive。 |
 | Component alias | 当前会参考 `fboundp` 自动生成 | 删除 load-order-dependent alias；只用准确 registry name。 |
+| 单根 Host attrs | 已实现最小纵向切片 | 继续迁移 etaf-ui，删除重复视觉 props 声明。 |
 | Host | 当前已有 text/box/fragment/row/column/flex/grid | 保持最小闭集。 |
 | props/slots/styles/reactivity/lifecycle | 已有主体能力 | 迁移到共同 ComponentDefinition，不复制实现。 |
 
@@ -1020,7 +1050,8 @@ grammar，也不要求 IR 保存 frontend provenance。
 1. definition parser 精确拒绝混写、未知 clause、重复/保留 prop；
 2. DSL 与代码模式生成同一版本 typed View IR；
 3. 同名 Elisp function/variable 的新增、删除和加载顺序不改变 tag 语义；
-4. props、default/named slot、styles、Context、Theme、events、Behavior 全部等价；
+4. props、single-root attrs、default/named slot、styles、Context、Theme、events、Behavior
+   全部等价；多根 attrs 精确拒绝；
 5. setup-once、prop update、mounted/updated/unmounted、Scope cleanup 等价；
 6. branch 与 keyed list 的 insert/delete/reorder 保留正确 identity；
 7. injected failure 完整恢复 generation、文本、文本属性、Range 与 lifecycle；

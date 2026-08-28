@@ -133,6 +133,33 @@
   (styles
    (".g6b-context-action" :background-color "#1F2937")))
 
+(etaf-define-component etaf-test-g6b-attr-leaf (&key label)
+  :view
+  (box :class '(leaf base) :color "#111111"
+    (text (expr label))))
+
+(etaf-define-component etaf-test-g6b-attr-wrapper (&key label)
+  :view
+  (etaf-test-g6b-attr-leaf :label label))
+
+(etaf-define-component etaf-test-g6b-attr-fragment ()
+  :view
+  (fragment (text "One") (text "Two")))
+
+(etaf-define-component etaf-test-g6b-attr-text ()
+  :view (text "Text"))
+
+(etaf-define-component etaf-test-g6b-attr-role ()
+  :view (box :role 'button "Role"))
+
+(etaf-define-component etaf-test-g6b-attr-shape (&key split)
+  :render
+  (if split
+      (etaf-node 'fragment nil
+                 (list (etaf-node 'text nil (list "One"))
+                       (etaf-node 'text nil (list "Two"))))
+    (etaf-node 'box nil (list "Stable"))))
+
 (etaf-define-component etaf-test-g6b-dsl-panel ()
   :view
   (column :background-color "#203040" :padding-inline 1
@@ -561,6 +588,101 @@
             (etaf-dispatch-event runtime 'g6b-context-action 'press)
             (should (string-match-p "Context 1"
                                     (etaf-test-g6b--text buffer)))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
+        (etaf-unmount runtime))
+      (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))
+
+(ert-deftest etaf-component-host-attrs-fall-through-one-root-chain ()
+  "Undeclared Host attrs cross a root Component chain without entering props."
+  (let ((buffer " *etaf-g6b-attrs*")
+        (color (etaf-ref "#224466")))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (lambda ()
+             (etaf-view
+              (etaf-test-g6b-attr-wrapper
+               :label "Leaf" :class '(caller base)
+               :color (etaf-value color) :padding-inline 2
+               :ref 'g6b-attr-root))))
+          (let* ((runtime (etaf-runtime-for-buffer buffer))
+                 (instances (hash-table-values
+                             (etaf-runtime-instances runtime)))
+                 (props (etaf-runtime-host-props-for
+                         runtime 'g6b-attr-root)))
+            (should (equal '("leaf" "base" "caller")
+                           (plist-get props :class)))
+            (should (equal "#224466" (plist-get props :color)))
+            (should (equal "#224466"
+                           (etaf-test-g6b--face-value
+                            (etaf-test-g6b--face-at buffer "Leaf")
+                            :foreground)))
+            (should (= 2 (plist-get props :padding-inline)))
+            (setf (etaf-value color) "#335577")
+            (setq props (etaf-runtime-host-props-for
+                         runtime 'g6b-attr-root))
+            (should (equal "#335577" (plist-get props :color)))
+            (should (equal "#335577"
+                           (etaf-test-g6b--face-value
+                            (etaf-test-g6b--face-at buffer "Leaf")
+                            :foreground)))
+            (should
+             (cl-every
+              (lambda (instance)
+                (memq instance (hash-table-values
+                                (etaf-runtime-instances runtime))))
+              instances))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
+        (etaf-unmount runtime))
+      (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))
+
+(ert-deftest etaf-component-host-attrs-reject-ambiguous-or-invalid-targets ()
+  "Fallthrough fails closed for unknown, duplicate, conflicting, and multi-root input."
+  (should-error
+   (etaf-node 'etaf-test-g6b-attr-leaf (list :unknown-attr 1) nil)
+   :type 'etaf-component-call-error)
+  (should-error
+   (etaf-node 'etaf-test-g6b-attr-leaf
+              (list :bgcolor "red" :background-color "blue") nil)
+   :type 'etaf-component-call-error)
+  (dolist
+      (entry
+       `((" *etaf-g6b-attrs-fragment*"
+          ,(etaf-view (etaf-test-g6b-attr-fragment :color "red")))
+         (" *etaf-g6b-attrs-text*"
+          ,(etaf-view (etaf-test-g6b-attr-text :padding 1)))
+         (" *etaf-g6b-attrs-role*"
+          ,(etaf-view (etaf-test-g6b-attr-role :role 'navigation)))))
+    (let ((buffer (car entry)))
+      (unwind-protect
+          (should-error (etaf-mount buffer (cadr entry))
+                        :type 'etaf-component-call-error)
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
+          (etaf-unmount runtime))
+        (when-let* ((live (get-buffer buffer))) (kill-buffer live))))))
+
+(ert-deftest etaf-component-host-attrs-rollback-root-shape-failure ()
+  "A later multi-root result cannot publish or retire the previous root."
+  (let ((buffer " *etaf-g6b-attrs-rollback*")
+        (split (etaf-ref nil)))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (lambda ()
+             (etaf-view
+              (etaf-test-g6b-attr-shape
+               :split (etaf-value split) :color "#224466"))))
+          (let* ((runtime (etaf-runtime-for-buffer buffer))
+                 (generation (etaf-runtime-current-generation runtime))
+                 (published (with-current-buffer buffer (buffer-string))))
+            (should-error (setf (etaf-value split) t)
+                          :type 'etaf-component-call-error)
+            (should (eq generation
+                        (etaf-runtime-current-generation runtime)))
+            (should (equal-including-properties
+                     published (with-current-buffer buffer (buffer-string))))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
         (etaf-unmount runtime))
       (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))

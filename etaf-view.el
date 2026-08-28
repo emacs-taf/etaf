@@ -12,6 +12,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'ebox-style)
 
 (define-error 'etaf-view-error "Invalid ETAF View")
 (define-error 'etaf-view-syntax-error "Invalid ETAF View syntax"
@@ -51,6 +52,7 @@
   "Internal Component invocation retained until rendering."
   spec
   props
+  attrs
   slots)
 
 (cl-defstruct (etaf--slot-input
@@ -78,6 +80,31 @@ this list merely to make a demo convenient.")
 
 (defconst etaf--directive-properties '(:if :else-if :else :for)
   "Compiler-owned DSL properties rejected by ordinary node construction.")
+
+(defconst etaf--semantic-props
+  '(:class :id :role :disabled :tab-index :ref :use)
+  "ETAF Host metadata outside the Ebox style schema.")
+
+(defun etaf--aria-property-p (property)
+  "Return non-nil when PROPERTY is in the ETAF aria namespace."
+  (and (keywordp property)
+       (string-prefix-p ":aria-" (symbol-name property))))
+
+(defun etaf--event-property-p (property)
+  "Return non-nil when PROPERTY is an ETAF event callback property."
+  (and (keywordp property)
+       (string-prefix-p ":on-" (symbol-name property))))
+
+(defun etaf--semantic-property-p (property)
+  "Return non-nil when PROPERTY belongs to ETAF Runtime metadata."
+  (or (memq property etaf--semantic-props)
+      (etaf--aria-property-p property)
+      (etaf--event-property-p property)))
+
+(defun etaf--host-attribute-p (property)
+  "Return non-nil when PROPERTY belongs to the shared Host attribute domain."
+  (or (ebox-style-schema-id property)
+      (etaf--semantic-property-p property)))
 
 (defconst etaf--ordinary-elisp-heads
   '(and or not if when unless cond case pcase
@@ -186,6 +213,132 @@ disposing the old Runtime.")
       (push (pop tail) copy)
       (push (etaf--resolve-property-value (pop tail)) copy))
     (nreverse copy)))
+
+(defun etaf--property-domain-key (property)
+  "Return PROPERTY's canonical Host-domain key."
+  (or (ebox-style-canonical-name property) property))
+
+(defun etaf--plist-set (props key value)
+  "Return PROPS with KEY set to VALUE while preserving source order."
+  (if (plist-member props key)
+      (let ((copy (copy-sequence props)))
+        (plist-put copy key value)
+        copy)
+    (append props (list key value))))
+
+(defun etaf--plist-remove-domain (props property)
+  "Return PROPS without any alias in PROPERTY's canonical domain."
+  (let ((domain (etaf--property-domain-key property)))
+    (cl-loop for (key value) on props by #'cddr
+             unless (eq (etaf--property-domain-key key) domain)
+             append (list key value))))
+
+(defun etaf--class-tokens (value)
+  "Return normalized class tokens from resolved VALUE."
+  (cond
+   ((null value) nil)
+   ((stringp value) (split-string value "[[:space:]]+" t))
+   ((symbolp value) (list (symbol-name value)))
+   ((proper-list-p value)
+    (cl-mapcan #'etaf--class-tokens value))
+   (t
+    (etaf--component-error "Invalid class value: %S" value))))
+
+(defun etaf--merge-class-values (root-value caller-value)
+  "Return stable union of ROOT-VALUE and CALLER-VALUE class tokens."
+  (let (seen result)
+    (dolist (token (append (etaf--class-tokens root-value)
+                           (etaf--class-tokens caller-value)))
+      (unless (member token seen)
+        (push token seen)
+        (push token result)))
+    (nreverse result)))
+
+(defun etaf--merge-class-input (root-value caller-value)
+  "Return a class value merging possibly lazy ROOT-VALUE and CALLER-VALUE."
+  (etaf--merge-class-values
+   (etaf--resolve-property-value root-value)
+   (etaf--resolve-property-value caller-value)))
+
+(defun etaf--merge-host-attrs (props attrs &optional tag component-name)
+  "Merge caller ATTRS into root Host PROPS for TAG.
+Visual Ebox attributes override Component defaults.  Class tokens merge.
+Conflicting Runtime metadata is rejected so fallthrough cannot silently alter
+Component semantics.  COMPONENT-NAME labels diagnostics."
+  (let ((result (copy-sequence props))
+        (tail attrs))
+    (while tail
+      (let* ((key (pop tail))
+             (value (pop tail))
+             (style-p (not (null (ebox-style-schema-id key)))))
+        (when (and tag style-p
+                   (not (ebox-style-property-accepted-p tag key)))
+          (etaf--component-error
+           "Component %S root Host %S rejects attribute %S"
+           component-name tag key))
+        (cond
+         ((eq key :class)
+          (setq result
+                (etaf--plist-set
+                 result :class
+                 (etaf--merge-class-input (plist-get result :class) value))))
+         (style-p
+          (setq result
+                (append (etaf--plist-remove-domain result key)
+                        (list key value))))
+         ((plist-member result key)
+          (etaf--component-error
+           "Component %S root metadata %S conflicts with fallthrough"
+           component-name key))
+         (t
+          (setq result (append result (list key value)))))))
+    result))
+
+(defun etaf--forward-component-attrs (call attrs component-name)
+  "Return copied root Component CALL receiving caller ATTRS."
+  (let* ((copy (copy-sequence call))
+         (spec (etaf--component-call-spec call))
+         (declared (mapcar #'etaf--component-prop-key
+                           (etaf--component-spec-props spec)))
+         (props (copy-sequence (etaf--component-call-props call)))
+         (forwarded (copy-sequence (etaf--component-call-attrs call)))
+         (tail attrs))
+    (while tail
+      (let ((key (pop tail))
+            (value (pop tail)))
+        (if (memq key declared)
+            (setq props (etaf--plist-set props key value))
+          (setq forwarded
+                (etaf--merge-host-attrs
+                 forwarded (list key value) nil component-name)))))
+    (setf (etaf--component-call-props copy) props
+          (etaf--component-call-attrs copy) forwarded)
+    copy))
+
+(defun etaf--apply-component-attrs (value attrs component-name)
+  "Apply resolved fallthrough ATTRS to COMPONENT-NAME root VALUE."
+  (if (null attrs)
+      value
+    (cond
+     ((stringp value)
+      (etaf--view-node-create
+       :name 'text :props (copy-sequence attrs) :children (list value)))
+     ((etaf--view-node-p value)
+      (when (eq (etaf--view-node-name value) 'fragment)
+        (etaf--component-error
+         "Component %S has multiple roots; Host attrs have no target"
+         component-name))
+      (let ((copy (copy-sequence value)))
+        (setf (etaf--view-node-props copy)
+              (etaf--merge-host-attrs
+               (etaf--view-node-props value) attrs
+               (etaf--view-node-name value) component-name))
+        copy))
+     ((etaf--component-call-p value)
+      (etaf--forward-component-attrs value attrs component-name))
+     (t
+      (etaf--component-error
+       "Component %S cannot apply Host attrs to %S" component-name value)))))
 
 (defun etaf--compile-property-value (form)
   "Compile property FORM as a constant or a render-time thunk."
@@ -605,20 +758,39 @@ ordinary Elisp expressions.  `(expr FORM)' is text interpolation only."
       name
     (etaf--keyword-for-name name)))
 
-(defun etaf--validate-component-props (spec props)
-  "Validate Component SPEC against evaluated property PLIST PROPS."
-  (let ((allowed (append '(:key)
-                         (mapcar #'etaf--component-prop-key
-                                 (etaf--component-spec-props spec))))
-        (tail (etaf--validate-property-plist props)))
+(defun etaf--partition-component-input (spec props)
+  "Partition SPEC input PROPS into business props and Host attrs.
+Return `(BUSINESS ATTRS)'.  `:key' remains framework-owned input metadata."
+  (let ((declared (mapcar #'etaf--component-prop-key
+                          (etaf--component-spec-props spec)))
+        (tail (etaf--validate-property-plist props))
+        (attr-domains (make-hash-table :test #'eq))
+        business
+        attrs)
     (while tail
-      (let ((key (pop tail)))
-        (pop tail)
-        (unless (memq key allowed)
+      (let ((key (pop tail))
+            (value (pop tail)))
+        (cond
+         ((or (eq key :key) (memq key declared))
+          (setq business (append business (list key value))))
+         ((etaf--host-attribute-p key)
+          (let ((domain (etaf--property-domain-key key)))
+            (when (gethash domain attr-domains)
+              (etaf--component-error
+               "Duplicate Component Host attribute domain: %S" key))
+            (puthash domain t attr-domains))
+          (setq attrs (append attrs (list key value))))
+         (t
           (etaf--component-error
-           "Unknown prop %S for Component %S"
-           key (etaf--component-spec-name spec)))))
-    props))
+           "Unknown prop or Host attribute %S for Component %S"
+           key (etaf--component-spec-name spec))))))
+    (list business attrs)))
+
+(defun etaf--component-business-props (call)
+  "Return CALL's declared business props without framework `:key'."
+  (cl-loop for (key value) on (etaf--component-call-props call) by #'cddr
+           unless (eq key :key)
+           append (list key value)))
 
 (defun etaf--typed-view-child-p (value)
   "Return non-nil when VALUE is one already validated View child."
@@ -728,14 +900,15 @@ alist from stable slot symbols to typed child lists."
       (when (plist-member props :key)
         (etaf--validate-key
          (etaf--resolve-property-value (plist-get props :key))))
-      (etaf--view-node-create
+     (etaf--view-node-create
        :name host-name
        :token token
        :props props
        :children children))
      ((etaf--component-spec-p entry)
-      (etaf--validate-component-props entry props)
-      (let (default-children named-slots)
+      (pcase-let* ((`(,business-props ,attrs)
+                    (etaf--partition-component-input entry props)))
+        (let (default-children named-slots)
         (dolist (child children)
           (if (etaf--slot-input-p child)
               (progn
@@ -753,10 +926,11 @@ alist from stable slot symbols to typed child lists."
            "Component default slot has both children and an explicit input"))
         (etaf--component-call-create
          :spec entry
-         :props props
+         :props business-props
+         :attrs attrs
          :slots (if default-children
                     (cons (cons 'default default-children) named-slots)
-                  named-slots))))
+                  named-slots)))))
      (t
       (etaf--component-error "Unknown ETAF Host or Component: %S" name)))))
 

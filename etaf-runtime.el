@@ -68,8 +68,8 @@
 
 (cl-defstruct (etaf--semantic-component
                (:constructor etaf--semantic-component-create))
-  semantic-id identity input-effect-id effect-id resource-key props slots
-  input-props input-slots output-signature artifact-key
+  semantic-id identity input-effect-id effect-id resource-key props attrs slots
+  input-props input-attrs input-slots output-signature artifact-key
   path caller-style-stack input-deps deps
   parent-id caller-component-id child-ids raw-slot-reader-p
   publication-kind output-range-id
@@ -978,6 +978,7 @@ transaction from deciding whether the value changed."
            ((etaf--semantic-component-p semantic)
             (list (etaf--semantic-component-composition-version semantic)
                   (etaf--semantic-component-input-props semantic)
+                  (etaf--semantic-component-input-attrs semantic)
                   (etaf--semantic-component-input-slots semantic)
                   (etaf--semantic-component-context-deps semantic)
                   (etaf--semantic-component-output-signature semantic)))
@@ -1378,12 +1379,14 @@ reading Runtime storage fields."
     (or (when-let* ((env (gethash component-id
                                  (etaf-runtime-candidate-component-envs runtime))))
           (list (copy-tree (plist-get env :props))
+                (copy-tree (plist-get env :attrs))
                 (copy-tree (plist-get env :slots))))
         (when-let* ((generation (etaf-runtime-current-generation runtime))
                     (component
                      (etaf--pvec-get (etaf-generation-semantic-nodes generation)
                                      component-id)))
           (list (copy-tree (etaf--semantic-component-props component))
+                (copy-tree (etaf--semantic-component-attrs component))
                 (copy-tree (etaf--semantic-component-slots component)))))))
 
 (defun etaf--context-frame-changed-keys (old new)
@@ -1853,17 +1856,6 @@ need to know how Behavior attributes are merged."
         (append (butlast path) (list :key key))
       path)))
 
-(defun etaf--runtime-component-business-props (call)
-  "Return CALL props without framework-owned identity metadata."
-  (let ((tail (etaf--component-call-props call))
-        result)
-    (while tail
-      (let ((key (pop tail))
-            (value (pop tail)))
-        (unless (eq key :key)
-          (setq result (append result (list key value))))))
-    result))
-
 (defun etaf--runtime-owned-slots (slots)
   "Attach current caller ownership to unowned normalized SLOTS."
   (mapcar
@@ -1935,7 +1927,7 @@ need to know how Behavior attributes are merged."
     (funcall hook)))
 
 (defun etaf--runtime-render-component-resource
-    (runtime instance identity props slots path
+    (runtime instance identity props attrs slots path
              &optional old-output-range-id old-publication-kind old-context-frame)
   "Render RUNTIME candidate IDENTITY from resource INSTANCE without mutation."
   (let* ((spec (etaf--component-instance-spec instance))
@@ -1992,6 +1984,9 @@ need to know how Behavior attributes are merged."
               (etaf--validate-component-render-result
                (funcall render-function props slots)
                (etaf--component-spec-name spec)))
+             (rendered
+              (etaf--apply-component-attrs
+               rendered attrs (etaf--component-spec-name spec)))
              (transparent-p
               (and (not (eq old-publication-kind 'material))
                    (etaf--runtime-transparent-output-p rendered)))
@@ -2258,8 +2253,9 @@ need to know how Behavior attributes are merged."
                         (cl-incf (etaf-runtime-next-effect-id runtime))))
          (semantic-id (or (and old (etaf--semantic-component-semantic-id old))
                           (cl-incf (etaf-runtime-next-semantic-id runtime))))
-         (input-props (etaf--runtime-component-business-props call))
-         props input-deps render-deps context-deps slot-retargeted-p)
+         (input-props (etaf--component-business-props call))
+         (input-attrs (etaf--component-call-attrs call))
+         props attrs input-deps render-deps context-deps slot-retargeted-p)
     (unless (etaf-context-owner-id (etaf--component-instance-context instance))
       (setf (etaf-context-owner-id (etaf--component-instance-context instance))
             semantic-id))
@@ -2271,10 +2267,11 @@ need to know how Behavior attributes are merged."
            (lambda (source) (cl-pushnew source input-deps :test #'eq)))
           (etaf--active-effect nil)
           (etaf--render-phase-p t))
-      (setq props
-            (etaf--resolve-property-plist input-props)))
+      (setq props (etaf--resolve-property-plist input-props)
+            attrs (etaf--resolve-property-plist input-attrs)))
     (puthash semantic-id
-             (list :identity identity :instance instance :props props :slots slots)
+             (list :identity identity :instance instance
+                   :props props :attrs attrs :slots slots)
              (etaf-runtime-candidate-component-envs runtime))
     (when (and old
                (or etaf--rendering-component-effect-p
@@ -2292,6 +2289,8 @@ need to know how Behavior attributes are merged."
                       (not slot-retargeted-p))
                  (not (equal-including-properties
                        props (etaf--semantic-component-props old)))
+                 (not (equal-including-properties
+                       attrs (etaf--semantic-component-attrs old)))
                  (and (not slot-retargeted-p)
                       (not (equal-including-properties
                             slots (etaf--semantic-component-slots old))))))
@@ -2357,7 +2356,7 @@ need to know how Behavior attributes are merged."
               (etaf--render-phase-p t))
           (setq result
                  (etaf--runtime-render-component-resource
-                 runtime instance identity props slots path
+                 runtime instance identity props attrs slots path
                  (and old (etaf--semantic-component-output-range-id old))
                  (and old (etaf--semantic-component-publication-kind old))
                  (and old (etaf--semantic-component-context-frame old)))))
@@ -2389,8 +2388,10 @@ need to know how Behavior attributes are merged."
                    :input-effect-id input-effect-id :effect-id effect-id
                    :resource-key
                    (copy-tree (etaf--component-instance-resource-key instance))
-                   :props (copy-tree props) :slots (copy-tree slots)
+                   :props (copy-tree props) :attrs (copy-tree attrs)
+                   :slots (copy-tree slots)
                    :input-props (copy-tree input-props)
+                   :input-attrs (copy-tree input-attrs)
                    :input-slots (copy-tree slots)
                    :output-signature (copy-tree output-signature)
                    :artifact-key (and (not transparent-p) effect-id)
@@ -4139,10 +4140,13 @@ removed inside the same rollback journal."
           (etaf--render-phase-p t))
       (let* ((props (etaf--resolve-property-plist
                      (etaf--semantic-component-input-props semantic)))
+             (attrs (etaf--resolve-property-plist
+                     (etaf--semantic-component-input-attrs semantic)))
              (slots (etaf--semantic-component-input-slots semantic))
              (candidate (copy-sequence semantic))
              (effect-id (etaf--semantic-component-input-effect-id semantic)))
         (setf (etaf--semantic-component-props candidate) (copy-tree props)
+              (etaf--semantic-component-attrs candidate) (copy-tree attrs)
               (etaf--semantic-component-slots candidate) (copy-tree slots)
               (etaf--semantic-component-input-deps candidate) (nreverse deps))
         (puthash (etaf--semantic-component-identity semantic) candidate
@@ -4155,6 +4159,8 @@ removed inside the same rollback journal."
                  (etaf-runtime-candidate-effects runtime))
         (unless (and (etaf--runtime-target-value-equal-p
                       props (etaf--semantic-component-props semantic))
+                     (etaf--runtime-target-value-equal-p
+                      attrs (etaf--semantic-component-attrs semantic))
                      (etaf--runtime-target-value-equal-p
                       slots (etaf--semantic-component-slots semantic)))
           (etaf--runtime-enqueue-effect
@@ -4344,11 +4350,13 @@ removed inside the same rollback journal."
          (parent (and (etaf--semantic-component-p parent-record)
                       (etaf--semantic-component-identity parent-record)))
          (props (etaf--semantic-component-props semantic))
+         (attrs (etaf--semantic-component-attrs semantic))
          (slots (etaf--semantic-component-slots semantic))
          (builder (ebox-source-builder-create))
          deps context-deps result)
     (puthash (etaf--semantic-component-semantic-id semantic)
-             (list :identity identity :instance instance :props props :slots slots)
+             (list :identity identity :instance instance
+                   :props props :attrs attrs :slots slots)
              (etaf-runtime-candidate-component-envs runtime))
     (let ((etaf--current-component-identity parent)
           (etaf--current-component-semantic-id
@@ -4371,7 +4379,7 @@ removed inside the same rollback journal."
       (setq result
             (etaf--runtime-render-component-resource
              runtime instance identity
-             props slots
+             props attrs slots
              (etaf--semantic-component-path semantic)
              (etaf--semantic-component-output-range-id committed)
              (etaf--semantic-component-publication-kind committed)
@@ -4418,6 +4426,7 @@ removed inside the same rollback journal."
         (setf (etaf--semantic-component-output-signature candidate)
               (copy-tree output-signature)
               (etaf--semantic-component-props candidate) (copy-tree props)
+              (etaf--semantic-component-attrs candidate) (copy-tree attrs)
               (etaf--semantic-component-slots candidate) (copy-tree slots)
               (etaf--semantic-component-deps candidate) (nreverse deps)
               (etaf--semantic-component-raw-slot-reader-p candidate)

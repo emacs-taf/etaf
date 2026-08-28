@@ -53,21 +53,6 @@
 
 (define-error 'etaf-renderer-error "ETAF rendering error")
 
-(defconst etaf--semantic-props
-  '(:class :id :role :disabled :tab-index :ref :use)
-  "ETAF semantic properties that are not Ebox box properties.")
-
-(defun etaf--aria-property-p (property)
-  "Return non-nil when PROPERTY is in the ETAF aria namespace."
-  (and (keywordp property)
-       (string-prefix-p ":aria-" (symbol-name property))))
-
-(defun etaf--semantic-property-p (property)
-  "Return non-nil when PROPERTY belongs to ETAF Runtime metadata."
-  (or (memq property etaf--semantic-props)
-      (etaf--aria-property-p property)
-      (etaf--event-property-p property)))
-
 (defun etaf--behavior-source-p (value)
   "Return non-nil when VALUE has the public `:use' source grammar."
   (or (null value)
@@ -152,11 +137,6 @@
   (ebox-canonical-input-create
    nodes
    (ebox-tree-source-builder-snapshot etaf--ebox-source-builder nodes)))
-
-(defun etaf--event-property-p (property)
-  "Return non-nil when PROPERTY is an ETAF event callback property."
-  (and (keywordp property)
-       (string-prefix-p "on-" (substring (symbol-name property) 1))))
 
 (defun etaf--generated-host-ref (props path &optional site-token)
   "Return PROPS' explicit Host reference or one generated for PATH.
@@ -612,12 +592,15 @@ multi-root forest; a single material root is returned unchanged."
 (defun etaf--render-component-call-pure (call path)
   "Render stateless CALL at PATH without a retained Runtime."
   (let* ((spec (etaf--component-call-spec call))
-         (render (etaf--component-spec-render spec)))
+         (render (etaf--component-spec-render spec))
+         (props (etaf--resolve-property-plist
+                 (etaf--component-business-props call)))
+         (attrs (etaf--resolve-property-plist
+                 (etaf--component-call-attrs call))))
     (when (etaf--component-spec-setup spec)
       (signal 'etaf-renderer-error
               (list "Stateful Component requires `etaf-mount'")))
-    (let ((etaf--current-component-props
-           (etaf--component-call-props call))
+    (let ((etaf--current-component-props props)
           (etaf--current-component-slots
            (etaf--component-call-slots call))
           (etaf--component-phase 'render))
@@ -627,9 +610,11 @@ multi-root forest; a single material root is returned unchanged."
                          (append path (list :component
                                             (etaf--component-spec-name spec)))))))
         (etaf--render-value-list
-         (funcall render
-                  (etaf--component-call-props call)
-                  (etaf--component-call-slots call))
+         (etaf--apply-component-attrs
+          (etaf--validate-component-render-result
+           (funcall render props (etaf--component-call-slots call))
+           (etaf--component-spec-name spec))
+          attrs (etaf--component-spec-name spec))
          (append path (list :component (etaf--component-spec-name spec))))))))
 
 (defun etaf--render-value-list (value path)
