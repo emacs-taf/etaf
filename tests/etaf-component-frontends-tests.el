@@ -651,16 +651,31 @@
        `((" *etaf-g6b-attrs-fragment*"
           ,(etaf-view (etaf-test-g6b-attr-fragment :color "red")))
          (" *etaf-g6b-attrs-text*"
-          ,(etaf-view (etaf-test-g6b-attr-text :padding 1)))
-         (" *etaf-g6b-attrs-role*"
-          ,(etaf-view (etaf-test-g6b-attr-role :role 'navigation)))))
+          ,(etaf-view (etaf-test-g6b-attr-text :padding 1)))))
     (let ((buffer (car entry)))
       (unwind-protect
           (should-error (etaf-mount buffer (cadr entry))
                         :type 'etaf-component-call-error)
         (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
           (etaf-unmount runtime))
-        (when-let* ((live (get-buffer buffer))) (kill-buffer live))))))
+        (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))
+  (let ((buffer " *etaf-g6b-attrs-role*"))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (etaf-view
+            (etaf-test-g6b-attr-role
+             :role 'navigation :ref 'g6b-attrs-role)))
+          (should
+           (eq 'navigation
+               (plist-get
+                (etaf-runtime-host-props-for
+                 (etaf-runtime-for-buffer buffer) 'g6b-attrs-role)
+                :role))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
+        (etaf-unmount runtime))
+      (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))
 
 (ert-deftest etaf-component-host-attrs-rollback-root-shape-failure ()
   "A later multi-root result cannot publish or retire the previous root."
@@ -683,6 +698,23 @@
                         (etaf-runtime-current-generation runtime)))
             (should (equal-including-properties
                      published (with-current-buffer buffer (buffer-string))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
+        (etaf-unmount runtime))
+      (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))
+
+(ert-deftest etaf-component-compiled-host-sites-are-instance-scoped ()
+  "Two instances of one compiled Component never share generated Host refs."
+  (let ((buffer " *etaf-g6b-instance-sites*"))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (etaf-view
+            (column
+             (etaf-test-g6b-attr-leaf :key 'one :label "One")
+             (etaf-test-g6b-attr-leaf :key 'two :label "Two"))))
+          (should (string-match-p
+                   "One[[:space:]]+Two" (etaf-test-g6b--text buffer))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
         (etaf-unmount runtime))
       (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))

@@ -287,9 +287,7 @@ Component semantics.  COMPONENT-NAME labels diagnostics."
                 (append (etaf--plist-remove-domain result key)
                         (list key value))))
          ((plist-member result key)
-          (etaf--component-error
-           "Component %S root metadata %S conflicts with fallthrough"
-           component-name key))
+          (setq result (etaf--plist-set result key value)))
          (t
           (setq result (append result (list key value)))))))
     result))

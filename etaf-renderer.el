@@ -144,10 +144,14 @@ SITE-TOKEN replaces PATH as the generated call-site identity when non-nil."
   (or (plist-get props :ref)
       (let ((site (or site-token (copy-sequence path))))
         (list 'etaf-host
-              (if etaf--rendering-range-p
+              (cond
+               (etaf--rendering-range-p
                   (list :range etaf--current-semantic-parent-id
-                        :site site)
-                site)))))
+                        :site site))
+               (etaf--render-runtime
+                (list :parent etaf--current-semantic-parent-id :site site))
+               (t
+                (list :path (copy-sequence path) :site site)))))))
 
 (defun etaf--merge-property (props key value)
   "Return PROPS with KEY set to VALUE, preserving the original order."

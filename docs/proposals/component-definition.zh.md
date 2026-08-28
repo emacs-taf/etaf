@@ -479,8 +479,9 @@ attrs 遵守下面的不变量：
 - `class` 合并并去重；
 - Ebox style/layout attrs 先按 canonical property domain 去重，调用方值覆盖组件视觉
   默认值；
-- `role`、`ref`、`disabled`、`:on-*` 等 Runtime metadata 若与根 Host 已有值冲突，
-  精确报错；需要由 Component 管理的 metadata 应声明为业务 prop；
+- `role`、`ref`、`disabled`、`:on-*` 等 Runtime metadata 与普通前端 attrs 一样由
+  调用方覆盖根默认值；必须由 Component 掌控的 metadata 应显式声明为业务 prop，
+  从 attrs 域中消费；
 - attrs 在调用方 Component 环境中求值，不能泄漏到被调用 Component 的 setup、
   `etaf-state` 或业务 props；
 - 实际根 Host 仍通过 `ebox-style-property-accepted-p` 验证适用域，例如 Text 根不能
