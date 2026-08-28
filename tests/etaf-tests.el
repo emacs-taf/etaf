@@ -96,6 +96,17 @@
 (defvar etaf-test-detached-theme-source nil)
 (defvar etaf-test-detached-row-renders 0)
 
+(defun etaf-test--input-root (input)
+  "Return INPUT's single canonical root for structural assertions."
+  (ebox-canonical-input--single-root input "ETAF test input"))
+
+(defun etaf-test--mounted-specified-value (buffer-name node name)
+  "Return mounted NODE's specified NAME from BUFFER-NAME's source generation."
+  (ebox-style-node-specified-value
+   node name nil
+   (plist-get (ebox--buffer-render-state (get-buffer buffer-name))
+              :source-index)))
+
 (defun etaf-test--range-items ()
   "Return keyed text Views from `etaf-test-range-source'."
   (cl-incf etaf-test-range-evals)
@@ -1284,8 +1295,10 @@
            (column :outer 'block
                 (text "A")
                 (text "B"))))))
-    (should (equal (ebox--computed-display row) '(inline row)))
-    (should (equal (ebox--computed-display column) '(block column)))
+    (should (equal (ebox--computed-display (etaf-test--input-root row))
+                   '(inline row)))
+    (should (equal (ebox--computed-display (etaf-test--input-root column))
+                   '(block column)))
     (should (equal (substring-no-properties (ebox-render row)) "AB"))
     (should (equal (substring-no-properties (ebox-render column)) "A\nB"))))
 
@@ -1323,8 +1336,9 @@
                  :grid-template-columns '((20) (20))
                  (text "A")
                  (text "B"))))))
-    (should (ebox-box-node-p node))
-    (should (eq (ebox-layout-config-kind (ebox-box-node-layout node))
+    (should (ebox-box-node-p (etaf-test--input-root node)))
+    (should (eq (ebox-layout-config-kind
+                 (ebox-box-node-layout (etaf-test--input-root node)))
                 'grid))
     (should (string-match-p "A" (substring-no-properties (ebox-render node))))
     (should (string-match-p "B" (substring-no-properties (ebox-render node))))))
@@ -1428,17 +1442,23 @@
 
 (ert-deftest etaf-styles-have-root-class-and-inline-precedence ()
   "Apply component styles only at matching scope and preserve inline props."
-  (let* ((node (etaf-render (etaf-view (etaf-test-styled-card))))
+  (let* ((input (etaf-render (etaf-view (etaf-test-styled-card))))
+         (source-index (ebox-canonical-input--source-index input))
+         (node (etaf-test--input-root input))
          (children (ebox-box-node-children node))
          (title (car children))
          (body (cadr children)))
     (should (equal "inline-title"
-                   (ebox-style-node-specified-value title :color)))
+                   (ebox-style-node-specified-value
+                    title :color nil source-index)))
     (should (equal "title-bg"
-                   (ebox-style-node-specified-value title :bgcolor)))
+                   (ebox-style-node-specified-value
+                    title :bgcolor nil source-index)))
     (should (equal "style-root"
-                   (ebox-style-node-specified-value node :color)))
-    (should-not (ebox-style-node-specified-value body :color))))
+                   (ebox-style-node-specified-value
+                    node :color nil source-index)))
+    (should-not (ebox-style-node-specified-value
+                 body :color nil source-index))))
 
 (ert-deftest etaf-nil-host-props-allow-component-styles ()
   "Treat an explicit nil Host style property as unspecified."
@@ -1485,7 +1505,10 @@
                   (ebox-style-node-specified-value
                    (etaf-runtime-root-node
                     (etaf-runtime-for-buffer buffer-name))
-                   :color))))
+                   :color nil
+                   (plist-get
+                    (ebox--buffer-render-state (get-buffer buffer-name))
+                    :source-index)))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name)))
@@ -1499,7 +1522,8 @@
           (etaf-mount buffer-name (etaf-view (etaf-test-styled-parent)))
           (should
            (null
-            (ebox-style-node-specified-value
+            (etaf-test--mounted-specified-value
+             buffer-name
              (etaf-runtime-root-node
               (etaf-runtime-for-buffer buffer-name))
              :color))))
@@ -1517,10 +1541,11 @@
           (let* ((runtime (etaf-runtime-for-buffer buffer-name))
                  (node (etaf-runtime-root-node runtime)))
             (should (equal "theme-color"
-                           (ebox-style-node-specified-value node :color)))
+                           (etaf-test--mounted-specified-value
+                            buffer-name node :color)))
             (should (equal "theme-bg"
-                           (ebox-style-node-specified-value
-                            node :bgcolor)))))
+                           (etaf-test--mounted-specified-value
+                            buffer-name node :bgcolor)))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name)))
@@ -1534,7 +1559,8 @@
           (etaf-mount buffer-name
                       (etaf-view (etaf-test-themed-style-token)))
           (should (equal "token-color"
-                         (ebox-style-node-specified-value
+                         (etaf-test--mounted-specified-value
+                          buffer-name
                           (etaf-runtime-root-node
                            (etaf-runtime-for-buffer buffer-name))
                           :color))))
@@ -1631,20 +1657,18 @@
             (cl-labels
                 ((ebox-host-node
                   (host-ref)
-                  (let* ((buffer (get-buffer buffer-name))
-                         (state (ebox--buffer-render-state buffer))
-                         (node-id
-                          (gethash host-ref
-                                   (plist-get state :host-ref-table))))
-                    (gethash node-id (plist-get state :node-table))))
+                  (ebox--host-ref-node (get-buffer buffer-name) host-ref))
                  (background
                   (value)
                   (if (tp-paint-slot-p value)
                       (plist-get (tp-paint-slot-spec value) :background)
                     value)))
               (let ((slot
-                     (ebox-style-node-specified-value
-                      (ebox-host-node 'theme-atomic-panel) :bgcolor)))
+                     (let* ((buffer (get-buffer buffer-name))
+                            (state (ebox--buffer-render-state buffer)))
+                       (ebox-style-node-specified-value
+                        (ebox-host-node 'theme-atomic-panel) :bgcolor nil
+                        (plist-get state :source-index)))))
                 (should (equal "#FFFFFF" (background slot)))
                 (etaf-dispatch-event runtime 'theme-atomic-toggle 'press)
                 (let ((semantic
@@ -2994,8 +3018,8 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                             (etaf--component-instance-p value)))
                       ('artifact
                        (and (consp key) (integerp (car key))
-                            (integerp (cdr key)) (listp value)
-                            (plist-member value :node)))
+                            (integerp (cdr key))
+                            (ebox-canonical-input-p value)))
                       ('route (etaf-runtime-route-p key)))
                   (error "injected %S journal write" phase))
                 result))))
@@ -3011,6 +3035,51 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                                    (list :label 1 :cell source) nil))
       (etaf-unmount (etaf-runtime-for-buffer buffer-name))
       (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+
+(ert-deftest etaf-runtime-artifact-removal-failure-restores-retained-input ()
+  "Rollback an obsolete-artifact removal inside the prepublication journal."
+  (let ((buffer-name " *etaf-artifact-removal-rollback*")
+        (source (etaf-ref 0))
+        (etaf-test-retained-render-counts (make-hash-table :test #'eql)))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name
+                      (etaf--view-call 'etaf-test-retained-leaf
+                                       (list :label 1 :cell source) nil))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (generation (etaf-runtime-current-generation runtime))
+                 (registry (etaf-runtime-artifact-registry runtime))
+                 old-key old-input
+                 (before (etaf-test--buffer-text buffer-name))
+                 (original-remhash (symbol-function 'remhash))
+                 injected-p)
+            (maphash (lambda (key value)
+                       (unless old-key
+                         (setq old-key key old-input value)))
+                     registry)
+            (should old-key)
+            (should (ebox-canonical-input-p old-input))
+            (cl-letf (((symbol-function 'remhash)
+                       (lambda (key table)
+                         (if (and (not injected-p)
+                                  (eq table registry)
+                                  (equal key old-key))
+                             (progn
+                               (setq injected-p t)
+                               (funcall original-remhash key table)
+                               (error "injected artifact removal failure"))
+                           (funcall original-remhash key table)))))
+              (should-error (setf (etaf-value source) 1) :type 'error))
+            (should injected-p)
+            (should (eq generation (etaf-runtime-current-generation runtime)))
+            (should (eq old-input (gethash old-key registry)))
+            (should (equal before (etaf-test--buffer-text buffer-name)))
+            (etaf-runtime-flush runtime)
+            (should-not (equal before (etaf-test--buffer-text buffer-name)))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
 
 (ert-deftest etaf-runtime-route-arm-kth-failure-is-bounded-and-retryable ()
   "Rollback each partial route arm and keep repeated failures bounded."
@@ -3297,6 +3366,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                                       child-id)))))
               (dolist (items (list '((a . "A"))
                                    '((a . "A") (b . "B"))
+                                   '((a . "A2") (b . "B"))
                                    '((b . "B2")) nil))
                 (setq etaf-test-range-evals 0
                       etaf-test-range-component-renders 0)
@@ -3360,6 +3430,28 @@ Event composition is a Runtime contract, not a UI-library helper contract."
         (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
           (etaf-unmount runtime))
         (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer))))))
+
+(ert-deftest etaf-runtime-detached-range-removals-are-not-rescanned ()
+  "A Range's complete removal set should skip duplicate subtree traversal."
+  (let* ((candidate-children (make-hash-table :test #'eql))
+         (runtime
+          (etaf--runtime-create
+           :candidate-graph-children candidate-children
+           :candidate-graph-nodes (make-hash-table :test #'eql)
+           :candidate-removed-semantic-ids '(20 30)))
+         queries)
+    (puthash 10 nil candidate-children)
+    (cl-letf (((symbol-function 'etaf--generation-child-ids)
+               (lambda (_generation semantic-id)
+                 (push semantic-id queries)
+                 (if (= semantic-id 10)
+                     '(20)
+                   (error "Pre-recorded subtree was traversed: %S"
+                          semantic-id)))))
+      (etaf--runtime-record-detached-candidate-subtrees runtime 'base))
+    (should (equal '(10) (nreverse queries)))
+    (should (equal '(20 30)
+                   (etaf-runtime-candidate-removed-semantic-ids runtime)))))
 
 (ert-deftest etaf-runtime-two-direct-ranges-batch-one-publication ()
   "Evaluate and splice two disjoint Ranges once in one logical commit."
@@ -4196,8 +4288,12 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (eq 'transparent
                         (etaf--semantic-component-publication-kind component)))
             (should (eq 'component-output (etaf--semantic-range-kind range)))
-            (should (eq (etaf--semantic-component-output-range-ref component)
-                        (etaf--semantic-range-range-ref range)))
+            (should-not (etaf--semantic-component-artifact-key component))
+            (should (etaf--semantic-range-range-ref range))
+            (should
+             (ebox-canonical-input-p
+              (gethash (etaf--semantic-range-artifact-key range)
+                       (etaf-runtime-range-artifact-registry runtime))))
             (let ((committed generation)
                   (before (etaf-test--buffer-text buffer-name)))
               (cl-letf (((symbol-function 'accept-change-group)
@@ -4799,6 +4895,45 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (should-error
            (etaf-mount buffer-name (etaf-view (text "Invalid"))
                        '(:viewport-width 0))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-runtime-publishes-handle-only-ebox-sources ()
+  "Renderer should publish one source index and handle-only Ebox nodes."
+  (let ((buffer-name " *etaf-source-index-boundary*"))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer-name
+           (etaf-view
+            (column :id "app" :class "shell"
+             (box :key 'row :id "row" :class "entry" "A"))))
+          (let* ((buffer (get-buffer buffer-name))
+                 (state (ebox--buffer-render-state buffer))
+                 (source-index (plist-get state :source-index))
+                 (match (car (ebox-selector-query-buffer buffer "#row")))
+                 (node (plist-get match :node))
+                 (record
+                  (ebox-source-index-record
+                   source-index (ebox-node-source-handle node))))
+            (should (ebox-source-index-p source-index))
+            (should (equal '("entry")
+                           (ebox-source-record-classes record)))
+            (should (eq 'row (ebox-source-record-key record)))
+            (maphash
+             (lambda (_node-id candidate-node)
+               (when (ebox-node-kind candidate-node)
+                 (should
+                  (ebox-source-index-record
+                   source-index
+                   (ebox-node-source-handle candidate-node)))
+                 (dolist (field
+                          '(:key :id :class :host-ref
+                            :ebox-style-declarations))
+                   (should-not (plist-member candidate-node field)))))
+             (plist-get state :node-table))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name)))

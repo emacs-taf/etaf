@@ -72,6 +72,28 @@
 (defvar etaf--rendering-range-p nil
   "Non-nil while eagerly lowering descendants of one Range item Host.")
 
+(defvar etaf--ebox-source-builder nil
+  "Source builder owned by the current ETAF lowering boundary.")
+
+(defun etaf--ebox-import-input (input)
+  "Import canonical INPUT into the current lowering and return its nodes."
+  (unless etaf--ebox-source-builder
+    (signal 'etaf-renderer-error
+            (list "Canonical Ebox input escaped its lowering boundary")))
+  (ebox-source-builder-import
+   etaf--ebox-source-builder
+   (ebox-canonical-input--source-index input))
+  (copy-sequence (ebox-canonical-input--nodes input)))
+
+(defun etaf--ebox-input-for-nodes (nodes)
+  "Snapshot current source facts for canonical forest NODES."
+  (unless etaf--ebox-source-builder
+    (signal 'etaf-renderer-error
+            (list "Canonical Ebox nodes have no lowering source builder")))
+  (ebox-canonical-input-create
+   nodes
+   (ebox-tree-source-builder-snapshot etaf--ebox-source-builder nodes)))
+
 (defun etaf--event-property-p (property)
   "Return non-nil when PROPERTY is an ETAF event callback property."
   (and (keywordp property)
@@ -81,7 +103,12 @@
   "Return PROPS' explicit Host reference or one generated for PATH.
 SITE-TOKEN replaces PATH as the generated call-site identity when non-nil."
   (or (plist-get props :ref)
-      (list 'etaf-host (or site-token (copy-sequence path)))))
+      (let ((site (or site-token (copy-sequence path))))
+        (list 'etaf-host
+              (if etaf--rendering-range-p
+                  (list :range etaf--current-semantic-parent-id
+                        :site site)
+                site)))))
 
 (defun etaf--merge-property (props key value)
   "Return PROPS with KEY set to VALUE, preserving the original order."
@@ -358,13 +385,13 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
     (setq ebox-props (nreverse ebox-props))
     (setq ebox-props
           (etaf--merge-property
-           ebox-props :source-handle
+           ebox-props :source-identity
            (etaf--generated-host-ref source-props path site-token)))
     ebox-props))
 
 (defconst etaf--ebox-source-fields
-  '(:source-handle :key :class :id)
-  "Canonical Ebox source metadata forwarded by ETAF Renderer.")
+  '(:source-identity :key :class :id)
+  "ETAF source facts compiled into one opaque Ebox source handle.")
 
 (defvar etaf--ebox-declaration-cache (make-hash-table :test #'equal)
   "Bounded canonical declaration cache for normalized ETAF author props.")
@@ -436,37 +463,63 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
   (unless (stringp value)
     (signal 'etaf-renderer-error
             (list (format "Text payload must resolve to a string: %S" value))))
-  (let ((declarations (etaf--ebox-declarations 'text props)))
-    (apply #'ebox-text-create
-           (append (list :value value :declarations declarations)
-                   (etaf--ebox-keep-properties
-                    props etaf--ebox-source-fields)))))
+  (unless (ebox-source-builder-p etaf--ebox-source-builder)
+    (signal 'etaf-renderer-error
+            (list "ETAF Text lowering requires one source builder")))
+  (let* ((declarations (etaf--ebox-declarations 'text props))
+         (source-handle
+          (ebox-source-builder-bind
+           etaf--ebox-source-builder
+           :identity (plist-get props :source-identity)
+           :key (plist-get props :key)
+           :id (plist-get props :id)
+           :class (plist-get props :class)
+           :declarations declarations
+           :provenance '(:adapter etaf-renderer :tag text))))
+    (ebox-text-create
+     :value value
+     :owned-facts
+     (ebox-canonical-facts-from-declarations 'text declarations)
+     :source-handle source-handle)))
 
 (defun etaf--ebox-box-node (tag props children)
   "Return one typed Ebox BoxNode TAG with PROPS over canonical CHILDREN."
+  (unless (ebox-source-builder-p etaf--ebox-source-builder)
+    (signal 'etaf-renderer-error
+            (list "ETAF Box lowering requires one source builder")))
   (let* ((declarations (etaf--ebox-declarations tag props))
          (layout (etaf--ebox-layout-config tag props declarations))
          (outer (if (plist-member props :outer)
                     (plist-get props :outer)
-                  'block)))
-    (apply #'ebox-box-create
-           (append
-            (list :layout layout :outer outer :children children
-                  :declarations declarations)
-            (etaf--ebox-keep-properties props etaf--ebox-source-fields)))))
+                  'block))
+         (source-handle
+          (ebox-source-builder-bind
+           etaf--ebox-source-builder
+           :identity (plist-get props :source-identity)
+           :key (plist-get props :key)
+           :id (plist-get props :id)
+           :class (plist-get props :class)
+           :declarations declarations
+           :provenance (list :adapter 'etaf-renderer :tag tag))))
+    (let ((ebox-canonical--source-builder etaf--ebox-source-builder))
+      (ebox-box-create
+       :layout layout :outer outer :children children
+       :owned-facts (ebox-canonical-facts-from-declarations tag declarations)
+       :source-handle source-handle))))
 
-(defun etaf--ebox-forest-root (nodes source-handle)
+(defun etaf--ebox-forest-root (nodes source-identity)
   "Return one canonical backend root for ordered forest NODES.
-SOURCE-HANDLE identifies only a backend root introduced for an empty or
+SOURCE-IDENTITY belongs only to a backend root introduced for an empty or
 multi-root forest; a single material root is returned unchanged."
   (cond
    ((null nodes)
     (etaf--ebox-box-node
-     'box (list :source-handle source-handle) nil))
-   ((null (cdr nodes)) (car nodes))
+     'box (list :source-identity source-identity) nil))
+   ((null (cdr nodes))
+    (car nodes))
    (t
     (etaf--ebox-box-node
-     'column (list :source-handle source-handle) nodes))))
+     'column (list :source-identity source-identity) nodes))))
 
 (defun etaf--flatten-view-value (value)
   "Flatten VALUE through transparent `expr' and sequence values."
@@ -579,10 +632,19 @@ multi-root forest; a single material root is returned unchanged."
                (if etaf--render-runtime
                    (let ((result (etaf--runtime-render-component
                                   etaf--render-runtime item item-path)))
-                     (if (and (consp result)
-                              (eq (car result) 'component-output-range))
-                         (cdr result)
-                       (list result)))
+                     (cond
+                      ((eq (car-safe result) 'component-output-material)
+                       (etaf--ebox-import-input (cdr result)))
+                      ((eq (car-safe result) 'component-output-range)
+                       (etaf--ebox-import-input (cdr result)))
+                      ((eq (car-safe result) 'component-output-anchor)
+                       (list
+                        (apply #'ebox-child-range
+                               (nth 1 result)
+                               (etaf--ebox-import-input (nth 2 result)))))
+                      (t
+                       (signal 'etaf-renderer-error
+                               (list "Runtime returned invalid Component output")))))
                  (etaf--render-component-call-pure item item-path)))
               ((etaf--slot-projection-p item)
                (etaf--render-slot-projection item item-path))
@@ -744,12 +806,17 @@ RANGE-CHILD-P preserves the direct material Range parent."
 
 ;;;###autoload
 (defun etaf-render (view)
-  "Lower normalized VIEW to one Ebox node.
+  "Lower normalized VIEW to one atomic canonical Ebox input.
 
 This pure entry supports stateless Components.  Stateful Components require a
   Runtime because their setup Scope must have a lifecycle owner."
-  (etaf--ebox-forest-root
-   (etaf--render-value-list view '(root)) '(etaf-root pure)))
+  (let ((builder (ebox-source-builder-create)))
+    (let* ((etaf--ebox-source-builder builder)
+           (root
+            (etaf--ebox-forest-root
+             (etaf--render-value-list view '(root)) '(etaf-root pure))))
+      (ebox-canonical-input-create
+       (list root) (ebox-source-builder-finish builder)))))
 
 ;;;###autoload
 (defun etaf-mount (buffer-or-name view &optional options)
