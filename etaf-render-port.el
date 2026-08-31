@@ -259,6 +259,59 @@
     (signal 'wrong-type-argument (list 'functionp framework-rollback)))
   t)
 
+(defvar-local etaf-render-port--v1-cleanup-diagnostics nil
+  "Contained cleanup failures from the latest failed v1 initial operation.")
+
+(defun etaf-render-port-v1-cleanup-diagnostics (buffer)
+  "Return a defensive copy of BUFFER's latest v1 cleanup diagnostics."
+  (and (buffer-live-p (get-buffer buffer))
+       (with-current-buffer (get-buffer buffer)
+         (copy-tree etaf-render-port--v1-cleanup-diagnostics))))
+
+(defun etaf-render-port--v1-buffer-snapshot (buffer)
+  "Return BUFFER content and editor state needed by v1 manual cleanup."
+  (with-current-buffer buffer
+    (let ((narrowed-p (buffer-narrowed-p))
+          (start (point-min))
+          (end (point-max)))
+      (save-restriction
+        (widen)
+        (list :contents (buffer-substring (point-min) (point-max))
+              :point (point)
+              :narrowed-p narrowed-p
+              :narrow-start start
+              :narrow-end end
+              :read-only buffer-read-only
+              :modified-p (buffer-modified-p))))))
+
+(defun etaf-render-port--v1-restore-buffer (buffer snapshot)
+  "Restore BUFFER exactly from a pre-render v1 SNAPSHOT."
+  (unless (buffer-live-p buffer)
+    (error "Legacy Ebox target died during manual cleanup"))
+  (with-current-buffer buffer
+    (let ((inhibit-read-only t)
+          (inhibit-modification-hooks t))
+      (widen)
+      (erase-buffer)
+      (insert (plist-get snapshot :contents))
+      (goto-char (min (point-max)
+                      (max (point-min) (plist-get snapshot :point))))
+      (when (plist-get snapshot :narrowed-p)
+        (narrow-to-region
+         (min (point-max) (plist-get snapshot :narrow-start))
+         (min (point-max) (plist-get snapshot :narrow-end))))
+      (setq buffer-read-only (plist-get snapshot :read-only))
+      (set-buffer-modified-p (plist-get snapshot :modified-p))))
+  buffer)
+
+(defun etaf-render-port--v1-cleanup-step (phase function)
+  "Run v1 cleanup FUNCTION and return a diagnostic for failure at PHASE."
+  (let ((inhibit-quit t) (quit-flag nil))
+    (condition-case condition
+        (progn (funcall function) nil)
+      ((error quit)
+       (list :phase phase :condition (copy-tree condition))))))
+
 (defun etaf-render-port--v1-initial
     (buffer input framework-stage framework-rollback &optional observer)
   "Publish INPUT initially to BUFFER through legacy Ebox.
@@ -267,8 +320,16 @@ manual framework cleanup if staging fails.  OBSERVER, when non-nil, is passed
 through Ebox's legacy initial option."
   (etaf-render-port--validate-framework-pair
    framework-stage framework-rollback)
-  (let ((result (ebox-render-to-buffer
-                 buffer input (and observer (list :observer observer))))
+  (let* ((buffer (get-buffer-create buffer))
+         (snapshot (etaf-render-port--v1-buffer-snapshot buffer))
+         (result
+          (progn
+            (when (ebox-surface-buffer-mounted-p buffer)
+              (error "Legacy Ebox initial operation requires an unmounted buffer"))
+            (with-current-buffer buffer
+              (setq-local etaf-render-port--v1-cleanup-diagnostics nil))
+            (ebox-render-to-buffer
+             buffer input (and observer (list :observer observer)))))
         stage-entered)
     (condition-case primary
         (progn
@@ -277,13 +338,32 @@ through Ebox's legacy initial option."
           result)
       ((error quit)
        (when stage-entered
-         (when (and observer (buffer-live-p (get-buffer buffer))
-                    (ebox-surface-buffer-mounted-p (get-buffer buffer)))
-           (ebox-buffer-set-observer buffer nil))
-         (let ((inhibit-quit t) (quit-flag nil))
-           (condition-case nil
-               (funcall framework-rollback nil)
-             ((error quit) nil))))
+         (let (diagnostics)
+           (dolist
+               (entry
+                `((framework-rollback
+                   ,(lambda () (funcall framework-rollback nil)))
+                  (observer-detach
+                   ,(lambda ()
+                      (when (and observer (buffer-live-p buffer)
+                                 (ebox-surface-buffer-mounted-p buffer))
+                        (ebox-buffer-set-observer buffer nil))))
+                  (ebox-unmount
+                   ,(lambda ()
+                      (when (and (buffer-live-p buffer)
+                                 (ebox-surface-buffer-mounted-p buffer))
+                        (ebox-unmount-buffer buffer))))
+                  (buffer-restore
+                   ,(lambda ()
+                      (etaf-render-port--v1-restore-buffer buffer snapshot)))))
+             (when-let* ((diagnostic
+                          (etaf-render-port--v1-cleanup-step
+                           (car entry) (cadr entry))))
+               (push diagnostic diagnostics)))
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer
+               (setq-local etaf-render-port--v1-cleanup-diagnostics
+                           (nreverse diagnostics))))))
        (signal (car primary) (cdr primary))))))
 
 (defun etaf-render-port--v1-update
@@ -394,10 +474,16 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair."
   (ebox-surface-buffer-mounted-p buffer))
 
 (defun etaf-render-port-revision (buffer)
-  "Return BUFFER's latest committed Ebox surface revision, or zero."
-  (condition-case nil
-      (or (plist-get (ebox-buffer-update-report buffer) :surface-revision) 0)
-    (error 0)))
+  "Return BUFFER's committed Ebox revision, or zero when it is unmounted."
+  (let ((buffer (get-buffer buffer)))
+    (if (not (and (buffer-live-p buffer)
+                  (ebox-surface-buffer-mounted-p buffer)))
+        0
+      (let ((revision (ebox-surface-buffer-revision buffer)))
+        (unless (and (integerp revision) (>= revision 0))
+          (error "Mounted Ebox surface has no committed revision: %S"
+                 revision))
+        revision))))
 
 (provide 'etaf-render-port)
 

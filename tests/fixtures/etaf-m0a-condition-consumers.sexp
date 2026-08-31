@@ -13,7 +13,6 @@
  (:file "etaf-render-port.el" :form condition-case :conditions (error quit) :owner etaf-render-port :policy generic-containment)
  (:file "etaf-render-port.el" :form condition-case :conditions (error quit) :owner etaf-render-port :policy generic-containment)
  (:file "etaf-render-port.el" :form condition-case :conditions (etaf-spi-incompatible-error etaf-spi-bootstrap-error) :owner etaf-render-port :policy specific-compatibility)
- (:file "etaf-render-port.el" :form condition-case :conditions (error) :owner etaf-render-port :policy generic-containment)
  (:file "etaf-resource.el" :form condition-case :conditions (error) :owner etaf-resource :policy generic-containment)
  (:file "etaf-resource.el" :form condition-case :conditions (error) :owner etaf-resource :policy generic-containment)
  (:file "etaf-retirement.el" :form condition-case :conditions (error quit) :owner etaf-retirement :policy generic-containment)

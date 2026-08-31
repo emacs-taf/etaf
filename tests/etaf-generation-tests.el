@@ -324,6 +324,41 @@
       (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
+(ert-deftest etaf-semantic-ebox-report-finalization-fault-does-not-rollback ()
+  "A postaccept Ebox report fault still commits ETAF generation and buffer."
+  (let ((buffer-name " *etaf-ebox-report-postaccept-test*")
+        (source (etaf-ref 0))
+        (rollback-count 0))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer-name
+           (etaf--view-call 'etaf-generation-test-visible
+                            (list :source source) nil))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (generation (etaf-runtime-generation runtime))
+                 (original-rollback
+                  (symbol-function 'etaf-semantic-candidate-rollback)))
+            (cl-letf
+                (((symbol-function 'ebox-surface--participant-complete)
+                  (lambda (&rest _arguments)
+                    (error "injected Ebox report finalization fault")))
+                 ((symbol-function 'etaf-semantic-candidate-rollback)
+                  (lambda (candidate)
+                    (cl-incf rollback-count)
+                    (funcall original-rollback candidate))))
+              (setf (etaf-value source) 1))
+            (should (zerop rollback-count))
+            (should (= (1+ generation)
+                       (etaf-runtime-generation runtime)))
+            (should (equal "value=1"
+                           (with-current-buffer buffer-name
+                             (buffer-string))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
 (ert-deftest etaf-semantic-render-rollback-restores-all-authority-in-callback ()
   "Framework rollback restores token, stores, and journals before TP returns."
   (let ((buffer-name " *etaf-semantic-render-rollback-test*")

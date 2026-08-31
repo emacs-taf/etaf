@@ -101,6 +101,39 @@
         (when-let* ((buffer (get-buffer buffer-name)))
           (kill-buffer buffer))))))
 
+(ert-deftest etaf-host-postaccept-report-fault-still-finishes-attach ()
+  "Ebox report-finalization failure cannot roll back an accepted Host."
+  (let ((buffer-name " *etaf-host-report-postaccept-test*")
+        (source (etaf-ref 0))
+        (rollback-count 0)
+        (original-rollback
+         (symbol-function 'etaf-semantic-candidate-rollback)))
+    (unwind-protect
+        (progn
+          (cl-letf
+              (((symbol-function 'ebox-surface--participant-complete)
+                (lambda (&rest _arguments)
+                  (error "injected initial report finalization fault")))
+               ((symbol-function 'etaf-semantic-candidate-rollback)
+                (lambda (candidate)
+                  (cl-incf rollback-count)
+                  (funcall original-rollback candidate))))
+            (etaf-mount
+             buffer-name
+             (etaf--view-call 'etaf-host-test-component
+                              (list :source source) nil)))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (authority (etaf-runtime-host-authority runtime)))
+            (should runtime)
+            (should (etaf-host-authority-attached-p authority))
+            (should (zerop rollback-count))
+            (should (ebox-surface-buffer-mounted-p
+                     (get-buffer buffer-name)))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
 (ert-deftest etaf-host-unmount-invalidates-before-component-cleanup ()
   "Explicit unmount invalidates Host token before any Component hook runs."
   (let ((buffer-name " *etaf-host-unmount-boundary-test*")

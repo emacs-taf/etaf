@@ -117,19 +117,96 @@
 
 (ert-deftest etaf-render-port-v1-initial-runs-manual-framework-cleanup ()
   "A failed legacy initial stage invokes its paired cleanup exactly once."
-  (let (trace)
-    (cl-letf (((symbol-function 'ebox-render-to-buffer)
-               (lambda (&rest _arguments)
-                 (push 'render trace)
-                 'rendered-buffer)))
-      (should-error
-       (etaf-render-port--v1-initial
-        'buffer 'input
-        (lambda (_report)
-          (push 'stage trace)
-          (error "injected v1 initial failure"))
-        (lambda (_report) (push 'rollback trace))))
-      (should (equal (nreverse trace) '(render stage rollback))))))
+  (let ((buffer (generate-new-buffer " *etaf-v1-manual-cleanup*")) trace)
+    (unwind-protect
+        (cl-letf (((symbol-function 'ebox-render-to-buffer)
+                   (lambda (&rest _arguments)
+                     (push 'render trace)
+                     buffer)))
+          (should-error
+           (etaf-render-port--v1-initial
+            buffer 'input
+            (lambda (_report)
+              (push 'stage trace)
+              (error "injected v1 initial failure"))
+            (lambda (_report) (push 'rollback trace))))
+          (should (equal (nreverse trace) '(render stage rollback))))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest etaf-render-port-v1-initial-restores-real-ebox-surface ()
+  "A failed legacy stage removes Ebox authority and restores buffer content."
+  (let ((buffer (generate-new-buffer " *etaf-v1-real-cleanup*"))
+        (input (ebox-build '(box "committed")))
+        (rollback-count 0)
+        captured)
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "sentinel"))
+          (condition-case condition
+              (etaf-render-port--v1-initial
+               buffer input
+               (lambda (_report)
+                 (error "injected real v1 stage failure"))
+               (lambda (_report) (cl-incf rollback-count)))
+            (error (setq captured condition)))
+          (should (equal captured '(error "injected real v1 stage failure")))
+          (should (= rollback-count 1))
+          (should-not (ebox-surface-buffer-mounted-p buffer))
+          (should-not (ebox-surface-buffer-observer buffer))
+          (should (equal "sentinel"
+                         (with-current-buffer buffer (buffer-string))))
+          (should-not
+           (etaf-render-port-v1-cleanup-diagnostics buffer)))
+      (when (and (buffer-live-p buffer)
+                 (ebox-surface-buffer-mounted-p buffer))
+        (ebox-unmount-buffer buffer))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest etaf-render-port-v1-cleanup-fault-keeps-primary-and-continues ()
+  "A secondary v1 cleanup fault is diagnosed while Ebox cleanup continues."
+  (let ((buffer (generate-new-buffer " *etaf-v1-cleanup-fault*"))
+        (input (ebox-build '(box "committed")))
+        captured)
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "before"))
+          (condition-case condition
+              (etaf-render-port--v1-initial
+               buffer input
+               (lambda (_report) (error "primary stage failure"))
+               (lambda (_report) (error "secondary rollback failure")))
+            (error (setq captured condition)))
+          (should (equal captured '(error "primary stage failure")))
+          (should-not (ebox-surface-buffer-mounted-p buffer))
+          (should (equal "before"
+                         (with-current-buffer buffer (buffer-string))))
+          (let ((diagnostics
+                 (etaf-render-port-v1-cleanup-diagnostics buffer)))
+            (should (= 1 (length diagnostics)))
+            (should (eq (plist-get (car diagnostics) :phase)
+                        'framework-rollback))
+            (should (equal (plist-get (car diagnostics) :condition)
+                           '(error "secondary rollback failure")))))
+      (when (and (buffer-live-p buffer)
+                 (ebox-surface-buffer-mounted-p buffer))
+        (ebox-unmount-buffer buffer))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest etaf-render-port-revision-fails-closed-for-mounted-surface ()
+  "Revision is zero only without a mount; mounted lookup errors stay visible."
+  (let ((buffer (generate-new-buffer " *etaf-revision-contract*")))
+    (unwind-protect
+        (progn
+          (should (zerop (etaf-render-port-revision buffer)))
+          (ebox-render-to-buffer buffer (ebox-build '(box "mounted")))
+          (should (> (etaf-render-port-revision buffer) 0))
+          (cl-letf (((symbol-function 'ebox-surface-buffer-revision)
+                     (lambda (_buffer) (error "injected report failure"))))
+            (should-error (etaf-render-port-revision buffer) :type 'error)))
+      (when (and (buffer-live-p buffer)
+                 (ebox-surface-buffer-mounted-p buffer))
+        (ebox-unmount-buffer buffer))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
 (ert-deftest etaf-render-port-is-the-only-protocol-probe-owner ()
   "No downstream ETAF module probes Ebox framework SPI protocol state."
