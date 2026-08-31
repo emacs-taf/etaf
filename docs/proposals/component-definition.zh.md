@@ -1,10 +1,10 @@
-# ETAF Component 定义：目标设计
+# ETAF Component 定义：历史目标设计
 
-> 状态：已完成架构审查的目标设计，尚未实现。
+> **SUPERSEDED / historical：本文不再是当前公共合同。**
 >
-> 本文只定义目标公共契约，不代表当前版本已经支持这些写法。当前实现差距见
-> “实现状态与迁移”一节。审查通过并完成代码、测试、GUI 与性能门禁后，稳定内容
-> 才能进入用户指南。
+> 当前公共合同以 [docs/architecture.zh.md](../architecture.zh.md) 与
+> [docs/user-guide.zh.md](../user-guide.zh.md) 为准。本文保留为设计决策历史，不再以
+> 创建时的“当前状态”表覆盖已经交付的实现。
 
 本文只拥有 **Component 作者语法和作者可见语义**。属性 owner、跨包依赖、
 transaction 权限、Ebox/TP/Rust 边界仍以
@@ -1016,11 +1016,12 @@ grammar，也不要求 IR 保存 frontend provenance。
 | topology compiler | 是 | 否 |
 | Runtime/identity/lifecycle | 同一套 | 同一套 |
 
-## 21. 实现状态与迁移
+## 21. 历史实现快照（非当前状态）
 
-截至本文创建时，当前代码的真实状态是：
+下表只记录本文创建时的历史差距，不能用于判断当前版本。当前实现与迁移状态见
+[implementation-plan.zh.md](../implementation-plan.zh.md)。
 
-| 能力 | 当前状态 | 目标动作 |
+| 能力 | 历史状态 | 当时目标动作 |
 | --- | --- | --- |
 | `etaf-define-component :view` | 已实现 | 按新 DSL grammar 收敛。 |
 | `:setup` | 已实现，但返回零参数 render function | 删除旧语义；改为只返回 state。 |

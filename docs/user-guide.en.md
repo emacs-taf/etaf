@@ -80,7 +80,7 @@ Attribute values are ordinary Elisp expressions. They do not need an extra `expr
    (text
     :color (if dark "#F4F6FB" "#1F2328")
     :background-color "#20242B"
-    (expr :value label))))
+    (expr label))))
 ```
 
 The child region is structural. `expr` is the one explicit bridge for ordinary Elisp computation:
@@ -88,14 +88,15 @@ The child region is structural. `expr` is the one explicit bridge for ordinary E
 ```elisp
 (etaf-view
  (column
-  (expr :value (if loading "Loading..." "Ready"))
+  (expr (if loading "Loading..." "Ready"))
   (expr
-   :value
    (when open
      (etaf-view (text :font-style 'italic "Details"))))))
 ```
 
-`expr` accepts exactly `:value` and no children. Its result can be a string, View, sequence, or `nil`. `if`, `when`, `cond`, `let`, `mapcar`, and `cl-loop` remain normal Elisp inside the value.
+`expr` accepts exactly one ordinary Elisp form and no structural children. Its
+result can be a string, typed View, proper typed View sequence, or `nil`.
+`if`, `when`, `cond`, `let`, `mapcar`, and `cl-loop` remain normal Elisp.
 
 Quote has one ordinary Elisp meaning:
 
@@ -134,7 +135,7 @@ The beginner form is a stateless `:view` Component:
   :view
   (text
    :font-weight 'bold
-   (expr :value label)))
+   (expr label)))
 
 (etaf-mount
  "*etaf-status*"
@@ -154,8 +155,9 @@ The definition macro accepts only these keywords:
 
 | Keyword | Meaning |
 | --- | --- |
-| `:view` | The stateless View producer; mutually exclusive with `:setup` |
-| `:setup` | One-time Component initialization returning a zero-argument render function |
+| `:view` | Declarative View frontend; mutually exclusive with `:render` |
+| `:render` | Ordinary-Elisp frontend returning one typed View through `etaf-node` |
+| `:setup` | Optional one-time initialization returning opaque state read with `etaf-state` |
 | `:styles` | Optional static scoped style declaration |
 
 There is no separate declaration block for children, slots, events, state, or variants. Props are declared with `(&key ...)`; children and slots are implicit content.
@@ -173,18 +175,24 @@ Use `:setup` when the Component owns local state:
      (lambda () (message "%s mounted" title)))
     (etaf-on-unmounted
      (lambda () (message "%s unmounted" title)))
-    (lambda ()
-      (etaf-view
-       (column
-        (text :font-weight 'bold (expr :value title))
-        (text (expr :value (format "Count: %d" (etaf-value count))))
-        (text
-         :role 'button
-         :on-press (lambda () (cl-incf (etaf-value count)))
-         "Increment"))))))
+    count)
+  :view
+  (column
+   (text :font-weight 'bold (expr title))
+   (text (expr (format "Count: %d" (etaf-value (etaf-state)))))
+   (text
+    :role 'button
+    :on-press
+    (let ((count (etaf-state)))
+      (lambda () (cl-incf (etaf-value count))))
+    "Increment")))
 ```
 
-Setup runs once for the retained instance. Its returned render function runs on each update. `etaf-on-mounted`, `etaf-on-updated`, and `etaf-on-unmounted` register lifecycle callbacks for that Component instance. Scope disposal automatically stops reactive effects and cleanup.
+Setup runs once for the retained instance and returns one opaque state value.
+The selected `:view` or `:render` frontend runs on each update and reads that
+exact value with `etaf-state`. `etaf-on-mounted`, `etaf-on-updated`, and
+`etaf-on-unmounted` register lifecycle callbacks for that Component instance.
+Scope disposal automatically stops reactive effects and cleanup.
 
 The small reactive API is:
 
@@ -219,7 +227,7 @@ Trailing children are the anonymous/default slot:
   "Render a titled panel."
   :view
   (column
-   (text :font-weight 'bold (expr :value title))
+   (text :font-weight 'bold (expr title))
    (slot (text :color "#687386" "No content"))))
 
 (etaf-view
@@ -236,7 +244,7 @@ Named slots use `:name` and must use a stable non-keyword symbol:
   :view
   (column
    (slot :name 'header
-         (text :font-weight 'bold (expr :value title)))
+         (text :font-weight 'bold (expr title)))
    (slot (text :color "#687386" "No body"))))
 
 (etaf-view
@@ -247,6 +255,22 @@ Named slots use `:name` and must use a stable non-keyword symbol:
 ```
 
 The two default-slot shorthands are `(slot)` and `(slot FALLBACK...)`. The normalized spelling is `(slot :name 'default FALLBACK...)`. At a call site, ordinary children fill `default`; a named input uses `(slot :name 'header CHILD...)`. An explicit empty `(slot :name 'header)` suppresses the fallback. Strings, numbers, variables, and runtime expressions are not valid slot names.
+
+`expr` may return a typed View or a proper sequence of typed Views at a
+structural boundary.  It never exposes or accepts ETAF's private structs.  The
+same Component can combine a keyed `:for`, a structural expression, and a
+named footer slot:
+
+```elisp
+(etaf-define-component etaf-docs-collection-card (&key items footer-view)
+  "Render keyed rows, one dynamic typed View, and a footer slot."
+  :view
+  (column
+   (row :for (item items) :key (car item)
+    (text (expr (cdr item))))
+   (expr footer-view)
+   (slot :name 'footer (text "No footer"))))
+```
 
 ## 7. Styles and themes
 
@@ -291,10 +315,9 @@ Theme is a Context convenience, not another runtime object:
 (etaf-define-component themed-shell ()
   "Provide default text colors to a subtree."
   :setup
-  (progn
-    (etaf-theme-provide
-     '(:color "#F4F6FB" :bgcolor "#202634"))
-    (lambda () (etaf-view (slot)))))
+  (etaf-theme-provide
+   '(:color "#F4F6FB" :bgcolor "#202634"))
+  :view (slot))
 ```
 
 For a light/dark application palette, keep the semantic roles in one palette
@@ -372,6 +395,18 @@ For a reusable installer, reserve `:install` for the cleanup-producing part of t
 
 The installer can call `etaf-current-behavior-context` when it needs the current Runtime or Host path. Replacing the Behavior runs the old cleanup before the new state becomes current. Behavior equality keeps function and reactive-value identity with `eq`; a newly-created installer closure is therefore a deliberate replacement, not an accidental reuse. The replacement is staged under the mounted resource registry and becomes authoritative only when its generation commits.
 
+Composition rules are fixed: the Host callback runs before Behavior callbacks,
+Behaviors follow declaration order, and a callback error short-circuits the
+rest. For non-event attributes the Host wins, then the first Behavior wins.
+Duplicate Behavior names fail before installation. Stable installers are reused
+and each installed cleanup runs exactly once. Dispatch targets one exact Host;
+there is no capture or bubble phase.
+
+Use application- or feature-prefixed Action names. Duplicate Action
+registration is an error. During deliberate reload, wrap the replacement in
+`etaf-action-redefine-run`; it changes future name-based dispatch without
+flushing the mounted Runtime.
+
 Focus and hit testing are Runtime operations:
 
 ```elisp
@@ -394,15 +429,14 @@ Use Context for a dependency shared across component depth, not for ordinary pro
   :setup
   (let ((service (etaf-ref "demo-service")))
     (etaf-provide 'service service)
-    (lambda () (etaf-view (slot)))))
+    service)
+  :view (slot))
 
 (etaf-define-component service-label ()
   "Read the inherited service."
-  :setup
-  (let ((service (etaf-inject 'service nil t)))
-    (lambda ()
-      (etaf-view
-       (text (expr :value (format "Service: %s" (etaf-value service)))))))
+  :setup (etaf-inject 'service nil t)
+  :view
+  (text (expr (format "Service: %s" (etaf-value (etaf-state))))))
 
 (etaf-mount
  "*etaf-context*"
@@ -469,8 +503,9 @@ updates only when that identity enters or leaves the main selection, including
 when application code writes `etaf-data-selection` directly.  The default
 DataGrid path uses these refs with keyed retained row owners, so a single-select
 change invalidates the old and new rows rather than the complete visible page.
-Custom `:row-selected-p` and `:selected-key` contracts remain available when
-selection is owned outside the Controller.
+Custom `:row-selected-p` remains available when selection is owned outside the
+Controller. Stable identity still comes from the required `:row-key`; there is
+no second selection-key DataGrid prop.
 
 `etaf-data-controller` accepts `:item-key` for stable selected-row lookup. When
 created inside a Component setup, its internal effect Scope is owned by the
@@ -662,7 +697,7 @@ Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, 
 - Put every property before the first child.
 - Use `:font-weight 'bold`, not `:font-weight :bold`; the weight is an Elisp symbol value, not a property keyword.
 - Do not quote a structural View form.
-- Use `expr :value` for `if`, `when`, `let`, `mapcar`, or a View returned by ordinary Elisp.
+- Use `(expr FORM)` for `if`, `when`, `let`, `mapcar`, or a typed View returned by ordinary Elisp.
 - Use `(slot)` or `(slot FALLBACK...)` for the default outlet; use `:name 'header` for named slot content.
 - Keep writes out of rendering; use an event, Action, watch callback, or Effect.
 - Use `etaf-ui` Components for product controls; core Hosts are the structural foundation.

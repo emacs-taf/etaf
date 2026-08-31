@@ -80,7 +80,7 @@ View 含有状态型 Component、响应式数据、事件或生命周期时，�
    (text
     :color (if dark "#F4F6FB" "#1F2328")
     :background-color "#20242B"
-    (expr :value label))))
+    (expr label))))
 ```
 
 子节点区是结构语法。`expr` 是执行普通 Elisp 的唯一明确桥接：
@@ -88,14 +88,15 @@ View 含有状态型 Component、响应式数据、事件或生命周期时，�
 ```elisp
 (etaf-view
  (column
-  (expr :value (if loading "Loading..." "Ready"))
+  (expr (if loading "Loading..." "Ready"))
   (expr
-   :value
    (when open
      (etaf-view (text :font-style 'italic "Details"))))))
 ```
 
-`expr` 只接受 `:value`，不能有子节点。返回值可以是字符串、View、序列或 `nil`。`if`、`when`、`cond`、`let`、`mapcar` 和 `cl-loop` 仍然是 value 中的普通 Elisp。
+`expr` 只接受一个普通 Elisp form，不能有结构子节点。返回值可以是字符串、typed
+View、typed View proper sequence 或 `nil`。`if`、`when`、`cond`、`let`、`mapcar` 和
+`cl-loop` 仍是普通 Elisp。
 
 quote 只有普通 Elisp 的含义：
 
@@ -134,7 +135,7 @@ quote 只有普通 Elisp 的含义：
   :view
   (text
    :font-weight 'bold
-   (expr :value label)))
+   (expr label)))
 
 (etaf-mount
  "*etaf-status*"
@@ -154,8 +155,9 @@ Component 的规范名称可以带 `etaf-` 前缀：
 
 | 关键字 | 作用 |
 | --- | --- |
-| `:view` | 无状态 Component 的 View 生产者，与 `:setup` 互斥 |
-| `:setup` | 一次性初始化，返回零参数 render 函数 |
+| `:view` | 声明式 View frontend，与 `:render` 互斥 |
+| `:render` | 普通 Elisp frontend，通过 `etaf-node` 返回一个 typed View |
+| `:setup` | 可选的一次性初始化，返回由 `etaf-state` 读取的 opaque 状态 |
 | `:styles` | 可选的静态作用域样式声明 |
 
 没有单独的 children、slot、event、state 或 variant 声明块。业务 props 通过 `(&key ...)` 声明，children 和 slot 是隐式内容。
@@ -173,18 +175,23 @@ Component 自己拥有状态时使用 `:setup`：
      (lambda () (message "%s mounted" title)))
     (etaf-on-unmounted
      (lambda () (message "%s unmounted" title)))
-    (lambda ()
-      (etaf-view
-       (column
-        (text :font-weight 'bold (expr :value title))
-        (text (expr :value (format "Count: %d" (etaf-value count))))
-        (text
-         :role 'button
-         :on-press (lambda () (cl-incf (etaf-value count)))
-         "Increment"))))))
+    count)
+  :view
+  (column
+   (text :font-weight 'bold (expr title))
+   (text (expr (format "Count: %d" (etaf-value (etaf-state)))))
+   (text
+    :role 'button
+    :on-press
+    (let ((count (etaf-state)))
+      (lambda () (cl-incf (etaf-value count))))
+    "Increment")))
 ```
 
-Setup 对 retained instance 只执行一次，返回的 render 函数在更新时重复运行。`etaf-on-mounted`、`etaf-on-updated` 和 `etaf-on-unmounted` 注册该 Component 的生命周期 callback。Scope 释放时会自动停止响应式 effect 并运行 cleanup。
+Setup 对 retained instance 只执行一次，返回一个 opaque 状态值。选定的 `:view` 或
+`:render` frontend 在更新时运行，并通过 `etaf-state` 读取这个准确值。
+`etaf-on-mounted`、`etaf-on-updated` 和 `etaf-on-unmounted` 注册该 Component 的生命周期
+callback。Scope 释放时会自动停止响应式 effect 并运行 cleanup。
 
 响应式 API 只有一套模型：
 
@@ -219,7 +226,7 @@ Setup 对 retained instance 只执行一次，返回的 render 函数在更新�
   "Render a titled panel."
   :view
   (column
-   (text :font-weight 'bold (expr :value title))
+   (text :font-weight 'bold (expr title))
    (slot (text :color "#687386" "No content"))))
 
 (etaf-view
@@ -236,7 +243,7 @@ Setup 对 retained instance 只执行一次，返回的 render 函数在更新�
   :view
   (column
    (slot :name 'header
-         (text :font-weight 'bold (expr :value title)))
+         (text :font-weight 'bold (expr title)))
    (slot (text :color "#687386" "No body"))))
 
 (etaf-view
@@ -247,6 +254,21 @@ Setup 对 retained instance 只执行一次，返回的 render 函数在更新�
 ```
 
 默认 slot 的两个用户简写是 `(slot)` 和 `(slot FALLBACK...)`。内部统一形式是 `(slot :name 'default FALLBACK...)`。调用处的普通子节点填充 `default`；命名内容写成 `(slot :name 'header CHILD...)`。显式空的 `(slot :name 'header)` 会抑制 fallback。字符串、数字、变量和运行时表达式都不是合法 slot name。
+
+在结构边界，`expr` 可以返回 typed View 或 typed View 的 proper sequence，但它不暴露、
+也不接受 ETAF 私有 struct。同一个 Component 可以组合 keyed `:for`、结构表达式和
+命名 footer slot：
+
+```elisp
+(etaf-define-component etaf-docs-collection-card (&key items footer-view)
+  "Render keyed rows, one dynamic typed View, and a footer slot."
+  :view
+  (column
+   (row :for (item items) :key (car item)
+    (text (expr (cdr item))))
+   (expr footer-view)
+   (slot :name 'footer (text "No footer"))))
+```
 
 ## 7. 样式与 Theme
 
@@ -290,10 +312,9 @@ Theme 是 Context 的便捷形式，不是另一个 Runtime 对象：
 (etaf-define-component themed-shell ()
   "Provide default text colors to a subtree."
   :setup
-  (progn
-    (etaf-theme-provide
-     '(:color "#F4F6FB" :bgcolor "#202634"))
-    (lambda () (etaf-view (slot)))))
+  (etaf-theme-provide
+   '(:color "#F4F6FB" :bgcolor "#202634"))
+  :view (slot))
 ```
 
 如果应用有亮/暗两套 palette，应把语义 role 集中放在一份 palette plist 中，
@@ -369,6 +390,15 @@ Behavior 用来打包可复用的非视觉属性和 cleanup：
 
 Installer 需要 Runtime 或 Host path 时，可以调用 `etaf-current-behavior-context`。Behavior 被替换时，旧 cleanup 会在新状态成为当前状态前运行。Behavior equality 对 function 和 reactive value 使用 `eq`；因此新建的 installer closure 会被视为有意替换，而不是错误复用。替换状态先以 mounted resource registry 的 staged resource 保存，generation commit 后才成为 authority。
 
+组合规则固定：Host callback 先于 Behavior callback，Behavior 按声明顺序运行，callback
+error 会 short-circuit 剩余 callback。非事件属性先由 Host 获胜，否则由第一个
+Behavior 获胜（first-wins）。重复 Behavior name 在 installer 前失败；稳定 installer 会复用，每个
+已安装 cleanup exactly-once。dispatch 只命中准确 Host，不存在 capture 或 bubble。
+
+Action name 使用 application/feature-prefixed symbol；重复 Action 注册默认报错。显式
+reload 用 `etaf-action-redefine-run` 包住替换，它只改变未来按 name 的 dispatch，不会
+flush 已挂载 Runtime。
+
 Focus 和 hit testing 是 Runtime 操作：
 
 ```elisp
@@ -391,15 +421,14 @@ Context 适合跨多层共享依赖，不适合普通 label：
   :setup
   (let ((service (etaf-ref "demo-service")))
     (etaf-provide 'service service)
-    (lambda () (etaf-view (slot)))))
+    service)
+  :view (slot))
 
 (etaf-define-component service-label ()
   "Read the inherited service."
-  :setup
-  (let ((service (etaf-inject 'service nil t)))
-    (lambda ()
-      (etaf-view
-       (text (expr :value (format "Service: %s" (etaf-value service)))))))
+  :setup (etaf-inject 'service nil t)
+  :view
+  (text (expr (format "Service: %s" (etaf-value (etaf-state))))))
 
 (etaf-mount
  "*etaf-context*"
@@ -465,8 +494,8 @@ Controller 通过 `etaf-data-items`、`etaf-data-status`、`etaf-data-error`、`
 identity 进入或离开主 selection 时它才会变化，应用直接写
 `etaf-data-selection` 时也一样。DataGrid 默认把这些 ref 与 keyed retained row
 owner 配合使用，因此单选变化只会使旧行和新行失效，而不是整个可见页。
-selection 由 Controller 外部拥有时，仍可使用自定义 `:row-selected-p` 与
-`:selected-key` 契约。
+selection 由 Controller 外部拥有时，仍可使用自定义 `:row-selected-p`。稳定 identity
+继续来自必选的 `:row-key`；DataGrid 没有第二个 selection-key prop。
 
 `etaf-data-controller` 支持用于稳定选中行查找的 `:item-key`。在 Component
 setup 中创建时，它的内部 effect Scope 会自动归当前 Component Scope 所有；如果
@@ -650,7 +679,7 @@ observer，不修改任何函数。
 - 所有属性必须放在第一个子节点之前。
 - 使用 `:font-weight 'bold`，不要使用 `:font-weight :bold`；weight 是 Elisp symbol 值，不是属性 keyword。
 - 结构性 View form 不要 quote。
-- `if`、`when`、`let`、`mapcar` 或 Elisp 返回 View 时，使用 `expr :value`。
+- `if`、`when`、`let`、`mapcar` 或 Elisp 返回 typed View 时，使用 `(expr FORM)`。
 - 默认 outlet 使用 `(slot)` 或 `(slot FALLBACK...)`；命名内容使用 `:name 'header`。
 - 不要在 render 中写状态；使用事件、Action、watch callback 或 Effect。
 - 产品级控件使用 `etaf-ui` Component；core Host 只是结构基础。

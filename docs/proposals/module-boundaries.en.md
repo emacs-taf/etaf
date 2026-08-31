@@ -824,7 +824,10 @@ complete chain, for example:
 
 `etaf-component`:
 
-- defines Component props, `:view`, `:setup`, and `:styles`;
+- defines Component props, mutually exclusive `:view`/`:render` frontends,
+  optional `:setup` returning opaque state, the sole `etaf-state` accessor,
+  and `:styles`;
+- defines the `etaf-node` code frontend at the same typed View ABI boundary;
 - does not schedule Runtime or call Ebox.
 
 `etaf-runtime`:

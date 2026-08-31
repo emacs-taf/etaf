@@ -18,7 +18,7 @@
 
 | 里程碑 | 已交付职责 | 证据 |
 | --- | --- | --- |
-| P0 grammar | 统一 View 形状、属性优先解析、`etaf-view`、`expr :value`、核心 Host、alias | `tests/etaf-tests.el` 结构和语法测试 |
+| P0 grammar | 统一 View 形状、属性优先解析、`etaf-view`、`(expr FORM)`、核心 Host、alias | `tests/etaf-tests.el` 结构和语法测试 |
 | P1 Component | `:view`、`:setup`、props、默认/命名 slot、retained instance、生命周期、`:key`、raw Ebox 出口 | Component、slot、mount、prop 更新、raw node、rollback 测试 |
 | P2 Runtime | ref、computed、effect、watch、Scope cleanup、Context、Theme、Behavior、事件、focus、Action | 挂载事件/focus、响应式失败回滚和 cleanup 测试 |
 | P3 presentation | 作用域样式、selector、Theme 优先级、inline text runs、Resource 和 error boundary | 样式、Theme、文本 surface、Resource、error 测试 |
@@ -55,16 +55,19 @@
 - 唯一结构形式是 `(NAME :PROPERTY VALUE ... CHILD ...)`。
 - 所有属性必须先于所有子节点。
 - 属性值是普通 Elisp 表达式。
-- 唯一的子节点计算桥接是 `(expr :value ELISP-EXPRESSION)`。
+- 唯一的子节点计算桥接是 `(expr ELISP-EXPRESSION)`；结果可以是文本、typed View、
+  typed View proper sequence 或 `nil`。
 - Elisp 返回动态 View 时，在 `expr` 中用 `(etaf-view ...)` 构造；被 quote 的结构数据永远不会被执行。
 - 六个可见 Host form 是 `text`、`box`、`row`、`column`、`flex`、`grid`；`fragment`、`slot`、`expr` 是透明的框架结构。
 - View 作者 DSL 不提供 raw Ebox 逃生口；框架集成在作者 DSL 之外使用 Ebox evaluated typed-constructor 端口。
 
 ### 4.2 Component 与 slot
 
-- `etaf-define-component` 只接受 `:view`、`:setup` 和可选 `:styles`。
-- `:view` 与 `:setup` 互斥。
-- `:setup` 对每个 retained identity 只运行一次，返回零参数 render 函数。
+- `etaf-define-component` 必须在 `:view` 与 `:render` 中恰好选择一个；`:setup` 与
+  `:styles` 可选。
+- `:view` 与 `:render` 是互斥 frontend。
+- `:setup` 对每个 retained identity 只运行一次，返回 opaque 状态，并由两个 frontend
+  中的 `etaf-state` 读取。
 - Props 更新只重新 render，不重新运行 setup。
 - 尾部 children 是 `slots.default`；命名 slot 输入使用 `(slot :name 'NAME CHILD...)`。
 - 默认 outlet 简写是 `(slot)` 或 `(slot FALLBACK...)`。

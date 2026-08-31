@@ -64,7 +64,7 @@ Properties must be complete before the first child. A child can be a string, a n
   (text :font-weight 'bold "Hello")
   (text
    :color "#687386"
-   (expr :value (if ready "Ready" "Waiting")))))
+   (expr (if ready "Ready" "Waiting")))))
 ```
 
 An attribute appearing after a child is invalid because the two regions may
@@ -77,18 +77,17 @@ not be interleaved.
 The rule is simple:
 
 1. Structural View positions are not quoted. This includes `etaf-view`, Hosts, Component calls, children, slot forms, and static Component styles.
-2. Elisp expression positions follow normal Elisp evaluation. This includes attribute values, `:key`, `:on-*`, `:use`, `expr :value`, `:setup`, Context values, Behavior constructors, and Actions.
+2. Elisp expression positions follow normal Elisp evaluation. This includes attribute values, `:key`, `:on-*`, `:use`, `expr`, `:setup`, Context values, Behavior constructors, and Actions.
 
 ```elisp
 (etaf-view
  (text
   :color (if dark "#F4F6FB" "#1F2328")
-  (expr :value label)))
+  (expr label)))
 
 (etaf-view
  (column
   (expr
-   :value
    (when open
      (etaf-view
       (text :font-weight 'bold "Details"))))))
@@ -103,30 +102,37 @@ Attribute values do not need an `expr` wrapper. `expr` exists only because the c
 `expr` accepts exactly one property and no children:
 
 ```elisp
-(expr :value ELISP-EXPRESSION)
+(expr ELISP-EXPRESSION)
 ```
 
-It evaluates the expression, then accepts a string, View, sequence, or `nil`. It creates no Ebox wrapper, identity, lifecycle, watcher, or effect. `if`, `when`, `cond`, `let`, `mapcar`, `cl-loop`, and other Elisp forms remain ordinary Elisp inside `:value`.
+It evaluates the expression, then accepts a string, typed View, proper typed
+View sequence, or `nil`. It creates no Ebox wrapper, identity, lifecycle,
+watcher, or effect. `if`, `when`, `cond`, `let`, `mapcar`, `cl-loop`, and other
+Elisp forms remain ordinary Elisp inside the form.
 
 The current core has no file-facing `.etaf` pair loader. `etaf-define-component` is the structure/style/behavior unit: its View defines structure, `:styles` owns presentation rules, and `:setup` owns retained state, events, and lifecycle behavior. A future `.etaf` single-file component format belongs in a compiler layer that lowers into this same public View and Component contract; it is not a second runtime grammar.
 
 ## 4. Components
 
-The public definition macro has exactly three keywords:
+The public definition macro has four keywords.  Choose exactly one frontend;
+the other two clauses are optional:
 
-```elisp
+```text
 (etaf-define-component NAME (&key PROPS)
   DOCSTRING?
+  :setup OPAQUE-STATE-FORM
   :view VIEW
   :styles (styles RULE...))
 
 (etaf-define-component NAME (&key PROPS)
   DOCSTRING?
-  :setup SETUP
+  :setup OPAQUE-STATE-FORM
+  :render ORDINARY-ELISP
   :styles (styles RULE...))
 ```
 
-`:view` and `:setup` are mutually exclusive. `:styles` is optional and may appear once. Props are the only declared business inputs; ordinary trailing children and named slots are normalized separately into the Component's slot collection.
+`:view` and `:render` are mutually exclusive and exactly one is required.
+`:setup` and `:styles` are optional and may each appear once. Props are the only declared business inputs; ordinary trailing children and named slots are normalized separately into the Component's slot collection.
 
 The Component definition is the current structure/style/behavior boundary. Keep dynamic state, Action callbacks, and lifecycle work in `:setup`; keep static presentation in `:styles`. A future `.etaf` SFC compiler may produce these definitions, but the Runtime does not load `.etaf` files directly.
 
@@ -138,31 +144,34 @@ The Component definition is the current structure/style/behavior boundary. Keep 
   :view
   (text
    :font-weight 'bold
-   (expr :value label)))
+   (expr label)))
 ```
 
 ```elisp
 (etaf-define-component disclosure (&key title)
   "Render a retained disclosure."
   :setup
-  (let ((open (etaf-ref nil)))
-    (lambda ()
-      (etaf-view
-       (column
-        (text
-         :role 'button
-         :on-press
-         (lambda ()
-           (setf (etaf-value open)
-                 (not (etaf-value open))))
-         (expr :value (if (etaf-value open) "Hide" "Show")))
-        (expr
-         :value
-         (when (etaf-value open)
-           (etaf-view (text (expr :value title))))))))))
+  (etaf-ref nil)
+  :view
+  (column
+   (text
+    :role 'button
+    :on-press
+    (let ((open (etaf-state)))
+      (lambda ()
+        (setf (etaf-value open)
+              (not (etaf-value open)))))
+    (expr (if (etaf-value (etaf-state)) "Hide" "Show")))
+   (expr
+    (when (etaf-value (etaf-state))
+      (etaf-view (text (expr title)))))))
 ```
 
-`:setup` runs once for a retained Component instance and must return a zero-argument render function. Re-render reads current props and refs without rerunning setup. Setup is the owner for local refs, computed values, watches, Effects, and cleanup registration.
+`:setup` runs once for a retained Component instance and returns one opaque state
+value.  `etaf-state` returns that exact value during `:view` or `:render`.
+Re-render reads current props and state without rerunning setup. Setup is the
+owner for local refs, computed values, watches, Effects, and cleanup
+registration; it never returns a render function.
 
 `:key` is stable identity metadata, not a business prop. On a Component call it selects the retained Component instance within the sibling scope; on a Host it is forwarded as the Ebox node key. If a render candidate fails, the Runtime restores the previous instance, handlers, behaviors, and buffer.
 
@@ -296,6 +305,19 @@ Use `etaf-action-define` and `etaf-dispatch` when the mutation is named and shar
 
 `etaf-behavior-create` accepts the reserved `:install` attribute for an optional zero-argument installer. The installer may return a cleanup function; `etaf-current-behavior-context` exposes the current Runtime, structural path, and Host props while it runs. Installer state is disposed when the Behavior is replaced or its owner is unmounted.
 
+Interaction composition is deterministic.  An explicit Host `:on-*` callback
+runs first, followed by Behavior callbacks in declaration order; an error
+short-circuits the remaining callbacks.  For non-event attributes the explicit
+Host value wins, otherwise the first declaring Behavior wins. Behavior names
+must be unique on one Host before any installer runs. Stable installer identity
+is reused, and every installed cleanup runs exactly once. Events dispatch only
+to the exact Host reference: ETAF has no capture or bubble phase.
+
+Action names should be application- or feature-prefixed symbols. Duplicate
+registration is an error by default. `etaf-action-redefine-run` is the explicit
+authoring/reload boundary; replacement affects future name-based dispatch and
+does not flush a mounted Runtime.
+
 Runtime events are dispatched through `etaf-dispatch-event`, and focus/hit testing use public Ebox Host-reference queries through `etaf-activate`, `etaf-focus`, `etaf-focus-next`, `etaf-host-ref-bounds`, and `etaf-host-ref-position`.
 
 ## 9. Context, Theme, Data, and Resource
@@ -310,14 +332,13 @@ Context is an inherited Component Scope environment:
   :setup
   (let ((service (etaf-ref "demo-service")))
     (etaf-provide 'service service)
-    (lambda () (etaf-view (slot)))))
+    service)
+  :view (slot))
 
 (etaf-define-component service-consumer ()
   "Read the inherited service."
-  :setup
-  (let ((service (etaf-inject 'service nil t)))
-    (lambda ()
-      (etaf-view (text (expr :value (etaf-value service)))))))
+  :setup (etaf-inject 'service nil t)
+  :view (text (expr (etaf-value (etaf-state)))))
 
 (etaf-view (service-provider (service-consumer)))
 ```
@@ -328,10 +349,9 @@ Keys are stable ordinary symbols. The nearest ancestor wins; a missing required 
 (etaf-define-component themed-shell ()
   "Provide default text colors to a subtree."
   :setup
-  (progn
-    (etaf-theme-provide
-     '(:color "#F4F6FB" :bgcolor "#202634"))
-    (lambda () (etaf-view (slot)))))
+  (etaf-theme-provide
+   '(:color "#F4F6FB" :bgcolor "#202634"))
+  :view (slot))
 ```
 
 Palette resolution remains a Theme concern, not a UI catalog concern. Core

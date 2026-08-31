@@ -6,6 +6,12 @@
 
 (require 'ert)
 (require 'cl-lib)
+(require 'json)
+(require 'macroexp)
+(require 'etaf)
+
+(declare-function etaf-m0b-component-manifest-write-json
+                  "etaf-m0b-component-manifest" ())
 
 (defconst etaf-docs-test--root
   (file-name-directory
@@ -30,7 +36,7 @@
           (unless (re-search-forward "^```[[:space:]]*$" nil t)
             (error "Unclosed Elisp documentation block"))
           (push (buffer-substring-no-properties start
-                                                 (line-beginning-position))
+                                                 (match-beginning 0))
                 blocks))))
     (nreverse blocks)))
 
@@ -46,6 +52,42 @@
             (cl-incf count))
         (end-of-file count)
         (error (error "Cannot read documentation form: %S" err))))))
+
+(defun etaf-docs-test--forms (source)
+  "Read and return every form in documentation SOURCE."
+  (with-temp-buffer
+    (insert source)
+    (goto-char (point-min))
+    (let (forms)
+      (condition-case nil
+          (while t (push (read (current-buffer)) forms))
+        (end-of-file (nreverse forms))))))
+
+(defun etaf-docs-test--mounted-collection-probe (forms)
+  "Load exact documentation FORMS and mount the collection composition."
+  (etaf-component-redefine-run
+   (lambda ()
+     (dolist (form forms)
+       (eval form t))))
+  (let ((buffer (generate-new-buffer " *etaf-docs-m0b*")))
+    (unwind-protect
+        (progn
+          (let ((view
+                 (eval
+                  '(etaf-view
+                    (etaf-docs-collection-card
+                     :items '((1 . "One") (2 . "Two"))
+                     :footer-view (etaf-view (text "Dynamic"))
+                     (slot :name 'footer (text "Footer"))))
+                  t)))
+            (etaf-mount buffer view))
+          (let ((text (with-current-buffer buffer (buffer-string))))
+            (dolist (expected '("One" "Two" "Dynamic" "Footer"))
+              (should (string-match-p expected text)))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
+        (etaf-unmount runtime))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
 
 (ert-deftest etaf-docs-have-paired-long-lived-files ()
   "Keep the public architecture, guide, and plan in both languages."
@@ -94,6 +136,119 @@
     (dolist (block (etaf-docs-test--elisp-blocks
                     (etaf-docs-test--read file)))
       (should (> (etaf-docs-test--read-all block) 0)))))
+
+(ert-deftest etaf-docs-component-contract-is-current ()
+  "Keep public Component prose aligned with the authoritative macro contract."
+  (dolist (file '("docs/architecture.en.md" "docs/architecture.zh.md"
+                  "docs/user-guide.en.md" "docs/user-guide.zh.md"
+                  "docs/implementation-plan.en.md"
+                  "docs/implementation-plan.zh.md"))
+    (let ((contents (etaf-docs-test--read file)))
+      (should (string-match-p (regexp-quote ":view") contents))
+      (should (string-match-p (regexp-quote ":render") contents))
+      (should (string-match-p (regexp-quote ":setup") contents))
+      (should (string-match-p (regexp-opt '("opaque state" "opaque 状态"))
+                              contents))
+      (should-not
+       (string-match-p
+        (regexp-opt '("setup returns a zero-argument render function"
+                      ":setup` runs once per retained identity and returns a zero-argument render function"
+                      ":setup` runs once for a retained Component instance and must return a zero-argument render function"
+                      "返回零参数 render 函数"
+                      "必须返回零参数 render 函数"))
+        contents)))))
+
+(ert-deftest etaf-docs-data-grid-selection-contract-is-current ()
+  "Document only selection inputs actually declared by `etaf-data-grid'."
+  (dolist (file '("docs/user-guide.en.md" "docs/user-guide.zh.md"))
+    (let ((contents (etaf-docs-test--read file)))
+      (should (string-match-p (regexp-quote ":row-selected-p") contents))
+      (should-not (string-match-p (regexp-quote ":selected-key") contents)))))
+
+(ert-deftest etaf-docs-superseded-proposals-not-current-contract ()
+  "Keep the old Component proposal explicitly historical."
+  (let ((contents
+         (etaf-docs-test--read "docs/proposals/component-definition.zh.md")))
+    (should (string-match-p "SUPERSEDED" contents))
+    (should (string-match-p "historical" contents))
+    (should (string-match-p (regexp-quote "docs/architecture.zh.md") contents))
+    (should-not (string-match-p "尚未实现" contents))))
+
+(ert-deftest etaf-docs-module-boundaries-target-vocabulary-is-paired ()
+  "Keep the English and Chinese target Component vocabulary equivalent."
+  (dolist (file '("docs/proposals/module-boundaries.en.md"
+                  "docs/proposals/module-boundaries.zh.md"))
+    (let ((contents (etaf-docs-test--read file)))
+      (dolist (token '(":view" ":render" ":setup" "etaf-state" "etaf-node"
+                       "opaque"))
+        (should (string-match-p (regexp-quote token) contents))))))
+
+(ert-deftest etaf-docs-interaction-contract-is-current ()
+  "Keep the public Action/Behavior/event composition contract explicit."
+  (dolist (file '("docs/architecture.en.md" "docs/architecture.zh.md"
+                  "docs/user-guide.en.md" "docs/user-guide.zh.md"))
+    (let ((contents (etaf-docs-test--read file)))
+      (dolist (token '("Host" "Behavior" "short-circuit" "first"
+                       "capture" "bubble" "application" "feature"
+                       "etaf-action-redefine-run" "dispatch"))
+        (should (string-match-p (regexp-quote token) contents))))))
+
+(ert-deftest etaf-docs-component-manifest-is-machine-readable ()
+  "Validate the three-column Component manifest and observed evidence."
+  (let* ((script (expand-file-name "scripts/etaf-m0b-component-manifest.el"
+                                   etaf-docs-test--root))
+         (json-object-type 'alist)
+         (json-array-type 'list)
+         (manifest
+          (with-temp-buffer
+            (let ((standard-output (current-buffer)))
+              (load script nil t)
+              (etaf-m0b-component-manifest-write-json))
+            (goto-char (point-min))
+            (json-read))))
+    (should (equal 1 (alist-get 'schema-version manifest)))
+    (should (equal "observed" (alist-get 'evidence-mode manifest)))
+    (dolist (entry (alist-get 'components manifest))
+      (should (alist-get 'declared-business-props entry))
+      (should (alist-get 'forwarded-host-attrs entry))
+      (should (alist-get 'root-shape-forwarding-guarantee entry))
+      (should (eq t (alist-get 'mounted-validation entry))))))
+
+(ert-deftest etaf-docs-executable-suite-is-fail-closed ()
+  "Classify exact blocks before macroexpansion, loading, or mounted smoke."
+  (let ((fixture (expand-file-name
+                  "tests/fixtures/etaf-m0b-doc-examples.sexp"
+                  etaf-docs-test--root)))
+    (should (file-readable-p fixture))
+    (let ((records (with-temp-buffer
+                     (insert-file-contents fixture)
+                     (goto-char (point-min))
+                     (read (current-buffer)))))
+      (should records)
+      (dolist (record records)
+        (let* ((file (plist-get record :file))
+               (index (plist-get record :block))
+               (classification (plist-get record :classification))
+               (blocks (etaf-docs-test--elisp-blocks
+                        (etaf-docs-test--read file)))
+               (source (nth (1- index) blocks)))
+          (should source)
+          (should (equal (secure-hash 'sha256 source)
+                         (plist-get record :sha256)))
+          (should (memq classification
+                        '(macroexpand-only load-safe mounted-smoke)))
+          (pcase classification
+            ('macroexpand-only
+             (should (> (etaf-docs-test--read-all source) 0)))
+            ((or 'load-safe 'mounted-smoke)
+             (let ((forms (etaf-docs-test--forms source)))
+               (dolist (form forms)
+                 (should (macroexpand-all (copy-tree form))))
+               (pcase (plist-get record :probe)
+                 ('collection-composition
+                  (etaf-docs-test--mounted-collection-probe forms))
+                 ('nil (dolist (form forms) (eval form t)))
+                 (_ (ert-fail "Unknown safe documentation probe")))))))))))
 
 (ert-deftest etaf-source-uses-only-public-ebox-names ()
   "Keep the ETAF implementation independent of Ebox private functions."

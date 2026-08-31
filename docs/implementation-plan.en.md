@@ -18,7 +18,7 @@ The repository is complete for the agreed unified architecture when the mandator
 
 | Milestone | Delivered responsibility | Evidence |
 | --- | --- | --- |
-| P0 grammar | Unified View shape, property-first parsing, `etaf-view`, `expr :value`, core Hosts, aliases | `tests/etaf-tests.el` structural and syntax tests |
+| P0 grammar | Unified View shape, property-first parsing, `etaf-view`, `(expr FORM)`, core Hosts, aliases | `tests/etaf-tests.el` structural and syntax tests |
 | P1 Components | `:view`, `:setup`, props, default/named slots, retained instances, lifecycle, `:key`, raw Ebox escape | Component, slot, mount, prop-update, raw-node, and rollback tests |
 | P2 Runtime | refs, computed, effects, watches, Scope cleanup, Context, Theme, Behaviors, events, focus, Actions | Mounted event/focus tests, reactive failure rollback, cleanup tests |
 | P3 presentation | scoped styles, selector matching, Theme precedence, inline text runs, Resource and error boundary | Style, Theme, text-surface, Resource, and error tests |
@@ -55,16 +55,19 @@ Do not split a file merely to create a shorter name. Split only when a stable re
 - The only structural form is `(NAME :PROPERTY VALUE ... CHILD ...)`.
 - All properties precede children.
 - Attribute values are ordinary Elisp expressions.
-- The only child computation bridge is `(expr :value ELISP-EXPRESSION)`.
+- The only child computation bridge is `(expr ELISP-EXPRESSION)`; its result
+  may be text, a typed View/proper typed View sequence, or `nil`.
 - A dynamic View returned by Elisp is constructed with `(etaf-view ...)` inside `expr`; quoted structural data is never executed.
 - The six visible Host forms are `text`, `box`, `row`, `column`, `flex`, and `grid`; `fragment`, `slot`, and `expr` are transparent framework structure.
 - There is no raw Ebox View escape hatch. Framework integrations use Ebox's evaluated typed-constructor port outside the author DSL.
 
 ### 4.2 Component and slots
 
-- `etaf-define-component` accepts only `:view`, `:setup`, and optional `:styles`.
-- `:view` and `:setup` are mutually exclusive.
-- `:setup` runs once per retained identity and returns a zero-argument render function.
+- `etaf-define-component` chooses exactly one of `:view` or `:render`; `:setup`
+  and `:styles` are optional.
+- `:view` and `:render` are mutually exclusive frontends.
+- `:setup` runs once per retained identity and returns opaque state read with
+  `etaf-state` during either frontend.
 - Props update render without rerunning setup.
 - Trailing children are `slots.default`; named slot input uses `(slot :name 'NAME CHILD...)`.
 - Default outlet shorthand is `(slot)` or `(slot FALLBACK...)`.

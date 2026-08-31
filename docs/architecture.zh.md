@@ -64,7 +64,7 @@ ATTRIBUTE = :KEY VALUE
   (text :font-weight 'bold "Hello")
   (text
    :color "#687386"
-   (expr :value (if ready "Ready" "Waiting")))))
+   (expr (if ready "Ready" "Waiting")))))
 ```
 
 属性出现在子节点之后时，属性区和子节点区被交错，属于非法结构。
@@ -76,18 +76,17 @@ ATTRIBUTE = :KEY VALUE
 规则只有两条：
 
 1. 结构性 View 位置不需要 quote，包括 `etaf-view`、Host、Component 调用、子节点、slot 和静态 Component styles。
-2. Elisp 表达式位置遵循普通 Elisp 求值，包括属性值、`:key`、`:on-*`、`:use`、`expr :value`、`:setup`、Context 值、Behavior 构造器和 Action。
+2. Elisp 表达式位置遵循普通 Elisp 求值，包括属性值、`:key`、`:on-*`、`:use`、`expr`、`:setup`、Context 值、Behavior 构造器和 Action。
 
 ```elisp
 (etaf-view
  (text
   :color (if dark "#F4F6FB" "#1F2328")
-  (expr :value label)))
+  (expr label)))
 
 (etaf-view
  (column
   (expr
-   :value
    (when open
      (etaf-view
       (text :font-weight 'bold "Details"))))))
@@ -102,30 +101,34 @@ ATTRIBUTE = :KEY VALUE
 `expr` 只接受一个属性且不能有子节点：
 
 ```elisp
-(expr :value ELISP-EXPRESSION)
+(expr ELISP-EXPRESSION)
 ```
 
-它执行表达式，然后接受字符串、View、View 序列或 `nil`。它不创建 Ebox wrapper、identity、生命周期、watch 或 effect。`if`、`when`、`cond`、`let`、`mapcar`、`cl-loop` 等 Elisp 形式仍然只是 `:value` 中的普通 Elisp。
+它执行表达式，然后接受字符串、typed View、typed View proper sequence 或 `nil`。
+它不创建 Ebox wrapper、identity、生命周期、watch 或 effect。`if`、`when`、`cond`、
+`let`、`mapcar`、`cl-loop` 等仍是 form 中的普通 Elisp。
 
 当前 core 没有面向文件的 `.etaf` pair loader。`etaf-define-component` 才是结构/样式/行为单元：View 定义结构，`:styles` 负责 presentation，`:setup` 负责 retained state、事件和生命周期行为。未来的 `.etaf` SFC 属于把结果 lowering 到同一套公共 View/Component 契约的 compiler layer，而不是第二套 Runtime 语法。
 
 ## 4. Component
 
-公共定义宏只有三个关键字：
+公共定义宏有四个关键字。两个 frontend 必须二选一，另外两个 clause 可选：
 
-```elisp
+```text
 (etaf-define-component NAME (&key PROPS)
   DOCSTRING?
+  :setup OPAQUE-STATE-FORM
   :view VIEW
   :styles (styles RULE...))
 
 (etaf-define-component NAME (&key PROPS)
   DOCSTRING?
-  :setup SETUP
+  :setup OPAQUE-STATE-FORM
+  :render ORDINARY-ELISP
   :styles (styles RULE...))
 ```
 
-`:view` 和 `:setup` 互斥；`:styles` 可选且最多出现一次。Props 是唯一需要声明的业务输入；普通尾部子节点和命名 slot 会被规范化为 Component 的 slot 集合。
+`:view` 和 `:render` 互斥且必须恰好出现一个；`:setup` 与 `:styles` 可选且各最多出现一次。Props 是唯一需要声明的业务输入；普通尾部子节点和命名 slot 会被规范化为 Component 的 slot 集合。
 
 Component definition 是当前结构/样式/行为边界：动态状态、Action callback 和生命周期工作放进 `:setup`，静态 presentation 放进 `:styles`。未来 `.etaf` SFC compiler 可以生成这些 definition，但 Runtime 不会直接加载 `.etaf` 文件。
 
@@ -137,31 +140,33 @@ Component definition 是当前结构/样式/行为边界：动态状态、Action
   :view
   (text
    :font-weight 'bold
-   (expr :value label)))
+   (expr label)))
 ```
 
 ```elisp
 (etaf-define-component disclosure (&key title)
   "Render a retained disclosure."
   :setup
-  (let ((open (etaf-ref nil)))
-    (lambda ()
-      (etaf-view
-       (column
-        (text
-         :role 'button
-         :on-press
-         (lambda ()
-           (setf (etaf-value open)
-                 (not (etaf-value open))))
-         (expr :value (if (etaf-value open) "Hide" "Show")))
-        (expr
-         :value
-         (when (etaf-value open)
-           (etaf-view (text (expr :value title))))))))))
+  (etaf-ref nil)
+  :view
+  (column
+   (text
+    :role 'button
+    :on-press
+    (let ((open (etaf-state)))
+      (lambda ()
+        (setf (etaf-value open)
+              (not (etaf-value open)))))
+    (expr (if (etaf-value (etaf-state)) "Hide" "Show")))
+   (expr
+    (when (etaf-value (etaf-state))
+      (etaf-view (text (expr title)))))))
 ```
 
-`:setup` 对一个 retained Component instance 只运行一次，并且必须返回零参数 render 函数。重新渲染读取当前 props 和 ref，不重新运行 setup。setup 负责局部 ref、computed、watch、Effect 和 cleanup 的创建。
+`:setup` 对一个 retained Component instance 只运行一次，返回一个 opaque 状态值。
+`:view` 或 `:render` 中用 `etaf-state` 取得这个准确值。重新渲染读取当前 props 和
+state，不重新运行 setup。setup 负责局部 ref、computed、watch、Effect 和 cleanup，
+不返回 render 函数。
 
 `:key` 是稳定的 identity metadata，不是业务 prop。放在 Component 调用上时，它选择同级作用域内要保留的 Component instance；放在 Host 上时，它会作为 Ebox node key 向下传递。候选渲染失败时，Runtime 恢复旧 instance、handlers、Behaviors 和 buffer。
 
@@ -295,6 +300,16 @@ Behavior = 安装多个非视觉能力的可复用 bundle
 
 `etaf-behavior-create` 接受保留的 `:install` 属性，用于可选的零参数 installer。Installer 可以返回 cleanup；运行期间可通过 `etaf-current-behavior-context` 读取当前 Runtime、结构路径和 Host props。Behavior 被替换或 owner 卸载时，installer 状态会被释放。
 
+交互组合是确定的：显式 Host `:on-*` callback 先运行，然后按声明顺序运行 Behavior
+callback；任一错误会 short-circuit 后续 callback。非事件属性由显式 Host 值优先，
+否则第一个声明该属性的 Behavior 获胜（first-wins）。同一 Host 的 Behavior name 必须在任何
+installer 运行前保持唯一。稳定 installer identity 会复用，每个已安装 cleanup
+exactly-once。事件只 dispatch 给准确 Host ref；ETAF 没有 capture 或 bubble 阶段。
+
+Action name 应使用 application/feature-prefixed symbol。重复注册默认报错。
+`etaf-action-redefine-run` 是显式 authoring/reload 边界；替换只影响未来按 name 的
+dispatch，不会 flush 已挂载 Runtime。
+
 Runtime 事件通过 `etaf-dispatch-event` 进入；命中测试和 focus 通过 Ebox Host 引用查询，并由 `etaf-activate`、`etaf-focus`、`etaf-focus-next`、`etaf-host-ref-bounds` 和 `etaf-host-ref-position` 提供公共入口。
 
 ## 9. Context、Theme、Data 与 Resource
@@ -309,14 +324,13 @@ Context 是继承的 Component Scope 环境：
   :setup
   (let ((service (etaf-ref "demo-service")))
     (etaf-provide 'service service)
-    (lambda () (etaf-view (slot)))))
+    service)
+  :view (slot))
 
 (etaf-define-component service-consumer ()
   "Read the inherited service."
-  :setup
-  (let ((service (etaf-inject 'service nil t)))
-    (lambda ()
-      (etaf-view (text (expr :value (etaf-value service)))))))
+  :setup (etaf-inject 'service nil t)
+  :view (text (expr (etaf-value (etaf-state)))))
 
 (etaf-view (service-provider (service-consumer)))
 ```
@@ -327,10 +341,9 @@ key 使用稳定的普通 symbol。最近的祖先优先，缺失的 required ke
 (etaf-define-component themed-shell ()
   "Provide default text colors to a subtree."
   :setup
-  (progn
-    (etaf-theme-provide
-     '(:color "#F4F6FB" :bgcolor "#202634"))
-    (lambda () (etaf-view (slot)))))
+  (etaf-theme-provide
+   '(:color "#F4F6FB" :bgcolor "#202634"))
+  :view (slot))
 ```
 
 Palette 解析属于 Theme，而不是 UI 目录。core 提供
