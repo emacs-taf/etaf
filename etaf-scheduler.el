@@ -367,24 +367,27 @@ DELIVERY receives CONTEXT, SOURCE, and the projection epoch."
           (max 0 (1- (etaf-scheduler-context-busy-depth context))))))
 
 (defun etaf-scheduler--drain-context-sources (context projection-id)
-  "Drain CONTEXT source FIFO for PROJECTION-ID."
-  (setf (etaf-scheduler-context-phase context) 'source)
-  (etaf-scheduler--call-context-work
-   context
-   (lambda ()
-     (while (etaf-scheduler-context-source-queue context)
-       (let* ((source (pop (etaf-scheduler-context-source-queue context)))
-              (delivery
-               (gethash source
-                        (etaf-scheduler-context-source-set context))))
-         (unless (etaf-scheduler-context-source-queue context)
-           (setf (etaf-scheduler-context-source-queue-tail context) nil))
-         (remhash source (etaf-scheduler-context-source-set context))
-         (puthash source t
-                  (etaf-scheduler-context-delivered-source-set context))
-         (cl-incf (etaf-scheduler-context-source-delivery-count context))
-         (when delivery
-           (funcall delivery context source projection-id)))))))
+  "Drain one snapshotted CONTEXT source turn for PROJECTION-ID."
+  (let ((turn (etaf-scheduler-context-source-queue context)))
+    ;; New sources discovered by TURN belong to the next bounded scheduler
+    ;; turn.  Detaching the current FIFO prevents a chain of distinct source
+    ;; identities from monopolizing one unbudgeted drain.
+    (setf (etaf-scheduler-context-source-queue context) nil
+          (etaf-scheduler-context-source-queue-tail context) nil
+          (etaf-scheduler-context-phase context) 'source)
+    (etaf-scheduler--call-context-work
+     context
+     (lambda ()
+       (dolist (source turn)
+         (let ((delivery
+                (gethash source
+                         (etaf-scheduler-context-source-set context))))
+           (remhash source (etaf-scheduler-context-source-set context))
+           (puthash source t
+                    (etaf-scheduler-context-delivered-source-set context))
+           (cl-incf (etaf-scheduler-context-source-delivery-count context))
+           (when delivery
+             (funcall delivery context source projection-id))))))))
 
 (defun etaf-scheduler--detach-runtime-turns (projection)
   "Detach and return PROJECTION's Runtime queues in context order."
@@ -397,19 +400,25 @@ DELIVERY receives CONTEXT, SOURCE, and the projection epoch."
     (nreverse turns)))
 
 (defun etaf-scheduler--run-runtime-turn (context turn)
-  "Run detached Runtime TURN owned by CONTEXT."
-  (setf (etaf-scheduler-context-phase context) 'runtime)
-  (etaf-scheduler--call-context-work
-   context
-   (lambda ()
-     (dolist (runtime turn)
-       (let ((function
-              (gethash runtime
-                       (etaf-scheduler-context-runtime-set context))))
-         (remhash runtime (etaf-scheduler-context-runtime-set context))
-         (when function
-           (cl-incf (etaf-scheduler-context-runtime-execution-count context))
-           (funcall function)))))))
+  "Run detached Runtime TURN in CONTEXT and return its first condition."
+  (let (first-condition)
+    (setf (etaf-scheduler-context-phase context) 'runtime)
+    (etaf-scheduler--call-context-work
+     context
+     (lambda ()
+       (dolist (runtime turn)
+         (let ((function
+                (gethash runtime
+                         (etaf-scheduler-context-runtime-set context))))
+           (remhash runtime (etaf-scheduler-context-runtime-set context))
+           (when function
+             (cl-incf (etaf-scheduler-context-runtime-execution-count context))
+             (condition-case condition
+                 (funcall function)
+               ((error quit)
+                (unless first-condition
+                  (setq first-condition condition)))))))))
+    first-condition))
 
 (defun etaf-scheduler--record-fault (context projection-id condition)
   "Record CONTEXT failure CONDITION for PROJECTION-ID."
@@ -434,6 +443,10 @@ DELIVERY receives CONTEXT, SOURCE, and the projection epoch."
         ;; All source propagation across every context settles before any
         ;; Runtime can observe and publish the resulting reactive state.
         (while (etaf-scheduler--projection-source-work-p projection)
+          ;; Each source wave is one bounded turn.  A wave snapshots every
+          ;; context's current FIFO, so newly discovered distinct sources
+          ;; consume another step and peers get an opportunity to run.
+          (setq marked-contexts (make-hash-table :test #'eq))
           (dolist (context (etaf-scheduler--projection-contexts projection))
             (cond
              ((gethash context failed-contexts)
@@ -460,7 +473,11 @@ DELIVERY receives CONTEXT, SOURCE, and the projection epoch."
                   (progn
                     (etaf-scheduler--mark-turn
                      context projection-id marked-contexts context-steps)
-                    (etaf-scheduler--run-runtime-turn context turn))
+                    (when-let* ((runtime-condition
+                                 (etaf-scheduler--run-runtime-turn
+                                  context turn)))
+                      (signal (car runtime-condition)
+                              (cdr runtime-condition))))
                 ((error quit)
                  (puthash context t failed-contexts)
                  (unless first-condition (setq first-condition condition))

@@ -1317,6 +1317,15 @@ effect-to-source edges.  It is intentionally immutable and suitable as an
    :generation-id (etaf-runtime-generation runtime)
    :revision (etaf-render-port-revision (etaf-runtime-buffer runtime))))
 
+(defun etaf--runtime-run-postcommit-step (journal owner kind function)
+  "Run FUNCTION after commit, recording its condition in JOURNAL.
+OWNER and KIND identify the step.  Return the original condition, or nil."
+  (condition-case condition
+      (progn (funcall function) nil)
+    ((error quit)
+     (etaf-retirement-record-contained-failure
+      journal owner kind condition))))
+
 (defun etaf--runtime-retain-retirement-journal (runtime journal)
   "Retain completed JOURNAL and its diagnostics on RUNTIME."
   (push journal (etaf-runtime-retirement-journals runtime))
@@ -6065,33 +6074,54 @@ RENDERED-IDENTITIES names the Component render participants."
         runtime retry-effect-ids)
        (signal (car err) (cdr err))))
     (etaf--runtime-participant-commit participant)
-    (etaf--runtime-complete-generation runtime candidate-generation)
-    (etaf--runtime-install-generation-mirrors
-     runtime candidate-generation nil)
-    (etaf--runtime-clear-dirty-effects runtime)
     (let ((retirement
            (etaf--runtime-new-retirement-journal
             runtime (etaf-semantic-candidate-candidate-id semantic-candidate)))
-          updated)
-      (unwind-protect
-          (progn
-            (dolist (instance (etaf-runtime-candidate-created runtime))
-              (setf (etaf--component-instance-mounted-p instance) t))
-            (dolist (entry (etaf--generation-index-entries
-                            candidate-generation 'lifecycle))
-              (let ((identity (car entry)))
-                (when-let* ((semantic (etaf--generation-semantic old identity))
-                            (instance
-                             (gethash
-                              (etaf--semantic-component-resource-key semantic)
-                              (etaf-runtime-resource-registry runtime))))
-                  (push instance updated))))
-            (etaf--runtime-run-lifecycle
-             (list (etaf-runtime-candidate-created runtime)
-                   (nreverse updated))
-             retirement)
-            (etaf--runtime-drain-retirement runtime retirement))
-        (etaf--runtime-clear-candidate runtime))))))
+          updated first-condition public-condition)
+      (cl-labels
+          ((run-step
+            (kind function)
+            (when-let* ((condition
+                         (etaf--runtime-run-postcommit-step
+                          retirement 'component-overlay kind function)))
+              (unless first-condition
+                (setq first-condition condition)))))
+        (run-step
+         'generation-completion
+         (lambda ()
+           (etaf--runtime-complete-generation runtime candidate-generation)))
+        (run-step
+         'generation-mirror-projection
+         (lambda ()
+           (etaf--runtime-install-generation-mirrors
+            runtime candidate-generation nil)))
+        (etaf--runtime-clear-dirty-effects runtime)
+        (unwind-protect
+            (progn
+              (run-step
+               'lifecycle-preparation
+               (lambda ()
+                 (dolist (instance (etaf-runtime-candidate-created runtime))
+                   (setf (etaf--component-instance-mounted-p instance) t))
+                 (dolist (entry (etaf--generation-index-entries
+                                 candidate-generation 'lifecycle))
+                   (let ((identity (car entry)))
+                     (when-let*
+                         ((semantic (etaf--generation-semantic old identity))
+                          (instance
+                           (gethash
+                            (etaf--semantic-component-resource-key semantic)
+                            (etaf-runtime-resource-registry runtime))))
+                       (push instance updated))))
+                 (etaf--runtime-run-lifecycle
+                  (list (etaf-runtime-candidate-created runtime)
+                        (nreverse updated))
+                  retirement)))
+              (setq public-condition
+                    (etaf--runtime-drain-retirement runtime retirement t))
+              (when-let* ((condition (or first-condition public-condition)))
+                (etaf-retirement-resignal condition retirement)))
+          (etaf--runtime-clear-candidate runtime)))))))
 
 (defun etaf--runtime-render-effect (runtime)
   "Build and publish one Root-owned candidate for RUNTIME."
@@ -6176,25 +6206,47 @@ RENDERED-IDENTITIES names the Component render participants."
        (etaf--runtime-clear-candidate runtime)
        (signal (car err) (cdr err))))
     (etaf--runtime-participant-commit participant)
-    (etaf--runtime-complete-generation runtime candidate-generation)
-    (etaf--runtime-install-generation-mirrors
-     runtime candidate-generation t)
-    (setf (etaf-runtime-root-node runtime) root-node
-          (etaf-runtime-root-dirty-p runtime) nil)
-    (etaf--runtime-clear-dirty-effects runtime)
     ;; Publication has completed.  Lifecycle and cleanup callbacks run after
     ;; the retained state is promoted; their errors remain visible without
     ;; incorrectly rolling back an already published Ebox tree.
     (let ((retirement
            (etaf--runtime-new-retirement-journal
-            runtime (etaf-semantic-candidate-candidate-id semantic-candidate))))
-      (unwind-protect
-          (let ((groups (etaf--runtime-promote runtime retirement)))
-            (etaf--runtime-promote-behaviors runtime retirement)
-            (etaf--runtime-run-lifecycle groups retirement)
-            (etaf--runtime-drain-retirement runtime retirement))
-        (etaf--runtime-rollback-behaviors runtime)
-        (etaf--runtime-clear-candidate runtime)))
+            runtime (etaf-semantic-candidate-candidate-id semantic-candidate)))
+          groups first-condition public-condition)
+      (cl-labels
+          ((run-step
+            (kind function)
+            (when-let* ((condition
+                         (etaf--runtime-run-postcommit-step
+                          retirement 'root-render kind function)))
+              (unless first-condition
+                (setq first-condition condition)))))
+        (run-step
+         'generation-completion
+         (lambda ()
+           (etaf--runtime-complete-generation runtime candidate-generation)))
+        (run-step
+         'generation-mirror-projection
+         (lambda ()
+           (etaf--runtime-install-generation-mirrors
+            runtime candidate-generation t)))
+        (setf (etaf-runtime-root-node runtime) root-node
+              (etaf-runtime-root-dirty-p runtime) nil)
+        (etaf--runtime-clear-dirty-effects runtime)
+        (unwind-protect
+            (progn
+              (run-step
+               'authority-retirement-preparation
+               (lambda ()
+                 (setq groups (etaf--runtime-promote runtime retirement))
+                 (etaf--runtime-promote-behaviors runtime retirement)
+                 (etaf--runtime-run-lifecycle groups retirement)))
+              (setq public-condition
+                    (etaf--runtime-drain-retirement runtime retirement t))
+              (when-let* ((condition (or first-condition public-condition)))
+                (etaf-retirement-resignal condition retirement)))
+          (etaf--runtime-rollback-behaviors runtime)
+          (etaf--runtime-clear-candidate runtime))))
     next-root))
 
 (defun etaf--runtime-render-root-turn (runtime &optional force-components-p)

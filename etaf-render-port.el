@@ -361,8 +361,8 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK retain their existing Ebox meanings."
     (buffer input framework-stage framework-rollback &optional observer)
   "Run selected initial operation for BUFFER and canonical INPUT.
 FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair.
-OBSERVER, when non-nil, is installed while initial v2 publication remains
-provisional so TP and Ebox acceptance reports are preserved."
+OBSERVER, when non-nil, receives TP and Ebox snapshots measured during the
+initial v2 publication and replayed only after successful final accept."
   (if (eq (etaf-render-port-route etaf-render-port--selected-port) 'v1)
       (funcall (etaf-render-port-initial-function
                 etaf-render-port--selected-port)

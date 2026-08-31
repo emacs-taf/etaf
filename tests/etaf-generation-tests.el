@@ -276,7 +276,9 @@
 (ert-deftest etaf-semantic-postcommit-mirror-failure-keeps-token-committed ()
   "A postcommit mirror error cannot reverse generation/token or TP facts."
   (let ((buffer-name " *etaf-semantic-postcommit-test*")
-        (source (etaf-ref 0)))
+        (source (etaf-ref 0))
+        captured
+        (rollback-count 0))
     (unwind-protect
         (progn
           (etaf-mount
@@ -288,12 +290,27 @@
                             (car tp--buffer-surfaces)))
                  (generation (etaf-runtime-generation runtime))
                  (token (etaf-runtime-generation-token runtime))
-                 (revision (tp-surface-revision surface)))
+                 (revision (tp-surface-revision surface))
+                 (original-rollback
+                  (symbol-function 'etaf-semantic-candidate-rollback)))
             (cl-letf
                 (((symbol-function 'etaf--runtime-install-generation-mirrors)
                   (lambda (&rest _arguments)
-                    (error "injected postcommit mirror failure"))))
-              (should-error (setf (etaf-value source) 1) :type 'error))
+                    (error "injected postcommit mirror failure")))
+                 ((symbol-function 'etaf-semantic-candidate-rollback)
+                  (lambda (candidate)
+                    (cl-incf rollback-count)
+                    (funcall original-rollback candidate))))
+              (condition-case condition
+                  (setf (etaf-value source) 1)
+                (error (setq captured condition))))
+            (should captured)
+            (should (eq (car captured) 'error))
+            (should
+             (equal (butlast (cdr captured))
+                    '("injected postcommit mirror failure")))
+            (should (etaf-condition-postcommit-info captured))
+            (should (zerop rollback-count))
             (should (= (1+ generation)
                        (etaf-runtime-generation runtime)))
             (should (= (1+ token)

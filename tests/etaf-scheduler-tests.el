@@ -246,6 +246,26 @@
       (etaf--stop-effect left-effect)
       (etaf--stop-effect right-effect))))
 
+(ert-deftest etaf-scheduler-runtime-fault-does-not-suppress-context-tail ()
+  "A failing Runtime job cannot discard later jobs in the same context."
+  (let ((context (etaf-scheduler-context-create :name 'runtime-fault-tail))
+        second-ran captured)
+    (condition-case condition
+        (etaf-scheduler-call-with-projection
+         (lambda ()
+           (etaf-scheduler-enqueue-runtime
+            context 'first
+            (lambda ()
+              (signal 'etaf-scheduler-test-condition '("first"))))
+           (etaf-scheduler-enqueue-runtime
+            context 'second (lambda () (setq second-ran t)))))
+      (etaf-scheduler-test-condition (setq captured condition)))
+    (should (equal captured '(etaf-scheduler-test-condition "first")))
+    (should second-ran)
+    (should (= 2 (plist-get (etaf-scheduler-context-metrics context)
+                            :runtime-executions)))
+    (should (etaf-scheduler-context-idle-p context))))
+
 (ert-deftest etaf-scheduler-body-error-precedes-drain-error-and-quit-drains ()
   "Body failure wins over drain failure; quit still drains queued effects."
   (let* ((context (etaf-scheduler-context-create :name 'precedence))
@@ -405,6 +425,37 @@
       (when (and right-effect (etaf-effect-active-p right-effect))
         (etaf--stop-effect right-effect))
       (when recovery-effect (etaf--stop-effect recovery-effect)))))
+
+(ert-deftest etaf-scheduler-distinct-source-chain-consumes-turn-budget ()
+  "A distinct-source chain yields to peers and cannot hide in one turn."
+  (let* ((chain-context
+          (etaf-scheduler-context-create
+           :name 'distinct-source-chain :fixed-point-step-budget 3))
+         (peer-context (etaf-scheduler-context-create :name 'chain-peer))
+         seen peer-ran captured)
+    (condition-case condition
+        (etaf-scheduler-call-with-projection
+         (lambda ()
+           (cl-labels
+               ((deliver (_context source _projection-id)
+                  (push source seen)
+                  (etaf-scheduler-enqueue-source
+                   chain-context (1+ source) #'deliver)))
+             (etaf-scheduler-enqueue-source chain-context 0 #'deliver))
+           (etaf-scheduler-enqueue-source
+            peer-context 'peer
+            (lambda (_context _source _projection-id)
+              (setq peer-ran t)))))
+      (etaf-scheduler-error (setq captured condition)))
+    (should captured)
+    (should (eq 'fixed-point-step-budget
+                (plist-get (cdr captured) :kind)))
+    (should (= 4 (plist-get (cdr captured) :steps)))
+    (should (= 3 (plist-get (cdr captured) :budget)))
+    (should (equal '(0 1 2) (nreverse seen)))
+    (should peer-ran)
+    (should (etaf-scheduler-context-idle-p chain-context))
+    (should (etaf-scheduler-context-idle-p peer-context))))
 
 (ert-deftest etaf-scheduler-data-success-is-one-turn-per-context ()
   "One Data success projection coalesces all changed refs in each context."

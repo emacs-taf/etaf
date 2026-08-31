@@ -19,6 +19,11 @@
 (defvar etaf-retirement--journal-id-counter 0)
 (defvar etaf-retirement--entry-id-counter 0)
 
+(defconst etaf-retirement--condition-payload-keys
+  '(:kind :committed-p :operation-id :outcome-id :generation-id :revision
+    :diagnostic-journal-id)
+  "Canonical ordered keys in a v1 postcommit condition payload.")
+
 (cl-defstruct
     (etaf-retirement-entry
      (:constructor etaf-retirement-entry--create))
@@ -211,6 +216,27 @@ forms are equal, and a positive integer otherwise."
           (etaf-retirement-journal-state journal) 'completed)
     public-condition))
 
+(defun etaf-retirement-record-contained-failure
+    (journal owner kind condition)
+  "Append contained postcommit CONDITION metadata to JOURNAL.
+OWNER and KIND identify the failed postcommit step.  This records evidence
+without rerunning the failed operation or changing committed authority."
+  (unless (and (etaf-retirement-journal-p journal)
+               (eq (etaf-retirement-journal-state journal) 'open)
+               owner kind
+               (consp condition) (symbolp (car condition)))
+    (signal 'etaf-retirement-error
+            (list :invalid-contained-failure owner kind condition)))
+  (push (list :entry-id (cl-incf etaf-retirement--entry-id-counter)
+              :owner (copy-tree owner)
+              :kind kind
+              :policy 'contained-once
+              :attempt-count 1
+              :state 'failed-contained
+              :condition (copy-tree condition))
+        (etaf-retirement-journal-diagnostics journal))
+  condition)
+
 (defun etaf-retirement-condition-trailer (journal &optional kind)
   "Return the canonical committed trailer for JOURNAL and optional KIND."
   (list
@@ -234,13 +260,23 @@ forms are equal, and a positive integer otherwise."
                  (eq (car trailer) :etaf-condition-trailer/v1)
                  (cadr trailer))))
       (when (and (proper-list-p payload)
+                 (= (length payload)
+                    (* 2 (length etaf-retirement--condition-payload-keys)))
+                 (equal
+                  (cl-loop for (key _value) on payload by #'cddr
+                           collect key)
+                  etaf-retirement--condition-payload-keys)
                  (eq (plist-get payload :committed-p) t)
                  (eq (plist-get payload :kind) 'postcommit)
                  (integerp (plist-get payload :operation-id))
+                 (>= (plist-get payload :operation-id) 0)
                  (plist-get payload :outcome-id)
                  (integerp (plist-get payload :generation-id))
+                 (>= (plist-get payload :generation-id) 0)
                  (integerp (plist-get payload :revision))
-                 (integerp (plist-get payload :diagnostic-journal-id)))
+                 (>= (plist-get payload :revision) 0)
+                 (integerp (plist-get payload :diagnostic-journal-id))
+                 (> (plist-get payload :diagnostic-journal-id) 0))
         (copy-tree payload)))))
 
 (defun etaf-retirement-resignal (condition journal)

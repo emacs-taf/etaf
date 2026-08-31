@@ -464,7 +464,9 @@ inside the Ebox framework callback and restores it through the same inverse
 journal on failure. A semantic-only change runs that CAS under ETAF ownership
 without creating an Ebox commit or TP revision. Mirror projection and obsolete
 route cleanup after CAS are postcommit work and cannot reverse the committed
-token if they fail.
+token if they fail. Such failures are retained in the retirement diagnostic
+journal and re-signaled with the same committed trailer used by lifecycle
+failures; they never re-enter semantic rollback.
 
 Each mounted Runtime also owns a distinct Host authority containing `state /
 opaque token / version`. The initial v2 framework stage enters only a
@@ -507,17 +509,21 @@ settles across all touched contexts before any Runtime callback publishes.
 Within a context, each source and Effect is delivered once per scheduler turn,
 and multiple changed sources enqueue a Runtime once. A reentrant write to an
 already delivered source is deferred to the next turn; a per-context turn
-budget contains cross-context cycles with reusable fault diagnostics. Dedupe
-in one context never suppresses another, and registry/token/Host validation
-filters stale Runtime routes before fan-out.
+budget contains cross-context cycles with reusable fault diagnostics. A source
+wave snapshots the current FIFO, so newly discovered distinct sources consume
+another budgeted turn and cannot monopolize one drain. Dedupe in one context
+never suppresses another, and registry/token/Host validation filters stale
+Runtime routes before fan-out.
 
 Runtime callbacks are detached as a turn, so a lifecycle write enters the
-following turn. Data success/error multi-ref publication and event/action
-callbacks use this same projection boundary, while the legacy facade continues
-through the default context. Data source failures update the Controller error
-state; a later projection/render failure propagates unchanged and cannot be
-reclassified as a source failure. Runtime operation reports include both the
-local context deltas and full cross-context projection summaries for source
+following turn. One failing callback is retained as the context fault only
+after every later callback in that detached turn has run. Data success/error
+multi-ref publication and event/action callbacks use this same projection
+boundary, while the legacy facade continues through the default context. Data
+source failures update the Controller error state; a later projection/render
+failure propagates unchanged and cannot be reclassified as a source failure.
+Runtime operation reports include both the local context deltas and full
+cross-context projection summaries for source
 delivery, subscriber visits, effect work, Runtime work, stale drops, turns,
 and faults.
 

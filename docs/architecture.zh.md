@@ -452,7 +452,8 @@ instance/resource/artifact/route store versions。render 路径在 Ebox framewor
 stage 中暂存一次 CAS，失败时由同一个 inverse journal 恢复；没有可见 Ebox
 变化的 semantic-only 路径由 ETAF 自己执行同一 CAS，不创建 Ebox commit 或 TP
 revision。CAS 后的 mirror 与旧 route 清理属于 postcommit，失败不能反向恢复已提交
-token。
+token；这类失败会写入 retirement diagnostic journal，并用与 lifecycle failure
+相同的 committed trailer 重新 signal，绝不会重新进入 semantic rollback。
 
 每个 mounted Runtime 还拥有独立的 Host authority：`state / opaque token /
 version`。initial v2 framework stage 只进入 provisional state，并向 TP 注册固定
@@ -491,15 +492,18 @@ context。
 Effect 每个 scheduler turn 只 delivery 一次，多个 changed source 也只 enqueue
 同一 Runtime 一次。已经 delivery 的 source 若重入写入，会延后到下一个 turn；
 per-context turn budget 会包含跨 context cycle，并留下可复用的 fault diagnostics。
-context A 的 dedupe 不会压制 context B；registry/token/Host 校验会在 fan-out 前
-过滤 stale Runtime route。
+每个 source wave 都会 snapshot 当前 FIFO，因此 wave 中发现的不同 source 必须在
+下一个受预算约束的 turn 执行，不能垄断一次 drain。context A 的 dedupe 不会压制
+context B；registry/token/Host 校验会在 fan-out 前过滤 stale Runtime route。
 
 Runtime callback 先作为一个完整 turn detach，因此 lifecycle write 会进入下一个
-turn。Data success/error 的 multi-ref publication 与 event/action callback 都复用
-同一个 projection boundary，legacy façade 则继续走 default context。Data source
-failure 会更新 Controller error state；之后发生的 projection/render failure 保持
-原 condition，不能被重新归类为 source failure。Runtime operation report 同时携带
-本 context delta 与完整 cross-context projection summary，覆盖 source delivery、
+turn；某个 callback 失败时，scheduler 会先执行该 detached turn 中剩余 callback，
+再把首个 condition 记录为 context fault。Data success/error 的 multi-ref
+publication 与 event/action callback 都复用同一个 projection boundary，legacy
+façade 则继续走 default context。Data source failure 会更新 Controller error state；
+之后发生的 projection/render failure 保持原 condition，不能被重新归类为 source
+failure。Runtime operation report 同时携带本 context delta 与完整 cross-context
+projection summary，覆盖 source delivery、
 subscriber visit、effect work、Runtime work、stale drop、turn 与 fault。
 
 每次 Runtime flush 都记录 candidate-aware effect tuple：其中包含 generation id、

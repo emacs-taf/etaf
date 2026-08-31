@@ -122,7 +122,39 @@
      (etaf-condition-postcommit-info
       '(error business
               (:etaf-condition-trailer/v2
-               (:kind postcommit :committed-p t)))))))
+               (:kind postcommit :committed-p t)))))
+    (dolist
+        (malformed
+         '((:kind postcommit :committed-p t :operation-id 1
+            :outcome-id 2 :generation-id 3 :revision 4
+            :diagnostic-journal-id 5 :unexpected accepted)
+           (:kind postcommit :committed-p t :operation-id 1
+            :outcome-id 2 :generation-id 3 :revision 4
+            :diagnostic-journal-id 5 :operation-id 6)
+           (:kind postcommit :committed-p t :operation-id 1
+            :outcome-id 2 :generation-id 3 :revision 4
+            :diagnostic-journal-id)
+           (:kind postcommit :committed-p t :operation-id -1
+            :outcome-id 2 :generation-id 3 :revision 4
+            :diagnostic-journal-id 5)))
+      (should-not
+       (etaf-condition-postcommit-info
+        (list 'error
+              (list :etaf-condition-trailer/v1 malformed)))))
+    (let (decorated)
+      (condition-case condition
+          (etaf-retirement-resignal
+           '(etaf-retirement-test-condition
+             "business"
+             (:etaf-condition-trailer/v1
+              (:kind postcommit :committed-p t :operation-id 1
+               :outcome-id 2 :generation-id 3 :revision 4
+               :diagnostic-journal-id 5 :unexpected accepted)))
+           journal)
+        (etaf-retirement-test-condition (setq decorated condition)))
+      (should decorated)
+      (should (etaf-condition-postcommit-info decorated))
+      (should (= 3 (length (cdr decorated)))))))
 
 (ert-deftest etaf-retirement-updated-error-is-committed-and-not-rerun ()
   "Updated hook error carries a trailer while generation and buffer stay new."
