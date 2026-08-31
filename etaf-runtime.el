@@ -136,7 +136,7 @@ the operation preserves committed values and removal semantics."
 
 (cl-defstruct (etaf--generation-participant
                (:constructor etaf--generation-participant-create))
-  runtime old candidate paint-journal (state 'unpublished))
+  runtime semantic-candidate paint-journal (state 'unpublished))
 
 (cl-defstruct (etaf-generation
                (:constructor etaf--generation-create))
@@ -332,6 +332,7 @@ the sequential `etaf--pvec-put' contract."
   diagnostics
   observer
   (next-operation-id 0)
+  (next-semantic-candidate-id 0)
   (event-depth 0)
   dirty-effect-queue-tail)
 
@@ -351,7 +352,23 @@ checking them against a fresh generation projection."
 
 (defun etaf-runtime-current-generation (runtime)
   "Return RUNTIME's uniquely authoritative committed generation."
-  (etaf-generation-authority-current
+  (let ((authority (etaf--runtime-generation-authority runtime)))
+    (unless (and (integerp (etaf-generation-authority-token authority))
+                 (>= (etaf-generation-authority-token authority) 0)
+                 (etaf-generation-store-versions-p
+                  (etaf-generation-authority-store-versions authority)))
+      (signal 'etaf-generation-error
+              (list :invalid-committed-authority authority)))
+    (etaf-generation-authority-current authority)))
+
+(defun etaf-runtime-generation-token (runtime)
+  "Return RUNTIME's committed semantic generation token."
+  (etaf-generation-authority-token
+   (etaf--runtime-generation-authority runtime)))
+
+(defun etaf-runtime-store-versions (runtime)
+  "Return RUNTIME's immutable committed store-version snapshot."
+  (etaf-generation-authority-store-versions
    (etaf--runtime-generation-authority runtime)))
 
 (defun etaf-runtime--set-current-generation (runtime generation)
@@ -4064,17 +4081,6 @@ Generation, including its effects and Host contributions."
                    (>= (plist-get props :tab-index) 0)
                    (not (plist-get props :disabled)))
         (setf (etaf-runtime-focus-ref runtime) nil))))
-  (maphash
-   (lambda (_identity semantic)
-     (when-let* ((instance
-                 (gethash (etaf--semantic-component-resource-key semantic)
-                          (etaf-runtime-resource-registry runtime))))
-       (setf (etaf--component-instance-context instance)
-             (etaf--semantic-component-context-frame semantic))))
-   (etaf-runtime-candidate-semantic-nodes runtime))
-  (dolist (instance (etaf-runtime-candidate-created runtime))
-    (puthash (etaf--component-instance-identity instance) instance
-             (etaf-runtime-instances runtime)))
   (dolist (delta (etaf-runtime-candidate-source-deltas runtime))
     (let ((source (car delta)) (effects (nth 2 delta)))
       (when (null effects)
@@ -4082,16 +4088,47 @@ Generation, including its effects and Host contributions."
                  (etaf--source-subscribers source))
         (remhash source (etaf-runtime-route-sources runtime))))))
 
-(defun etaf--runtime-swap-generation (runtime old candidate)
-  "Swap RUNTIME from OLD to CANDIDATE with an exact authority guard."
-  (unless (eq (etaf-runtime-current-generation runtime) old)
-    (error "ETAF generation authority changed during publication"))
-  (setf (etaf-runtime-current-generation runtime) candidate))
+(defun etaf--runtime-new-semantic-candidate (runtime generation)
+  "Return RUNTIME's next versioned semantic candidate for GENERATION."
+  (let ((candidate-id
+         (cl-incf (etaf-runtime-next-semantic-candidate-id runtime)))
+        (operation-id
+         (if etaf--observer-context
+             (etaf--observer-context-operation-id etaf--observer-context)
+           0)))
+    (etaf-semantic-candidate-create
+     (etaf--runtime-generation-authority runtime)
+     generation operation-id candidate-id
+     (etaf-runtime-mount-epoch runtime)
+     (etaf-runtime-mount-epoch runtime))))
 
-(defun etaf--runtime-rollback-generation (runtime old candidate)
+(defun etaf--runtime-swap-generation
+    (runtime old candidate &optional semantic-candidate)
+  "Swap RUNTIME from OLD to CANDIDATE with an exact authority guard.
+SEMANTIC-CANDIDATE selects the versioned token/store CAS path."
+  (if semantic-candidate
+      (progn
+        (unless (and
+                 (eq old
+                     (etaf-semantic-candidate-expected-generation
+                      semantic-candidate))
+                 (eq candidate
+                     (etaf-semantic-candidate-candidate-generation
+                      semantic-candidate)))
+          (signal 'etaf-generation-error
+                  (list :participant-candidate-mismatch)))
+        (etaf-semantic-candidate-stage semantic-candidate))
+    (unless (eq (etaf-runtime-current-generation runtime) old)
+      (error "ETAF generation authority changed during publication"))
+    (setf (etaf-runtime-current-generation runtime) candidate)))
+
+(defun etaf--runtime-rollback-generation
+    (runtime old candidate &optional semantic-candidate)
   "Idempotently restore OLD when RUNTIME still points at CANDIDATE."
-  (when (eq (etaf-runtime-current-generation runtime) candidate)
-    (setf (etaf-runtime-current-generation runtime) old)))
+  (if semantic-candidate
+      (etaf-semantic-candidate-rollback semantic-candidate)
+    (when (eq (etaf-runtime-current-generation runtime) candidate)
+      (setf (etaf-runtime-current-generation runtime) old))))
 
 (defun etaf--runtime-preinstall-resources (runtime old generation)
   "Install RUNTIME resources/artifacts for GENERATION and return journal.
@@ -4113,9 +4150,35 @@ removed inside the same rollback journal."
       (unwind-protect
           (progn
             (dolist (instance (etaf-runtime-candidate-created runtime))
-              (let ((key (etaf--component-instance-resource-key instance)))
+              (let* ((key (etaf--component-instance-resource-key instance))
+                     (identity (etaf--component-instance-identity instance))
+                     (missing (make-symbol "etaf-instance-missing"))
+                     (old-instance
+                      (gethash identity (etaf-runtime-instances runtime)
+                               missing)))
 		(push (list 'resource key instance) journal)
-		(puthash key instance (etaf-runtime-resource-registry runtime))))
+		(puthash key instance (etaf-runtime-resource-registry runtime))
+                (push (list 'instance identity
+                            (not (eq old-instance missing)) old-instance instance)
+                      journal)
+                (puthash identity instance (etaf-runtime-instances runtime))))
+            (maphash
+             (lambda (_identity semantic)
+               (when-let* ((instance
+                            (gethash
+                             (etaf--semantic-component-resource-key semantic)
+                             (etaf-runtime-resource-registry runtime))))
+                 (let ((old-context
+                        (etaf--component-instance-context instance))
+                       (new-context
+                        (etaf--semantic-component-context-frame semantic)))
+                   (unless (eq old-context new-context)
+                     (push (list 'instance-context instance
+                                 old-context new-context)
+                           journal)
+                     (setf (etaf--component-instance-context instance)
+                           new-context)))))
+             (etaf-runtime-candidate-semantic-nodes runtime))
             (when (and (hash-table-p
 			(etaf-runtime-candidate-behavior-resource-keys runtime))
                        (hash-table-p
@@ -4210,6 +4273,22 @@ removed inside the same rollback journal."
   "Remove RUNTIME resources still owned by failed JOURNAL entries."
   (dolist (entry journal)
     (pcase (car entry)
+      ('instance
+       (let ((identity (nth 1 entry))
+             (present-p (nth 2 entry))
+             (old (nth 3 entry))
+             (candidate (nth 4 entry)))
+         (when (eq (gethash identity (etaf-runtime-instances runtime))
+                   candidate)
+           (if present-p
+               (puthash identity old (etaf-runtime-instances runtime))
+             (remhash identity (etaf-runtime-instances runtime))))))
+      ('instance-context
+       (let ((instance (nth 1 entry))
+             (old-context (nth 2 entry))
+             (new-context (nth 3 entry)))
+         (when (eq (etaf--component-instance-context instance) new-context)
+           (setf (etaf--component-instance-context instance) old-context))))
       ('resource
        (when (eq (gethash (nth 1 entry)
                           (etaf-runtime-resource-registry runtime))
@@ -4247,12 +4326,51 @@ removed inside the same rollback journal."
            (error "ETAF artifact authority changed during rollback: %S" key)))))))
   nil)
 
+(defun etaf--runtime-bind-semantic-inverse-journal
+    (candidate runtime resource-journal route-journal)
+  "Bind CANDIDATE inverse journals for RUNTIME before authority staging.
+RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
+  (setf (etaf-semantic-candidate-inverse-journal candidate)
+        (list :runtime runtime
+              :resource-journal resource-journal
+              :route-journal route-journal
+              :state 'armed))
+  candidate)
+
+(defun etaf--runtime-rollback-semantic-inverse-journal (candidate)
+  "Rollback CANDIDATE route/resource journals exactly once."
+  (when-let* ((inverse (etaf-semantic-candidate-inverse-journal candidate))
+              ((eq (plist-get inverse :state) 'armed)))
+    (let ((runtime (plist-get inverse :runtime)))
+      (plist-put inverse :state 'rolling-back)
+      (unwind-protect
+          (progn
+            (etaf--runtime-rollback-prearm
+             runtime (plist-get inverse :route-journal))
+            (etaf--runtime-rollback-resource-journal
+             runtime (plist-get inverse :resource-journal)))
+        (plist-put inverse :state 'rolled-back))))
+  candidate)
+
+(defun etaf--runtime-commit-semantic-inverse-journal (candidate)
+  "Mark CANDIDATE inverse journal committed and no longer rollback-capable."
+  (when-let* ((inverse (etaf-semantic-candidate-inverse-journal candidate)))
+    (unless (eq (plist-get inverse :state) 'armed)
+      (signal 'etaf-generation-error
+              (list :inverse-journal-not-armed
+                    (plist-get inverse :state))))
+    (plist-put inverse :state 'committed))
+  candidate)
+
 (defun etaf--runtime-participant-publish (participant)
   "Publish PARTICIPANT generation, restoring old authority on any failure."
-  (let ((success nil)
+  (let* ((success nil)
         (runtime (etaf--generation-participant-runtime participant))
-        (old (etaf--generation-participant-old participant))
-        (candidate (etaf--generation-participant-candidate participant))
+        (semantic-candidate
+         (etaf--generation-participant-semantic-candidate participant))
+        (old (etaf-semantic-candidate-expected-generation semantic-candidate))
+        (candidate
+         (etaf-semantic-candidate-candidate-generation semantic-candidate))
         paint-updates)
     (when-let* ((table
                 (etaf-runtime-candidate-theme-paint-updates runtime)))
@@ -4265,29 +4383,40 @@ removed inside the same rollback journal."
             (setf (etaf--generation-participant-paint-journal participant)
                   (tp-paint-slot-apply-updates
                    (etaf-runtime-buffer runtime) paint-updates)))
-          (etaf--runtime-swap-generation runtime old candidate)
+          (etaf--runtime-swap-generation
+           runtime old candidate semantic-candidate)
           (setf (etaf--generation-participant-state participant) 'published
                 success t))
       (unless success
-        (when-let* ((paint-journal
-                    (etaf--generation-participant-paint-journal participant)))
-          (tp-paint-slot-rollback-updates paint-journal)
-          (setf (etaf--generation-participant-paint-journal participant) nil))
-        (etaf--runtime-rollback-generation runtime old candidate)))
+        (etaf--runtime-participant-rollback participant)))
     participant))
 
 (defun etaf--runtime-participant-rollback (participant)
   "Rollback PARTICIPANT generation exactly and idempotently."
-  (when-let* ((paint-journal
-              (etaf--generation-participant-paint-journal participant)))
-    (tp-paint-slot-rollback-updates paint-journal)
-    (setf (etaf--generation-participant-paint-journal participant) nil))
-  (etaf--runtime-rollback-generation
-   (etaf--generation-participant-runtime participant)
-   (etaf--generation-participant-old participant)
-   (etaf--generation-participant-candidate participant))
-  (setf (etaf--generation-participant-state participant) 'rolled-back)
+  (unless (eq (etaf--generation-participant-state participant) 'rolled-back)
+    (let ((semantic-candidate
+           (etaf--generation-participant-semantic-candidate participant)))
+      (etaf--runtime-rollback-generation
+       (etaf--generation-participant-runtime participant)
+       (etaf-semantic-candidate-expected-generation semantic-candidate)
+       (etaf-semantic-candidate-candidate-generation semantic-candidate)
+       semantic-candidate)
+      (when-let* ((paint-journal
+                  (etaf--generation-participant-paint-journal participant)))
+        (tp-paint-slot-rollback-updates paint-journal)
+        (setf (etaf--generation-participant-paint-journal participant) nil))
+      (etaf--runtime-rollback-semantic-inverse-journal semantic-candidate)
+      (setf (etaf--generation-participant-state participant) 'rolled-back)))
   participant)
+
+(defun etaf--runtime-participant-commit (participant)
+  "Commit PARTICIPANT semantic candidate after render final accept."
+  (let ((candidate
+         (etaf--generation-participant-semantic-candidate participant)))
+    (etaf-semantic-candidate-commit candidate)
+    (etaf--runtime-commit-semantic-inverse-journal candidate)
+    (setf (etaf--generation-participant-state participant) 'committed)
+    participant))
 
 (defun etaf--runtime-begin-component-overlay (runtime generation)
   "Seed RUNTIME candidate tables from committed GENERATION without traversal."
@@ -5401,7 +5530,8 @@ RENDERED-IDENTITIES names the Component render participants."
            queued-effect-ids))
          changes range-changes inline-changes host-property-semantics host-changes
          backend-component-identities
-         journal resource-journal candidate-generation participant)
+         journal resource-journal candidate-generation semantic-candidate
+         participant)
     (etaf--runtime-begin-component-overlay runtime old)
     ;; A source notification can race a generation promotion and leave an old
     ;; effect id in the FIFO.  Keep the dirty-id set and FIFO coherent before
@@ -5625,6 +5755,9 @@ RENDERED-IDENTITIES names the Component render participants."
                    semantic-id)
              host-changes)))))
     (setq host-changes (nreverse host-changes))
+    (setq semantic-candidate
+          (etaf--runtime-new-semantic-candidate
+           runtime candidate-generation))
     (condition-case err
         (progn
           (setq resource-journal
@@ -5632,9 +5765,11 @@ RENDERED-IDENTITIES names the Component render participants."
                  runtime old candidate-generation)
                 participant
                 (etaf--generation-participant-create
-                 :runtime runtime :old old :candidate candidate-generation)
+                 :runtime runtime :semantic-candidate semantic-candidate)
                 journal
                 (etaf--runtime-prearm-generation runtime candidate-generation))
+          (etaf--runtime-bind-semantic-inverse-journal
+           semantic-candidate runtime resource-journal journal)
           (if (and (null changes)
                    (null range-changes)
                    (cl-every
@@ -5686,6 +5821,10 @@ RENDERED-IDENTITIES names the Component render participants."
                (lambda (_report)
                  (etaf--runtime-participant-rollback participant))))))
       ((error quit)
+       (when semantic-candidate
+         (etaf-semantic-candidate-rollback semantic-candidate)
+         (etaf--runtime-rollback-semantic-inverse-journal
+          semantic-candidate))
        (etaf--runtime-rollback-prearm runtime journal)
        (etaf--runtime-rollback-resource-journal runtime resource-journal)
        (etaf--runtime-clear-dirty-effects runtime)
@@ -5694,6 +5833,7 @@ RENDERED-IDENTITIES names the Component render participants."
        (etaf--runtime-dispose-created-candidate runtime)
        (etaf--runtime-clear-candidate runtime)
        (signal (car err) (cdr err))))
+    (etaf--runtime-participant-commit participant)
     (etaf--runtime-complete-generation runtime candidate-generation)
     (etaf--runtime-install-generation-mirrors
      runtime candidate-generation nil)
@@ -5719,8 +5859,8 @@ RENDERED-IDENTITIES names the Component render participants."
   "Build and publish one Root-owned candidate for RUNTIME."
   (setf (etaf-runtime-candidate-full-rebuild-p runtime) t)
   (let ((old-generation (etaf-runtime-current-generation runtime))
-        next-root root-node candidate-generation journal resource-journal
-        participant)
+        next-root root-node candidate-generation semantic-candidate
+        journal resource-journal participant)
     (condition-case err
         (let* ((source-builder (ebox-source-builder-create))
                (etaf--render-runtime runtime)
@@ -5746,13 +5886,18 @@ RENDERED-IDENTITIES names the Component render participants."
                  (ebox-source-builder-finish source-builder)))
           (setq candidate-generation
                 (etaf--runtime-build-generation runtime old-generation)
+                semantic-candidate
+                (etaf--runtime-new-semantic-candidate
+                 runtime candidate-generation)
                 resource-journal (etaf--runtime-preinstall-resources
                                   runtime old-generation candidate-generation)
                 participant (etaf--generation-participant-create
-                             :runtime runtime :old old-generation
-                             :candidate candidate-generation)
+                             :runtime runtime
+                             :semantic-candidate semantic-candidate)
                 journal
                 (etaf--runtime-prearm-generation runtime candidate-generation))
+          (etaf--runtime-bind-semantic-inverse-journal
+           semantic-candidate runtime resource-journal journal)
           (if old-generation
               (let ((candidate (ebox-candidate-begin
                                 (etaf-runtime-buffer runtime))))
@@ -5767,14 +5912,12 @@ RENDERED-IDENTITIES names the Component render participants."
              (etaf-runtime-buffer runtime) next-root
              (when (etaf-runtime-observer runtime)
                (list :observer #'etaf--runtime-forward-ebox-report)))
-            (etaf--runtime-participant-publish participant))
-          (etaf--runtime-complete-generation runtime candidate-generation)
-          (etaf--runtime-install-generation-mirrors
-           runtime candidate-generation t)
-          (setf (etaf-runtime-root-node runtime) root-node
-                (etaf-runtime-root-dirty-p runtime) nil)
-          (etaf--runtime-clear-dirty-effects runtime))
+            (etaf--runtime-participant-publish participant)))
       ((error quit)
+       (when semantic-candidate
+         (etaf-semantic-candidate-rollback semantic-candidate)
+         (etaf--runtime-rollback-semantic-inverse-journal
+          semantic-candidate))
        (etaf--runtime-rollback-prearm runtime journal)
        (etaf--runtime-rollback-resource-journal runtime resource-journal)
        (etaf--runtime-clear-dirty-effects runtime)
@@ -5782,6 +5925,13 @@ RENDERED-IDENTITIES names the Component render participants."
        (etaf--runtime-rollback-behaviors runtime)
        (etaf--runtime-clear-candidate runtime)
        (signal (car err) (cdr err))))
+    (etaf--runtime-participant-commit participant)
+    (etaf--runtime-complete-generation runtime candidate-generation)
+    (etaf--runtime-install-generation-mirrors
+     runtime candidate-generation t)
+    (setf (etaf-runtime-root-node runtime) root-node
+          (etaf-runtime-root-dirty-p runtime) nil)
+    (etaf--runtime-clear-dirty-effects runtime)
     ;; Publication has completed.  Lifecycle and cleanup callbacks run after
     ;; the retained state is promoted; their errors remain visible without
     ;; incorrectly rolling back an already published Ebox tree.

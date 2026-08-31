@@ -458,6 +458,14 @@ back into it. The migration-only `legacy`, `project`, and `shadow` routes prove
 projection equivalence and rollback safety without introducing a second
 committed truth.
 
+Each semantic candidate captures the expected generation, semantic token, and
+instance/resource/artifact/route store versions. The render path stages one CAS
+inside the Ebox framework callback and restores it through the same inverse
+journal on failure. A semantic-only change runs that CAS under ETAF ownership
+without creating an Ebox commit or TP revision. Mirror projection and obsolete
+route cleanup after CAS are postcommit work and cannot reverse the committed
+token if they fail.
+
 Each Runtime flush records a candidate-aware effect tuple containing the
 generation id, effect-to-source edges and source versions, plus an immutable
 semantic-node stamp for candidate input/context/output facts. A repeated tuple

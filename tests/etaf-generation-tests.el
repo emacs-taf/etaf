@@ -6,6 +6,16 @@
 (require 'etaf)
 (require 'etaf-generation)
 
+(etaf-define-component etaf-generation-test-dependency-only (&key source)
+  "Track SOURCE while producing an equal Ebox artifact."
+  :view
+  (text (expr (progn (etaf-value source) "same"))))
+
+(etaf-define-component etaf-generation-test-visible (&key source)
+  "Render SOURCE as visible text for semantic conflict tests."
+  :view
+  (text (expr (format "value=%s" (etaf-value source)))))
+
 (defun etaf-generation-test--view (visible)
   "Return a root View selected by reactive VISIBLE."
   (if (etaf-value visible)
@@ -121,6 +131,271 @@
     (should-error
      (etaf--runtime-install-generation-mirrors runtime nil t)
      :type 'etaf-generation-error)))
+
+(ert-deftest etaf-semantic-candidate-cas-and-rollback-are-exactly-once ()
+  "CAS stages generation/token/versions together and rollback restores all."
+  (let* ((old (list 'old-generation))
+         (next (list 'next-generation))
+         (authority (etaf-generation-authority-create old))
+         (candidate
+          (etaf-semantic-candidate-create
+           authority next 7 11 13 17)))
+    (etaf-semantic-candidate-stage candidate)
+    (should (eq next (etaf-generation-authority-current authority)))
+    (should (= (etaf-generation-authority-token authority) 1))
+    (should
+     (equal (etaf-generation-authority-store-versions authority)
+            (etaf-semantic-candidate-candidate-store-versions candidate)))
+    (should-error (etaf-semantic-candidate-stage candidate)
+                  :type 'etaf-generation-error)
+    (etaf-semantic-candidate-rollback candidate)
+    (should (eq old (etaf-generation-authority-current authority)))
+    (should (zerop (etaf-generation-authority-token authority)))
+    (should
+     (equal (etaf-generation-authority-store-versions authority)
+            (etaf-semantic-candidate-expected-store-versions candidate)))
+    (etaf-semantic-candidate-rollback candidate)
+    (should-error (etaf-semantic-candidate-commit candidate)
+                  :type 'etaf-generation-error)))
+
+(ert-deftest etaf-semantic-candidate-rejects-stale-authority-snapshots ()
+  "Generation, token, and store-version conflicts fail before authority swap."
+  (dolist (kind '(generation token stores))
+    (let* ((old (list 'old-generation))
+           (next (list 'next-generation))
+           (authority (etaf-generation-authority-create old))
+           (candidate
+            (etaf-semantic-candidate-create authority next 1 2 3 4)))
+      (pcase kind
+        ('generation
+         (etaf-generation-authority-set-current authority (list 'foreign)))
+        ('token
+         (setf (etaf-generation-authority-token authority) 9))
+        ('stores
+         (setf (etaf-generation-authority-store-versions authority)
+               (etaf-generation-store-versions-next
+                (etaf-generation-authority-store-versions authority)))))
+      (should-error (etaf-semantic-candidate-stage candidate)
+                    :type 'etaf-generation-conflict)
+      (should (eq (etaf-semantic-candidate-state candidate) 'prepared)))))
+
+(ert-deftest etaf-semantic-candidate-commit-is-terminal ()
+  "A committed semantic candidate cannot rollback or commit twice."
+  (let* ((authority (etaf-generation-authority-create 'old))
+         (candidate
+          (etaf-semantic-candidate-create authority 'next 1 2 3 4)))
+    (etaf-semantic-candidate-stage candidate)
+    (etaf-semantic-candidate-commit candidate)
+    (should (eq (etaf-semantic-candidate-state candidate) 'committed))
+    (should-error (etaf-semantic-candidate-commit candidate)
+                  :type 'etaf-generation-error)
+    (should-error (etaf-semantic-candidate-rollback candidate)
+                  :type 'etaf-generation-error)
+    (should (eq (etaf-generation-authority-current authority) 'next))))
+
+(ert-deftest etaf-semantic-only-commit-advances-token-without-ebox-or-tp ()
+  "Equal output commits semantic token/version only, with no surface revision."
+  (let ((buffer-name " *etaf-semantic-token-test*")
+        (source (etaf-ref 0))
+        (ebox-updates 0))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer-name
+           (etaf--view-call 'etaf-generation-test-dependency-only
+                            (list :source source) nil))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (surface (with-current-buffer buffer-name
+                            (car tp--buffer-surfaces)))
+                 (generation (etaf-runtime-generation runtime))
+                 (token (etaf-runtime-generation-token runtime))
+                 (versions (etaf-runtime-store-versions runtime))
+                 (revision (tp-surface-revision surface))
+                 (original
+                  (symbol-function 'etaf-render-port-update)))
+            (cl-letf (((symbol-function 'etaf-render-port-update)
+                       (lambda (&rest arguments)
+                         (cl-incf ebox-updates)
+                         (apply original arguments))))
+              (setf (etaf-value source) 1))
+            (should (= (1+ generation)
+                       (etaf-runtime-generation runtime)))
+            (should (= (1+ token)
+                       (etaf-runtime-generation-token runtime)))
+            (should
+             (equal (etaf-generation-store-versions-next versions)
+                    (etaf-runtime-store-versions runtime)))
+            (should (zerop ebox-updates))
+            (should (= revision (tp-surface-revision surface)))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-semantic-store-conflict-restores-and-retries ()
+  "A stale store version leaves generation/buffer old and a fresh retry wins."
+  (let ((buffer-name " *etaf-semantic-conflict-test*")
+        (source (etaf-ref 0)))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer-name
+           (etaf--view-call 'etaf-generation-test-visible
+                            (list :source source) nil))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (authority (etaf-runtime-generation-authority runtime))
+                 (generation (etaf-runtime-current-generation runtime))
+                 (token (etaf-runtime-generation-token runtime))
+                 (versions (etaf-runtime-store-versions runtime))
+                 (original
+                  (symbol-function 'etaf--runtime-participant-publish)))
+            (cl-letf
+                (((symbol-function 'etaf--runtime-participant-publish)
+                  (lambda (participant)
+                    (setf (etaf-generation-authority-store-versions authority)
+                          (etaf-generation-store-versions-next versions))
+                    (funcall original participant))))
+              (should-error (setf (etaf-value source) 1)
+                            :type 'etaf-generation-conflict))
+            (should (eq generation
+                        (etaf-runtime-current-generation runtime)))
+            (should (= token (etaf-runtime-generation-token runtime)))
+            (should (equal "value=0"
+                           (with-current-buffer buffer-name
+                             (buffer-string))))
+            (etaf-runtime-flush runtime)
+            (should (= (1+ token) (etaf-runtime-generation-token runtime)))
+            (should (equal "value=1"
+                           (with-current-buffer buffer-name
+                             (buffer-string))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-semantic-postcommit-mirror-failure-keeps-token-committed ()
+  "A postcommit mirror error cannot reverse generation/token or TP facts."
+  (let ((buffer-name " *etaf-semantic-postcommit-test*")
+        (source (etaf-ref 0)))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer-name
+           (etaf--view-call 'etaf-generation-test-dependency-only
+                            (list :source source) nil))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (surface (with-current-buffer buffer-name
+                            (car tp--buffer-surfaces)))
+                 (generation (etaf-runtime-generation runtime))
+                 (token (etaf-runtime-generation-token runtime))
+                 (revision (tp-surface-revision surface)))
+            (cl-letf
+                (((symbol-function 'etaf--runtime-install-generation-mirrors)
+                  (lambda (&rest _arguments)
+                    (error "injected postcommit mirror failure"))))
+              (should-error (setf (etaf-value source) 1) :type 'error))
+            (should (= (1+ generation)
+                       (etaf-runtime-generation runtime)))
+            (should (= (1+ token)
+                       (etaf-runtime-generation-token runtime)))
+            (should (= revision (tp-surface-revision surface)))
+            (should (equal "same"
+                           (with-current-buffer buffer-name
+                             (buffer-string))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-semantic-render-rollback-restores-all-authority-in-callback ()
+  "Framework rollback restores token, stores, and journals before TP returns."
+  (let ((buffer-name " *etaf-semantic-render-rollback-test*")
+        (source (etaf-ref 0))
+        rollback-evidence)
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer-name
+           (etaf--view-call 'etaf-generation-test-visible
+                            (list :source source) nil))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (generation (etaf-runtime-current-generation runtime))
+                 (token (etaf-runtime-generation-token runtime))
+                 (versions (etaf-runtime-store-versions runtime))
+                 (original-precommit
+                  (symbol-function 'tp--run-transaction-precommit-functions))
+                 (original-rollback
+                  (symbol-function 'etaf--runtime-participant-rollback)))
+            (cl-letf
+                (((symbol-function 'tp--run-transaction-precommit-functions)
+                  (lambda ()
+                    (funcall original-precommit)
+                    (error "injected precommit failure")))
+                 ((symbol-function 'etaf--runtime-participant-rollback)
+                  (lambda (participant)
+                    (prog1 (funcall original-rollback participant)
+                      (let* ((semantic
+                              (etaf--generation-participant-semantic-candidate
+                               participant))
+                             (inverse
+                              (etaf-semantic-candidate-inverse-journal semantic)))
+                        (setq rollback-evidence
+                              (list
+                               :generation
+                               (eq generation
+                                   (etaf-runtime-current-generation runtime))
+                               :token
+                               (= token (etaf-runtime-generation-token runtime))
+                               :versions
+                               (equal versions
+                                      (etaf-runtime-store-versions runtime))
+                               :candidate-state
+                               (etaf-semantic-candidate-state semantic)
+                               :journal-state
+                               (plist-get inverse :state))))))))
+              (should-error (setf (etaf-value source) 1) :type 'error))
+            (should
+             (equal rollback-evidence
+                    '(:generation t :token t :versions t
+                      :candidate-state rolled-back
+                      :journal-state rolled-back)))
+            (should (equal "value=0"
+                           (with-current-buffer buffer-name
+                             (buffer-string))))
+            (etaf-runtime-flush runtime)
+            (should (equal "value=1"
+                           (with-current-buffer buffer-name
+                             (buffer-string))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-semantic-legacy-and-shadow-routes-remain-recoverable ()
+  "Legacy keeps its token while shadow validates and advances the CAS token."
+  (dolist (route '(legacy shadow))
+    (let ((buffer-name
+           (format " *etaf-semantic-%s-route-test*" route))
+          (source (etaf-ref 0))
+          (etaf-semantic-commit-route route))
+      (unwind-protect
+          (progn
+            (etaf-mount
+             buffer-name
+             (etaf--view-call 'etaf-generation-test-visible
+                              (list :source source) nil))
+            (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                   (generation (etaf-runtime-generation runtime))
+                   (token (etaf-runtime-generation-token runtime)))
+              (setf (etaf-value source) 1)
+              (should (= (1+ generation)
+                         (etaf-runtime-generation runtime)))
+              (should (= (etaf-runtime-generation-token runtime)
+                         (if (eq route 'legacy) token (1+ token))))))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+          (etaf-unmount runtime))
+        (when-let* ((buffer (get-buffer buffer-name)))
+          (kill-buffer buffer))))))
 
 (provide 'etaf-generation-tests)
 

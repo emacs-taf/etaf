@@ -447,6 +447,13 @@ generation；Runtime 中同名 hash table 只是由 generation 单向重建的�
 `legacy`/`project`/`shadow` 路由只用于证明投影等价与安全回退，不增加第二份
 committed truth。
 
+每个 semantic candidate 同时捕获 expected generation、semantic token，以及
+instance/resource/artifact/route store versions。render 路径在 Ebox framework
+stage 中暂存一次 CAS，失败时由同一个 inverse journal 恢复；没有可见 Ebox
+变化的 semantic-only 路径由 ETAF 自己执行同一 CAS，不创建 Ebox commit 或 TP
+revision。CAS 后的 mirror 与旧 route 清理属于 postcommit，失败不能反向恢复已提交
+token。
+
 每次 Runtime flush 都记录 candidate-aware effect tuple：其中包含 generation id、
 effect→source 边和 source version，以及 candidate input/context/output facts 的
 immutable semantic-node stamp。重复 tuple 会报告有序的 effect/edge path；step
