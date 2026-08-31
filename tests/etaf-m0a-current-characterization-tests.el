@@ -116,9 +116,10 @@
             (etaf-test-m0a-lifecycle-condition
              (setq captured condition)))
           (should
-           (equal captured
-                  (cons 'etaf-test-m0a-lifecycle-condition
-                        etaf-test-m0a-condition-data)))
+           (eq (car captured) 'etaf-test-m0a-lifecycle-condition))
+          (should (equal (butlast (cdr captured))
+                         etaf-test-m0a-condition-data))
+          (should (etaf-condition-postcommit-info captured))
           (should (equal "B"
                          (with-current-buffer buffer-name
                            (buffer-string)))))

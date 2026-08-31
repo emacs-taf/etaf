@@ -474,6 +474,25 @@ source routes validate both attached state and token. Detach invalidates the
 token at one O(1) boundary before removing registries, routes, Component scopes,
 or Behaviors, so cleanup volume or failure cannot revive the old Host.
 
+Lifecycle callbacks and structural cleanup run after that commit boundary in
+an `etaf-retirement-journal`. Every entry has a stable identity, ordering key,
+attempt count, policy, and terminal state. Public mounted, updated, and
+unmounted callbacks are run once; the first public failure abandons later
+public callbacks while structural cleanup continues. Idempotent framework
+cleanup has a bounded retry count, and contained cleanup records diagnostics
+without changing the committed generation, Ebox revision, or Host authority.
+Completed journals are retained separately from committed outcomes on the
+Runtime, with a bounded history.
+
+When an explicit operation must expose a postcommit callback failure, ETAF
+re-signals the original condition symbol and preserves its original data as a
+prefix. It appends one fixed `:etaf-condition-trailer/v1` datum containing the
+operation, outcome, generation, Ebox revision, and diagnostic-journal IDs.
+`etaf-condition-postcommit-info` validates and reads that trailer, so callers
+can distinguish “committed, then callback failed” from a rollback failure.
+The buffer-kill path drains or contains retirement work but never throws a
+retirement condition from the kill hook.
+
 Each Runtime flush records a candidate-aware effect tuple containing the
 generation id, effect-to-source edges and source versions, plus an immutable
 semantic-node stamp for candidate input/context/output facts. A repeated tuple

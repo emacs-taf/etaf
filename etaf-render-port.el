@@ -393,6 +393,12 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair."
   "Return non-nil when BUFFER owns a live retained Ebox surface."
   (ebox-surface-buffer-mounted-p buffer))
 
+(defun etaf-render-port-revision (buffer)
+  "Return BUFFER's latest committed Ebox surface revision, or zero."
+  (condition-case nil
+      (or (plist-get (ebox-buffer-update-report buffer) :surface-revision) 0)
+    (error 0)))
+
 (provide 'etaf-render-port)
 
 ;;; etaf-render-port.el ends here

@@ -74,10 +74,10 @@
              etaf-runtime-killed-buffer-unmounts-owned-scope
              etaf-m0a-repeated-public-unmount-signals-runtime-error))
     (:id condition-trailer
-     :evidence-mode observed-baseline
+     :evidence-mode current-contract
      :activation-milestone M3a
      :owner etaf-runtime
-     :summary "current consumers receive raw condition symbols/data; typed compatibility trailer is not active"
+     :summary "postcommit errors preserve the raw condition symbol/data prefix and append the v1 committed trailer"
      :tests (etaf-m0a-public-update-preserves-raw-condition-symbol-and-data))
     (:id document-examples
      :evidence-mode observed-baseline

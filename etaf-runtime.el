@@ -17,6 +17,7 @@
 (require 'etaf-reactive)
 (require 'etaf-generation)
 (require 'etaf-host)
+(require 'etaf-retirement)
 (require 'etaf-render-port)
 (require 'etaf-renderer)
 (require 'etaf-context)
@@ -332,6 +333,7 @@ the sequential `etaf--pvec-put' contract."
   flushing-p
   pending-p
   diagnostics
+  retirement-journals
   observer
   (next-operation-id 0)
   (next-semantic-candidate-id 0)
@@ -1286,6 +1288,46 @@ effect-to-source edges.  It is intentionally immutable and suitable as an
         (etaf-runtime-diagnostics runtime))
   nil)
 
+(defcustom etaf-retirement-journal-limit 64
+  "Maximum completed retirement journals retained by one Runtime."
+  :type 'positive-integer
+  :group 'etaf)
+
+(defun etaf--runtime-new-retirement-journal (runtime outcome-id)
+  "Create RUNTIME retirement journal correlated with committed OUTCOME-ID."
+  (etaf-retirement-journal-create
+   :operation-id
+   (if etaf--observer-context
+       (etaf--observer-context-operation-id etaf--observer-context)
+     (or (etaf-runtime-next-operation-id runtime) 0))
+   :outcome-id outcome-id
+   :generation-id (etaf-runtime-generation runtime)
+   :revision (etaf-render-port-revision (etaf-runtime-buffer runtime))))
+
+(defun etaf--runtime-retain-retirement-journal (runtime journal)
+  "Retain completed JOURNAL and its diagnostics on RUNTIME."
+  (push journal (etaf-runtime-retirement-journals runtime))
+  (when (> (length (etaf-runtime-retirement-journals runtime))
+           (max 1 etaf-retirement-journal-limit))
+    (setcdr (nthcdr (1- (max 1 etaf-retirement-journal-limit))
+                    (etaf-runtime-retirement-journals runtime))
+            nil))
+  (dolist (diagnostic (etaf-retirement-journal-diagnostics journal))
+    (push (append (list :phase 'retirement
+                        :diagnostic-journal-id
+                        (etaf-retirement-journal-id journal))
+                  (copy-tree diagnostic))
+          (etaf-runtime-diagnostics runtime)))
+  journal)
+
+(defun etaf--runtime-drain-retirement (runtime journal &optional contained-p)
+  "Drain RUNTIME JOURNAL and re-signal public failure unless CONTAINED-P."
+  (let ((condition (etaf-retirement-drain journal)))
+    (etaf--runtime-retain-retirement-journal runtime journal)
+    (when (and condition (not contained-p))
+      (etaf-retirement-resignal condition journal))
+    condition))
+
 (defun etaf-runtime-call-operation (runtime kind label function)
   "Call FUNCTION as one observed RUNTIME operation.
 KIND is a stable symbol and LABEL is a user-facing string.  Nested calls for
@@ -1940,32 +1982,44 @@ need to know how Behavior attributes are merged."
      :props merged
      :children (etaf--view-node-children node)))))
 
-(defun etaf--runtime-promote-behaviors (runtime)
-  "Publish candidate Behavior state for RUNTIME and dispose old state."
+(defun etaf--runtime-promote-behaviors (runtime retirement-journal)
+  "Publish RUNTIME Behaviors and enqueue cleanup in RETIREMENT-JOURNAL."
   (let ((old-resources (or (etaf-runtime-behavior-resource-keys runtime)
                            (make-hash-table :test #'equal)))
         (candidate-resources
          (or (etaf-runtime-candidate-behavior-resource-keys runtime)
              (make-hash-table :test #'equal))))
-    (dolist (entry (sort (let (entries)
+    (cl-loop for entry in (sort (let (entries)
                            (maphash (lambda (key value)
                                       (push (cons key value) entries))
                                     (etaf-runtime-behaviors runtime))
                            entries)
                          (lambda (left right)
                            (string< (prin1-to-string (car left))
-                                    (prin1-to-string (car right))))))
+                                    (prin1-to-string (car right)))))
+             for index from 0
+             do
       (let* ((identity (car entry)) (old (cdr entry))
              (candidate (gethash identity
                                  (etaf-runtime-candidate-behaviors runtime)))
              (old-key (gethash identity old-resources))
              (candidate-key (gethash identity candidate-resources)))
         (unless (and candidate (eq candidate old))
-          (when-let* ((cleanup (cdr old)))
-            (etaf--runtime-run-contained-cleanup
-             runtime 'behavior-remove identity cleanup))
           (when old-key
-            (remhash old-key (etaf-runtime-resource-registry runtime))))
+            (remhash old-key (etaf-runtime-resource-registry runtime)))
+          (when-let* ((cleanup (cdr old)))
+            (if retirement-journal
+                (let ((callback cleanup))
+                  (etaf-retirement-enqueue
+                   retirement-journal
+                   :owner (copy-tree identity)
+                   :kind 'behavior-remove
+                   :payload callback
+                   :ordering-key (list 4 index)
+                   :policy 'retryable-idempotent
+                   :max-attempts 2))
+              (etaf--runtime-run-contained-cleanup
+               runtime 'behavior-remove identity cleanup))))
         (when (and candidate candidate-key)
           (puthash candidate-key candidate
                    (etaf-runtime-resource-registry runtime)))))
@@ -3551,14 +3605,58 @@ raw Emacs properties; Text presentation is projected by Ebox."
         (when (and styles (not (equal path root-path)))
           (setq result (etaf--apply-inline-style-rules result styles nil)))))))
 
-(defun etaf--runtime-dispose-instance (instance &optional run-hooks-p)
-  "Dispose INSTANCE, optionally running hooks when RUN-HOOKS-P is non-nil."
+(defun etaf--runtime-enqueue-instance-hooks
+    (journal instance kind hooks ordering-prefix)
+  "Enqueue INSTANCE HOOKS of KIND into JOURNAL after ORDERING-PREFIX."
+  (cl-loop for hook in (reverse hooks)
+           for index from 0
+           do
+           (let ((callback hook))
+             (etaf-retirement-enqueue
+              journal
+              :owner (copy-tree (etaf--component-instance-identity instance))
+              :kind kind
+              :payload (lambda ()
+                         (let ((etaf--render-phase-p nil))
+                           (funcall callback)))
+              :ordering-key (append ordering-prefix (list 0 index))
+              :policy 'run-once-public
+              :max-attempts 1))))
+
+(defun etaf--runtime-dispose-instance
+  (instance &optional run-hooks-p retirement-journal ordering-prefix)
+  "Dispose INSTANCE and run public hooks when RUN-HOOKS-P is non-nil.
+When RETIREMENT-JOURNAL is non-nil, enqueue public hooks and structural scope
+cleanup after ORDERING-PREFIX instead of running them inline."
   (when (etaf--component-instance-p instance)
-    (when (and run-hooks-p (etaf--component-instance-mounted-p instance))
-      (let ((etaf--render-phase-p nil))
-        (etaf--run-hooks (etaf--component-instance-unmounted-hooks instance))))
-    (setf (etaf--component-instance-mounted-p instance) nil)
-    (etaf-scope-stop (etaf--component-instance-scope instance))))
+    (let ((mounted-p (etaf--component-instance-mounted-p instance))
+          (scope (etaf--component-instance-scope instance)))
+      ;; Authority is removed before any user or structural cleanup runs.
+      (setf (etaf--component-instance-mounted-p instance) nil)
+      (if retirement-journal
+          (progn
+            (when (and run-hooks-p mounted-p)
+              (etaf--runtime-enqueue-instance-hooks
+               retirement-journal instance 'unmounted
+               (etaf--component-instance-unmounted-hooks instance)
+               ordering-prefix))
+            (etaf-retirement-enqueue
+             retirement-journal
+             :owner (copy-tree (etaf--component-instance-identity instance))
+             :kind 'scope-stop
+             :payload
+             (lambda ()
+               (when-let* ((errors (etaf-scope-stop scope)))
+                 (signal (caar errors) (cdar errors))))
+             :ordering-key (append ordering-prefix '(1 0))
+             :policy 'contained-once
+             :max-attempts 1))
+        (progn
+          (when (and run-hooks-p mounted-p)
+            (let ((etaf--render-phase-p nil))
+              (etaf--run-hooks
+               (etaf--component-instance-unmounted-hooks instance))))
+          (etaf-scope-stop scope))))))
 
 (defun etaf--runtime-dispose-created-candidate (runtime)
   "Dispose RUNTIME's instances created by an uncommitted candidate."
@@ -3604,8 +3702,8 @@ raw Emacs properties; Text presentation is projected by Ebox."
         (etaf-runtime-candidate-behaviors runtime) nil
         (etaf-runtime-candidate-behavior-resource-keys runtime) nil))
 
-(defun etaf--runtime-promote (runtime)
-  "Promote RUNTIME's successful candidate and return its lifecycle groups."
+(defun etaf--runtime-promote (runtime retirement-journal)
+  "Promote RUNTIME candidate and enqueue removals in RETIREMENT-JOURNAL."
   (let (removed added existing)
     (maphash
      (lambda (identity instance)
@@ -3616,17 +3714,22 @@ raw Emacs properties; Text presentation is projected by Ebox."
          (push instance removed)))
      (etaf-runtime-instances runtime))
     ;; Removed descendants are disposed before their parents.
-    (dolist (instance (sort removed
+    (cl-loop for instance in (sort removed
                              (lambda (left right)
                                (> (length (etaf--component-instance-identity left))
-                                  (length (etaf--component-instance-identity right))))))
+                                  (length (etaf--component-instance-identity right)))))
+             for index from 0
+             do
       (remhash (etaf--component-instance-identity instance)
                (etaf-runtime-instances runtime))
       (remhash (etaf--component-instance-resource-key instance)
                (etaf-runtime-resource-registry runtime))
-      (etaf--runtime-dispose-instance instance t))
-    (dolist (entry (etaf-runtime-candidate-old-instances runtime))
-      (etaf--runtime-dispose-instance (cadr entry) t))
+      (etaf--runtime-dispose-instance
+       instance t retirement-journal (list 0 index)))
+    (cl-loop for entry in (etaf-runtime-candidate-old-instances runtime)
+             for index from 0
+             do (etaf--runtime-dispose-instance
+                 (cadr entry) t retirement-journal (list 1 index)))
     (dolist (instance added)
       (setf (etaf--component-instance-mounted-p instance) t))
     (list
@@ -3636,14 +3739,20 @@ raw Emacs properties; Text presentation is projected by Ebox."
                 (length (etaf--component-instance-identity right)))))
      existing)))
 
-(defun etaf--runtime-run-lifecycle (groups)
-  "Run mounted and updated lifecycle hooks in GROUPS after publication."
-  (dolist (instance (car groups))
-    (let ((etaf--render-phase-p nil))
-      (etaf--run-hooks (etaf--component-instance-mounted-hooks instance))))
-  (dolist (instance (cadr groups))
-    (let ((etaf--render-phase-p nil))
-      (etaf--run-hooks (etaf--component-instance-updated-hooks instance)))))
+(defun etaf--runtime-run-lifecycle (groups retirement-journal)
+  "Enqueue mounted and updated GROUPS in RETIREMENT-JOURNAL."
+  (cl-loop for instance in (car groups)
+           for index from 0
+           do (etaf--runtime-enqueue-instance-hooks
+               retirement-journal instance 'mounted
+               (etaf--component-instance-mounted-hooks instance)
+               (list 2 index)))
+  (cl-loop for instance in (cadr groups)
+           for index from 0
+           do (etaf--runtime-enqueue-instance-hooks
+               retirement-journal instance 'updated
+               (etaf--component-instance-updated-hooks instance)
+               (list 3 index))))
 
 (defun etaf--runtime-begin-candidate (runtime)
   "Reset candidate bookkeeping before a RUNTIME render."
@@ -5857,22 +5966,29 @@ RENDERED-IDENTITIES names the Component render participants."
     (etaf--runtime-install-generation-mirrors
      runtime candidate-generation nil)
     (etaf--runtime-clear-dirty-effects runtime)
-    (unwind-protect
-        (progn
-          (dolist (instance (etaf-runtime-candidate-created runtime))
-            (setf (etaf--component-instance-mounted-p instance) t)
-            (etaf--run-hooks (etaf--component-instance-mounted-hooks instance)))
-          (dolist (entry (etaf--generation-index-entries
-                          candidate-generation 'lifecycle))
-            (let ((identity (car entry)))
-            (when-let* ((semantic (etaf--generation-semantic old identity))
-                        (instance
-                         (gethash
-                          (etaf--semantic-component-resource-key semantic)
-                          (etaf-runtime-resource-registry runtime))))
-              (etaf--run-hooks
-               (etaf--component-instance-updated-hooks instance))))))
-      (etaf--runtime-clear-candidate runtime)))))
+    (let ((retirement
+           (etaf--runtime-new-retirement-journal
+            runtime (etaf-semantic-candidate-candidate-id semantic-candidate)))
+          updated)
+      (unwind-protect
+          (progn
+            (dolist (instance (etaf-runtime-candidate-created runtime))
+              (setf (etaf--component-instance-mounted-p instance) t))
+            (dolist (entry (etaf--generation-index-entries
+                            candidate-generation 'lifecycle))
+              (let ((identity (car entry)))
+                (when-let* ((semantic (etaf--generation-semantic old identity))
+                            (instance
+                             (gethash
+                              (etaf--semantic-component-resource-key semantic)
+                              (etaf-runtime-resource-registry runtime))))
+                  (push instance updated))))
+            (etaf--runtime-run-lifecycle
+             (list (etaf-runtime-candidate-created runtime)
+                   (nreverse updated))
+             retirement)
+            (etaf--runtime-drain-retirement runtime retirement))
+        (etaf--runtime-clear-candidate runtime))))))
 
 (defun etaf--runtime-render-effect (runtime)
   "Build and publish one Root-owned candidate for RUNTIME."
@@ -5966,12 +6082,16 @@ RENDERED-IDENTITIES names the Component render participants."
     ;; Publication has completed.  Lifecycle and cleanup callbacks run after
     ;; the retained state is promoted; their errors remain visible without
     ;; incorrectly rolling back an already published Ebox tree.
-    (unwind-protect
-        (let ((groups (etaf--runtime-promote runtime)))
-          (etaf--runtime-promote-behaviors runtime)
-          (etaf--runtime-run-lifecycle groups))
-      (etaf--runtime-rollback-behaviors runtime)
-      (etaf--runtime-clear-candidate runtime))
+    (let ((retirement
+           (etaf--runtime-new-retirement-journal
+            runtime (etaf-semantic-candidate-candidate-id semantic-candidate))))
+      (unwind-protect
+          (let ((groups (etaf--runtime-promote runtime retirement)))
+            (etaf--runtime-promote-behaviors runtime retirement)
+            (etaf--runtime-run-lifecycle groups retirement)
+            (etaf--runtime-drain-retirement runtime retirement))
+        (etaf--runtime-rollback-behaviors runtime)
+        (etaf--runtime-clear-candidate runtime)))
     next-root))
 
 (defun etaf--runtime-render-root-turn (runtime &optional force-components-p)
@@ -6162,10 +6282,15 @@ CAUSE is `buffer-kill' for the contained dead-buffer path, or nil for explicit
 unmount.  Host authority is invalidated before any unbounded cleanup."
   (unless (etaf-runtime-p runtime)
     (signal 'wrong-type-argument (list 'etaf-runtime-p runtime)))
-  (ignore cause)
   (if (not (etaf-runtime-mounted-p runtime))
       runtime
-    (let ((authority (etaf-runtime-host-authority runtime)))
+    (let* ((authority (etaf-runtime-host-authority runtime))
+           (retirement
+            (etaf--runtime-new-retirement-journal
+             runtime
+             (list 'host-detach
+                   (etaf-runtime-mount-epoch runtime)
+                   (etaf-host-authority-version authority)))))
       (when (etaf-host-authority-attached-p authority)
         (etaf-host-authority-begin-detach authority))
       (unless (eq (etaf-host-authority-state authority) 'terminal)
@@ -6181,7 +6306,15 @@ unmount.  Host authority is invalidated before any unbounded cleanup."
             (unless (eq cause 'buffer-kill)
               (when (etaf-render-port-mounted-p
                      (etaf-runtime-buffer runtime))
-                (etaf-render-port-unmount (etaf-runtime-buffer runtime))))
+                (let ((buffer (etaf-runtime-buffer runtime)))
+                  (etaf-retirement-enqueue
+                   retirement
+                   :owner (list 'ebox (etaf-runtime-mount-epoch runtime))
+                   :kind 'ebox-unmount
+                   :payload (lambda () (etaf-render-port-unmount buffer))
+                   :ordering-key '(0 0)
+                   :policy 'retryable-idempotent
+                   :max-attempts 2))))
             (remhash (etaf-runtime-buffer runtime) etaf--runtime-table)
             (remhash (etaf-runtime-mount-epoch runtime)
                      etaf--runtime-route-registry)
@@ -6194,24 +6327,64 @@ unmount.  Host authority is invalidated before any unbounded cleanup."
             (let (instances)
               (maphash (lambda (_identity instance) (push instance instances))
                        (etaf-runtime-instances runtime))
-              (dolist
-                  (instance
-                   (sort instances
-                         (lambda (left right)
-                           (> (length
-                               (etaf--component-instance-identity left))
-                              (length
-                               (etaf--component-instance-identity right))))))
-                (etaf--runtime-dispose-instance instance t)))
-            (etaf-scope-stop (etaf-runtime-scope runtime))
+              (cl-loop
+               for instance in
+               (sort instances
+                     (lambda (left right)
+                       (> (length (etaf--component-instance-identity left))
+                          (length
+                           (etaf--component-instance-identity right)))))
+               for index from 0
+               do
+               (remhash (etaf--component-instance-identity instance)
+                        (etaf-runtime-instances runtime))
+               (remhash (etaf--component-instance-resource-key instance)
+                        (etaf-runtime-resource-registry runtime))
+               (etaf--runtime-dispose-instance
+                instance t retirement (list 1 index))))
+            (let ((scope (etaf-runtime-scope runtime)))
+              (etaf-retirement-enqueue
+               retirement
+               :owner (list 'runtime-scope
+                            (etaf-runtime-mount-epoch runtime))
+               :kind 'runtime-scope-stop
+               :payload
+               (lambda ()
+                 (when-let* ((errors (etaf-scope-stop scope)))
+                   (signal (caar errors) (cdar errors))))
+               :ordering-key '(8 0)
+               :policy 'contained-once
+               :max-attempts 1))
+            (let (behavior-entries)
             (maphash
              (lambda (identity state)
-               (when-let* ((cleanup (cdr state)))
-                 (etaf--runtime-run-contained-cleanup
-                  runtime 'behavior-unmount identity cleanup)))
-             (etaf-runtime-behaviors runtime))
+                 (push (cons identity state) behavior-entries))
+               (etaf-runtime-behaviors runtime))
+              (clrhash (etaf-runtime-behaviors runtime))
+              (cl-loop for entry in behavior-entries
+                       for index from 0
+                       do
+                       (when-let* ((resource-key
+                                   (gethash
+                                    (car entry)
+                                    (etaf-runtime-behavior-resource-keys
+                                     runtime))))
+                         (remhash resource-key
+                                  (etaf-runtime-resource-registry runtime)))
+                       (when-let* ((cleanup (cdr (cdr entry))))
+                         (let ((callback cleanup))
+                           (etaf-retirement-enqueue
+                            retirement
+                            :owner (copy-tree (car entry))
+                            :kind 'behavior-unmount
+                            :payload callback
+                            :ordering-key (list 7 index)
+                            :policy 'retryable-idempotent
+                            :max-attempts 2)))))
             (clrhash (etaf-runtime-instances runtime))
             (clrhash (etaf-runtime-resource-registry runtime))
+            (etaf--runtime-drain-retirement
+             runtime retirement (eq cause 'buffer-kill))
             runtime)
         (etaf-host-authority-finish-detach authority)))))
 

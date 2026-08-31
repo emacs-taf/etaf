@@ -461,6 +461,22 @@ lookup、event 和 source route 同时校验 attached state 与 token。detach �
 边界让 token 失效，再清理 registry、routes、Component scopes 和 Behaviors；因此
 cleanup 数量或错误不能让旧 Host 重新获得 authority。
 
+lifecycle callback 与结构 cleanup 在该 commit boundary 之后进入
+`etaf-retirement-journal`。每个 entry 都有稳定 identity、ordering key、attempt
+count、policy 与 terminal state。mounted、updated、unmounted 等公开 callback
+只运行一次；第一个公开 callback 失败后，后续公开 callback 标记为 abandoned，
+但结构 cleanup 继续。可幂等的框架 cleanup 只做有上限的重试；contained cleanup
+只写 diagnostics，不改变已提交 generation、Ebox revision 或 Host authority。
+Runtime 以有界历史保存已完成 journal，且它们与 committed outcome 分离。
+
+当显式操作需要向调用者暴露 postcommit callback 错误时，ETAF 会用原 condition
+symbol 重新 signal，并逐项保留原 condition data 前缀；末尾只追加一个固定
+`:etaf-condition-trailer/v1` datum，其中包含 operation、outcome、generation、
+Ebox revision 与 diagnostic-journal ID。`etaf-condition-postcommit-info` 会校验并
+读取该 trailer，让调用者机械区分“已经提交、随后 callback 失败”和 rollback
+failure。buffer-kill 路径会 drain 或 contain retirement 工作，但绝不会从 kill
+hook 抛 retirement condition。
+
 每次 Runtime flush 都记录 candidate-aware effect tuple：其中包含 generation id、
 effect→source 边和 source version，以及 candidate input/context/output facts 的
 immutable semantic-node stamp。重复 tuple 会报告有序的 effect/edge path；step
