@@ -4,6 +4,10 @@
 > Current behavior remains defined by
 > [`architecture.en.md`](../architecture.en.md),
 > [`user-guide.en.md`](../user-guide.en.md), and passing tests.
+> The public Component vocabulary is synchronized with the
+> [Chinese proposal](module-boundaries.zh.md); both describe `:view`, `:render`,
+> optional `:setup`, opaque `etaf-state`, and the single public `etaf-node`
+> constructor at the target boundary.
 
 This document defines only the target model, module owners, dependency direction, and
 completion criteria. Implementation order belongs in a separate delivery plan;

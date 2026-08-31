@@ -3,6 +3,9 @@
 > 状态：设计提案。本文不描述当前已交付 API。当前行为仍以
 > [`architecture.zh.md`](../architecture.zh.md)、[`user-guide.zh.md`](../user-guide.zh.md)
 > 和通过的测试为准。
+> 公共 Component 词汇已与[英文提案](module-boundaries.en.md)同步；两份文档在目标边界
+> 都使用 `:view`、`:render`、可选 `:setup`、opaque `etaf-state`，以及唯一公共构造器
+> `etaf-node`。
 
 本文只定义目标模型、模块 owner、依赖方向和完成条件。实现顺序属于单独的
 实施计划；历史名称和兼容策略不参与目标架构设计。
