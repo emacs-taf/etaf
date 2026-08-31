@@ -246,7 +246,7 @@ Strings are the smallest text View and lower to Ebox content. Nested `text` View
 
 `grid` reuses Ebox's public two-dimensional layout contract. Its properties include track templates, `auto`/fractional/`minmax` tracks, gaps, row/column placement, spans, auto-flow, and item alignment. Ebox owns track measurement and placement; ETAF only maps the `grid` Host into that node. Ebox's optional native reflow backend is not required for correctness; a Grid tree uses the ordinary Ebox renderer when that backend does not support the node.
 
-ETAF's Renderer is the only framework module that calls Ebox. It uses Ebox public constructors, property readers, host-reference queries, and publication APIs. Ebox does not know about Components, slots, Actions, Context, Behaviors, or Data.
+ETAF's Renderer is the only framework module that lowers View semantics into Ebox nodes, properties, and Host queries; `etaf-render-port.el` is the only module that probes the versioned Ebox framework SPI and selects a publication route. Both use only public Ebox APIs, while Runtime reads the already-selected immutable port instead of guessing the Ebox version. Ebox does not know about Components, slots, Actions, Context, Behaviors, or Data.
 
 The public View grammar does not accept raw Ebox Nodes. Framework integrations construct canonical TextNode and BoxNode values through Ebox's typed integration port, while ordinary ETAF applications stay on Hosts and Components. This keeps measurement, identity, and rollback ownership inside one lowering path.
 

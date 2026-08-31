@@ -241,7 +241,7 @@ text · fragment · container · row · column · stack · flex · grid · space
 
 `grid` 复用 Ebox 的公共二维布局契约，支持轨道模板、`auto`/分数/`minmax` 轨道、间距、行列放置、跨度、自动流向和 item 对齐。轨道测量和放置由 Ebox 负责；ETAF 只把 `grid` Host 映射到这个节点。Ebox 的可选 native reflow 后端不参与正确性保证；如果该后端不支持 Grid，Grid 树会使用普通 Ebox 渲染器。
 
-ETAF 的 Renderer 是唯一调用 Ebox 的框架模块，并且只使用 Ebox 公共构造器、属性读取器、Host 引用查询和发布 API。Ebox 不理解 Component、slot、Action、Context、Behavior 或 Data。
+ETAF 的 Renderer 是唯一把 View 语义 lower 为 Ebox 节点、属性与 Host 查询的框架模块；`etaf-render-port.el` 是唯一探测 versioned Ebox framework SPI 并选择发布路径的模块。两者都只使用 Ebox 公共 API，Runtime 只读取已经选定的 immutable port，不再自行猜测 Ebox 版本。Ebox 不理解 Component、slot、Action、Context、Behavior 或 Data。
 
 公共 View 语法不接受裸 Ebox Node。框架集成层通过 Ebox 的 typed integration port 构造规范的 TextNode 和 BoxNode；普通 ETAF 应用只使用 Host 与 Component。这样 measurement、identity 和 rollback 始终由同一条 lowering 路径负责。
 

@@ -15,6 +15,7 @@
 (require 'etaf-view)
 (require 'etaf-component)
 (require 'etaf-reactive)
+(require 'etaf-render-port)
 (require 'etaf-renderer)
 (require 'etaf-context)
 (require 'etaf-behavior)
@@ -5575,7 +5576,7 @@ RENDERED-IDENTITIES names the Component render participants."
                    candidate (etaf--semantic-host-host-ref (car change))
                    (etaf--runtime-lower-semantic-input
                     runtime candidate-generation (nth 3 change)))))
-              (ebox-commit
+              (etaf-render-port-update
                (etaf-runtime-buffer runtime) candidate
                (lambda (_report)
                  (etaf--runtime-participant-publish participant))
@@ -5657,7 +5658,7 @@ RENDERED-IDENTITIES names the Component render participants."
               (let ((candidate (ebox-candidate-begin
                                 (etaf-runtime-buffer runtime))))
                 (ebox-candidate-replace-root candidate next-root)
-                (ebox-commit
+                (etaf-render-port-update
                  (etaf-runtime-buffer runtime) candidate
                  (lambda (_report)
                    (etaf--runtime-participant-publish participant))
