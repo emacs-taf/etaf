@@ -466,6 +466,14 @@ without creating an Ebox commit or TP revision. Mirror projection and obsolete
 route cleanup after CAS are postcommit work and cannot reverse the committed
 token if they fail.
 
+Each mounted Runtime also owns a distinct Host authority containing `state /
+opaque token / version`. The initial v2 framework stage enters only a
+provisional state and registers a fixed-slot TP final marker; the Host becomes
+attached only when buffer final accept succeeds. Public lookup, events, and
+source routes validate both attached state and token. Detach invalidates the
+token at one O(1) boundary before removing registries, routes, Component scopes,
+or Behaviors, so cleanup volume or failure cannot revive the old Host.
+
 Each Runtime flush records a candidate-aware effect tuple containing the
 generation id, effect-to-source edges and source versions, plus an immutable
 semantic-node stamp for candidate input/context/output facts. A repeated tuple

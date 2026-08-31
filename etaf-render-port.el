@@ -33,7 +33,8 @@
   '(initial-paired-stage-rollback
     update-paired-stage-rollback
     combined-participant-ordering
-    same-object-legacy-report)
+    same-object-legacy-report
+    initial-observation-replay)
   "Capabilities required from an Ebox framework SPI v2 provider.")
 
 (defconst etaf-render-port--required-tp-protocol
@@ -119,7 +120,8 @@
          ebox-framework-spi-operation-function
          ebox-framework-spi-operation-argument-schema
          ebox-framework-spi-operation-result-schema
-         ebox-framework-spi-operation-paired-stage-rollback-p))
+         ebox-framework-spi-operation-paired-stage-rollback-p
+         ebox-framework-spi-initial-observation-reports))
     (unless (fboundp function)
       (etaf-render-port--bootstrap-error
        'missing-provider-accessor function))))
@@ -258,13 +260,15 @@
   t)
 
 (defun etaf-render-port--v1-initial
-    (buffer input framework-stage framework-rollback)
+    (buffer input framework-stage framework-rollback &optional observer)
   "Publish INPUT initially to BUFFER through legacy Ebox.
 FRAMEWORK-STAGE runs after publication; FRAMEWORK-ROLLBACK performs contained
-manual framework cleanup if staging fails."
+manual framework cleanup if staging fails.  OBSERVER, when non-nil, is passed
+through Ebox's legacy initial option."
   (etaf-render-port--validate-framework-pair
    framework-stage framework-rollback)
-  (let ((result (ebox-render-to-buffer buffer input))
+  (let ((result (ebox-render-to-buffer
+                 buffer input (and observer (list :observer observer))))
         stage-entered)
     (condition-case primary
         (progn
@@ -273,6 +277,9 @@ manual framework cleanup if staging fails."
           result)
       ((error quit)
        (when stage-entered
+         (when (and observer (buffer-live-p (get-buffer buffer))
+                    (ebox-surface-buffer-mounted-p (get-buffer buffer)))
+           (ebox-buffer-set-observer buffer nil))
          (let ((inhibit-quit t) (quit-flag nil))
            (condition-case nil
                (funcall framework-rollback nil)
@@ -351,12 +358,24 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK retain their existing Ebox meanings."
   etaf-render-port--selected-port)
 
 (defun etaf-render-port-initial
-    (buffer input framework-stage framework-rollback)
+    (buffer input framework-stage framework-rollback &optional observer)
   "Run selected initial operation for BUFFER and canonical INPUT.
-FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair."
-  (funcall (etaf-render-port-initial-function
-            etaf-render-port--selected-port)
-           buffer input framework-stage framework-rollback))
+FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair.
+OBSERVER, when non-nil, is installed while initial v2 publication remains
+provisional so TP and Ebox acceptance reports are preserved."
+  (if (eq (etaf-render-port-route etaf-render-port--selected-port) 'v1)
+      (funcall (etaf-render-port-initial-function
+                etaf-render-port--selected-port)
+               buffer input framework-stage framework-rollback observer)
+    (let ((report
+           (funcall
+            (etaf-render-port-initial-function etaf-render-port--selected-port)
+            buffer input framework-stage framework-rollback)))
+      (when observer
+        (dolist (provider-report
+                 (ebox-framework-spi-initial-observation-reports report))
+          (funcall observer buffer provider-report)))
+      report)))
 
 (defun etaf-render-port-update
     (buffer input framework-stage framework-rollback)
@@ -365,6 +384,14 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair."
   (funcall (etaf-render-port-update-function
             etaf-render-port--selected-port)
            buffer input framework-stage framework-rollback))
+
+(defun etaf-render-port-unmount (buffer)
+  "Release the retained Ebox surface owned by mounted BUFFER."
+  (ebox-unmount-buffer buffer))
+
+(defun etaf-render-port-mounted-p (buffer)
+  "Return non-nil when BUFFER owns a live retained Ebox surface."
+  (ebox-surface-buffer-mounted-p buffer))
 
 (provide 'etaf-render-port)
 

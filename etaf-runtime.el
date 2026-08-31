@@ -16,6 +16,7 @@
 (require 'etaf-component)
 (require 'etaf-reactive)
 (require 'etaf-generation)
+(require 'etaf-host)
 (require 'etaf-render-port)
 (require 'etaf-renderer)
 (require 'etaf-context)
@@ -282,6 +283,7 @@ the sequential `etaf--pvec-put' contract."
   instances
   resource-registry
   mount-epoch
+  host-authority
   next-resource-id
   next-effect-id
   next-semantic-id
@@ -1023,7 +1025,14 @@ Component owner to absorb them."
 (defun etaf--runtime-kill-buffer ()
   "Unmount the ETAF Runtime owned by the current buffer before it dies."
   (when-let* ((runtime (gethash (current-buffer) etaf--runtime-table)))
-    (etaf-runtime-unmount runtime)))
+    (condition-case condition
+        (etaf-runtime-call-operation
+         runtime 'unmount "buffer kill"
+         (lambda () (etaf--runtime-unmount-now runtime 'buffer-kill)))
+      ((error quit)
+       (etaf--runtime-record-observer-diagnostic
+        runtime (list :kind 'buffer-kill-retirement
+                      :condition condition))))))
 
 (defun etaf--runtime-enqueue-effect (runtime effect-id)
   "Append EFFECT-ID once to RUNTIME's stable FIFO work queue."
@@ -1233,7 +1242,10 @@ effect-to-source edges.  It is intentionally immutable and suitable as an
   (when-let* ((runtime
               (gethash (etaf-runtime-route-mount-epoch route)
                        etaf--runtime-route-registry)))
-    (when (etaf-runtime-mounted-p runtime)
+    (when (and (etaf-runtime-mounted-p runtime)
+               (etaf-host-authority-accepts-token-p
+                (etaf-runtime-host-authority runtime)
+                (etaf-runtime-route-authority-token route)))
       (dolist (effect-id
                (etaf--generation-source-effects
                 (etaf-runtime-current-generation runtime) source))
@@ -1387,8 +1399,13 @@ error or quit."
 
 (defun etaf-runtime-for-buffer (buffer-or-name)
   "Return the live Runtime mounted in BUFFER-OR-NAME, or nil."
-  (let ((buffer (get-buffer buffer-or-name)))
-    (and buffer (gethash buffer etaf--runtime-table))))
+  (let* ((buffer (get-buffer buffer-or-name))
+         (runtime (and buffer (gethash buffer etaf--runtime-table))))
+    (and runtime
+         (etaf-runtime-mounted-p runtime)
+         (etaf-host-authority-attached-p
+          (etaf-runtime-host-authority runtime))
+         runtime)))
 
 (defun etaf-runtime-require-mounted (&optional runtime)
   "Return mounted RUNTIME or the Runtime in the current buffer.
@@ -1399,7 +1416,9 @@ when the requested boundary is no longer mounted."
                      (and (buffer-live-p (current-buffer))
                           (gethash (current-buffer) etaf--runtime-table)))))
     (unless (and (etaf-runtime-p runtime)
-                 (etaf-runtime-mounted-p runtime))
+                 (etaf-runtime-mounted-p runtime)
+                 (etaf-host-authority-attached-p
+                  (etaf-runtime-host-authority runtime)))
       (signal 'etaf-runtime-error
               (list "ETAF runtime is not mounted")))
     runtime))
@@ -5908,11 +5927,23 @@ RENDERED-IDENTITIES names the Component render participants."
                    (etaf--runtime-participant-publish participant))
                  (lambda (_report)
                    (etaf--runtime-participant-rollback participant))))
-            (ebox-render-to-buffer
-             (etaf-runtime-buffer runtime) next-root
-             (when (etaf-runtime-observer runtime)
-               (list :observer #'etaf--runtime-forward-ebox-report)))
-            (etaf--runtime-participant-publish participant)))
+            (let* ((host-authority (etaf-runtime-host-authority runtime))
+                   (legacy-p
+                    (eq (etaf-render-port-route
+                         (etaf-render-port-selected))
+                        'v1)))
+              (etaf-render-port-initial
+               (etaf-runtime-buffer runtime) next-root
+               (lambda (_report)
+                 (etaf--runtime-participant-publish participant)
+                 (etaf-host-authority-stage-attach
+                  host-authority legacy-p))
+               (lambda (_report)
+                 (etaf-host-authority-rollback-attach host-authority)
+                 (etaf--runtime-participant-rollback participant))
+               (and (etaf-runtime-observer runtime)
+                    #'etaf--runtime-forward-ebox-report))
+              (etaf-host-authority-finish-attach host-authority))))
       ((error quit)
        (when semantic-candidate
          (etaf-semantic-candidate-rollback semantic-candidate)
@@ -6007,13 +6038,18 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
     (when old
       (etaf-runtime-unmount old))
     (let* ((scope (etaf-effect-scope :detached t :name buffer))
+           (mount-epoch (cl-incf etaf--mount-epoch-counter))
+           (host-authority
+            (etaf-host-authority-create
+             (list 'etaf-runtime mount-epoch) mount-epoch buffer))
            (runtime (etaf--runtime-create
                      :buffer buffer
                      :root-view view
                      :scope scope
                      :instances (make-hash-table :test #'equal)
                      :resource-registry (make-hash-table :test #'equal)
-                     :mount-epoch (cl-incf etaf--mount-epoch-counter)
+                     :mount-epoch mount-epoch
+                     :host-authority host-authority
                      :next-resource-id 0
                      :next-effect-id 0
                      :next-semantic-id 1
@@ -6034,12 +6070,15 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
                      :behavior-resource-keys (make-hash-table :test #'equal)
                      :observer observer
                      :root-dirty-p t)))
+      (etaf-host-authority-begin-attach host-authority)
       (puthash buffer runtime etaf--runtime-table)
       (with-current-buffer buffer
         (add-hook 'kill-buffer-hook #'etaf--runtime-kill-buffer nil t))
       (let ((route (etaf-runtime-route-create
                     :runtime-id (etaf-runtime-mount-epoch runtime)
                     :mount-epoch (etaf-runtime-mount-epoch runtime)
+                    :authority-token
+                    (etaf-host-authority-token host-authority)
                     :scheduler 'etaf--runtime-route-scheduler)))
         (setf (etaf-runtime-route-token runtime) route)
         (puthash (etaf-runtime-mount-epoch runtime) runtime
@@ -6062,14 +6101,19 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
               (etaf-events-enable-input buffer))
             buffer)
         ((error quit)
-         (when (buffer-live-p buffer)
-           (with-current-buffer buffer
-             (remove-hook 'kill-buffer-hook
-                          #'etaf--runtime-kill-buffer t)))
-         (remhash buffer etaf--runtime-table)
-         (remhash (etaf-runtime-mount-epoch runtime)
-                  etaf--runtime-route-registry)
-         (etaf-scope-stop scope)
+         ;; Postaccept lifecycle errors leave an attached Runtime queryable.
+         ;; Preaccept failures have no Host authority and discard registration.
+         (unless (etaf-host-authority-attached-p host-authority)
+           (setf (etaf-runtime-mounted-p runtime) nil)
+           (etaf-host-authority-rollback-attach host-authority)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer
+               (remove-hook 'kill-buffer-hook
+                            #'etaf--runtime-kill-buffer t)))
+           (remhash buffer etaf--runtime-table)
+           (remhash (etaf-runtime-mount-epoch runtime)
+                    etaf--runtime-route-registry)
+           (etaf-scope-stop scope))
          (signal (car err) (cdr err))))
       buffer)))
 
@@ -6112,41 +6156,64 @@ before the first Ebox publication."
      #'etaf--runtime-mount-now buffer-or-name view
      (plist-get options :observer))))
 
-(defun etaf--runtime-unmount-now (runtime)
-  "Unmount RUNTIME and dispose its Component scopes now."
-  (let ((runtime (etaf-runtime-require-mounted runtime)))
-    (when (buffer-live-p (etaf-runtime-buffer runtime))
-      (with-current-buffer (etaf-runtime-buffer runtime)
-        (remove-hook 'kill-buffer-hook #'etaf--runtime-kill-buffer t)))
-    (setf (etaf-runtime-mounted-p runtime) nil)
-    (when (fboundp 'etaf-events-disable-input)
-      (etaf-events-disable-input (etaf-runtime-buffer runtime)))
-    (remhash (etaf-runtime-buffer runtime) etaf--runtime-table)
-    (remhash (etaf-runtime-mount-epoch runtime) etaf--runtime-route-registry)
-    (maphash
-     (lambda (source _)
-       (remhash (etaf-runtime-route-token runtime)
-                (etaf--source-subscribers source)))
-     (etaf-runtime-route-sources runtime))
-    (clrhash (etaf-runtime-route-sources runtime))
-    (let (instances)
-      (maphash (lambda (_identity instance) (push instance instances))
-               (etaf-runtime-instances runtime))
-      (dolist (instance (sort instances
-                               (lambda (left right)
-                                 (> (length (etaf--component-instance-identity left))
-                                    (length (etaf--component-instance-identity right))))))
-        (etaf--runtime-dispose-instance instance t)))
-    (etaf-scope-stop (etaf-runtime-scope runtime))
-    (maphash
-     (lambda (identity state)
-       (when-let* ((cleanup (cdr state)))
-         (etaf--runtime-run-contained-cleanup
-          runtime 'behavior-unmount identity cleanup)))
-     (etaf-runtime-behaviors runtime))
-    (clrhash (etaf-runtime-instances runtime))
-    (clrhash (etaf-runtime-resource-registry runtime))
-    runtime))
+(defun etaf--runtime-unmount-now (runtime &optional cause)
+  "Unmount RUNTIME idempotently and retire its Component scopes.
+CAUSE is `buffer-kill' for the contained dead-buffer path, or nil for explicit
+unmount.  Host authority is invalidated before any unbounded cleanup."
+  (unless (etaf-runtime-p runtime)
+    (signal 'wrong-type-argument (list 'etaf-runtime-p runtime)))
+  (ignore cause)
+  (if (not (etaf-runtime-mounted-p runtime))
+      runtime
+    (let ((authority (etaf-runtime-host-authority runtime)))
+      (when (etaf-host-authority-attached-p authority)
+        (etaf-host-authority-begin-detach authority))
+      (unless (eq (etaf-host-authority-state authority) 'terminal)
+        (etaf-host-authority-invalidate authority))
+      (setf (etaf-runtime-mounted-p runtime) nil)
+      (unwind-protect
+          (progn
+            (when (buffer-live-p (etaf-runtime-buffer runtime))
+              (with-current-buffer (etaf-runtime-buffer runtime)
+                (remove-hook 'kill-buffer-hook #'etaf--runtime-kill-buffer t)))
+            (when (fboundp 'etaf-events-disable-input)
+              (etaf-events-disable-input (etaf-runtime-buffer runtime)))
+            (unless (eq cause 'buffer-kill)
+              (when (etaf-render-port-mounted-p
+                     (etaf-runtime-buffer runtime))
+                (etaf-render-port-unmount (etaf-runtime-buffer runtime))))
+            (remhash (etaf-runtime-buffer runtime) etaf--runtime-table)
+            (remhash (etaf-runtime-mount-epoch runtime)
+                     etaf--runtime-route-registry)
+            (maphash
+             (lambda (source _)
+               (remhash (etaf-runtime-route-token runtime)
+                        (etaf--source-subscribers source)))
+             (etaf-runtime-route-sources runtime))
+            (clrhash (etaf-runtime-route-sources runtime))
+            (let (instances)
+              (maphash (lambda (_identity instance) (push instance instances))
+                       (etaf-runtime-instances runtime))
+              (dolist
+                  (instance
+                   (sort instances
+                         (lambda (left right)
+                           (> (length
+                               (etaf--component-instance-identity left))
+                              (length
+                               (etaf--component-instance-identity right))))))
+                (etaf--runtime-dispose-instance instance t)))
+            (etaf-scope-stop (etaf-runtime-scope runtime))
+            (maphash
+             (lambda (identity state)
+               (when-let* ((cleanup (cdr state)))
+                 (etaf--runtime-run-contained-cleanup
+                  runtime 'behavior-unmount identity cleanup)))
+             (etaf-runtime-behaviors runtime))
+            (clrhash (etaf-runtime-instances runtime))
+            (clrhash (etaf-runtime-resource-registry runtime))
+            runtime)
+        (etaf-host-authority-finish-detach authority)))))
 
 ;;;###autoload
 (defun etaf-runtime-unmount (&optional runtime)

@@ -454,6 +454,13 @@ stage 中暂存一次 CAS，失败时由同一个 inverse journal 恢复；没�
 revision。CAS 后的 mirror 与旧 route 清理属于 postcommit，失败不能反向恢复已提交
 token。
 
+每个 mounted Runtime 还拥有独立的 Host authority：`state / opaque token /
+version`。initial v2 framework stage 只进入 provisional state，并向 TP 注册固定
+slot final marker；只有 buffer final accept 成功时 Host 才成为 attached。公开
+lookup、event 和 source route 同时校验 attached state 与 token。detach 先在 O(1)
+边界让 token 失效，再清理 registry、routes、Component scopes 和 Behaviors；因此
+cleanup 数量或错误不能让旧 Host 重新获得 authority。
+
 每次 Runtime flush 都记录 candidate-aware effect tuple：其中包含 generation id、
 effect→source 边和 source version，以及 candidate input/context/output facts 的
 immutable semantic-node stamp。重复 tuple 会报告有序的 effect/edge path；step

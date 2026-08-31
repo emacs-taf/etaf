@@ -71,7 +71,7 @@
 (cl-defstruct (etaf-runtime-route
                (:constructor etaf-runtime-route-create))
   "Opaque Runtime route stored by reactive sources."
-  runtime-id mount-epoch scheduler)
+  runtime-id mount-epoch authority-token scheduler)
 
 (defvar etaf--active-effect nil
   "The effect currently collecting dependencies.")

@@ -36,6 +36,7 @@
 (require 'etaf-resource)
 (require 'etaf-data)
 (require 'etaf-generation)
+(require 'etaf-host)
 (require 'etaf-render-port)
 (require 'etaf-renderer)
 (etaf--prefer-local-files)
