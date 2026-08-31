@@ -266,6 +266,92 @@
                             :runtime-executions)))
     (should (etaf-scheduler-context-idle-p context))))
 
+(ert-deftest etaf-scheduler-source-fault-does-not-suppress-context-tail ()
+  "A failing source delivery cannot discard later sources in the same turn."
+  (let ((context (etaf-scheduler-context-create :name 'source-fault-tail))
+        second-ran captured)
+    (condition-case condition
+        (etaf-scheduler-call-with-projection
+         (lambda ()
+           (etaf-scheduler-enqueue-source
+            context 'first
+            (lambda (_context _source _projection-id)
+              (signal 'etaf-scheduler-test-source-condition '("first"))))
+           (etaf-scheduler-enqueue-source
+            context 'second
+            (lambda (_context _source _projection-id)
+              (setq second-ran t)))))
+      (etaf-scheduler-test-source-condition (setq captured condition)))
+    (should (equal captured
+                   '(etaf-scheduler-test-source-condition "first")))
+    (should second-ran)
+    (should (= 2 (etaf-scheduler-test--metric context :source-deliveries)))
+    (should (etaf-scheduler-context-idle-p context))))
+
+(ert-deftest etaf-scheduler-subscriber-fault-does-not-suppress-group-tail ()
+  "A failing subscriber cannot discard later subscribers in the same source."
+  (let* ((context
+          (etaf-scheduler-context-create :name 'subscriber-fault-tail))
+         second-ran
+         (first
+          (etaf-runtime-route-create
+           :runtime-id 1 :mount-epoch 1 :authority-token 'first
+           :scheduler-context context
+           :scheduler
+           (lambda (_route _source)
+             (signal 'etaf-scheduler-test-source-condition
+                     '("subscriber")))))
+         (second
+          (etaf-runtime-route-create
+           :runtime-id 2 :mount-epoch 1 :authority-token 'second
+           :scheduler-context context
+           :scheduler (lambda (_route _source) (setq second-ran t))))
+         captured)
+    (condition-case condition
+        (etaf-scheduler-call-with-projection
+         (lambda ()
+           (etaf-scheduler-enqueue-source
+            context 'source
+            (lambda (delivery-context source projection-id)
+              (etaf--dispatch-subscriber-group
+               delivery-context source projection-id (list first second))))))
+      (etaf-scheduler-test-source-condition (setq captured condition)))
+    (should (equal captured
+                   '(etaf-scheduler-test-source-condition "subscriber")))
+    (should second-ran)
+    (should (= 2 (etaf-scheduler-test--metric context :subscriber-visits)))
+    (should (etaf-scheduler-context-idle-p context))))
+
+(ert-deftest etaf-scheduler-authority-predicate-fault-is-diagnostic ()
+  "A broken Host authority predicate stays fail-closed and diagnostically visible."
+  (let* ((context
+          (etaf-scheduler-context-create :name 'authority-predicate-fault))
+         (source (etaf-ref 0))
+         scheduled
+         (route
+          (etaf-runtime-route-create
+           :runtime-id 1 :mount-epoch 1 :authority-token 'authority
+           :scheduler-context context
+           :scheduler (lambda (_route _source) (setq scheduled t))
+           :accepts-p
+           (lambda (_route)
+             (signal 'etaf-scheduler-test-condition '("authority"))))))
+    (puthash route t (etaf-ref-subscribers source))
+    (unwind-protect
+        (progn
+          (setf (etaf-value source) 1)
+          (should-not scheduled)
+          (should (= 1 (etaf-scheduler-test--metric
+                        context :stale-route-drops)))
+          (let ((diagnostic
+                 (cl-find 'route-authority
+                          (etaf-scheduler-context-diagnostics context)
+                          :key (lambda (entry) (plist-get entry :phase)))))
+            (should diagnostic)
+            (should (equal (plist-get diagnostic :condition)
+                           '(etaf-scheduler-test-condition "authority")))))
+      (remhash route (etaf-ref-subscribers source)))))
+
 (ert-deftest etaf-scheduler-body-error-precedes-drain-error-and-quit-drains ()
   "Body failure wins over drain failure; quit still drains queued effects."
   (let* ((context (etaf-scheduler-context-create :name 'precedence))

@@ -127,9 +127,12 @@ Runtime, watchers run synchronously.")
        (etaf-runtime-route-active-p route)
        (let ((predicate (etaf-runtime-route-accepts-p route)))
          (or (null predicate)
-             (condition-case nil
+             (condition-case condition
                  (funcall predicate route)
-               ((error quit) nil))))))
+               ((error quit)
+                (etaf-scheduler-record-route-authority-fault
+                 (etaf--subscriber-scheduler-context route) condition)
+                nil))))))
 
 (defun etaf-reactive-enqueue-runtime-flush
     (runtime function &optional scheduler-context)
@@ -142,20 +145,27 @@ The default context preserves the legacy two-argument facade."
 (defun etaf--dispatch-subscriber-group
     (context source _projection-epoch subscribers)
   "Notify SOURCE SUBSCRIBERS already grouped for scheduler CONTEXT."
-  (dolist (subscriber subscribers)
-    (etaf-scheduler-record-subscriber-visit context)
-    (cond
-     ((etaf-runtime-route-p subscriber)
-      (if (etaf-runtime-route-live-p subscriber)
-          (funcall (etaf-runtime-route-scheduler subscriber)
-                   subscriber source)
-        (etaf-scheduler-record-stale-route-drop context)))
-     ((and (etaf-effect-p subscriber)
-           (etaf-effect-active-p subscriber)
-           (etaf-scheduler-claim-effect context subscriber))
-      (if-let* ((scheduler (etaf-effect-scheduler subscriber)))
-          (funcall scheduler subscriber)
-        (etaf-reactive-effect-run subscriber))))))
+  (let (first-condition)
+    (dolist (subscriber subscribers)
+      (etaf-scheduler-record-subscriber-visit context)
+      (condition-case condition
+          (cond
+           ((etaf-runtime-route-p subscriber)
+            (if (etaf-runtime-route-live-p subscriber)
+                (funcall (etaf-runtime-route-scheduler subscriber)
+                         subscriber source)
+              (etaf-scheduler-record-stale-route-drop context)))
+           ((and (etaf-effect-p subscriber)
+                 (etaf-effect-active-p subscriber)
+                 (etaf-scheduler-claim-effect context subscriber))
+            (if-let* ((scheduler (etaf-effect-scheduler subscriber)))
+                (funcall scheduler subscriber)
+              (etaf-reactive-effect-run subscriber))))
+        ((error quit)
+         (unless first-condition
+           (setq first-condition condition)))))
+    (when first-condition
+      (signal (car first-condition) (cdr first-condition)))))
 
 (defun etaf--reactive-same-p (left right)
   "Return whether LEFT and RIGHT are equal under ETAF's shallow rule."

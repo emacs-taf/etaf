@@ -286,39 +286,153 @@
         (widen)
         (list :contents (buffer-substring (point-min) (point-max))
               :point (point)
+              :mark-marker (mark-marker)
+              :mark-position (mark t)
+              :mark-insertion-type
+              (marker-insertion-type (mark-marker))
+              :mark-active mark-active
               :narrowed-p narrowed-p
               :narrow-start start
               :narrow-end end
               :read-only buffer-read-only
-              :modified-p (buffer-modified-p))))))
+              :modified-p (buffer-modified-p)
+              :undo-list buffer-undo-list
+              :overlays
+              (mapcar
+               (lambda (overlay)
+                 (list :overlay overlay
+                       :start (overlay-start overlay)
+                       :end (overlay-end overlay)))
+               (delete-dups
+                (append (car (overlay-lists)) (cdr (overlay-lists))))))))))
 
-(defun etaf-render-port--v1-restore-buffer (buffer snapshot)
-  "Restore BUFFER exactly from a pre-render v1 SNAPSHOT."
+(defun etaf-render-port--v1-restore-buffer
+    (buffer snapshot &optional restore-contents-p)
+  "Restore BUFFER editor state from a pre-render v1 SNAPSHOT.
+When RESTORE-CONTENTS-P is non-nil, also re-materialize text as a last-resort
+fallback after change-group cancellation itself failed."
   (unless (buffer-live-p buffer)
     (error "Legacy Ebox target died during manual cleanup"))
   (with-current-buffer buffer
     (let ((inhibit-read-only t)
           (inhibit-modification-hooks t))
       (widen)
-      (erase-buffer)
-      (insert (plist-get snapshot :contents))
-      (goto-char (min (point-max)
-                      (max (point-min) (plist-get snapshot :point))))
+      (when restore-contents-p
+        (let ((buffer-undo-list t))
+          (erase-buffer)
+          (insert (plist-get snapshot :contents))))
+      (let* ((saved-overlays (plist-get snapshot :overlays))
+             (saved-identities
+              (mapcar (lambda (entry) (plist-get entry :overlay))
+                      saved-overlays)))
+        (dolist
+            (overlay
+             (delete-dups
+              (append (car (overlay-lists)) (cdr (overlay-lists)))))
+          (unless (memq overlay saved-identities)
+            (delete-overlay overlay)))
+        (dolist (entry saved-overlays)
+          (let ((overlay (plist-get entry :overlay)))
+            (move-overlay overlay
+                          (plist-get entry :start)
+                          (plist-get entry :end)
+                          buffer))))
       (when (plist-get snapshot :narrowed-p)
         (narrow-to-region
          (min (point-max) (plist-get snapshot :narrow-start))
          (min (point-max) (plist-get snapshot :narrow-end))))
+      (goto-char (min (point-max)
+                      (max (point-min) (plist-get snapshot :point))))
+      (let ((mark-marker (plist-get snapshot :mark-marker)))
+        (set-marker mark-marker (plist-get snapshot :mark-position) buffer)
+        (set-marker-insertion-type
+         mark-marker (plist-get snapshot :mark-insertion-type)))
+      (setq mark-active (plist-get snapshot :mark-active))
       (setq buffer-read-only (plist-get snapshot :read-only))
-      (set-buffer-modified-p (plist-get snapshot :modified-p))))
+      (set-buffer-modified-p (plist-get snapshot :modified-p))
+      (setq buffer-undo-list (plist-get snapshot :undo-list))))
   buffer)
 
-(defun etaf-render-port--v1-cleanup-step (phase function)
-  "Run v1 cleanup FUNCTION and return a diagnostic for failure at PHASE."
-  (let ((inhibit-quit t) (quit-flag nil))
-    (condition-case condition
-        (progn (funcall function) nil)
-      ((error quit)
-       (list :phase phase :condition (copy-tree condition))))))
+(defun etaf-render-port--v1-cleanup-failed-initial
+    (buffer snapshot change-group change-group-active-p stage-entered
+            observer framework-rollback)
+  "Clean one failed legacy initial operation and return diagnostics.
+BUFFER and SNAPSHOT identify editor custody.  CHANGE-GROUP-ACTIVE-P says
+whether CHANGE-GROUP still needs cancellation.  STAGE-ENTERED controls the
+paired FRAMEWORK-ROLLBACK.  OBSERVER is detached before Ebox unmount."
+  (let (cancel-failed-p)
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (setq-local etaf-render-port--v1-cleanup-diagnostics nil)))
+    (cl-labels
+        ((record
+          (diagnostic)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer
+              (setq-local
+               etaf-render-port--v1-cleanup-diagnostics
+               (append etaf-render-port--v1-cleanup-diagnostics
+                       (list diagnostic))))))
+         (run-phase
+          (entry)
+          (let ((phase (nth 0 entry))
+                (function (nth 1 entry))
+                (failure-function (nth 2 entry))
+                completed-p)
+            (unwind-protect
+                (let ((inhibit-quit t) (quit-flag nil))
+                  (condition-case condition
+                      (progn (funcall function) (setq completed-p t))
+                    ((error quit)
+                     (setq completed-p t)
+                     (when failure-function (funcall failure-function))
+                     (record
+                      (list :phase phase
+                            :condition (copy-tree condition))))))
+              (unless completed-p
+                (when failure-function (funcall failure-function))
+                (record (list :phase phase :nonlocal-exit t))))))
+         (run-phases
+          (entries)
+          (when entries
+            ;; A cleanup callback may perform an arbitrary nonlocal exit.
+            ;; Nested unwind cleanup guarantees every later phase still runs.
+            (unwind-protect
+                (run-phase (car entries))
+              (run-phases (cdr entries))))))
+      (run-phases
+       `((framework-rollback
+          ,(lambda ()
+             (when stage-entered
+               (funcall framework-rollback nil))))
+         (observer-detach
+          ,(lambda ()
+             (when (and observer (buffer-live-p buffer)
+                        (ebox-surface-buffer-mounted-p buffer))
+               (ebox-buffer-set-observer buffer nil))))
+         (ebox-unmount
+          ,(lambda ()
+             (when (and (buffer-live-p buffer)
+                        (ebox-surface-buffer-mounted-p buffer))
+               (ebox-unmount-buffer buffer))))
+         (revision-reset
+          ,(lambda ()
+             (when (buffer-live-p buffer)
+               (with-current-buffer buffer
+                 (setq-local
+                  etaf-render-port--v1-committed-revision nil)))))
+         (change-group-cancel
+          ,(lambda ()
+             (when change-group-active-p
+               (with-current-buffer buffer
+                 (cancel-change-group change-group))))
+          ,(lambda () (setq cancel-failed-p t)))
+         (buffer-restore
+          ,(lambda ()
+             (etaf-render-port--v1-restore-buffer
+              buffer snapshot cancel-failed-p))))))
+    (and (buffer-live-p buffer)
+         (etaf-render-port-v1-cleanup-diagnostics buffer))))
 
 (defun etaf-render-port--v1-record-revision (buffer revision)
   "Record committed v1 REVISION for BUFFER without postaccept failure."
@@ -350,60 +464,53 @@ through Ebox's legacy initial option."
    framework-stage framework-rollback)
   (let* ((buffer (get-buffer-create buffer))
          (snapshot (etaf-render-port--v1-buffer-snapshot buffer))
-         (result
-          (progn
-            (when (ebox-surface-buffer-mounted-p buffer)
-              (error "Legacy Ebox initial operation requires an unmounted buffer"))
-            (with-current-buffer buffer
-              (setq-local etaf-render-port--v1-cleanup-diagnostics nil
-                          etaf-render-port--v1-committed-revision nil))
-            (ebox-render-to-buffer
-             buffer input (and observer (list :observer observer)))))
-        stage-entered)
-    (condition-case primary
-        (progn
-          (setq stage-entered t)
-          (funcall framework-stage nil)
-          ;; TP surfaces start at committed revision one.  Legacy Ebox does
-          ;; not expose its surface handle, so ETAF owns this compatibility
-          ;; evidence and advances it from later update reports.
-          (etaf-render-port--v1-record-revision buffer 1)
-          result)
-      ((error quit)
-       (when stage-entered
-         (let (diagnostics)
-           (dolist
-               (entry
-                `((framework-rollback
-                   ,(lambda () (funcall framework-rollback nil)))
-                  (observer-detach
-                   ,(lambda ()
-                      (when (and observer (buffer-live-p buffer)
-                                 (ebox-surface-buffer-mounted-p buffer))
-                        (ebox-buffer-set-observer buffer nil))))
-                  (ebox-unmount
-                   ,(lambda ()
-                      (when (and (buffer-live-p buffer)
-                                 (ebox-surface-buffer-mounted-p buffer))
-                        (ebox-unmount-buffer buffer))))
-                  (revision-reset
-                   ,(lambda ()
-                      (when (buffer-live-p buffer)
-                        (with-current-buffer buffer
-                          (setq-local
-                           etaf-render-port--v1-committed-revision nil)))))
-                  (buffer-restore
-                   ,(lambda ()
-                      (etaf-render-port--v1-restore-buffer buffer snapshot)))))
-             (when-let* ((diagnostic
-                          (etaf-render-port--v1-cleanup-step
-                           (car entry) (cadr entry))))
-               (push diagnostic diagnostics)))
-           (when (buffer-live-p buffer)
-             (with-current-buffer buffer
-               (setq-local etaf-render-port--v1-cleanup-diagnostics
-                           (nreverse diagnostics))))))
-       (signal (car primary) (cdr primary))))))
+         (change-group (with-current-buffer buffer (prepare-change-group)))
+         result stage-entered operation-started-p change-group-active-p
+         cleanup-ran-p)
+    (cl-labels
+        ((cleanup
+          ()
+          (unless cleanup-ran-p
+            (setq cleanup-ran-p t)
+            (when operation-started-p
+              (let ((active-p change-group-active-p))
+                (setq change-group-active-p nil)
+                (etaf-render-port--v1-cleanup-failed-initial
+                 buffer snapshot change-group active-p stage-entered
+                 observer framework-rollback))))))
+      (unwind-protect
+          (condition-case primary
+              (progn
+                (when (ebox-surface-buffer-mounted-p buffer)
+                  (error
+                   "Legacy Ebox initial operation requires an unmounted buffer"))
+                (with-current-buffer buffer
+                  (setq-local etaf-render-port--v1-cleanup-diagnostics nil
+                              etaf-render-port--v1-committed-revision nil)
+                  (activate-change-group change-group)
+                  (setq operation-started-p t
+                        change-group-active-p t)
+                  (save-restriction
+                    (widen)
+                    (setq result
+                          (ebox-render-to-buffer
+                           buffer input
+                           (and observer (list :observer observer))))))
+                (setq stage-entered t)
+                (funcall framework-stage nil)
+                (with-current-buffer buffer
+                  (accept-change-group change-group))
+                (setq change-group-active-p nil)
+                ;; TP surfaces start at committed revision one.  Legacy Ebox
+                ;; does not expose its surface handle, so ETAF owns this
+                ;; compatibility evidence and advances it from update reports.
+                (etaf-render-port--v1-record-revision buffer 1)
+                result)
+            ((error quit)
+             (cleanup)
+             (signal (car primary) (cdr primary))))
+        (when change-group-active-p
+          (cleanup))))))
 
 (defun etaf-render-port--v1-update
     (buffer input framework-stage framework-rollback)
@@ -535,7 +642,7 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair."
               (etaf-render-port-revision-function
                etaf-render-port--selected-port)
               buffer)))
-        (unless (and (integerp revision) (>= revision 0))
+        (unless (and (integerp revision) (> revision 0))
           (error "Mounted Ebox surface has no committed revision: %S"
                  revision))
         revision))))

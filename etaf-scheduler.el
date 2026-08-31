@@ -367,8 +367,9 @@ DELIVERY receives CONTEXT, SOURCE, and the projection epoch."
           (max 0 (1- (etaf-scheduler-context-busy-depth context))))))
 
 (defun etaf-scheduler--drain-context-sources (context projection-id)
-  "Drain one snapshotted CONTEXT source turn for PROJECTION-ID."
-  (let ((turn (etaf-scheduler-context-source-queue context)))
+  "Drain one CONTEXT source turn and return its first condition.
+PROJECTION-ID identifies the bounded projection owning the detached turn."
+  (let ((turn (etaf-scheduler-context-source-queue context)) first-condition)
     ;; New sources discovered by TURN belong to the next bounded scheduler
     ;; turn.  Detaching the current FIFO prevents a chain of distinct source
     ;; identities from monopolizing one unbudgeted drain.
@@ -387,7 +388,12 @@ DELIVERY receives CONTEXT, SOURCE, and the projection epoch."
                     (etaf-scheduler-context-delivered-source-set context))
            (cl-incf (etaf-scheduler-context-source-delivery-count context))
            (when delivery
-             (funcall delivery context source projection-id))))))))
+             (condition-case condition
+                 (funcall delivery context source projection-id)
+               ((error quit)
+                (unless first-condition
+                  (setq first-condition condition)))))))))
+    first-condition))
 
 (defun etaf-scheduler--detach-runtime-turns (projection)
   "Detach and return PROJECTION's Runtime queues in context order."
@@ -420,17 +426,34 @@ DELIVERY receives CONTEXT, SOURCE, and the projection epoch."
                   (setq first-condition condition)))))))))
     first-condition))
 
-(defun etaf-scheduler--record-fault (context projection-id condition)
-  "Record CONTEXT failure CONDITION for PROJECTION-ID."
+(defun etaf-scheduler--record-fault
+    (context projection-id condition &optional phase)
+  "Record CONTEXT failure CONDITION for PROJECTION-ID and optional PHASE."
   (setf (etaf-scheduler-context-fault-state context) (copy-tree condition))
   (cl-incf (etaf-scheduler-context-projection-fault-count context))
-  (push (list :projection-epoch projection-id
-              :turn-id (etaf-scheduler-context-active-turn-id context)
-              :condition (copy-tree condition))
+  (push (append (list :projection-epoch projection-id
+                      :turn-id
+                      (etaf-scheduler-context-active-turn-id context))
+                (and phase (list :phase phase))
+                (list :condition (copy-tree condition)))
         (etaf-scheduler-context-diagnostics context))
   (when (> (length (etaf-scheduler-context-diagnostics context)) 64)
     (setcdr (nthcdr 63 (etaf-scheduler-context-diagnostics context)) nil))
   condition)
+
+(defun etaf-scheduler-record-route-authority-fault (context condition)
+  "Record contained Host route authority CONDITION in scheduler CONTEXT."
+  (setq context (etaf-scheduler-context-resolve context))
+  (unless (consp condition)
+    (signal 'wrong-type-argument (list 'consp condition)))
+  (when etaf-scheduler--active-projection
+    (etaf-scheduler--append-context etaf-scheduler--active-projection context))
+  (etaf-scheduler--record-fault
+   context
+   (if etaf-scheduler--active-projection
+       (etaf-scheduler--projection-id etaf-scheduler--active-projection)
+     (etaf-scheduler-context-projection-epoch context))
+   condition 'route-authority))
 
 (defun etaf-scheduler--drain-projection (projection)
   "Drain PROJECTION source-first and re-signal its first context fault."
@@ -456,8 +479,11 @@ DELIVERY receives CONTEXT, SOURCE, and the projection epoch."
                   (progn
                     (etaf-scheduler--mark-turn
                      context projection-id marked-contexts context-steps)
-                    (etaf-scheduler--drain-context-sources
-                     context projection-id))
+                    (when-let* ((source-condition
+                                 (etaf-scheduler--drain-context-sources
+                                  context projection-id)))
+                      (signal (car source-condition)
+                              (cdr source-condition))))
                 ((error quit)
                  (puthash context t failed-contexts)
                  (unless first-condition (setq first-condition condition))

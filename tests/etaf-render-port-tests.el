@@ -166,6 +166,186 @@
         (ebox-unmount-buffer buffer))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
+(ert-deftest etaf-render-port-v1-failure-restores-exact-editor-custody ()
+  "Legacy stage rollback preserves Emacs-owned editor identities and undo."
+  (let ((buffer (generate-new-buffer " *etaf-v1-editor-custody*"))
+        (input (ebox-build '(box "committed")))
+        overlay left-marker right-marker snapshot captured)
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer
+            (buffer-enable-undo)
+            (insert (propertize "sentinel" 'face 'bold))
+            (undo-boundary)
+            (goto-char 4)
+            (set-mark 2)
+            (setq mark-active t)
+            (setq overlay (make-overlay 2 6 buffer t t)
+                  left-marker (copy-marker 3 nil)
+                  right-marker (copy-marker 5 t))
+            (overlay-put overlay 'etaf-test-property '(owned value))
+            (narrow-to-region 2 7)
+            (set-buffer-modified-p nil)
+            (setq snapshot
+                  (list
+                   :contents
+                   (save-restriction
+                     (widen)
+                     (buffer-substring (point-min) (point-max)))
+                   :point (point)
+                   :mark-marker (mark-marker)
+                   :mark-position (mark t)
+                   :mark-insertion-type
+                   (marker-insertion-type (mark-marker))
+                   :mark-active mark-active
+                   :narrow-start (point-min)
+                   :narrow-end (point-max)
+                   :overlay-start (overlay-start overlay)
+                   :overlay-end (overlay-end overlay)
+                   :overlay-properties (overlay-properties overlay)
+                   :left-position (marker-position left-marker)
+                   :left-insertion-type (marker-insertion-type left-marker)
+                   :right-position (marker-position right-marker)
+                   :right-insertion-type (marker-insertion-type right-marker)
+                   :undo-list (copy-tree buffer-undo-list)
+                   :modified-p (buffer-modified-p))))
+          (condition-case condition
+              (etaf-render-port--v1-initial
+               buffer input
+               (lambda (_report) (error "editor custody primary"))
+               #'ignore)
+            (error (setq captured condition)))
+          (should (equal captured '(error "editor custody primary")))
+          (should-not (ebox-surface-buffer-mounted-p buffer))
+          (should-not (ebox-surface-buffer-observer buffer))
+          (with-current-buffer buffer
+            (should
+             (equal (save-restriction
+                      (widen)
+                      (buffer-substring (point-min) (point-max)))
+                    (plist-get snapshot :contents)))
+            (should (= (point) (plist-get snapshot :point)))
+            (should (eq (mark-marker) (plist-get snapshot :mark-marker)))
+            (should (= (mark t) (plist-get snapshot :mark-position)))
+            (should
+             (eq (marker-insertion-type (mark-marker))
+                 (plist-get snapshot :mark-insertion-type)))
+            (should (eq mark-active (plist-get snapshot :mark-active)))
+            (should (= (point-min) (plist-get snapshot :narrow-start)))
+            (should (= (point-max) (plist-get snapshot :narrow-end)))
+            (should (overlayp overlay))
+            (should (eq (overlay-buffer overlay) buffer))
+            (should (= (overlay-start overlay)
+                       (plist-get snapshot :overlay-start)))
+            (should (= (overlay-end overlay)
+                       (plist-get snapshot :overlay-end)))
+            (should (equal (overlay-properties overlay)
+                           (plist-get snapshot :overlay-properties)))
+            (should (eq (marker-buffer left-marker) buffer))
+            (should (= (marker-position left-marker)
+                       (plist-get snapshot :left-position)))
+            (should
+             (eq (marker-insertion-type left-marker)
+                 (plist-get snapshot :left-insertion-type)))
+            (should (eq (marker-buffer right-marker) buffer))
+            (should (= (marker-position right-marker)
+                       (plist-get snapshot :right-position)))
+            (should
+             (eq (marker-insertion-type right-marker)
+                 (plist-get snapshot :right-insertion-type)))
+            (should (equal buffer-undo-list (plist-get snapshot :undo-list)))
+            (should (eq (buffer-modified-p)
+                        (plist-get snapshot :modified-p)))))
+      (when (overlayp overlay) (delete-overlay overlay))
+      (when (markerp left-marker) (set-marker left-marker nil))
+      (when (markerp right-marker) (set-marker right-marker nil))
+      (when (and (buffer-live-p buffer)
+                 (ebox-surface-buffer-mounted-p buffer))
+        (ebox-unmount-buffer buffer))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest etaf-render-port-v1-nonlocal-exit-runs-exact-cleanup ()
+  "A legacy stage throw cannot escape with mounted or editor state retained."
+  (let ((buffer (generate-new-buffer " *etaf-v1-nonlocal-cleanup*"))
+        (input (ebox-build '(box "committed")))
+        (rollback-count 0))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "before"))
+          (should
+           (eq
+            (catch 'etaf-v1-test-escape
+              (etaf-render-port--v1-initial
+               buffer input
+               (lambda (_report)
+                 (throw 'etaf-v1-test-escape 'escaped))
+               (lambda (_report) (cl-incf rollback-count)))
+              'not-escaped)
+            'escaped))
+          (should (= rollback-count 1))
+          (should-not (ebox-surface-buffer-mounted-p buffer))
+          (should-not (ebox-surface-buffer-observer buffer))
+          (should (equal "before"
+                         (with-current-buffer buffer (buffer-string))))
+          (should-not
+           (etaf-render-port-v1-cleanup-diagnostics buffer)))
+      (when (and (buffer-live-p buffer)
+                 (ebox-surface-buffer-mounted-p buffer))
+        (ebox-unmount-buffer buffer))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest etaf-render-port-v1-precondition-keeps-existing-mount ()
+  "Rejecting an already mounted target must not clean up foreign authority."
+  (let ((buffer (generate-new-buffer " *etaf-v1-existing-mount*")))
+    (unwind-protect
+        (progn
+          (ebox-render-to-buffer buffer (ebox-build '(box "existing")))
+          (let ((revision (ebox-surface-buffer-revision buffer)))
+            (should-error
+             (etaf-render-port--v1-initial
+              buffer (ebox-build '(box "replacement")) #'ignore #'ignore)
+             :type 'error)
+            (should (ebox-surface-buffer-mounted-p buffer))
+            (should (= revision (ebox-surface-buffer-revision buffer)))
+            (should (equal "existing"
+                           (with-current-buffer buffer (buffer-string))))))
+      (when (and (buffer-live-p buffer)
+                 (ebox-surface-buffer-mounted-p buffer))
+        (ebox-unmount-buffer buffer))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest etaf-render-port-v1-rollback-throw-cannot-stop-cleanup-tail ()
+  "A framework rollback throw still unmounts and restores legacy editor state."
+  (let ((buffer (generate-new-buffer " *etaf-v1-rollback-throw*"))
+        (input (ebox-build '(box "committed"))))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (insert "before"))
+          (should
+           (eq
+            (catch 'etaf-v1-rollback-escape
+              (etaf-render-port--v1-initial
+               buffer input
+               (lambda (_report) (error "primary before rollback throw"))
+               (lambda (_report)
+                 (throw 'etaf-v1-rollback-escape 'rollback-escaped)))
+              'not-escaped)
+            'rollback-escaped))
+          (should-not (ebox-surface-buffer-mounted-p buffer))
+          (should-not (ebox-surface-buffer-observer buffer))
+          (should (equal "before"
+                         (with-current-buffer buffer (buffer-string))))
+          (let ((diagnostic
+                 (cl-find 'framework-rollback
+                          (etaf-render-port-v1-cleanup-diagnostics buffer)
+                          :key (lambda (entry) (plist-get entry :phase)))))
+            (should diagnostic)
+            (should (plist-get diagnostic :nonlocal-exit))))
+      (when (and (buffer-live-p buffer)
+                 (ebox-surface-buffer-mounted-p buffer))
+        (ebox-unmount-buffer buffer))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (ert-deftest etaf-render-port-v1-cleanup-fault-keeps-primary-and-continues ()
   "A secondary v1 cleanup fault is diagnosed while Ebox cleanup continues."
   (let ((buffer (generate-new-buffer " *etaf-v1-cleanup-fault*"))
@@ -206,6 +386,9 @@
           (should (> (etaf-render-port-revision buffer) 0))
           (cl-letf (((symbol-function 'ebox-surface-buffer-revision)
                      (lambda (_buffer) (error "injected report failure"))))
+            (should-error (etaf-render-port-revision buffer) :type 'error))
+          (cl-letf (((symbol-function 'ebox-surface-buffer-revision)
+                     (lambda (_buffer) 0)))
             (should-error (etaf-render-port-revision buffer) :type 'error)))
       (when (and (buffer-live-p buffer)
                  (ebox-surface-buffer-mounted-p buffer))
