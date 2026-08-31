@@ -493,6 +493,34 @@ can distinguish “committed, then callback failed” from a rollback failure.
 The buffer-kill path drains or contains retirement work but never throws a
 retirement condition from the kill hook.
 
+Reactive publication is coordinated by an explicit `etaf-scheduler-context`.
+The context owns the source and Runtime FIFOs, their dedupe sets, effect claims,
+turn and projection epochs, nesting/busy state, fault diagnostics, and cost
+counters; it does not own Component, resource, or generation state. Existing
+callers use `etaf-scheduler-default-context`, while a mount may supply
+`:scheduler-context` to isolate its dispatch authority. Scopes, Effects, and
+opaque Runtime routes inherit and retain that context.
+
+One logical projection groups every changed source by its live subscriber
+contexts in one subscriber-table scan before draining. Source propagation
+settles across all touched contexts before any Runtime callback publishes.
+Within a context, each source and Effect is delivered once per scheduler turn,
+and multiple changed sources enqueue a Runtime once. A reentrant write to an
+already delivered source is deferred to the next turn; a per-context turn
+budget contains cross-context cycles with reusable fault diagnostics. Dedupe
+in one context never suppresses another, and registry/token/Host validation
+filters stale Runtime routes before fan-out.
+
+Runtime callbacks are detached as a turn, so a lifecycle write enters the
+following turn. Data success/error multi-ref publication and event/action
+callbacks use this same projection boundary, while the legacy facade continues
+through the default context. Data source failures update the Controller error
+state; a later projection/render failure propagates unchanged and cannot be
+reclassified as a source failure. Runtime operation reports include both the
+local context deltas and full cross-context projection summaries for source
+delivery, subscriber visits, effect work, Runtime work, stale drops, turns,
+and faults.
+
 Each Runtime flush records a candidate-aware effect tuple containing the
 generation id, effect-to-source edges and source versions, plus an immutable
 semantic-node stamp for candidate input/context/output facts. A repeated tuple

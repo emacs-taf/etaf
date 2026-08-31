@@ -2240,24 +2240,26 @@ Event composition is a Runtime contract, not a UI-library helper contract."
 
 (ert-deftest etaf-reactive-dispatch-fifos-append-in-constant-time-order ()
   "Keep source and Runtime dispatch order with explicit FIFO tails."
-  (let ((etaf--dispatch-depth 1)
-        (etaf--dispatch-source-queue nil)
-        (etaf--dispatch-source-queue-tail nil)
-        (etaf--dispatch-source-set (make-hash-table :test #'eq))
-        (etaf--dispatch-runtime-queue nil)
-        (etaf--dispatch-runtime-queue-tail nil)
-        (etaf--dispatch-runtime-set (make-hash-table :test #'eq))
+  (let ((context (etaf-scheduler-context-create :name 'fifo-test))
         (sources (cl-loop repeat 100 collect (etaf-ref nil))))
-    (dolist (source sources)
-      (etaf--dispatch-source source))
-    (etaf--dispatch-source (car sources))
-    (etaf-reactive-enqueue-runtime-flush 'first #'ignore)
-    (etaf-reactive-enqueue-runtime-flush 'second #'ignore)
-    (etaf-reactive-enqueue-runtime-flush 'first #'ignore)
-    (should (equal sources etaf--dispatch-source-queue))
-    (should (eq (car etaf--dispatch-source-queue-tail) (car (last sources))))
-    (should (equal '(first second) etaf--dispatch-runtime-queue))
-    (should (eq 'second (car etaf--dispatch-runtime-queue-tail)))))
+    (etaf-scheduler-call-with-projection
+     (lambda ()
+       (dolist (source sources)
+         (etaf-scheduler-enqueue-source context source #'ignore))
+       (etaf-scheduler-enqueue-source context (car sources) #'ignore)
+       (etaf-scheduler-enqueue-runtime context 'first #'ignore)
+       (etaf-scheduler-enqueue-runtime context 'second #'ignore)
+       (etaf-scheduler-enqueue-runtime context 'first #'ignore)
+       (should (equal sources
+                      (etaf-scheduler-context-source-queue context)))
+       (should (eq (car (etaf-scheduler-context-source-queue-tail context))
+                   (car (last sources))))
+       (should (equal '(first second)
+                      (etaf-scheduler-context-runtime-queue context)))
+       (should
+        (eq 'second
+            (car (etaf-scheduler-context-runtime-queue-tail context))))))
+    (should (etaf-scheduler-context-idle-p context))))
 
 (ert-deftest etaf-runtime-dirty-effect-fifo-and-priority-stay-stable ()
   "Append dirty effects in O(1) and sort each immutable effect only once."

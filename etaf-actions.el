@@ -11,6 +11,8 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'etaf-scheduler)
+(require 'etaf-reactive)
 (require 'etaf-runtime)
 
 (defvar etaf--current-runtime)
@@ -108,14 +110,20 @@ RUNTIME ACTION ...)'.  Action functions receive Runtime first."
     (unless spec
       (signal 'etaf-action-error
               (list (format "Unknown ETAF Action: %S" action))))
-    (if (or etaf--observer-context (etaf-runtime-observer runtime))
-        (etaf-runtime-call-operation
-         runtime 'action (format "%S" action)
-         (lambda ()
-           (let ((etaf--current-runtime runtime))
-             (apply (etaf-action-spec-function spec) runtime arguments))))
-      (let ((etaf--current-runtime runtime))
-        (apply (etaf-action-spec-function spec) runtime arguments)))))
+    (let ((run
+           (lambda ()
+             (etaf-scheduler-call-with-context
+              (etaf-runtime-scheduler-context runtime)
+              (lambda ()
+                (etaf-reactive-call-with-batch
+                 (lambda ()
+                   (let ((etaf--current-runtime runtime))
+                     (apply (etaf-action-spec-function spec)
+                            runtime arguments)))))))))
+      (if (or etaf--observer-context (etaf-runtime-observer runtime))
+          (etaf-runtime-call-operation
+           runtime 'action (format "%S" action) run)
+        (funcall run)))))
 
 ;;;###autoload
 (defun etaf-action-undefine (name)

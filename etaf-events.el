@@ -12,6 +12,8 @@
 
 (require 'cl-lib)
 (require 'ebox)
+(require 'etaf-scheduler)
+(require 'etaf-reactive)
 (require 'etaf-runtime)
 
 (defvar etaf--current-runtime)
@@ -67,7 +69,7 @@
 otherwise call the local callback with no arguments."
   (etaf--assert-not-rendering 'dispatch-event)
   (setq runtime (etaf-runtime-require-mounted runtime))
-  (let ((dispatch
+  (let* ((dispatch
          (lambda ()
            (let ((callback (etaf--event-handler runtime host-ref kind)))
              (unless callback
@@ -83,13 +85,19 @@ otherwise call the local callback with no arguments."
                    (if payload-p
                        (funcall callback payload)
                      (funcall callback))
-                 (etaf-runtime-event-end runtime)))))))
+                 (etaf-runtime-event-end runtime))))))
+         (run
+          (lambda ()
+            (etaf-scheduler-call-with-context
+             (etaf-runtime-scheduler-context runtime)
+             (lambda ()
+               (etaf-reactive-call-with-batch dispatch))))))
     (if (or etaf--observer-context (etaf-runtime-observer runtime))
         (etaf-runtime-call-operation
          runtime 'event
          (format "%s %S" (etaf-event-kind kind) host-ref)
-         (lambda () (ebox-call-with-render-burst dispatch)))
-      (ebox-call-with-render-burst dispatch))))
+         (lambda () (ebox-call-with-render-burst run)))
+      (ebox-call-with-render-burst run))))
 
 ;;;###autoload
 (defun etaf-host-ref-bounds (runtime host-ref)

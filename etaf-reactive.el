@@ -12,6 +12,7 @@
 
 (require 'cl-lib)
 (require 'gv)
+(require 'etaf-scheduler)
 
 (define-error 'etaf-reactive-error "Invalid ETAF reactive operation")
 (define-error 'etaf-render-side-effect-error
@@ -53,6 +54,7 @@
   scheduler
   deps
   owner-scope
+  scheduler-context
   on-stop
   name
   (active-p t)
@@ -65,13 +67,16 @@
   effects
   children
   cleanups
+  scheduler-context
   name
   (active-p t))
 
 (cl-defstruct (etaf-runtime-route
                (:constructor etaf-runtime-route-create))
   "Opaque Runtime route stored by reactive sources."
-  runtime-id mount-epoch authority-token scheduler)
+  runtime-id mount-epoch authority-token scheduler scheduler-context
+  accepts-p
+  (active-p t))
 
 (defvar etaf--active-effect nil
   "The effect currently collecting dependencies.")
@@ -107,72 +112,50 @@
 The function receives a zero-argument job and a phase symbol.  Outside a
 Runtime, watchers run synchronously.")
 
-(defvar etaf--dispatch-depth 0)
-(defvar etaf--dispatch-source-queue nil)
-(defvar etaf--dispatch-source-queue-tail nil)
-(defvar etaf--dispatch-source-set (make-hash-table :test #'eq))
-(defvar etaf--dispatch-runtime-queue nil)
-(defvar etaf--dispatch-runtime-queue-tail nil)
-(defvar etaf--dispatch-runtime-set (make-hash-table :test #'eq))
-(defvar etaf--dispatch-effect-set (make-hash-table :test #'eq))
+(defun etaf--subscriber-scheduler-context (subscriber)
+  "Return SUBSCRIBER's scheduler context or the default context."
+  (or (cond
+       ((etaf-runtime-route-p subscriber)
+        (etaf-runtime-route-scheduler-context subscriber))
+       ((etaf-effect-p subscriber)
+        (etaf-effect-scheduler-context subscriber)))
+      etaf-scheduler-default-context))
 
-(defun etaf--dispatch-append-source (source)
-  "Append SOURCE to the reactive FIFO in constant time."
-  (let ((cell (list source)))
-    (if etaf--dispatch-source-queue-tail
-        (setcdr etaf--dispatch-source-queue-tail cell)
-      (setq etaf--dispatch-source-queue cell))
-    (setq etaf--dispatch-source-queue-tail cell)))
+(defun etaf-runtime-route-live-p (route)
+  "Return non-nil when opaque Runtime ROUTE still owns dispatch authority."
+  (and (etaf-runtime-route-p route)
+       (etaf-runtime-route-active-p route)
+       (let ((predicate (etaf-runtime-route-accepts-p route)))
+         (or (null predicate)
+             (condition-case nil
+                 (funcall predicate route)
+               ((error quit) nil))))))
 
-(defun etaf--dispatch-append-runtime (runtime)
-  "Append RUNTIME to the reactive publication FIFO in constant time."
-  (let ((cell (list runtime)))
-    (if etaf--dispatch-runtime-queue-tail
-        (setcdr etaf--dispatch-runtime-queue-tail cell)
-      (setq etaf--dispatch-runtime-queue cell))
-    (setq etaf--dispatch-runtime-queue-tail cell)))
+(defun etaf-reactive-enqueue-runtime-flush
+    (runtime function &optional scheduler-context)
+  "Queue FUNCTION once for RUNTIME in SCHEDULER-CONTEXT.
+The default context preserves the legacy two-argument facade."
+  (etaf-scheduler-enqueue-runtime
+   (or scheduler-context (etaf-scheduler-current-context))
+   runtime function))
 
-(defun etaf-reactive-enqueue-runtime-flush (runtime function)
-  "Queue FUNCTION once for RUNTIME after the outer reactive dispatch settles."
-  (unless (gethash runtime etaf--dispatch-runtime-set)
-    (puthash runtime function etaf--dispatch-runtime-set)
-    (etaf--dispatch-append-runtime runtime)))
-
-(defun etaf--dispatch-source-now (source)
-  "Notify SOURCE subscribers without opening another dispatch boundary."
-  (let ((subscribers (copy-hash-table (etaf--source-subscribers source))))
-    (maphash
-     (lambda (subscriber _)
-       (cond
-        ((etaf-runtime-route-p subscriber)
-         (funcall (etaf-runtime-route-scheduler subscriber)
-                  subscriber source))
-        ((etaf-effect-active-p subscriber)
-         (unless (gethash subscriber etaf--dispatch-effect-set)
-           (puthash subscriber t etaf--dispatch-effect-set)
-           (if-let* ((scheduler (etaf-effect-scheduler subscriber)))
-               (funcall scheduler subscriber)
-             (etaf-reactive-effect-run subscriber))))))
-     subscribers)))
-
-(defun etaf--drain-dispatch ()
-  "Drain reactive sources and Runtime work to a stable outer fixed point."
-  (while (or etaf--dispatch-source-queue etaf--dispatch-runtime-queue)
-    (while etaf--dispatch-source-queue
-      (let ((source (pop etaf--dispatch-source-queue)))
-        (unless etaf--dispatch-source-queue
-          (setq etaf--dispatch-source-queue-tail nil))
-        (remhash source etaf--dispatch-source-set)
-        (etaf--dispatch-source-now source)))
-    ;; Detach this turn.  A lifecycle write may enqueue a source and the same
-    ;; Runtime again for the following turn without merging it into this one.
-    (let ((turn etaf--dispatch-runtime-queue))
-      (setq etaf--dispatch-runtime-queue nil
-            etaf--dispatch-runtime-queue-tail nil)
-      (dolist (runtime turn)
-        (let ((function (gethash runtime etaf--dispatch-runtime-set)))
-          (remhash runtime etaf--dispatch-runtime-set)
-          (funcall function))))))
+(defun etaf--dispatch-subscriber-group
+    (context source _projection-epoch subscribers)
+  "Notify SOURCE SUBSCRIBERS already grouped for scheduler CONTEXT."
+  (dolist (subscriber subscribers)
+    (etaf-scheduler-record-subscriber-visit context)
+    (cond
+     ((etaf-runtime-route-p subscriber)
+      (if (etaf-runtime-route-live-p subscriber)
+          (funcall (etaf-runtime-route-scheduler subscriber)
+                   subscriber source)
+        (etaf-scheduler-record-stale-route-drop context)))
+     ((and (etaf-effect-p subscriber)
+           (etaf-effect-active-p subscriber)
+           (etaf-scheduler-claim-effect context subscriber))
+      (if-let* ((scheduler (etaf-effect-scheduler subscriber)))
+          (funcall scheduler subscriber)
+        (etaf-reactive-effect-run subscriber))))))
 
 (defun etaf--reactive-same-p (left right)
   "Return whether LEFT and RIGHT are equal under ETAF's shallow rule."
@@ -234,10 +217,14 @@ when the effect is disposed."
   (unless (functionp function)
     (signal 'wrong-type-argument (list 'functionp function)))
   (let* ((owner (or scope etaf--active-scope))
+         (scheduler-context
+          (or (and owner (etaf-effect-scope-scheduler-context owner))
+              (etaf-scheduler-current-context)))
          (effect (etaf--effect-create
                   :function function
                   :scheduler scheduler
                   :owner-scope owner
+                  :scheduler-context scheduler-context
                   :on-stop on-stop
                   :name name)))
     (when owner
@@ -253,7 +240,12 @@ When RENDERING is non-nil, `etaf-value' writes are rejected for the duration
 of the run."
   (unless (etaf-effect-p effect)
     (signal 'wrong-type-argument (list 'etaf-effect-p effect)))
-  (cond
+  (let* ((scheduler-context
+          (or (etaf-effect-scheduler-context effect)
+              (etaf-scheduler-current-context)))
+         (etaf--scheduler-context scheduler-context))
+    (etaf-scheduler-record-effect-evaluation scheduler-context)
+    (cond
    ((etaf-effect-running-p effect)
     (error "Recursive ETAF effect execution: %S"
            (or (etaf-effect-name effect) effect)))
@@ -280,23 +272,45 @@ of the run."
             (etaf--clear-effect-deps effect)
             (dolist (source old-deps)
               (puthash effect t (etaf--source-subscribers source)))
-            (setf (etaf-effect-deps effect) old-deps))))))))
+            (setf (etaf-effect-deps effect) old-deps)))))))))
 
 (defun etaf--dispatch-source (source)
   "Notify every current subscriber of SOURCE once."
-  (unless (gethash source etaf--dispatch-source-set)
-    (puthash source t etaf--dispatch-source-set)
-    (etaf--dispatch-append-source source))
-  (when (zerop etaf--dispatch-depth)
-    (let ((etaf--dispatch-depth 1))
-      (unwind-protect (etaf--drain-dispatch)
-        (setq etaf--dispatch-source-queue nil
-              etaf--dispatch-source-queue-tail nil
-              etaf--dispatch-runtime-queue nil
-              etaf--dispatch-runtime-queue-tail nil)
-        (clrhash etaf--dispatch-source-set)
-        (clrhash etaf--dispatch-runtime-set)
-        (clrhash etaf--dispatch-effect-set)))))
+  (etaf-scheduler-call-with-projection
+   (lambda ()
+     (let ((groups (make-hash-table :test #'eq)))
+       (maphash
+        (lambda (subscriber _)
+          (let ((context (etaf--subscriber-scheduler-context subscriber)))
+            (cond
+             ((etaf-runtime-route-p subscriber)
+              (if (etaf-runtime-route-live-p subscriber)
+                  (puthash context
+                           (cons subscriber (gethash context groups)) groups)
+                (etaf-scheduler-record-stale-route-drop context)))
+             ((and (etaf-effect-p subscriber)
+                   (etaf-effect-active-p subscriber))
+              (puthash context
+                       (cons subscriber (gethash context groups)) groups)))))
+        (etaf--source-subscribers source))
+       (let (contexts)
+         (maphash (lambda (context _) (push context contexts)) groups)
+         (dolist (context
+                  (sort contexts
+                      (lambda (left right)
+                        (< (etaf-scheduler-context-id left)
+                           (etaf-scheduler-context-id right)))))
+           (let ((subscribers (nreverse (gethash context groups))))
+             (etaf-scheduler-enqueue-source
+              context source
+              (lambda (delivery-context delivery-source projection-epoch)
+                (etaf--dispatch-subscriber-group
+                 delivery-context delivery-source projection-epoch
+                 subscribers))))))))))
+
+(defun etaf-reactive-call-with-batch (function)
+  "Call FUNCTION inside one cross-context reactive projection."
+  (etaf-scheduler-call-with-projection function))
 
 ;;;###autoload
 (cl-defun etaf-ref (initial-value &key test name)
@@ -477,11 +491,20 @@ effect.  If FUNCTION returns a function, it cleans up the previous run."
     (lambda () (etaf--stop-effect effect))))
 
 ;;;###autoload
-(cl-defun etaf-effect-scope (&key detached name)
-  "Create a Scope named NAME, owned by the current Scope unless DETACHED."
+(cl-defun etaf-effect-scope (&key detached name scheduler-context)
+  "Create a Scope named NAME, owned by the current Scope unless DETACHED.
+SCHEDULER-CONTEXT defaults to the parent or dynamically active context."
   (etaf--assert-not-rendering 'create-scope)
   (let* ((parent (and (not detached) etaf--active-scope))
-         (scope (etaf--effect-scope-create :parent parent :name name)))
+         (scheduler-context
+          (or scheduler-context
+              (and parent (etaf-effect-scope-scheduler-context parent))
+              (etaf-scheduler-current-context)))
+         (scope (etaf--effect-scope-create
+                 :parent parent
+                 :scheduler-context
+                 (etaf-scheduler-context-resolve scheduler-context)
+                 :name name)))
     (when parent
       (push scope (etaf-effect-scope-children parent)))
     scope))
@@ -499,6 +522,8 @@ effect.  If FUNCTION returns a function, it cleans up the previous run."
                (etaf-effect-scope-active-p scope))
     (error "Cannot enter an inactive ETAF Scope"))
   (let ((etaf--active-scope scope)
+        (etaf--scheduler-context
+         (etaf-effect-scope-scheduler-context scope))
         (etaf--watch-scheduler
          (if watch-scheduler-p watch-scheduler etaf--watch-scheduler)))
     (funcall function)))

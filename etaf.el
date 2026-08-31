@@ -30,6 +30,7 @@
 (require 'etaf-view)
 (require 'etaf-compiler)
 (require 'etaf-component)
+(require 'etaf-scheduler)
 (require 'etaf-reactive)
 (require 'etaf-observer)
 (require 'etaf-context)

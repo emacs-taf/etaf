@@ -14,6 +14,7 @@
 (require 'ebox)
 (require 'etaf-view)
 (require 'etaf-component)
+(require 'etaf-scheduler)
 (require 'etaf-reactive)
 (require 'etaf-generation)
 (require 'etaf-host)
@@ -276,6 +277,7 @@ the sequential `etaf--pvec-put' contract."
   root-view
   root-node
   scope
+  scheduler-context
   root-effect-id
   root-range-id
   candidate-root-deps
@@ -1239,15 +1241,25 @@ effect-to-source edges.  It is intentionally immutable and suitable as an
       (puthash tuple t etaf--runtime-fixed-point-stamps)
       (push entry etaf--runtime-fixed-point-history))))
 
+(defun etaf--runtime-authorized-route-runtime (route)
+  "Return the live Runtime authorized by opaque ROUTE, or nil."
+  (when (and (etaf-runtime-route-p route)
+             (etaf-runtime-route-active-p route))
+    (when-let* ((runtime
+                 (gethash (etaf-runtime-route-mount-epoch route)
+                          etaf--runtime-route-registry)))
+      (and (eq route (etaf-runtime-route-token runtime))
+           (eq (etaf-runtime-route-scheduler-context route)
+               (etaf-runtime-scheduler-context runtime))
+           (etaf-runtime-mounted-p runtime)
+           (etaf-host-authority-accepts-token-p
+            (etaf-runtime-host-authority runtime)
+            (etaf-runtime-route-authority-token route))
+           runtime))))
+
 (defun etaf--runtime-route-scheduler (route source)
   "Route dirty SOURCE through opaque ROUTE to its current generation."
-  (when-let* ((runtime
-              (gethash (etaf-runtime-route-mount-epoch route)
-                       etaf--runtime-route-registry)))
-    (when (and (etaf-runtime-mounted-p runtime)
-               (etaf-host-authority-accepts-token-p
-                (etaf-runtime-host-authority runtime)
-                (etaf-runtime-route-authority-token route)))
+  (when-let* ((runtime (etaf--runtime-authorized-route-runtime route)))
       (dolist (effect-id
                (etaf--generation-source-effects
                 (etaf-runtime-current-generation runtime) source))
@@ -1258,7 +1270,8 @@ effect-to-source edges.  It is intentionally immutable and suitable as an
             (etaf--runtime-mark-root-dirty runtime))))
       (etaf-reactive-enqueue-runtime-flush
        (etaf-runtime-mount-epoch runtime)
-       (lambda () (etaf--runtime-request-flush runtime))))))
+       (lambda () (etaf--runtime-request-flush runtime))
+       (etaf-runtime-scheduler-context runtime))))
 
 (defun etaf--runtime-evaluate-root-candidate (runtime)
   "Evaluate RUNTIME root while privately collecting dependencies."
@@ -1362,6 +1375,11 @@ error or quit."
       (let* ((operation-id
               (1+ (or (etaf-runtime-next-operation-id runtime) 0)))
              (generation-before (etaf-runtime-generation runtime))
+             (scheduler-context
+              (or (etaf-runtime-scheduler-context runtime)
+                  etaf-scheduler-default-context))
+             (scheduler-before
+              (etaf-scheduler-context-metrics scheduler-context))
              (started (float-time))
              (gc-count-before gcs-done)
              (gc-elapsed-before gc-elapsed)
@@ -1376,34 +1394,101 @@ error or quit."
                (lambda (diagnostic)
                  (etaf--runtime-record-observer-diagnostic
                   runtime diagnostic))))
+             projection-summaries
              result)
         (setf (etaf-runtime-next-operation-id runtime) operation-id)
-        (etaf--observer-call-with-context
-         context
-         (lambda ()
-           (unwind-protect
-               (condition-case condition
-                   (prog1 (setq result (funcall function))
-                     (setq status 'success))
-                 (quit
-                  (setq status 'quit)
-                  (signal (car condition) (cdr condition))))
-             (etaf-observer-emit
-              (list
-               :provider 'etaf
-               :stage 'runtime-operation
-               :kind kind
-               :label (copy-sequence label)
-               :generation-before generation-before
-               :generation-after (etaf-runtime-generation runtime)
-               :status status
-               :duration-ms
-               (max 0.0 (* 1000.0 (- (float-time) started)))
-               :gc-count (- gcs-done gc-count-before)
-               :gc-duration-ms
-               (max 0.0
-                    (* 1000.0 (- gc-elapsed gc-elapsed-before))))))))
-        result)))))
+        (cl-labels
+            ((run-body
+              ()
+              (etaf--observer-call-with-context
+               context
+               (lambda ()
+                 (condition-case condition
+                     (prog1 (setq result (funcall function))
+                       (setq status 'success))
+                   (quit
+                    (setq status 'quit)
+                    (signal (car condition) (cdr condition)))))))
+             (emit-final
+              (summaries)
+              (let ((scheduler-after
+                     (etaf-scheduler-context-metrics scheduler-context)))
+                (etaf--observer-call-with-context
+                 context
+                 (lambda ()
+                   (etaf-observer-emit
+                    (list
+                     :provider 'etaf
+                     :stage 'runtime-operation
+                     :kind kind
+                     :label (copy-sequence label)
+                     :generation-before generation-before
+                     :generation-after (etaf-runtime-generation runtime)
+                     :status status
+                     :scheduler-context-id
+                     (plist-get scheduler-after :context-id)
+                     :scheduler-projection-epoch-before
+                     (plist-get scheduler-before :projection-epoch)
+                     :scheduler-projection-epoch-after
+                     (plist-get scheduler-after :projection-epoch)
+                     :scheduler-turns
+                     (- (plist-get scheduler-after :turn-count)
+                        (plist-get scheduler-before :turn-count))
+                     :scheduler-source-enqueues
+                     (- (plist-get scheduler-after :source-enqueues)
+                        (plist-get scheduler-before :source-enqueues))
+                     :scheduler-source-dedupes
+                     (- (plist-get scheduler-after :source-dedupes)
+                        (plist-get scheduler-before :source-dedupes))
+                     :scheduler-source-deliveries
+                     (- (plist-get scheduler-after :source-deliveries)
+                        (plist-get scheduler-before :source-deliveries))
+                     :scheduler-subscriber-visits
+                     (- (plist-get scheduler-after :subscriber-visits)
+                        (plist-get scheduler-before :subscriber-visits))
+                     :scheduler-effect-claims
+                     (- (plist-get scheduler-after :effect-claims)
+                        (plist-get scheduler-before :effect-claims))
+                     :scheduler-effect-evaluations
+                     (- (plist-get scheduler-after :effect-evaluations)
+                        (plist-get scheduler-before :effect-evaluations))
+                     :scheduler-runtime-enqueues
+                     (- (plist-get scheduler-after :runtime-enqueues)
+                        (plist-get scheduler-before :runtime-enqueues))
+                     :scheduler-runtime-dedupes
+                     (- (plist-get scheduler-after :runtime-dedupes)
+                        (plist-get scheduler-before :runtime-dedupes))
+                     :scheduler-runtime-executions
+                     (- (plist-get scheduler-after :runtime-executions)
+                        (plist-get scheduler-before :runtime-executions))
+                     :scheduler-stale-route-drops
+                     (- (plist-get scheduler-after :stale-route-drops)
+                        (plist-get scheduler-before :stale-route-drops))
+                     :scheduler-faults
+                     (- (plist-get scheduler-after :fault-count)
+                        (plist-get scheduler-before :fault-count))
+                     :scheduler-projections (copy-tree summaries)
+                     :scheduler-fault-state
+                     (plist-get scheduler-after :fault-state)
+                     :duration-ms
+                     (max 0.0 (* 1000.0 (- (float-time) started)))
+                     :gc-count (- gcs-done gc-count-before)
+                     :gc-duration-ms
+                     (max 0.0
+                          (* 1000.0
+                             (- gc-elapsed gc-elapsed-before))))))))))
+          (if (etaf-scheduler-projection-active-p)
+              (unwind-protect
+                  (run-body)
+                (etaf-scheduler-on-projection-complete
+                 (lambda (summary) (emit-final (list summary)))))
+            (let ((etaf-scheduler-projection-observer
+                   (lambda (summary)
+                     (push summary projection-summaries))))
+              (unwind-protect
+                  (run-body)
+                (emit-final (nreverse projection-summaries)))))
+          result))))))
 
 (cl-defmacro etaf--runtime-with-operation ((runtime kind label) &rest body)
   "Evaluate BODY in RUNTIME operation KIND and LABEL when observed."
@@ -1425,15 +1510,19 @@ error or quit."
   "Enter one logical event batch for mounted RUNTIME."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (cl-incf (etaf-runtime-event-depth runtime))
+  (etaf-scheduler-context-event-begin
+   (etaf-runtime-scheduler-context runtime))
   runtime)
 
 (defun etaf-runtime-event-end (runtime)
   "Leave RUNTIME's logical event batch and publish pending state once."
-  (when (and (etaf-runtime-p runtime)
-             (etaf-runtime-mounted-p runtime))
+  (when (etaf-runtime-p runtime)
     (setf (etaf-runtime-event-depth runtime)
           (max 0 (1- (etaf-runtime-event-depth runtime))))
-    (when (and (zerop (etaf-runtime-event-depth runtime))
+    (etaf-scheduler-context-event-end
+     (etaf-runtime-scheduler-context runtime))
+    (when (and (etaf-runtime-mounted-p runtime)
+               (zerop (etaf-runtime-event-depth runtime))
                (etaf-runtime-pending-p runtime))
       (setf (etaf-runtime-pending-p runtime) nil)
       (etaf--runtime-request-flush runtime)))
@@ -6109,7 +6198,10 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
 
 (defun etaf--runtime-request-flush-now (runtime)
   "Flush RUNTIME now, or mark one follow-up flush while busy."
-  (when (etaf-runtime-mounted-p runtime)
+  (let ((etaf--scheduler-context
+         (or (etaf-runtime-scheduler-context runtime)
+             etaf-scheduler-default-context)))
+    (when (etaf-runtime-mounted-p runtime)
     (if (or (> (etaf-runtime-event-depth runtime) 0)
             (etaf-runtime-flushing-p runtime))
         (setf (etaf-runtime-pending-p runtime) t)
@@ -6137,7 +6229,7 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
                   (when (eq (etaf--runtime-component-overlay runtime)
                             :root-fallback)
                     (etaf--runtime-render-root-turn runtime t)))))
-          (setf (etaf-runtime-flushing-p runtime) nil))))))
+          (setf (etaf-runtime-flushing-p runtime) nil)))))))
 
 (defun etaf--runtime-request-flush (runtime)
   "Flush RUNTIME within one optional Runtime operation boundary."
@@ -6151,13 +6243,19 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
     (etaf--runtime-request-flush runtime)
     (etaf-runtime-root-node runtime)))
 
-(defun etaf--runtime-mount-now (buffer-or-name view observer)
-  "Mount VIEW with optional OBSERVER into BUFFER-OR-NAME."
-  (let* ((buffer (get-buffer-create buffer-or-name))
+(defun etaf--runtime-mount-now
+    (buffer-or-name view observer &optional scheduler-context)
+  "Mount VIEW into BUFFER-OR-NAME with OBSERVER and SCHEDULER-CONTEXT."
+  (setq scheduler-context
+        (or scheduler-context etaf-scheduler-default-context))
+  (let ((etaf--scheduler-context scheduler-context))
+    (let* ((buffer (get-buffer-create buffer-or-name))
          (old (gethash buffer etaf--runtime-table)))
     (when old
       (etaf-runtime-unmount old))
-    (let* ((scope (etaf-effect-scope :detached t :name buffer))
+    (let* ((scope (etaf-effect-scope
+                   :detached t :name buffer
+                   :scheduler-context scheduler-context))
            (mount-epoch (cl-incf etaf--mount-epoch-counter))
            (host-authority
             (etaf-host-authority-create
@@ -6166,6 +6264,7 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
                      :buffer buffer
                      :root-view view
                      :scope scope
+                     :scheduler-context scheduler-context
                      :instances (make-hash-table :test #'equal)
                      :resource-registry (make-hash-table :test #'equal)
                      :mount-epoch mount-epoch
@@ -6199,7 +6298,9 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
                     :mount-epoch (etaf-runtime-mount-epoch runtime)
                     :authority-token
                     (etaf-host-authority-token host-authority)
-                    :scheduler 'etaf--runtime-route-scheduler)))
+                    :scheduler 'etaf--runtime-route-scheduler
+                    :scheduler-context scheduler-context
+                    :accepts-p 'etaf--runtime-authorized-route-runtime)))
         (setf (etaf-runtime-route-token runtime) route)
         (puthash (etaf-runtime-mount-epoch runtime) runtime
                  etaf--runtime-route-registry))
@@ -6225,6 +6326,8 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
          ;; Preaccept failures have no Host authority and discard registration.
          (unless (etaf-host-authority-attached-p host-authority)
            (setf (etaf-runtime-mounted-p runtime) nil)
+           (when-let* ((route (etaf-runtime-route-token runtime)))
+             (setf (etaf-runtime-route-active-p route) nil))
            (etaf-host-authority-rollback-attach host-authority)
            (when (buffer-live-p buffer)
              (with-current-buffer buffer
@@ -6235,7 +6338,7 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
                     etaf--runtime-route-registry)
            (etaf-scope-stop scope))
          (signal (car err) (cdr err))))
-      buffer)))
+      buffer))))
 
 (defun etaf--runtime-validate-mount-options (options)
   "Validate and return mount OPTIONS."
@@ -6245,7 +6348,8 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
         (unless tail
           (error "ETAF mount option %S has no value" key))
         (pop tail)
-        (unless (memq key '(:viewport-width :viewport-height :observer))
+        (unless (memq key '(:viewport-width :viewport-height :observer
+                            :scheduler-context))
           (error "Unknown ETAF mount option: %S" key)))))
   (when-let* ((width (plist-get options :viewport-width)))
     (unless (and (numberp width) (> width 0))
@@ -6258,6 +6362,12 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
                       (functionp (plist-get options :observer)))))
     (signal 'wrong-type-argument
             (list 'functionp (plist-get options :observer))))
+  (when (and (plist-member options :scheduler-context)
+             (not (etaf-scheduler-context-p
+                   (plist-get options :scheduler-context))))
+    (signal 'wrong-type-argument
+            (list 'etaf-scheduler-context-p
+                  (plist-get options :scheduler-context))))
   options)
 
 ;;;###autoload
@@ -6266,15 +6376,17 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
 Setup, reactive publication, Ebox rendering, and lifecycle work share one
 framework render-burst allocation budget when the installed Ebox supports it.
 OPTIONS may provide `:viewport-width' in pixels, `:viewport-height' in lines,
-and `:observer' as a one-argument flat-report sink.  The observer is installed
-before the first Ebox publication."
+`:observer' as a one-argument flat-report sink, and `:scheduler-context' for
+explicit dispatch isolation.  The observer is installed before publication."
   (etaf--assert-not-rendering 'mount-runtime)
   (setq options (etaf--runtime-validate-mount-options options))
   (let ((ebox-viewport-width (plist-get options :viewport-width))
         (ebox-viewport-height (plist-get options :viewport-height)))
     (ebox-call-with-render-burst
      #'etaf--runtime-mount-now buffer-or-name view
-     (plist-get options :observer))))
+     (plist-get options :observer)
+     (or (plist-get options :scheduler-context)
+         etaf-scheduler-default-context))))
 
 (defun etaf--runtime-unmount-now (runtime &optional cause)
   "Unmount RUNTIME idempotently and retire its Component scopes.
@@ -6295,6 +6407,8 @@ unmount.  Host authority is invalidated before any unbounded cleanup."
         (etaf-host-authority-begin-detach authority))
       (unless (eq (etaf-host-authority-state authority) 'terminal)
         (etaf-host-authority-invalidate authority))
+      (when-let* ((route (etaf-runtime-route-token runtime)))
+        (setf (etaf-runtime-route-active-p route) nil))
       (setf (etaf-runtime-mounted-p runtime) nil)
       (unwind-protect
           (progn

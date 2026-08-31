@@ -477,6 +477,31 @@ Ebox revision 与 diagnostic-journal ID。`etaf-condition-postcommit-info` 会�
 failure。buffer-kill 路径会 drain 或 contain retirement 工作，但绝不会从 kill
 hook 抛 retirement condition。
 
+Reactive publication 由显式 `etaf-scheduler-context` 协调。context 拥有 source
+与 Runtime FIFO、对应 dedupe set、effect claim、turn/projection epoch、
+nesting/busy 状态、fault diagnostics 与成本计数器；它不拥有 Component、
+resource 或 generation state。既有调用者继续使用
+`etaf-scheduler-default-context`，mount 也可以传入 `:scheduler-context` 隔离
+dispatch authority。Scope、Effect 与 opaque Runtime route 会继承并保留该
+context。
+
+一次 logical projection 会先按 live subscriber context 对所有 changed source
+在一次 subscriber-table scan 中分组；所有已触及 context 的 source propagation
+都稳定后，Runtime callback 才能 publish。在同一 context 中，每个 source 与
+Effect 每个 scheduler turn 只 delivery 一次，多个 changed source 也只 enqueue
+同一 Runtime 一次。已经 delivery 的 source 若重入写入，会延后到下一个 turn；
+per-context turn budget 会包含跨 context cycle，并留下可复用的 fault diagnostics。
+context A 的 dedupe 不会压制 context B；registry/token/Host 校验会在 fan-out 前
+过滤 stale Runtime route。
+
+Runtime callback 先作为一个完整 turn detach，因此 lifecycle write 会进入下一个
+turn。Data success/error 的 multi-ref publication 与 event/action callback 都复用
+同一个 projection boundary，legacy façade 则继续走 default context。Data source
+failure 会更新 Controller error state；之后发生的 projection/render failure 保持
+原 condition，不能被重新归类为 source failure。Runtime operation report 同时携带
+本 context delta 与完整 cross-context projection summary，覆盖 source delivery、
+subscriber visit、effect work、Runtime work、stale drop、turn 与 fault。
+
 每次 Runtime flush 都记录 candidate-aware effect tuple：其中包含 generation id、
 effect→source 边和 source version，以及 candidate input/context/output facts 的
 immutable semantic-node stamp。重复 tuple 会报告有序的 effect/edge path；step

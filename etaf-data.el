@@ -13,6 +13,7 @@
 
 (require 'cl-lib)
 (require 'etaf-observer)
+(require 'etaf-scheduler)
 (require 'etaf-reactive)
 
 (define-error 'etaf-data-error "Invalid ETAF data operation")
@@ -285,36 +286,41 @@ use its result as `:initial-result' for `etaf-data-controller'."
   (when (= request-id (etaf-data--controller-request-id controller))
     (let ((normalized (etaf-data--normalize-result result))
           (auto-load-p (etaf-data--controller-auto-load-p controller)))
-      (unwind-protect
-          (progn
-            (setf (etaf-data--controller-auto-load-p controller) nil)
-            ;; ITEMS publication may synchronously schedule a DataGrid render.
-            ;; Materialize keyed selection dependencies first so render only
-            ;; reads retained reactive state.
-            (etaf-data--prepare-selected-refs
-             controller (plist-get normalized :items))
-            (setf (etaf-value (etaf-data--controller-items controller))
-                  (plist-get normalized :items))
-            (setf (etaf-value (etaf-data--controller-total controller))
-                  (or (plist-get normalized :total)
-                      (length (plist-get normalized :items))))
-            (when (plist-member normalized :page)
-              (setf (etaf-value (etaf-data--controller-page controller))
-                    (plist-get normalized :page)))
-            (when (plist-member normalized :page-size)
-              (setf (etaf-value (etaf-data--controller-page-size controller))
-                    (plist-get normalized :page-size)))
-            (setf (etaf-value (etaf-data--controller-error controller)) nil)
-            (setf (etaf-value (etaf-data--controller-status controller))
-                  'success))
-        (setf (etaf-data--controller-auto-load-p controller) auto-load-p))))
+      ;; ITEMS publication may synchronously schedule a DataGrid render.
+      ;; Materialize keyed selection dependencies first so render only reads
+      ;; retained reactive state.
+      (etaf-data--prepare-selected-refs
+       controller (plist-get normalized :items))
+      (etaf-reactive-call-with-batch
+       (lambda ()
+         (setf (etaf-data--controller-auto-load-p controller) nil)
+         (etaf-scheduler-defer-finalizer
+          (lambda ()
+            (setf (etaf-data--controller-auto-load-p controller)
+                  auto-load-p)))
+         (setf (etaf-value (etaf-data--controller-items controller))
+               (plist-get normalized :items))
+         (setf (etaf-value (etaf-data--controller-total controller))
+               (or (plist-get normalized :total)
+                   (length (plist-get normalized :items))))
+         (when (plist-member normalized :page)
+           (setf (etaf-value (etaf-data--controller-page controller))
+                 (plist-get normalized :page)))
+         (when (plist-member normalized :page-size)
+           (setf (etaf-value (etaf-data--controller-page-size controller))
+                 (plist-get normalized :page-size)))
+         (setf (etaf-value (etaf-data--controller-error controller)) nil)
+         (setf (etaf-value (etaf-data--controller-status controller))
+               'success)))))
   result)
 
 (defun etaf-data--apply-error (controller request-id error-data)
   "Publish ERROR-DATA for CONTROLLER when REQUEST-ID is current."
   (when (= request-id (etaf-data--controller-request-id controller))
-    (setf (etaf-value (etaf-data--controller-error controller)) error-data)
-    (setf (etaf-value (etaf-data--controller-status controller)) 'error)))
+    (etaf-reactive-call-with-batch
+     (lambda ()
+       (setf (etaf-value (etaf-data--controller-error controller)) error-data)
+       (setf (etaf-value (etaf-data--controller-status controller)) 'error)))))
 
 ;;;###autoload
 (cl-defun etaf-data-controller
@@ -447,20 +453,23 @@ load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive."
   (etaf-data--require-controller controller)
   (let ((request-id (1+ (etaf-data--controller-request-id controller))))
     (setf (etaf-data--controller-request-id controller) request-id)
-    (setf (etaf-value (etaf-data--controller-status controller)) 'loading)
-    (setf (etaf-value (etaf-data--controller-error controller)) nil)
-    (condition-case err
-        (etaf-data--apply-load-success
-         controller
-         request-id
-         (etaf-data--source-load
-          (etaf-data--controller-source controller)
-          (etaf-value (etaf-data--controller-query controller))
-          (etaf-value (etaf-data--controller-page controller))
-          (etaf-value (etaf-data--controller-page-size controller))))
-      (error
-       (etaf-data--apply-error controller request-id err)
-       (signal (car err) (cdr err))))))
+    (etaf-reactive-call-with-batch
+     (lambda ()
+       (setf (etaf-value (etaf-data--controller-status controller)) 'loading)
+       (setf (etaf-value (etaf-data--controller-error controller)) nil)))
+    (let ((result
+           (condition-case err
+               (etaf-data--source-load
+                (etaf-data--controller-source controller)
+                (etaf-value (etaf-data--controller-query controller))
+                (etaf-value (etaf-data--controller-page controller))
+                (etaf-value (etaf-data--controller-page-size controller)))
+             (error
+              (etaf-data--apply-error controller request-id err)
+              (signal (car err) (cdr err))))))
+      ;; Projection/render failures after a successful source call are not
+      ;; source failures and must not rewrite the committed Controller refs.
+      (etaf-data--apply-load-success controller request-id result))))
 
 ;;;###autoload
 (defun etaf-data-reload (controller)
@@ -476,18 +485,21 @@ source mutation result after the reload succeeds."
   (etaf-data--require-controller controller)
   (let ((request-id (1+ (etaf-data--controller-request-id controller))))
     (setf (etaf-data--controller-request-id controller) request-id)
-    (setf (etaf-value (etaf-data--controller-status controller)) 'loading)
-    (setf (etaf-value (etaf-data--controller-error controller)) nil)
-    (condition-case err
-        (let ((result
+    (etaf-reactive-call-with-batch
+     (lambda ()
+       (setf (etaf-value (etaf-data--controller-status controller)) 'loading)
+       (setf (etaf-value (etaf-data--controller-error controller)) nil)))
+    (let ((result
+           (condition-case err
                (etaf-data--source-mutate
                 (etaf-data--controller-source controller)
-                operation payload)))
-          (etaf-data-load controller)
-          result)
-      (error
-       (etaf-data--apply-error controller request-id err)
-       (signal (car err) (cdr err))))))
+                operation payload)
+             (error
+              (etaf-data--apply-error controller request-id err)
+              (signal (car err) (cdr err))))))
+      ;; Reload owns its own source/projection classification.
+      (etaf-data-load controller)
+      result)))
 
 ;;;###autoload
 (defun etaf-data-stop (controller)
