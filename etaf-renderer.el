@@ -526,12 +526,11 @@ multi-root forest; a single material root is returned unchanged."
        (let ((resolved (funcall (etaf--expr-thunk value))))
          (cond ((null resolved) nil)
                ((stringp resolved) (list resolved))
-               (t
-                (signal 'etaf-renderer-error
-                        (list
-                         (format
-                          "Expr interpolation must return nil or string: %S"
-                          resolved)))))))
+               ;; Text Hosts validate interpolation through
+               ;; `etaf--inline-text-content'.  At a structural boundary the
+               ;; same evaluated value may be a dynamically produced View
+               ;; forest (notably a transparent Component's fragment).
+               (t (etaf--flatten-view-value resolved)))))
       ('branch
        (etaf--flatten-view-value (funcall (etaf--expr-thunk value))))
       ('keyed-list
@@ -752,8 +751,12 @@ multi-root forest; a single material root is returned unchanged."
                                (or semantic-id
                                    etaf--current-semantic-parent-id)))
                           (if (and semantic-id
-                                   (etaf--structural-program-p child)
-                                   (not etaf--rendering-range-p))
+                                   ;; Code-mode may carry a retained
+                                   ;; structural Expr through `etaf-node'.
+                                   ;; Both compiler-owned programs and these
+                                   ;; validated Expr values use the same
+                                   ;; direct Range lowering boundary.
+                                   (etaf--expr-p child))
                               (let ((result
                                      (etaf--runtime-render-child-range
                                       etaf--render-runtime child
@@ -763,8 +766,7 @@ multi-root forest; a single material root is returned unchanged."
                                 (cdr result))
                             (if (and semantic-id
                                      (etaf--view-node-p child)
-                                     (eq (etaf--view-node-name child) 'fragment)
-                                     (not etaf--rendering-range-p))
+                                     (eq (etaf--view-node-name child) 'fragment))
                                 (let ((result
                                        (etaf--runtime-render-fragment-range
                                         etaf--render-runtime child
@@ -774,8 +776,7 @@ multi-root forest; a single material root is returned unchanged."
                               (if (and semantic-id
                                      (etaf--slot-projection-p child)
                                      (etaf--slot-projection-range-compatible-p
-                                      child)
-                                     (not etaf--rendering-range-p))
+                                      child))
                                 (let ((result
                                        (etaf--runtime-render-slot-range
                                         etaf--render-runtime child

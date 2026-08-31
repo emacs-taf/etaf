@@ -49,7 +49,8 @@ CAPABILITIES is a plist.  `:load' is required and receives QUERY, PAGE, and
 PAGE-SIZE.  It must return a plist containing at least `:items', and may return
 `:total', `:page', and `:page-size'.  `:mutate' is optional and receives
 OPERATION and PAYLOAD.  `:dispose' is optional and runs when the owning
-controller stops.  `:provider' may name the source in observation reports and
+controller stops.  `:item-key' optionally returns stable selection identity
+for one item.  `:provider' may name the source in observation reports and
 defaults to `data'."
   (let ((load (plist-get capabilities :load))
         (mutate (plist-get capabilities :mutate))
@@ -58,7 +59,8 @@ defaults to `data'."
     (unless (functionp load)
       (signal 'wrong-type-argument (list 'functionp load)))
     (dolist (entry `((:mutate . ,mutate)
-                    (:dispose . ,dispose)))
+                    (:dispose . ,dispose)
+                    (:item-key . ,(plist-get capabilities :item-key))))
       (when (and (cdr entry) (not (functionp (cdr entry))))
         (signal 'wrong-type-argument (list 'functionp (cdr entry)))))
     (when (and (plist-member capabilities :provider)
@@ -166,7 +168,8 @@ defaults to `data'."
 (cl-defun etaf-data-memory-source (items &key id-key name)
   "Create an in-memory Data source over ITEMS.
 
-ID-KEY identifies records for `replace', `update', and `delete' mutations.
+ID-KEY identifies records for `replace', `update', and `delete' mutations,
+and is exposed to Data Controllers as the source's stable item identity.
 NAME optionally labels the source for diagnostics.
 Queries may be nil, a predicate, a search string, a plist, an alist, or an
 exact value.  Supported mutations are `insert', `replace', `update', `delete',
@@ -182,6 +185,9 @@ and `reset'."
     (etaf-data-source
      :name name
      :provider 'memory
+     :item-key (and id-key
+                    (lambda (record)
+                      (etaf-data--memory-record-id record id-key)))
      :load (lambda (query page page-size)
              (let* ((all (etaf-value records))
                     (filtered (funcall query-function query all)))
@@ -245,6 +251,35 @@ use its result as `:initial-result' for `etaf-data-controller'."
     (etaf-data--normalize-result
      (etaf-data--source-load source query page page-size))))
 
+(defun etaf-data--item-identity (controller item)
+  "Return ITEM's selection identity in CONTROLLER."
+  (if-let* ((item-key (etaf-data--controller-item-key controller)))
+      (funcall item-key item)
+    item))
+
+(defun etaf-data--ensure-selected-ref (controller identity)
+  "Return CONTROLLER's retained boolean selection ref for IDENTITY."
+  (let* ((refs (etaf-data--controller-selected-refs controller))
+         (selected-ref (gethash identity refs)))
+    (or selected-ref
+        (let ((created
+               (etaf-ref
+                (not (null
+                      (member identity
+                              (etaf-data--controller-selection-snapshot
+                               controller))))
+                :name 'etaf-data-selected)))
+          (puthash identity created refs)
+          created))))
+
+(defun etaf-data--prepare-selected-refs (controller items)
+  "Materialize CONTROLLER selection dependencies for ITEMS before render."
+  (dolist (identity (etaf-data--controller-selection-snapshot controller))
+    (etaf-data--ensure-selected-ref controller identity))
+  (dolist (item items)
+    (etaf-data--ensure-selected-ref
+     controller (etaf-data--item-identity controller item))))
+
 (defun etaf-data--apply-load-success (controller request-id result)
   "Publish successful RESULT for CONTROLLER when REQUEST-ID is current."
   (when (= request-id (etaf-data--controller-request-id controller))
@@ -253,6 +288,11 @@ use its result as `:initial-result' for `etaf-data-controller'."
       (unwind-protect
           (progn
             (setf (etaf-data--controller-auto-load-p controller) nil)
+            ;; ITEMS publication may synchronously schedule a DataGrid render.
+            ;; Materialize keyed selection dependencies first so render only
+            ;; reads retained reactive state.
+            (etaf-data--prepare-selected-refs
+             controller (plist-get normalized :items))
             (setf (etaf-value (etaf-data--controller-items controller))
                   (plist-get normalized :items))
             (setf (etaf-value (etaf-data--controller-total controller))
@@ -285,8 +325,8 @@ use its result as `:initial-result' for `etaf-data-controller'."
 QUERY, PAGE, PAGE-SIZE, result ITEMS, TOTAL, STATUS, ERROR, and SELECTION are
 stored in refs.  When AUTO-LOAD is non-nil, the controller loads immediately
 and reloads after query or pagination refs change.  NAME optionally labels the
-controller for diagnostics.  ITEM-KEY is a function used by
-`etaf-data-selected-item' to match a selected identity to one loaded item.
+controller for diagnostics.  ITEM-KEY identifies selection and selected-item
+state; it defaults to the source's `:item-key' capability when available.
 When OWNER-SCOPE is supplied, or when a current ETAF Scope exists, the
 controller's own child Scope is disposed with that owner; otherwise it keeps
 the detached Scope behavior.  INITIAL-RESULT may be a normalized source result
@@ -294,6 +334,7 @@ for QUERY/PAGE/PAGE-SIZE; it seeds a successful Controller without another
 load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive."
   (unless (etaf-data-source-p source)
     (signal 'wrong-type-argument (list 'etaf-data-source-p source)))
+  (setq item-key (or item-key (plist-get source :item-key)))
   (unless (or (null item-key) (functionp item-key))
     (signal 'wrong-type-argument (list 'functionp item-key)))
   (when (and initial-result auto-load)
@@ -337,10 +378,11 @@ load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive."
            :selection (etaf-ref (copy-sequence selection)
                                 :name 'etaf-data-selection)
            :selection-snapshot (copy-sequence selection)
-           :selected-refs (make-hash-table :test #'equal :weakness 'value)
+           :selected-refs (make-hash-table :test #'equal)
            :request-id 0
            :auto-load-p auto-load
            :item-key item-key)))
+    (etaf-data--prepare-selected-refs controller initial-items)
     (etaf-scope-run
         scope
         (lambda ()
@@ -349,6 +391,8 @@ load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive."
            (lambda (new-selection old-selection)
              (setf (etaf-data--controller-selection-snapshot controller)
                    new-selection)
+             (dolist (identity new-selection)
+               (etaf-data--ensure-selected-ref controller identity))
              (let ((selected-refs
                     (etaf-data--controller-selected-refs controller)))
                (unless (zerop (hash-table-count selected-refs))
@@ -491,6 +535,14 @@ The status value is one of `idle', `loading', `success', or `error'."
    (etaf-data--require-controller controller)))
 
 ;;;###autoload
+(defun etaf-data-item-identity (controller item)
+  "Return ITEM's stable selection identity in CONTROLLER.
+
+The identity comes from the Controller's explicit `:item-key', then from its
+source capability, and otherwise is ITEM itself."
+  (etaf-data--item-identity (etaf-data--require-controller controller) item))
+
+;;;###autoload
 (defun etaf-data-selected-ref (controller identity)
   "Return CONTROLLER's stable boolean selection ref for IDENTITY.
 
@@ -498,19 +550,8 @@ The returned ref changes only when IDENTITY enters or leaves the controller's
 selection.  Repeated calls for the same identity return the same ref for the
 controller lifetime.  Updates made through the selection APIs or by writing
 the public `etaf-data-selection' ref directly are both reflected."
-  (setq controller (etaf-data--require-controller controller))
-  (let* ((refs (etaf-data--controller-selected-refs controller))
-         (selected-ref (gethash identity refs)))
-    (or selected-ref
-        (let ((created
-               (etaf-ref
-                (not (null
-                      (member identity
-                              (etaf-data--controller-selection-snapshot
-                               controller))))
-                :name 'etaf-data-selected)))
-          (puthash identity created refs)
-          created))))
+  (etaf-data--ensure-selected-ref
+   (etaf-data--require-controller controller) identity))
 
 ;;;###autoload
 (defun etaf-data-selected-item (controller &optional item-key)

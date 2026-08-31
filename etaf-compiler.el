@@ -18,6 +18,7 @@
 (defconst etaf-compiler-blueprint-abi "etaf-view-blueprint/2")
 
 (defvar etaf-compiler--static-cache (make-hash-table :test #'equal))
+(defvar etaf-compiler--site-token-cache (make-hash-table :test #'equal))
 (defvar etaf-compiler--registry-epoch 0)
 (defvar etaf-compiler--instantiate-count 0)
 (defvar etaf-compiler--last-blueprint nil)
@@ -30,7 +31,22 @@
 (defun etaf-compiler-clear-cache ()
   "Clear all process-local compiled View materializations."
   (interactive)
-  (clrhash etaf-compiler--static-cache))
+  (clrhash etaf-compiler--static-cache)
+  (clrhash etaf-compiler--site-token-cache))
+
+(defun etaf-compiler--site-token (blueprint block)
+  "Return the stable opaque token for compiled BLOCK in BLUEPRINT."
+  (let* ((key (list (plist-get blueprint :id)
+                    (plist-get block :path)))
+         (missing (make-symbol "etaf-compiled-site-token-missing"))
+         (token (gethash key etaf-compiler--site-token-cache missing)))
+    (if (not (eq token missing))
+        token
+      (setq token (list 'etaf-compiled-site
+                        (plist-get blueprint :id)
+                        (plist-get block :path)))
+      (puthash key token etaf-compiler--site-token-cache)
+      token)))
 
 (defun etaf-compiler-statistics ()
   "Return a read-only snapshot of compiler runtime statistics."
@@ -313,12 +329,19 @@
         cached
       (let ((value
              (pcase (plist-get block :kind)
-               ('literal (plist-get block :value))
+               ;; The compiler's literal block is also used for a root string.
+               ;; Keep the same canonicalization as the non-compiled View path:
+               ;; a bare string is a Text View, while nil remains an empty
+               ;; structural value.
+               ('literal
+                (let ((literal (plist-get block :value)))
+                  (if (and (stringp literal)
+                           (= (length (plist-get block :path)) 1))
+                      (etaf--text-view-from-string literal)
+                    literal)))
                ('expr
                 (etaf--expr-create
-                 :token (list 'etaf-compiled-site
-                              (plist-get blueprint :id)
-                              (plist-get block :path))
+                 :token (etaf-compiler--site-token blueprint block)
                  :thunk (aref programs (plist-get block :hole))))
                ((or 'branch 'keyed-list)
                 (let ((program

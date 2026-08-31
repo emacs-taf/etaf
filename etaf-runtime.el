@@ -732,11 +732,23 @@ FULL-P means candidate tables describe the complete mounted tree."
       (etaf--semantic-range-range-ref semantic)
     (etaf--semantic-slot-range-range-ref semantic)))
 
+(defun etaf--semantic-backend-range-semantic-id (semantic)
+  "Return retained semantic id for direct or slot Range SEMANTIC."
+  (if (etaf--semantic-range-p semantic)
+      (etaf--semantic-range-semantic-id semantic)
+    (etaf--semantic-slot-range-semantic-id semantic)))
+
 (defun etaf--semantic-backend-range-container-component-id (semantic)
   "Return the Component containing backend Range SEMANTIC's artifact."
   (if (etaf--semantic-range-p semantic)
       (etaf--semantic-range-component-id semantic)
     (etaf--semantic-slot-range-consumer-component-id semantic)))
+
+(defun etaf--semantic-backend-range-item-root-ids (semantic)
+  "Return direct material root ids owned by backend Range SEMANTIC."
+  (if (etaf--semantic-range-p semantic)
+      (etaf--semantic-range-item-root-ids semantic)
+    (etaf--semantic-slot-range-item-root-ids semantic)))
 
 (defun etaf--generation-component-output-range (generation component)
   "Return COMPONENT's transparent output Range from GENERATION."
@@ -1495,6 +1507,19 @@ OLD-SEMANTIC supplies the already-read committed Host, when any."
       (puthash parent-id cell children))
     (puthash parent-id cell tails)))
 
+(defun etaf--runtime-range-must-refresh-for-component-input-p (expr)
+  "Return non-nil when EXPR's value is coupled to a Component rerender.
+Compiler-owned branch/keyed programs and compiled direct Expr callsites may
+read the current Component props while they materialize.  Setup-retained
+interpolation programs are opaque values and can safely reuse their Range
+when only an unrelated parent structure changed."
+  (and etaf--rendering-component-effect-p
+       (or (memq (and (etaf--expr-p expr) (etaf--expr-kind expr))
+                 '(branch keyed-list))
+           (and (etaf--expr-p expr)
+                (consp (etaf--expr-token expr))
+                (eq (car (etaf--expr-token expr)) 'etaf-compiled-site)))))
+
 (defun etaf--runtime-semantic-id-for-identity (runtime identity)
   "Return stable semantic id for IDENTITY in RUNTIME's current candidate."
   (or (gethash identity (etaf-runtime-candidate-identity-entries runtime))
@@ -1653,14 +1678,25 @@ receive an independent Host effect."
          (t
           (signal 'etaf-behavior-error
                   (list (format "Invalid :use entry: %S" entry)))))))
-    (cond
-     ((null value) nil)
-     ((or (symbolp value) (etaf-behavior-spec-p value))
-      (list (resolve value)))
-     ((proper-list-p value) (mapcar #'resolve value))
-     (t
-      (signal 'etaf-behavior-error
+    (let ((specs
+           (cond
+            ((null value) nil)
+            ((or (symbolp value) (etaf-behavior-spec-p value))
+             (list (resolve value)))
+            ((proper-list-p value) (mapcar #'resolve value))
+            (t
+             (signal
+              'etaf-behavior-error
               (list ":use must be a Behavior symbol, spec, or proper list"))))))
+      (let (names)
+        (dolist (spec specs)
+          (let ((name (etaf-behavior-spec-name spec)))
+            (when (memq name names)
+              (signal 'etaf-behavior-error
+                      (list (format "Duplicate Behavior on one Host: %S"
+                                    name))))
+            (push name names))))
+      specs)))
 
 (defun etaf--runtime-target-value-equal-p (left right)
   "Compare LEFT and RIGHT with reactive/function identity rules."
@@ -1860,9 +1896,25 @@ need to know how Behavior attributes are merged."
   "Attach current caller ownership to unowned normalized SLOTS."
   (mapcar
    (lambda (entry)
-     (let ((name (car entry)) (value (cdr entry)))
+     (let* ((name (car entry)) (value (cdr entry))
+            ;; Code-mode forwarding uses `etaf-current-slot', which exposes
+            ;; the owned child list rather than the private SlotContent
+            ;; wrapper.  Recover the wrapper by spine identity so the
+            ;; original author Component remains the lifecycle owner.
+            (forwarded-content
+             (cl-loop for forwarded in etaf--current-component-slots
+                      for content = (cdr forwarded)
+                      when (and (etaf--slot-content-p content)
+                                value
+                                (or (eq value
+                                        (etaf--slot-content-children content))
+                                    (equal-including-properties
+                                     value
+                                     (etaf--slot-content-children content))))
+                      return content)))
        (cond
         ((etaf--slot-content-p value) entry)
+        (forwarded-content (cons name forwarded-content))
         ((and (= (length value) 1)
               (etaf--slot-projection-p (car value)))
          (let* ((projection (car value))
@@ -2004,35 +2056,18 @@ need to know how Behavior attributes are merged."
               (let ((etaf--current-semantic-parent-id
                      (or range-id etaf--current-semantic-parent-id))
                     (etaf--current-range-item-index
-                     (and old-range
-                          (etaf--semantic-range-item-identity-index old-range)))
-                    ;; Material Components nested below an existing semantic
-                    ;; Range flatten their child Range sites into that outer
-                    ;; owner; Ebox must never receive nested descriptors.
+                     (or (and old-range
+                              (etaf--semantic-range-item-identity-index
+                               old-range))
+                         etaf--current-range-item-index))
+                    ;; Rendering below a retained Range changes only how this
+                    ;; Component publishes its own output.  Descendant Range
+                    ;; anchors remain semantic children and are never folded
+                    ;; into their ancestor's identity.
                     (etaf--rendering-range-p
                      (or transparent-p etaf--rendering-range-p)))
                 (etaf--render-value-list rendered
                                          (append path (list :view))))))
-        (let ((child-ids
-               (copy-sequence
-                (gethash range-id
-                         (etaf-runtime-candidate-graph-children runtime)))))
-          (when (= (length child-ids) (length nodes))
-            (setq nodes
-                  (cl-mapcan
-                   (lambda (child-id node)
-                     (let ((child
-                            (gethash child-id
-                                     (etaf-runtime-candidate-graph-nodes runtime))))
-                       (cond
-                        ((etaf--semantic-range-p child)
-                         (copy-sequence
-                          (etaf--runtime-range-nodes runtime child)))
-                        ((etaf--semantic-slot-range-p child)
-                         (copy-sequence
-                          (etaf--runtime-range-nodes runtime child)))
-                        (t (list node)))))
-                   child-ids nodes))))
         (when (cl-some (lambda (node)
                          (memq node etaf--rendered-range-container-nodes))
                        nodes)
@@ -2480,19 +2515,6 @@ need to know how Behavior attributes are merged."
       (let* ((name (etaf--semantic-host-name semantic))
              (props (copy-tree (etaf--semantic-host-props-signature semantic)))
              (child-ids (etaf--semantic-host-child-ids semantic))
-             (parent-semantic
-              (and (etaf--semantic-host-parent-id semantic)
-                   (etaf--pvec-get
-                    (etaf-generation-semantic-nodes generation)
-                    (etaf--semantic-host-parent-id semantic))))
-             ;; A semantic Range may contain one material Host anchor whose
-             ;; descendants include another Range.  Flatten that nested
-             ;; semantic Range at the Renderer boundary so Ebox receives only
-             ;; declarative children; the outer Range remains the publication
-             ;; identity and ancestor invalidation still follows the graph.
-             (flatten-range-children-p
-              (or (etaf--semantic-range-p parent-semantic)
-                  (etaf--semantic-slot-range-p parent-semantic)))
              (content
               (if (eq name 'text)
                   (if (etaf--semantic-host-content-parts semantic)
@@ -2510,30 +2532,20 @@ need to know how Behavior attributes are merged."
                 (etaf--semantic-host-content semantic)))
              (children
               (unless (eq name 'text)
-                (cl-mapcan
+                (mapcar
                  (lambda (child-id)
-                   (let ((child (etaf--pvec-get
-                                 (etaf-generation-semantic-nodes generation)
-                                 child-id)))
-                     (if (and flatten-range-children-p
-                              (or (etaf--semantic-range-p child)
-                                  (etaf--semantic-slot-range-p child)))
-                         (copy-sequence
-                          (etaf--runtime-range-nodes runtime child))
-                       (list
-                        (etaf--runtime-lower-semantic-artifact
-                         runtime generation child-id)))))
+                   (etaf--runtime-lower-semantic-artifact
+                    runtime generation child-id))
                  child-ids)))
              (range-child-p
-              (and (not flatten-range-children-p)
-                   (cl-some
-                    (lambda (child-id)
-                      (let ((child (etaf--pvec-get
-                                    (etaf-generation-semantic-nodes generation)
-                                    child-id)))
-                        (or (etaf--semantic-range-p child)
-                            (etaf--semantic-slot-range-p child))))
-                    child-ids))))
+              (cl-some
+               (lambda (child-id)
+                 (let ((child (etaf--pvec-get
+                               (etaf-generation-semantic-nodes generation)
+                               child-id)))
+                   (or (etaf--semantic-range-p child)
+                       (etaf--semantic-slot-range-p child))))
+               child-ids)))
         (etaf--lower-resolved-semantic-host
          name props content
          children range-child-p)))
@@ -2743,7 +2755,13 @@ need to know how Behavior attributes are merged."
                         (copy-sequence
                          (etaf--runtime-range-nodes runtime candidate))))))
       (if (and old
-             (not etaf--rendering-component-effect-p)
+             ;; A parent Component may rerender because a preceding static
+             ;; sibling changed while this direct Range did not.  Its stable
+             ;; site token and retained artifact are sufficient to reuse the
+             ;; Range; a genuinely dirty Range effect still takes the render
+             ;; branch below.
+             (not (etaf--runtime-range-must-refresh-for-component-input-p
+                   expr))
              (not (gethash effect-id (etaf-runtime-dirty-effect-ids runtime))))
         (progn
           (puthash identity semantic-id
@@ -2771,9 +2789,13 @@ need to know how Behavior attributes are merged."
                   (etaf--runtime-keyed-range-snapshot expr))
             (setq value
                   (etaf--runtime-normalize-range-value
+                   ;; Keyed item renderers may intentionally return a
+                   ;; transparent Component span; ordinary direct Expr
+                   ;; ranges still fail closed on Component output.
                    (if keyed-snapshot
                        (etaf--keyed-program-outputs expr keyed-snapshot)
-                     (funcall (etaf--expr-thunk expr))))))
+                     (funcall (etaf--expr-thunk expr)))
+                   (not (null keyed-snapshot)))))
           (puthash identity semantic-id
                    (etaf-runtime-candidate-identity-entries runtime))
           (etaf--runtime-candidate-add-child
@@ -2805,6 +2827,7 @@ need to know how Behavior attributes are merged."
                  expr keyed-snapshot
                  (plist-get range-render :item-root-groups)
                  (plist-get range-render :item-node-counts)))
+               (input (etaf--ebox-input-for-nodes nodes))
                (record
                (etaf--semantic-range-create
                 :semantic-id semantic-id :identity identity :effect-id effect-id
@@ -2845,8 +2868,18 @@ need to know how Behavior attributes are merged."
                     :semantic-id semantic-id
                     :deps (etaf--semantic-range-deps record) :target expr)
                    (etaf-runtime-candidate-effects runtime))
-          (puthash effect-id (etaf--ebox-input-for-nodes nodes)
+          (puthash effect-id input
                    (etaf-runtime-candidate-range-artifacts runtime))
+          (when (and old
+                     (not (ebox-canonical-input-equal-p
+                           (etaf--runtime-committed-range-input runtime old)
+                           input)))
+            (push (list old record
+                        (etaf--runtime-committed-range-input runtime old)
+                        input nil)
+                  (etaf-runtime-candidate-eager-range-changes runtime))
+            (etaf--runtime-invalidate-range-ancestors runtime old)
+            (etaf--runtime-record-range-owner-update runtime old))
           (cons 'range
                 (list (apply #'ebox-child-range range-ref nodes)))))))))
 
@@ -3050,27 +3083,38 @@ The candidate uses resolved VALUE, DEPS, and NODES."
                  styled)
              item)))
 
-(defun etaf--runtime-normalize-range-value (value)
-  "Return Host/string RANGE VALUE with nested expr sites eagerly resolved."
+ (defun etaf--runtime-normalize-range-value (value &optional allow-components-p)
+  "Return normalized RANGE VALUE with nested Expr sites eagerly resolved.
+When ALLOW-COMPONENTS-P is non-nil, keyed item boundaries may contain
+Component calls whose retained output is owned by the keyed Range."
   (cond
    ((null value) nil)
    ((stringp value) (list value))
-   ((or (etaf--component-call-p value)
-        (etaf--slot-projection-p value))
+   ((and allow-components-p
+         (or (etaf--component-call-p value)
+             (etaf--slot-projection-p value)))
     (list value))
    ((etaf--expr-p value)
-    (etaf--runtime-normalize-range-value (funcall (etaf--expr-thunk value))))
+    (etaf--runtime-normalize-range-value
+     (funcall (etaf--expr-thunk value)) allow-components-p))
    ((etaf--view-node-p value)
     (if (eq (etaf--view-node-name value) 'fragment)
-        (cl-mapcan #'etaf--runtime-normalize-range-value
+        (cl-mapcan (lambda (child)
+                     (etaf--runtime-normalize-range-value
+                      child allow-components-p))
                    (etaf--view-node-children value))
       (let ((copy (copy-sequence value)))
         (setf (etaf--view-node-children copy)
-              (cl-mapcan #'etaf--runtime-normalize-range-value
-                         (etaf--view-node-children value)))
+              (cl-loop for child in (etaf--view-node-children value)
+                       append
+                       (etaf--runtime-normalize-range-value
+                        child allow-components-p)))
         (list copy))))
    ((proper-list-p value)
-    (cl-mapcan #'etaf--runtime-normalize-range-value value))
+    (cl-mapcan (lambda (child)
+                 (etaf--runtime-normalize-range-value
+                  child allow-components-p))
+               value))
    (t
     (signal 'etaf-runtime-error
             (list "Direct material expr requires Step4b output")))))
@@ -3095,7 +3139,8 @@ The candidate uses resolved VALUE, DEPS, and NODES."
 
 (defun etaf--runtime-keyed-range-keys (expr snapshot)
   "Return validated keys for EXPR aligned with keyed SNAPSHOT items."
-  (or (plist-get snapshot :keys)
+  (if (plist-member snapshot :keys)
+      (plist-get snapshot :keys)
       (let ((key-function (etaf--expr-range-key expr)))
         (unless (functionp key-function)
           (signal 'etaf-runtime-error
@@ -3619,17 +3664,41 @@ Generation, including its effects and Host contributions."
                            (make-hash-table :test #'equal)))
          (identity-copy nil)
          (affected-sources (make-hash-table :test #'eq))
+         (effect-map-shadow (make-hash-table :test #'eql))
+         (effect-sources-shadow (make-hash-table :test #'eql))
+         (source-effects-shadow (make-hash-table :test #'eql))
+         (missing-index-value (make-symbol "etaf-missing-index-value"))
          deltas
-         node-updates resource-updates)
+         node-updates resource-updates
+         effect-map-update-ids effect-sources-update-ids
+         source-effects-update-ids)
     (cl-labels
-        ((install-effect
+        ((index-value
+          (shadow root id kind)
+          (let ((value (gethash id shadow missing-index-value)))
+            (if (eq value missing-index-value)
+                (etaf--pvec-get root id metrics kind)
+              value)))
+         (stage-index-value
+          (shadow ids id value)
+          (let ((new-p (eq (gethash id shadow missing-index-value)
+                           missing-index-value)))
+            (puthash id value shadow)
+            (if new-p (cons id ids) ids)))
+         (staged-index-entries
+          (shadow ids)
+          (mapcar (lambda (id) (cons id (gethash id shadow)))
+                  (nreverse ids)))
+         (install-effect
           (effect old-deps new-deps)
           (let ((effect-id (etaf--generation-effect-effect-id effect)))
-            (setq effect-map
-                  (etaf--pvec-put effect-map effect-id effect metrics)
-                  effect-sources
-                  (etaf--pvec-put effect-sources effect-id
-                                  (copy-sequence new-deps) metrics))
+            (setq effect-map-update-ids
+                  (stage-index-value effect-map-shadow effect-map-update-ids
+                                     effect-id effect)
+                  effect-sources-update-ids
+                  (stage-index-value effect-sources-shadow
+                                     effect-sources-update-ids effect-id
+                                     (copy-sequence new-deps)))
             (dolist (source (cl-delete-duplicates
                              (append (copy-sequence old-deps)
                                      (copy-sequence new-deps))
@@ -3638,39 +3707,42 @@ Generation, including its effects and Host contributions."
               (let* ((source-id (etaf-reactive-source-id source))
                      (current-effects
                       (copy-sequence
-                       (etaf--pvec-get source-effects source-id
-                                       metrics 'source)))
+                       (index-value source-effects-shadow source-effects
+                                    source-id 'source)))
                      (new-effects (delq effect-id current-effects)))
                 (when (memq source new-deps)
                   (setq new-effects
                         (sort (cons effect-id new-effects) #'<)))
                 (unless (equal current-effects new-effects)
-                  (setq source-effects
-                        (etaf--pvec-put source-effects source-id
-                                        new-effects metrics)))))))
+                  (setq source-effects-update-ids
+                        (stage-index-value source-effects-shadow
+                                           source-effects-update-ids
+                                           source-id new-effects)))))))
          (remove-effect
           (effect-id)
           (when-let* ((old-effect
-                      (and effect-map
-                           (etaf--pvec-get effect-map effect-id metrics
-                                           'effect))))
+                      (index-value effect-map-shadow effect-map effect-id
+                                   'effect)))
             (let ((deps (etaf--generation-effect-deps old-effect)))
-              (setq effect-map
-                    (etaf--pvec-put effect-map effect-id nil metrics)
-                    effect-sources
-                    (etaf--pvec-put effect-sources effect-id nil metrics))
+              (setq effect-map-update-ids
+                    (stage-index-value effect-map-shadow effect-map-update-ids
+                                       effect-id nil)
+                    effect-sources-update-ids
+                    (stage-index-value effect-sources-shadow
+                                       effect-sources-update-ids effect-id nil))
               (dolist (source deps)
                 (puthash source t affected-sources)
                 (let* ((source-id (etaf-reactive-source-id source))
                        (current-effects
                         (copy-sequence
-                         (etaf--pvec-get source-effects source-id metrics
-                                         'source)))
+                         (index-value source-effects-shadow source-effects
+                                      source-id 'source)))
                        (new-effects (delq effect-id current-effects)))
                   (unless (equal current-effects new-effects)
-                    (setq source-effects
-                          (etaf--pvec-put source-effects source-id
-                                          new-effects metrics))))))))
+                    (setq source-effects-update-ids
+                          (stage-index-value source-effects-shadow
+                                             source-effects-update-ids
+                                             source-id new-effects))))))))
          (semantic-effect-ids
           (semantic)
           (cond
@@ -3732,31 +3804,32 @@ Generation, including its effects and Host contributions."
       (dolist (effect-id (etaf-runtime-candidate-removed-effect-ids runtime))
         (remove-effect effect-id))
       (dolist (semantic-id (etaf-runtime-candidate-removed-semantic-ids runtime))
-        (when-let* ((old-node (and base
-                                  (etaf--pvec-get
-                                   (etaf-generation-semantic-nodes base)
-                                   semantic-id))))
-          ;; A stable identity may be reintroduced in this candidate.  In that
-          ;; case its new effect is installed below; only remove effects for a
-          ;; semantic node that is absent from the candidate graph.
-          (unless (gethash semantic-id
-                           (etaf-runtime-candidate-graph-nodes runtime))
-            (dolist (effect-id (semantic-effect-ids old-node))
-              (remove-effect effect-id)))
-          (when (and (etaf--semantic-host-p old-node)
-                     (etaf--semantic-host-host-ref old-node))
-            (let ((host-ref (etaf--semantic-host-host-ref old-node)))
-              ;; A dirty Component may remove and recreate the same stable
-              ;; Host address in one candidate.  The new contribution wins;
-              ;; do not leave a removal tombstone that shadows it.
-              (unless (or (gethash host-ref
-                                   (etaf-runtime-candidate-host-props runtime))
-                          (gethash host-ref
-                                   (etaf-runtime-candidate-handlers runtime)))
-                (cl-pushnew host-ref
-                            (etaf-runtime-candidate-removed-host-refs runtime)
-                            :test #'equal)))))
-        (push (cons semantic-id nil) node-updates))
+        (let ((live-p
+               (gethash semantic-id
+                        (etaf-runtime-candidate-graph-nodes runtime))))
+          ;; Replacement may reintroduce a stable descendant below a new
+          ;; ancestor.  Candidate liveness wins over the old subtree's removal
+          ;; journal for both the node and its effects.
+          (unless live-p
+            (when-let* ((old-node (and base
+                                      (etaf--pvec-get
+                                       (etaf-generation-semantic-nodes base)
+                                       semantic-id))))
+              (dolist (effect-id (semantic-effect-ids old-node))
+                (remove-effect effect-id))
+              (when (and (etaf--semantic-host-p old-node)
+                         (etaf--semantic-host-host-ref old-node))
+                (let ((host-ref (etaf--semantic-host-host-ref old-node)))
+                  (unless (or
+                           (gethash host-ref
+                                    (etaf-runtime-candidate-host-props runtime))
+                           (gethash host-ref
+                                    (etaf-runtime-candidate-handlers runtime)))
+                    (cl-pushnew
+                     host-ref
+                     (etaf-runtime-candidate-removed-host-refs runtime)
+                     :test #'equal)))))
+            (push (cons semantic-id nil) node-updates))))
       (maphash
        (lambda (identity semantic-id)
          (unless (gethash identity identity-index)
@@ -3800,7 +3873,24 @@ Generation, including its effects and Host contributions."
       ;; Apply all semantic/index membership edits in one trie batch.  The
       ;; candidate remains immutable; only the number of copied persistent
       ;; vector spines changes.
-      (setq nodes
+      (setq effect-map
+            (etaf--pvec-put-many effect-map
+                                 (staged-index-entries
+                                  effect-map-shadow effect-map-update-ids)
+                                 metrics)
+            effect-sources
+            (etaf--pvec-put-many effect-sources
+                                 (staged-index-entries
+                                  effect-sources-shadow
+                                  effect-sources-update-ids)
+                                 metrics)
+            source-effects
+            (etaf--pvec-put-many source-effects
+                                 (staged-index-entries
+                                  source-effects-shadow
+                                  source-effects-update-ids)
+                                 metrics)
+            nodes
             (etaf--pvec-put-many nodes node-updates metrics)
             resources
             (etaf--pvec-put-many resources resource-updates metrics))
@@ -4107,64 +4197,46 @@ removed inside the same rollback journal."
 
 (defun etaf--runtime-evaluate-component-input (runtime semantic)
   "Recompute RUNTIME SEMANTIC input and enqueue render only when it differs."
-  (let* ((generation (etaf-runtime-current-generation runtime))
-         (caller-id (etaf--semantic-component-caller-component-id semantic))
-         (base-caller
-          (and caller-id
-               (etaf--pvec-get (etaf-generation-semantic-nodes generation)
-                               caller-id)))
-         (caller
-          (and base-caller
-               (or (gethash (etaf--semantic-component-identity base-caller)
-                            (etaf-runtime-candidate-semantic-nodes runtime))
-                   base-caller)))
-         (instance
-          (and caller
-               (gethash (etaf--semantic-component-resource-key caller)
-                        (etaf-runtime-resource-registry runtime))))
+  (let* ((caller-id (etaf--semantic-component-caller-component-id semantic))
          deps)
-    (let ((etaf--runtime-dependency-collector
-           (lambda (source) (cl-pushnew source deps :test #'eq)))
-          (etaf--current-runtime runtime)
-          (etaf--current-component-instance instance)
-          (etaf--current-component-identity
-           (and caller (etaf--semantic-component-identity caller)))
-          (etaf--current-component-semantic-id caller-id)
-          (etaf--current-component-props
-           (and caller (etaf--semantic-component-props caller)))
-          (etaf--current-component-slots
-           (and caller (etaf--semantic-component-slots caller)))
-          (etaf--current-context
-           (and caller (etaf--semantic-component-context-frame caller)))
-          (etaf--active-effect nil)
-          (etaf--render-phase-p t))
-      (let* ((props (etaf--resolve-property-plist
-                     (etaf--semantic-component-input-props semantic)))
-             (attrs (etaf--resolve-property-plist
-                     (etaf--semantic-component-input-attrs semantic)))
-             (slots (etaf--semantic-component-input-slots semantic))
-             (candidate (copy-sequence semantic))
-             (effect-id (etaf--semantic-component-input-effect-id semantic)))
-        (setf (etaf--semantic-component-props candidate) (copy-tree props)
-              (etaf--semantic-component-attrs candidate) (copy-tree attrs)
-              (etaf--semantic-component-slots candidate) (copy-tree slots)
-              (etaf--semantic-component-input-deps candidate) (nreverse deps))
-        (puthash (etaf--semantic-component-identity semantic) candidate
-                 (etaf-runtime-candidate-semantic-nodes runtime))
-        (puthash effect-id
-                 (etaf--generation-effect-create
-                  :effect-id effect-id :kind 'component-input
-                  :semantic-id (etaf--semantic-component-semantic-id semantic)
-                  :deps (etaf--semantic-component-input-deps candidate))
-                 (etaf-runtime-candidate-effects runtime))
-        (unless (and (etaf--runtime-target-value-equal-p
-                      props (etaf--semantic-component-props semantic))
-                     (etaf--runtime-target-value-equal-p
-                      attrs (etaf--semantic-component-attrs semantic))
-                     (etaf--runtime-target-value-equal-p
-                      slots (etaf--semantic-component-slots semantic)))
-          (etaf--runtime-enqueue-effect
-           runtime (etaf--semantic-component-effect-id semantic)))))))
+    (etaf--runtime-call-with-component-env
+     runtime caller-id
+     (lambda ()
+       (let ((etaf--runtime-dependency-collector
+              (lambda (source) (cl-pushnew source deps :test #'eq)))
+             (etaf--active-effect nil)
+             (etaf--render-phase-p t))
+         (let* ((props (etaf--resolve-property-plist
+                        (etaf--semantic-component-input-props semantic)))
+                (attrs (etaf--resolve-property-plist
+                        (etaf--semantic-component-input-attrs semantic)))
+                (slots (etaf--semantic-component-input-slots semantic))
+                (candidate (copy-sequence semantic))
+                (effect-id
+                 (etaf--semantic-component-input-effect-id semantic)))
+           (setf (etaf--semantic-component-props candidate) (copy-tree props)
+                 (etaf--semantic-component-attrs candidate) (copy-tree attrs)
+                 (etaf--semantic-component-slots candidate) (copy-tree slots)
+                 (etaf--semantic-component-input-deps candidate)
+                 (nreverse deps))
+           (puthash (etaf--semantic-component-identity semantic) candidate
+                    (etaf-runtime-candidate-semantic-nodes runtime))
+           (puthash effect-id
+                    (etaf--generation-effect-create
+                     :effect-id effect-id :kind 'component-input
+                     :semantic-id
+                     (etaf--semantic-component-semantic-id semantic)
+                     :deps (etaf--semantic-component-input-deps candidate))
+                    (etaf-runtime-candidate-effects runtime))
+           (unless
+               (and (etaf--runtime-target-value-equal-p
+                     props (etaf--semantic-component-props semantic))
+                    (etaf--runtime-target-value-equal-p
+                     attrs (etaf--semantic-component-attrs semantic))
+                    (etaf--runtime-target-value-equal-p
+                     slots (etaf--semantic-component-slots semantic)))
+             (etaf--runtime-enqueue-effect
+              runtime (etaf--semantic-component-effect-id semantic)))))))))
 
 (defun etaf--runtime-retarget-component-slot-ranges (runtime semantic slots)
   "Retarget SEMANTIC projection slot effects to candidate SLOTS in RUNTIME."
@@ -4579,6 +4651,22 @@ the range is not eligible for keyed incremental rendering."
                      (cl-pushnew (cons (etaf-context-owner-id frame) key)
                                  context-deps :test #'equal)))
                   (etaf--render-runtime runtime)
+                  (etaf--current-runtime runtime)
+                  (etaf--current-component-instance instance)
+                  (etaf--current-component-state
+                   (etaf--component-instance-state instance))
+                  (etaf--current-component-setup-defined-p
+                   (not (null (etaf--component-spec-setup
+                               (etaf--component-instance-spec instance)))))
+                  (etaf--current-component-setup-complete-p
+                   (etaf--component-instance-setup-complete-p instance))
+                  (etaf--component-phase 'render)
+                  (etaf--current-component-identity
+                   (etaf--semantic-component-identity component))
+                  (etaf--current-component-props
+                   (etaf--semantic-component-props component))
+                  (etaf--current-component-slots
+                   (etaf--semantic-component-slots component))
                   (etaf--current-context
                    (etaf--semantic-component-context-frame component))
                   (etaf--current-component-semantic-id
@@ -4658,7 +4746,8 @@ the range is not eligible for keyed incremental rendering."
                              (etaf-runtime-candidate-graph-children runtime))))
                           (value
                            (etaf--runtime-normalize-range-value
-                            (funcall item-function item context)))
+                            (funcall item-function item context)
+                            t))
                           (rendered
                            (etaf--render-value-list
                             value
@@ -4687,7 +4776,11 @@ the range is not eligible for keyed incremental rendering."
                   :item-node-counts (nreverse item-node-counts)
                   :deps (nreverse deps)
                   :context-deps (nreverse context-deps)
-                  :reuse-map (nreverse reuse-map)))))))))
+                  :reuse-map (nreverse reuse-map)
+                  ;; Ebox validates every non-reused slot against this input's
+                  ;; source generation; reused slots are replaced by their
+                  ;; exact published objects from the explicit reuse map.
+                  :retain-item-identities-p t))))))))
 
 (defun etaf--runtime-render-dirty-range (runtime effect range)
   "Evaluate RUNTIME dirty RANGE EFFECT without running its Component owner."
@@ -4748,32 +4841,32 @@ the range is not eligible for keyed incremental rendering."
                 (etaf--runtime-normalize-range-value
                  (funcall (etaf--expr-thunk
                            (etaf--generation-effect-target effect))))))
-        (let ((etaf--runtime-dependency-collector collector)
-            (etaf--context-inject-recorder
-             (lambda (frame key)
-               (cl-pushnew (cons (etaf-context-owner-id frame) key)
-                           context-deps :test #'equal)))
-            (etaf--render-runtime runtime)
-            ;; Static style tokens are lowered in this second pass.  Preserve
-            ;; only the owning Context frame needed by Theme resolution; the
-            ;; range semantic ids below already provide the runtime lowering
-            ;; identity, and the other Component bindings belong to the value
-            ;; normalization pass above.
-            (etaf--current-context
-             (etaf--semantic-component-context-frame component))
-            (etaf--current-component-semantic-id
-             (etaf--semantic-range-component-id range))
-            (etaf--current-semantic-parent-id
-             (etaf--semantic-range-semantic-id range))
-            (etaf--current-range-item-index
-             (etaf--semantic-range-item-identity-index range))
-            (etaf--rendering-range-p t)
-            (etaf--active-effect nil)
-            (etaf--render-phase-p t)
-            (etaf--render-style-stack
-             (copy-tree (etaf--semantic-range-caller-style-stack range))))
-          (setq nodes (etaf--render-value-list
-                       value (etaf--semantic-range-path range))))))
+        ;; Lowering may resolve property expressions on Component calls
+        ;; produced by the Range.  Keep the lexical Component environment for
+        ;; both normalization and lowering; otherwise prop symbol macros read
+        ;; an empty dynamic environment during an independent Range update.
+        (etaf--runtime-call-with-component-env
+         runtime (etaf--semantic-range-component-id range)
+         (lambda ()
+           (let ((etaf--runtime-dependency-collector collector)
+                 (etaf--context-inject-recorder
+                  (lambda (frame key)
+                    (cl-pushnew (cons (etaf-context-owner-id frame) key)
+                                context-deps :test #'equal)))
+                 (etaf--render-runtime runtime)
+                 (etaf--current-component-semantic-id
+                  (etaf--semantic-range-component-id range))
+                 (etaf--current-semantic-parent-id
+                  (etaf--semantic-range-semantic-id range))
+                 (etaf--current-range-item-index
+                  (etaf--semantic-range-item-identity-index range))
+                 (etaf--rendering-range-p t)
+                 (etaf--active-effect nil)
+                 (etaf--render-phase-p t)
+                 (etaf--render-style-stack
+                  (copy-tree (etaf--semantic-range-caller-style-stack range))))
+             (setq nodes (etaf--render-value-list
+                          value (etaf--semantic-range-path range))))))))
     (let* ((item-root-ids
             (copy-sequence
              (gethash (etaf--semantic-range-semantic-id range)
@@ -4838,7 +4931,12 @@ the range is not eligible for keyed incremental rendering."
       (list range candidate
             (etaf--runtime-committed-range-input runtime range)
             (etaf--runtime-range-input runtime candidate)
-            (plist-get keyed :reuse-map)))))))
+            (plist-get keyed :reuse-map)
+            ;; A keyed render with no reused item owns every payload node in
+            ;; this candidate source generation.  Ebox rechecks that proof
+            ;; before retaining identity; other Range paths keep copy-based
+            ;; fallback semantics.
+            (plist-get keyed :retain-item-identities-p)))))))
 
 (defun etaf--runtime-record-range-owner-update (runtime range)
   "Record RANGE's lexical Component lifecycle participation in RUNTIME."
@@ -4968,6 +5066,110 @@ the range is not eligible for keyed incremental rendering."
          (ref (and range (etaf--semantic-backend-range-ref range))))
     (and ref
          (ebox-range-ref-present-p (etaf-runtime-buffer runtime) ref))))
+
+(defun etaf--runtime-range-direct-node-signature
+    (runtime generation semantic-id candidate-p)
+  "Return SEMANTIC-ID's direct material signature.
+When CANDIDATE-P is non-nil, read the candidate overlay before GENERATION.
+Nested Range identity is retained, but its internal artifact is deliberately
+excluded so descendant-only work cannot masquerade as an ancestor change."
+  (let ((semantic
+         (or (and candidate-p
+                  (gethash semantic-id
+                           (etaf-runtime-candidate-graph-nodes runtime)))
+             (etaf--pvec-get
+              (etaf-generation-semantic-nodes generation) semantic-id))))
+    (cond
+     ((etaf--semantic-host-p semantic)
+      (list 'host
+            (etaf--semantic-host-identity semantic)
+            (etaf--semantic-host-name semantic)
+            (etaf--semantic-host-props-signature semantic)
+            (etaf--semantic-host-content semantic)
+            (mapcar
+             (lambda (part)
+               (if (integerp part)
+                   (etaf--runtime-range-direct-node-signature
+                    runtime generation part candidate-p)
+                 part))
+             (etaf--semantic-host-content-parts semantic))
+            (mapcar
+             (lambda (child-id)
+               (etaf--runtime-range-direct-node-signature
+                runtime generation child-id candidate-p))
+             (etaf--semantic-host-child-ids semantic))))
+     ((etaf--semantic-component-p semantic)
+      (list 'component
+            (etaf--semantic-component-identity semantic)
+            (etaf--semantic-component-publication-kind semantic)
+            (mapcar
+             (lambda (child-id)
+               (etaf--runtime-range-direct-node-signature
+                runtime generation child-id candidate-p))
+             (etaf--semantic-component-child-ids semantic))))
+     ((or (etaf--semantic-range-p semantic)
+          (etaf--semantic-slot-range-p semantic))
+      (list 'range-anchor
+            (etaf--semantic-backend-range-semantic-id semantic)
+            (etaf--semantic-backend-range-ref semantic)))
+     ((etaf--semantic-inline-range-p semantic)
+      (list 'inline (etaf--semantic-inline-range-output semantic)))
+     (t (list 'missing semantic-id)))))
+
+(defun etaf--runtime-range-direct-payload-equal-p
+    (runtime generation old candidate)
+  "Return whether OLD and CANDIDATE own the same direct Range payload."
+  (and (equal
+        (etaf--semantic-backend-range-item-root-ids old)
+        (etaf--semantic-backend-range-item-root-ids candidate))
+       (equal-including-properties
+        (mapcar
+         (lambda (semantic-id)
+           (etaf--runtime-range-direct-node-signature
+            runtime generation semantic-id nil))
+         (etaf--semantic-backend-range-item-root-ids old))
+        (mapcar
+         (lambda (semantic-id)
+           (etaf--runtime-range-direct-node-signature
+            runtime generation semantic-id t))
+         (etaf--semantic-backend-range-item-root-ids candidate)))))
+
+(defun etaf--runtime-normalize-range-changes (runtime generation changes)
+  "Return non-overlapping CHANGES ordered as originally staged.
+An ancestor absorbs descendants only when its own direct material payload
+changed.  If its root identity/cardinality and direct payload are stable, its
+staged artifact differs solely because it contains a descendant candidate;
+drop that ancestor and publish the deepest direct change instead."
+  (let ((changed (make-hash-table :test #'eql))
+        (direct-changed (make-hash-table :test #'eql))
+        normalized)
+    (dolist (change changes)
+      (when-let* ((range (car change)))
+        (puthash (etaf--semantic-backend-range-semantic-id range)
+                 change changed)))
+    (maphash
+     (lambda (semantic-id change)
+       (unless (etaf--runtime-range-direct-payload-equal-p
+                runtime generation (car change) (cadr change))
+         (puthash semantic-id t direct-changed)))
+     changed)
+    (dolist (change changes)
+      (let* ((range (car change))
+             (semantic-id
+              (etaf--semantic-backend-range-semantic-id range))
+             (parent-id (etaf--generation-parent-id generation semantic-id))
+             absorbed-p)
+        (while (and parent-id (not absorbed-p))
+          (when (gethash parent-id direct-changed)
+            (setq absorbed-p t))
+          (unless absorbed-p
+            (setq parent-id
+                  (etaf--generation-parent-id generation parent-id))))
+        (unless (or absorbed-p
+                    (not (gethash semantic-id direct-changed))
+                    (not (eq change (gethash semantic-id changed))))
+          (push change normalized))))
+    (nreverse normalized)))
 
 (defun etaf--runtime-invalidate-semantic-ancestors (runtime parent-id)
   "Invalidate RUNTIME artifacts from PARENT-ID through semantic ancestors."
@@ -5132,7 +5334,35 @@ RENDERED-IDENTITIES names the Component render participants."
                             runtime old base-semantic))
                 (pcase (etaf--generation-effect-kind effect)
                   ('component-input
-                   (etaf--runtime-evaluate-component-input runtime semantic))
+                   (etaf--runtime-evaluate-component-input runtime semantic)
+                   ;; Input evaluation may enqueue the Component render while
+                   ;; lower-priority inline/Range effects are already waiting
+                   ;; in this turn.  Restore the priority order immediately
+                   ;; so the render observes the final input before those
+                   ;; effects can seed a stale candidate.
+                   (setf (etaf-runtime-dirty-effect-queue runtime)
+                         (etaf--runtime-sort-dirty-effects
+                          old
+                          (etaf-runtime-dirty-effect-queue runtime))
+                         (etaf-runtime-dirty-effect-queue-tail runtime)
+                         (last (etaf-runtime-dirty-effect-queue runtime)))
+                   ;; `component-render' deliberately keeps its historical
+                   ;; sort class for the public priority contract, but a
+                   ;; render created by this input update must run before an
+                   ;; already queued child Range/inline effect.  Move only
+                   ;; this known dependent to the front of the remaining
+                   ;; turn; the ordinary FIFO remains unchanged otherwise.
+                   (let ((render-id
+                          (etaf--semantic-component-effect-id semantic)))
+                     (when (gethash render-id
+                                    (etaf-runtime-dirty-effect-ids runtime))
+                       (setf (etaf-runtime-dirty-effect-queue runtime)
+                             (cons
+                              render-id
+                              (delq render-id
+                                   (etaf-runtime-dirty-effect-queue runtime)))
+                             (etaf-runtime-dirty-effect-queue-tail runtime)
+                             (last (etaf-runtime-dirty-effect-queue runtime))))))
                   ('component-render
                    (unless (member (etaf--semantic-component-identity semantic)
                                    (etaf-runtime-candidate-rendered-identities
@@ -5170,37 +5400,6 @@ RENDERED-IDENTITIES names the Component render participants."
              (ebox-canonical-input-equal-p
               (nth 2 change) (nth 3 change)))
            range-changes))
-    ;; A semantic Range may be nested below a material Component whose
-    ;; backend publication exposes only the ancestor component-output anchor.
-    ;; Never submit an address that Ebox cannot resolve against this base;
-    ;; discard the local candidate and let the next branch publish one exact
-    ;; root candidate.  This is a proof miss, not an exception path.
-    (let (fallback-component-effect-ids fallback-p)
-      (dolist (change range-changes)
-        (unless (etaf--runtime-range-change-has-backend-anchor-p
-                runtime change)
-          (setq fallback-p t)
-          (when-let* ((range (car change))
-                      (component-id
-                       (etaf--semantic-backend-range-container-component-id
-                        range))
-                      (component
-                       (etaf--pvec-get
-                        (etaf-generation-semantic-nodes old) component-id)))
-            (cl-pushnew
-             (etaf--semantic-component-effect-id component)
-             fallback-component-effect-ids :test #'eql))))
-      (when fallback-p
-        ;; Re-render the material owner during the root fallback.  A root
-        ;; rebuild may otherwise carry its old artifact and leave the source
-        ;; value visually stale even though the invalid Range was discarded.
-        (etaf--runtime-mark-root-dirty runtime)
-        (etaf--runtime-clear-dirty-effects runtime)
-        (dolist (effect-id fallback-component-effect-ids)
-          (puthash effect-id t (etaf-runtime-dirty-effect-ids runtime)))
-        (etaf--runtime-dispose-created-candidate runtime)
-        (etaf--runtime-clear-candidate runtime)
-        (cl-return-from etaf--runtime-component-overlay :root-fallback)))
     (let (material-changes)
       (dolist (change changes)
         (let ((candidate (car change)))
@@ -5250,6 +5449,39 @@ RENDERED-IDENTITIES names the Component render participants."
                (member (etaf--semantic-component-identity component)
                        backend-component-identities)))
            range-changes))
+    (setq range-changes
+          (etaf--runtime-normalize-range-changes runtime old range-changes))
+    ;; A semantic Range may be nested below a material Component whose
+    ;; backend publication exposes only the ancestor component-output anchor.
+    ;; Never submit an address that Ebox cannot resolve against this base;
+    ;; discard the local candidate and let the next branch publish one exact
+    ;; root candidate.  This is a proof miss, not an exception path.
+    (let (fallback-component-effect-ids fallback-p)
+      (dolist (change range-changes)
+        (unless (etaf--runtime-range-change-has-backend-anchor-p
+                runtime change)
+          (setq fallback-p t)
+          (when-let* ((range (car change))
+                      (component-id
+                       (etaf--semantic-backend-range-container-component-id
+                        range))
+                      (component
+                       (etaf--pvec-get
+                        (etaf-generation-semantic-nodes old) component-id)))
+            (cl-pushnew
+             (etaf--semantic-component-effect-id component)
+             fallback-component-effect-ids :test #'eql))))
+      (when fallback-p
+        ;; Re-render the material owner during the root fallback.  A root
+        ;; rebuild may otherwise carry its old artifact and leave the source
+        ;; value visually stale even though the invalid Range was discarded.
+        (etaf--runtime-mark-root-dirty runtime)
+        (etaf--runtime-clear-dirty-effects runtime)
+        (dolist (effect-id fallback-component-effect-ids)
+          (puthash effect-id t (etaf-runtime-dirty-effect-ids runtime)))
+        (etaf--runtime-dispose-created-candidate runtime)
+        (etaf--runtime-clear-candidate runtime)
+        (cl-return-from etaf--runtime-component-overlay :root-fallback)))
     (setq candidate-generation (etaf--runtime-build-generation runtime old)
           ;; Component artifacts are first produced while dirty effects are
           ;; still being evaluated.  Rebuild material publication roots from
@@ -5313,9 +5545,20 @@ RENDERED-IDENTITIES names the Component render participants."
                  (ebox-canonical-input-root-host-ref (nth 1 change))
                  (nth 2 change)))
               (dolist (change range-changes)
-                (ebox-candidate-replace-range-ref
-                 candidate (etaf--semantic-backend-range-ref (car change))
-                 (nth 3 change) (nth 4 change)))
+                (let ((reuse-map (nth 4 change))
+                      (retain-item-identities-p (nth 5 change)))
+                  ;; Keep the optional identity-retention flag off the call
+                  ;; when it is not needed.  Besides avoiding an unnecessary
+                  ;; argument on the common path, this preserves the stable
+                  ;; three/four-argument integration boundary for callers
+                  ;; which only observe ordinary Range replacement.
+                  (if retain-item-identities-p
+                      (ebox-candidate-replace-range-ref
+                       candidate (etaf--semantic-backend-range-ref (car change))
+                       (nth 3 change) reuse-map retain-item-identities-p)
+                    (ebox-candidate-replace-range-ref
+                     candidate (etaf--semantic-backend-range-ref (car change))
+                     (nth 3 change) reuse-map))))
               (dolist (change inline-changes)
                 (ebox-candidate-replace-host-ref
                  candidate (etaf--semantic-host-host-ref (car change))

@@ -45,109 +45,53 @@
   (etaf-data-set-query controller query)
   (etaf-data-load controller))
 
-(defun etaf-data-example--row (controller task)
-  "Return one TASK row bound to CONTROLLER."
-  (let* ((identity (plist-get task :id))
-         (selected (etaf-data-selected-p controller identity))
-         (status (plist-get task :status))
-         (host-ref (intern (format "data-task-%d" identity))))
-    (etaf-view
-     (flex :width '(718) :flex-flow '(row nowrap) :gap '(0 (10))
-      :padding '(1 (12)) :border "#6D8A73"
-      :bgcolor (if selected "#DCEBDD" "#FFFDF8")
-      :ref host-ref :role 'button :use (list (etaf-focusable))
-      :on-press (lambda ()
-                  (etaf-dispatch 'etaf-data-example-toggle
-                                 controller identity))
-      (box :width '(36) :font-weight 'bold
-           :color (if selected "#2F6B43" "#8D887F")
-       (text (expr :value (if selected "●" "○"))))
-      (box :flex-grow 1 :flex-shrink 1 :flex-basis '(390)
-           :min-width '(280)
-       (text (expr :value (plist-get task :title))))
-      (box :width '(96) :color "#66706A"
-       (text (expr :value (plist-get task :owner))))
-      (box :width '(84) :font-weight 'bold :text-align 'right
-           :color (if (eq status 'done) "#2F6B43" "#9B4A34")
-       (text (expr :value (upcase (symbol-name status)))))))))
-
-(defun etaf-data-example--header (controller)
-  "Return the summary header for CONTROLLER."
-  (let ((total (etaf-value (etaf-data-total controller)))
-        (selection (etaf-value (etaf-data-selection controller))))
-    (etaf-view
-     (box :width '(720) :padding '(1 (18)) :border "#8F432F"
-      :bgcolor "#FFFDF8" :text-align 'center
-      (column
-       (text :color "#8F432F" :font-weight 'bold
-             "BEST PRACTICE  /  DATA OWNERSHIP")
-       (text :font-weight 'bold "Task controller")
-       (text :color "#66706A"
-             (expr :value
-                   (format "%d records · %d selected" total
-                           (length selection)))))))))
-
-(defun etaf-data-example--filter-control
-    (controller label host-ref query border background)
-  "Return a filter LABEL for CONTROLLER using HOST-REF and QUERY.
-Use BORDER and BACKGROUND for its semantic color family."
-  (etaf-view
-   (box :padding '(1 (12)) :border border :bgcolor background
-        :font-weight 'bold :ref host-ref :role 'button
-        :use (list (etaf-focusable))
-        :on-press (lambda ()
-                    (etaf-data-example--filter controller query))
-    (text (expr :value label)))))
-
-(defun etaf-data-example--toolbar (controller next-id)
-  "Return the action toolbar for CONTROLLER and NEXT-ID."
-  (etaf-view
-   (flex :width '(720) :flex-flow '(row wrap) :gap '(1 (10))
-    (expr :value (etaf-data-example--filter-control
-                  controller "ALL" 'data-filter-all nil
-                  "#4E7890" "#D9EAF2"))
-    (expr :value (etaf-data-example--filter-control
-                  controller "OPEN" 'data-filter-open '(:status open)
-                  "#C97252" "#F1D4C9"))
-    (expr :value (etaf-data-example--filter-control
-                  controller "DONE" 'data-filter-done '(:status done)
-                  "#6D8A73" "#DCEBDD"))
-    (box :padding '(1 (12)) :border "#7A6B95" :bgcolor "#E7E2F1"
-         :font-weight 'bold :ref 'data-add :role 'button
-         :use (list (etaf-focusable))
-         :on-press (lambda ()
-                     (etaf-dispatch 'etaf-data-example-add
-                                    controller next-id))
-     (text "+ ADD TASK")))))
-
-(defun etaf-data-example--rows (controller)
-  "Return the loaded task rows for CONTROLLER."
-  (let ((items (etaf-value (etaf-data-items controller))))
-    (if items
-        (mapcar (lambda (task)
-                  (etaf-data-example--row controller task))
-                items)
-      (etaf-view
-       (box :width '(720) :padding '(2 (16))
-            :border "#8D887F" :bgcolor "#EEEAE2"
-            :text-align 'center
-        (text "No matching tasks."))))))
-
-(defun etaf-data-example--view (controller next-id)
-  "Return the Data example View for CONTROLLER and NEXT-ID."
-  (etaf-view
-   (column :width '(720) :color "#252A2E" :bgcolor "#F8F5EE"
-    (expr :value (etaf-data-example--header controller))
-    (box :height 1)
-    (expr :value (etaf-data-example--toolbar controller next-id))
-    (box :height 1)
-    (column :width '(720)
-     (expr :value (etaf-data-example--rows controller)))
-    (box :height 1)
-    (box :width '(720) :padding '(1 (16)) :border "#8D887F"
-         :color "#4D5651" :bgcolor "#EEEAE2"
+(etaf-define-component etaf-data-example-row (&key controller task)
+  "Render one retained TASK row from CONTROLLER."
+  :view
+  (flex :width '(718) :flex-flow '(row nowrap) :gap '(0 (10))
+        :padding '(1 (12)) :border "#6D8A73"
+        :bgcolor
+        (if (etaf-value
+             (etaf-data-selected-ref controller (plist-get task :id)))
+            "#DCEBDD" "#FFFDF8")
+        :role 'button :use (list (etaf-focusable))
+        :on-press
+        (let ((data-controller controller)
+              (identity (plist-get task :id)))
+          (lambda ()
+            (etaf-dispatch 'etaf-data-example-toggle
+                           data-controller identity)))
+    (box :width '(36) :font-weight 'bold
+         :color
+         (if (etaf-value
+              (etaf-data-selected-ref controller (plist-get task :id)))
+             "#2F6B43" "#8D887F")
      (text
-      "Owner rule: create in setup, mutate through Data, stop on unmount")))))
+      (expr
+       (if (etaf-value
+            (etaf-data-selected-ref controller (plist-get task :id)))
+           "●" "○"))))
+    (box :flex-grow 1 :flex-shrink 1 :flex-basis '(390)
+         :min-width '(280)
+     (text (expr (plist-get task :title))))
+    (box :width '(96) :color "#66706A"
+     (text (expr (plist-get task :owner))))
+    (box :width '(84) :font-weight 'bold :text-align 'right
+         :color (if (eq (plist-get task :status) 'done)
+                    "#2F6B43" "#9B4A34")
+     (text (expr (upcase (symbol-name (plist-get task :status))))))))
+
+(etaf-define-component etaf-data-example-filter
+    (&key controller label query border background)
+  "Render one query filter for CONTROLLER."
+  :view
+  (box :padding '(1 (12)) :border border :bgcolor background
+       :font-weight 'bold :role 'button :use (list (etaf-focusable))
+       :on-press
+       (let ((data-controller controller) (next-query query))
+         (lambda ()
+           (etaf-data-example--filter data-controller next-query)))
+    (text (expr label))))
 
 (etaf-define-component etaf-data-example-app ()
   "Render a memory-backed task application with owned cleanup."
@@ -161,7 +105,70 @@ Use BORDER and BACKGROUND for its semantic color family."
          (next-id (etaf-ref 6 :name 'etaf-data-example-next-id)))
     (etaf-on-mounted (lambda () (etaf-data-load controller)))
     (etaf-on-unmounted (lambda () (etaf-data-stop controller)))
-    (lambda () (etaf-data-example--view controller next-id))))
+    (list :controller controller :next-id next-id))
+  :view
+  (column :width '(720) :color "#252A2E" :bgcolor "#F8F5EE"
+   (box :width '(720) :padding '(1 (18)) :border "#8F432F"
+        :bgcolor "#FFFDF8" :text-align 'center
+    (column
+     (text :color "#8F432F" :font-weight 'bold
+           "BEST PRACTICE  /  DATA OWNERSHIP")
+     (text :font-weight 'bold "Task controller")
+     (text :color "#66706A"
+      (expr
+       (format
+        "%d records · %d selected"
+        (etaf-value
+         (etaf-data-total (plist-get (etaf-state) :controller)))
+        (length
+         (etaf-value
+          (etaf-data-selection (plist-get (etaf-state) :controller)))))))))
+   (box :height 1)
+   (flex :width '(720) :flex-flow '(row wrap) :gap '(1 (10))
+    (etaf-data-example-filter
+     :ref 'data-filter-all
+     :controller (plist-get (etaf-state) :controller)
+     :label "ALL" :query nil :border "#4E7890" :background "#D9EAF2")
+    (etaf-data-example-filter
+     :ref 'data-filter-open
+     :controller (plist-get (etaf-state) :controller)
+     :label "OPEN" :query '(:status open)
+     :border "#C97252" :background "#F1D4C9")
+    (etaf-data-example-filter
+     :ref 'data-filter-done
+     :controller (plist-get (etaf-state) :controller)
+     :label "DONE" :query '(:status done)
+     :border "#6D8A73" :background "#DCEBDD")
+    (box :padding '(1 (12)) :border "#7A6B95" :bgcolor "#E7E2F1"
+         :font-weight 'bold :ref 'data-add :role 'button
+         :use (list (etaf-focusable))
+         :on-press
+         (let ((controller (plist-get (etaf-state) :controller))
+               (next-id (plist-get (etaf-state) :next-id)))
+           (lambda ()
+             (etaf-dispatch 'etaf-data-example-add controller next-id)))
+     (text "+ ADD TASK")))
+   (box :height 1)
+   (column :width '(720)
+    (box :if
+         (null
+          (etaf-value
+           (etaf-data-items (plist-get (etaf-state) :controller))))
+         :width '(720) :padding '(2 (16))
+         :border "#8D887F" :bgcolor "#EEEAE2" :text-align 'center
+     (text "No matching tasks."))
+    (etaf-data-example-row
+     :for (task
+           (etaf-value
+            (etaf-data-items (plist-get (etaf-state) :controller))))
+     :key (plist-get task :id)
+     :ref (intern (format "data-task-%d" (plist-get task :id)))
+     :controller (plist-get (etaf-state) :controller)
+     :task task))
+   (box :height 1)
+   (box :width '(720) :padding '(1 (16)) :border "#8D887F"
+        :color "#4D5651" :bgcolor "#EEEAE2"
+    (text "Owner rule: create in setup, mutate through Data, stop on unmount"))))
 
 ;;;###autoload
 (defun etaf-data-example-view ()

@@ -776,8 +776,8 @@ Return `(BUSINESS ATTRS)'.  `:key' remains framework-owned input metadata."
             (when (gethash domain attr-domains)
               (etaf--component-error
                "Duplicate Component Host attribute domain: %S" key))
-            (puthash domain t attr-domains))
-          (setq attrs (append attrs (list key value))))
+            (puthash domain t attr-domains)
+            (setq attrs (append attrs (list domain value)))))
          (t
           (etaf--component-error
            "Unknown prop or Host attribute %S for Component %S"
@@ -794,6 +794,11 @@ Return `(BUSINESS ATTRS)'.  `:key' remains framework-owned input metadata."
   "Return non-nil when VALUE is one already validated View child."
   (or (null value)
       (stringp value)
+      ;; Code-mode setup may retain a structural program (for example, a
+      ;; direct Range expression) and pass that opaque value to `etaf-node'.
+      ;; It is still validated and interpreted only at the renderer boundary;
+      ;; arbitrary lists remain rejected here.
+      (etaf--expr-p value)
       (etaf--view-node-p value)
       (etaf--component-call-p value)
       (etaf--slot-projection-p value)))

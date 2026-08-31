@@ -25,67 +25,25 @@
      ('reset 0)
      (_ (user-error "Unknown counter operation: %S" operation)))))
 
-(defun etaf-counter-example--header (title)
-  "Return the counter header for TITLE."
-  (etaf-view
-   (box :class "hero"
-    (column
-     (text :class "eyebrow" "BEST PRACTICE  /  RETAINED STATE")
-     (text :font-weight 'bold (expr :value title))
-     (text :color "#66706A"
-           "State belongs to setup; rendering only reads it.")))))
-
-(defun etaf-counter-example--metrics (count double status)
-  "Return metric cards for COUNT, DOUBLE, and STATUS."
-  (etaf-view
-   (flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
-    (box :class "metric"
-     (text (expr :value (format "COUNT  %d" (etaf-value count)))))
-    (box :class "metric"
-     (text (expr :value (format "DOUBLE  %d" (etaf-value double)))))
-    (box :class "metric"
-     (text (expr :value (format "STATE  %s" (etaf-value status))))))))
-
-(defun etaf-counter-example--action (count label host-ref operation)
-  "Return one COUNT action named LABEL using HOST-REF and OPERATION."
-  (etaf-view
-   (box :class "action" :ref host-ref :role 'button
-         :use (list (etaf-focusable))
-         :on-press (lambda ()
-                     (etaf-dispatch 'etaf-counter-example-update
-                                    count operation))
-    (text (expr :value label)))))
-
-(defun etaf-counter-example--actions (count)
-  "Return the action group for COUNT."
-  (etaf-view
-   (flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
-    (expr :value
-          (etaf-counter-example--action
-           count "−  DECREMENT" 'counter-decrement 'decrement))
-    (expr :value
-          (etaf-counter-example--action
-           count "RESET" 'counter-reset 'reset))
-    (expr :value
-          (etaf-counter-example--action
-           count "+  INCREMENT" 'counter-increment 'increment)))))
+(etaf-define-component etaf-counter-example-action
+    (&key count label operation)
+  "Render one semantic counter action."
+  :view
+  (box :class "action" :role 'button :use (list (etaf-focusable))
+       :on-press
+       (let ((cell count) (next-operation operation))
+         (lambda ()
+           (etaf-dispatch 'etaf-counter-example-update
+                          cell next-operation)))
+    (text (expr label)))
+  :styles
+  (styles
+   ("&" :flex-grow 1 :flex-shrink 1 :flex-basis (160)
+    :min-width (140) :padding (1 (12)) :border "#4E7890"
+    :bgcolor "#D9EAF2" :text-align center :font-weight bold)))
 
 (etaf-define-component etaf-counter-example-card (&key title initial-value)
   "Render a retained counter named TITLE starting at INITIAL-VALUE."
-  :styles
-  (styles
-   ("&" :width (680) :color "#252A2E" :bgcolor "#F8F5EE")
-   (".hero" :width (680) :padding (1 (18)) :border "#8F432F"
-    :bgcolor "#FFFDF8" :text-align center)
-   (".eyebrow" :color "#8F432F" :font-weight bold)
-   (".metric" :flex-grow 1 :flex-shrink 1 :flex-basis (200)
-    :min-width (180) :padding (1 (14)) :border "#6D8A73"
-    :bgcolor "#DCEBDD" :text-align center)
-   (".action" :flex-grow 1 :flex-shrink 1 :flex-basis (160)
-    :min-width (140) :padding (1 (12)) :border "#4E7890"
-    :bgcolor "#D9EAF2" :text-align center :font-weight bold)
-   (".note" :width (680) :padding (1 (16)) :border "#8D887F"
-    :color "#4D5651" :bgcolor "#EEEAE2"))
   :setup
   (let* ((count (etaf-ref (or initial-value 0) :name 'counter))
          (double (etaf-computed
@@ -95,19 +53,57 @@
                   (lambda ()
                     (if (zerop (etaf-value count)) "READY" "ACTIVE"))
                   :name 'counter-status)))
-    (lambda ()
-      (etaf-view
-       (column
-        (expr :value (etaf-counter-example--header title))
-        (box :height 1)
-        (expr :value
-              (etaf-counter-example--metrics count double status))
-        (box :height 1)
-        (expr :value (etaf-counter-example--actions count))
-        (box :height 1)
-        (box :class "note"
-         (text
-          "Public path: Event → Action → Ref → Computed → Runtime commit")))))))
+    (list :count count :double double :status status))
+  :view
+  (column
+   (box :class "hero"
+    (column
+     (text :class "eyebrow" "BEST PRACTICE  /  RETAINED STATE")
+     (text :font-weight 'bold (expr title))
+     (text :color "#66706A"
+           "State belongs to setup; rendering only reads it.")))
+   (box :height 1)
+   (flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
+    (box :class "metric"
+     (text (expr
+            (format "COUNT  %d"
+                    (etaf-value (plist-get (etaf-state) :count))))))
+    (box :class "metric"
+     (text (expr
+            (format "DOUBLE  %d"
+                    (etaf-value (plist-get (etaf-state) :double))))))
+    (box :class "metric"
+     (text (expr
+            (format "STATE  %s"
+                    (etaf-value (plist-get (etaf-state) :status)))))))
+   (box :height 1)
+   (flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
+    (etaf-counter-example-action
+     :ref 'counter-decrement
+     :count (plist-get (etaf-state) :count)
+     :label "−  DECREMENT" :operation 'decrement)
+    (etaf-counter-example-action
+     :ref 'counter-reset
+     :count (plist-get (etaf-state) :count)
+     :label "RESET" :operation 'reset)
+    (etaf-counter-example-action
+     :ref 'counter-increment
+     :count (plist-get (etaf-state) :count)
+     :label "+  INCREMENT" :operation 'increment))
+   (box :height 1)
+   (box :class "note"
+    (text "Public path: Event → Action → Ref → Computed → Runtime commit")))
+  :styles
+  (styles
+   ("&" :width (680) :color "#252A2E" :bgcolor "#F8F5EE")
+   (".hero" :width (680) :padding (1 (18)) :border "#8F432F"
+    :bgcolor "#FFFDF8" :text-align center)
+   (".eyebrow" :color "#8F432F" :font-weight bold)
+   (".metric" :flex-grow 1 :flex-shrink 1 :flex-basis (200)
+    :min-width (180) :padding (1 (14)) :border "#6D8A73"
+    :bgcolor "#DCEBDD" :text-align center)
+   (".note" :width (680) :padding (1 (16)) :border "#8D887F"
+    :color "#4D5651" :bgcolor "#EEEAE2")))
 
 ;;;###autoload
 (defun etaf-counter-example-view ()

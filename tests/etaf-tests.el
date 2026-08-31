@@ -55,6 +55,8 @@
 (defvar etaf-test-nested-range-present nil)
 (defvar etaf-test-nested-range-source nil)
 (defvar etaf-test-nested-range-evals 0)
+(defvar etaf-test-nested-outer-source nil)
+(defvar etaf-test-nested-inner-source nil)
 (defvar etaf-test-inline-shared nil)
 (defvar etaf-test-inline-shared-evals 0)
 (defvar etaf-test-inline-branch-mode nil)
@@ -193,7 +195,7 @@
 (etaf-define-component etaf-test-retained-leaf (&key label cell)
   "Render one independently reactive retained leaf."
   :view
-  (text (expr :value (etaf-test--retained-leaf-value label cell))))
+  (text (expr (etaf-test--retained-leaf-value label cell))))
 
 (etaf-define-component etaf-test-setup-read-owner
     (&key setup-source render-source)
@@ -201,25 +203,24 @@
   :setup
   (progn
     (etaf-value setup-source)
-    (lambda ()
-      (etaf-view (text (expr :value (etaf-value render-source)))))))
+    render-source)
+  :render
+  (etaf-node 'text nil (list (etaf-value (etaf-state)))))
 
 (etaf-define-component etaf-test-dependency-only (&key source)
   "Track SOURCE while returning semantically equal output."
   :view
-  (text (expr :value (progn (etaf-value source) "same"))))
+  (text (expr (progn (etaf-value source) "same"))))
 
 (etaf-define-component etaf-test-input-equal (&key label)
   "Count renders of a caller-owned semantic input."
   :view
-  (text (expr :value
-              (progn (cl-incf etaf-test-input-render-count) label))))
+  (text (expr (progn (cl-incf etaf-test-input-render-count) label))))
 
 (etaf-define-component etaf-test-target-priority (&key label)
   "Render LABEL with an independently dirty render dependency."
   :view
-  (text (expr :value
-              (progn
+  (text (expr (progn
                 (cl-incf etaf-test-priority-render-count)
                 (format "%s/%s" label
                         (etaf-value etaf-test-priority-render-source))))))
@@ -231,7 +232,7 @@
   :view
   (etaf-test-styled-slot-child
    (text :class "live"
-         (expr :value (etaf-value etaf-test-local-style-source)))))
+         (expr (etaf-value etaf-test-local-style-source)))))
 
 (etaf-define-component etaf-test-lazy-computed-owner ()
   "Create a lazy computed first evaluated by the render target."
@@ -240,30 +241,31 @@
          (computed (etaf-computed (lambda () (* 2 (etaf-value base))))))
     (setq etaf-test-lazy-computed-base base
           etaf-test-lazy-computed-value computed)
-    (lambda ()
-      (etaf-view (text (expr :value (number-to-string
-                                     (etaf-value computed))))))))
+    computed)
+  :render
+  (etaf-node 'text nil
+             (list (number-to-string (etaf-value (etaf-state))))))
 
 (etaf-define-component etaf-test-wide-parent ()
   "Render a wide stable child list around one parent-owned value."
   :setup
-  (lambda ()
-    (etaf--view-call
+  (list etaf-test-wide-parent-source etaf-test-wide-parent-cells)
+  :render
+  (let ((source (car (etaf-state))) (cells (cadr (etaf-state))))
+    (etaf-node
      'column nil
-     (cons
-      (etaf--view-call
-       'text nil (list (format "parent=%s"
-                               (etaf-value etaf-test-wide-parent-source))))
-      (cl-loop for cell in etaf-test-wide-parent-cells for index from 0
-               collect
-               (etaf--view-call 'etaf-test-retained-leaf
-                                (list :key index :label index :cell cell)
-                                nil))))))
+     (cons (etaf-node 'text nil
+                      (list (format "parent=%s" (etaf-value source))))
+           (cl-loop for cell in cells for index from 0
+                    collect
+                    (etaf-node 'etaf-test-retained-leaf
+                               (list :key index :label index :cell cell)
+                               nil))))))
 
 (etaf-define-component etaf-test-direct-range ()
   "Render static siblings and one direct retained material-child Range."
   :setup
-  (let ((range (etaf--expr-create
+    (let ((range (etaf--expr-create
                 :token 'etaf-test-direct-range-site
                 :thunk #'etaf-test--range-items))
         (color (etaf--expr-create
@@ -271,19 +273,20 @@
                 :thunk (lambda ()
                          (cl-incf etaf-test-range-host-prop-calls)
                          "red"))))
-    (lambda ()
-      (cl-incf etaf-test-range-component-renders)
-      (etaf--view-node-create
-       :name 'column :props nil
-       :children
-       (append
-        (cl-loop for index below etaf-test-range-static-count
-                 collect (etaf--view-call
-                          'text (append
-                                 (list :key (intern (format "static-%s" index)))
-                                 (and (zerop index) (list :color color)))
-                          (list (format "S%s" index))))
-        (list range))))))
+    (list range color))
+  :render
+  (let ((range (car (etaf-state))) (color (cadr (etaf-state))))
+    (cl-incf etaf-test-range-component-renders)
+    (etaf-node
+     'column nil
+     (append
+      (cl-loop for index below etaf-test-range-static-count
+               collect (etaf-node
+                        'text
+                        (append (list :key (intern (format "static-%s" index)))
+                                (and (zerop index) (list :color color)))
+                        (list (format "S%s" index))))
+      (list range)))))
 
 (etaf-define-component etaf-test-two-direct-ranges ()
   "Render two disjoint direct material Ranges from one source."
@@ -298,25 +301,24 @@
                 :thunk (lambda ()
                          (cl-incf etaf-test-range-right-evals)
                          (etaf-test--prefixed-range-items "R")))))
-    (lambda ()
-      (etaf--view-node-create :name 'column :props nil
-                              :children
-                              (list (etaf--view-call 'text
-                                                     (list :key 'static)
-                                                     (list "S"))
-                                    left right)))))
+    (list left right))
+  :render
+  (let ((ranges (etaf-state)))
+    (etaf-node 'column nil
+               (cons (etaf-node 'text (list :key 'static) (list "S"))
+                     ranges))))
 
 (etaf-define-component etaf-test-macro-range-token ()
   "Expose one macro-compiled direct expr callsite."
   :view
-  (column (expr :value nil)))
+  (column (expr nil)))
 
 (etaf-define-component etaf-test-public-direct-range ()
   "Exercise a public macro-compiled direct material-child expr."
   :view
   (column
    (text :key 'public-static "S")
-   (expr :value (etaf-test--range-items))))
+   (expr (etaf-test--range-items))))
 
 (etaf-define-component etaf-test-counted-direct-range (&key count)
   "Render COUNT static siblings before one stable direct Range callsite."
@@ -324,17 +326,19 @@
   (let ((range (etaf--expr-create
                 :token 'etaf-test-counted-range-site
                 :thunk #'etaf-test--range-items)))
-    (lambda ()
-      (cl-incf etaf-test-range-component-renders)
-      (etaf--view-node-create
-       :name 'column :props nil
-       :children
-       (append
-        (cl-loop for index below count
-                 collect (etaf--view-call
-                          'text (list :key (intern (format "counted-%s" index)))
-                          (list (format "C%s" index))))
-        (list range))))))
+    range)
+  :render
+  (progn
+    (cl-incf etaf-test-range-component-renders)
+    (etaf-node
+     'column nil
+     (append
+      (cl-loop for index below count
+               collect
+               (etaf-node
+                'text (list :key (intern (format "counted-%s" index)))
+                (list (format "C%s" index))))
+      (list (etaf-state))))))
 
 (etaf-define-component etaf-test-string-sibling-range ()
   "Render bare string siblings around one direct Range."
@@ -342,9 +346,9 @@
   (let ((range (etaf--expr-create
                 :token 'etaf-test-string-sibling-range-site
                 :thunk #'etaf-test--range-items)))
-    (lambda ()
-      (etaf--view-node-create :name 'column :props nil
-                              :children (list "prefix" range "suffix")))))
+    range)
+  :render
+  (etaf-node 'column nil (list "prefix" (etaf-state) "suffix")))
 
 (etaf-define-component etaf-test-unsupported-direct-range ()
   "Start with a Host Range whose later unsupported output must fail."
@@ -352,18 +356,19 @@
   (let ((range (etaf--expr-create
                 :token 'etaf-test-unsupported-range-site
                 :thunk #'etaf-test--unsupported-range-value)))
-    (lambda ()
-      (etaf--view-node-create
-       :name 'column :props nil
-       :children (list (etaf--view-call 'text (list :key 'static) (list "S"))
-                       range)))))
+    range)
+  :render
+  (etaf-node
+   'column nil
+   (list (etaf-node 'text (list :key 'static) (list "S"))
+         (etaf-state))))
 
 (etaf-define-component etaf-test-public-string-range ()
   "Render one public direct expr whose Range item is a bare string."
   :view
   (column
    (text :key 'static "S")
-   (expr :value (etaf-value etaf-test-string-range-source))))
+   (expr (etaf-value etaf-test-string-range-source))))
 
 (etaf-define-component etaf-test-nested-host-range ()
   "Render one Range whose keyed item owns keyed nested Hosts."
@@ -371,23 +376,39 @@
   (let ((range (etaf--expr-create
                 :token 'etaf-test-nested-range-site
                 :thunk #'etaf-test--nested-range-value)))
-    (lambda ()
-      (etaf--view-node-create
-       :name 'column :props nil
-       :children (list (etaf--view-call 'text (list :key 'static) (list "S"))
-                       range)))))
+    range)
+  :render
+  (etaf-node
+   'column nil
+   (list (etaf-node 'text (list :key 'static) (list "S"))
+         (etaf-state))))
+
+(etaf-define-component etaf-test-nested-keyed-card (&key card)
+  "Render CARD with an independently keyed descendant list."
+  :view
+  (column
+   (text (expr (cadr card)))
+   (text :for (entry (etaf-value etaf-test-nested-inner-source))
+         :key (car entry)
+         (expr (cdr entry)))))
+
+(etaf-define-component etaf-test-nested-keyed-ranges ()
+  "Render a keyed outer list whose items contain keyed inner lists."
+  :view
+  (column
+   (etaf-test-nested-keyed-card
+    :for (card (etaf-value etaf-test-nested-outer-source))
+    :key (car card) :card card)))
 
 (etaf-define-component etaf-test-inline-shared-hosts ()
   "Render one shared source in two distinct text Hosts."
   :view
   (column
    (text :key 'left
-         (expr :value
-               (progn (cl-incf etaf-test-inline-shared-evals)
+         (expr (progn (cl-incf etaf-test-inline-shared-evals)
                       (etaf-value etaf-test-inline-shared))))
    (text :key 'right
-         (expr :value
-               (progn (cl-incf etaf-test-inline-shared-evals)
+         (expr (progn (cl-incf etaf-test-inline-shared-evals)
                       (etaf-value etaf-test-inline-shared))))))
 
 (etaf-define-component etaf-test-inline-dependency-branch ()
@@ -395,82 +416,77 @@
   :setup
   (progn
     (etaf-on-updated (lambda () (cl-incf etaf-test-inline-branch-updated)))
-    (lambda ()
-      (etaf-view
-       (text
-        (expr :value
-              (progn
-                (cl-incf etaf-test-inline-branch-evals)
-                (if (etaf-value etaf-test-inline-branch-mode)
-                    (etaf-value etaf-test-inline-branch-right)
-                  (etaf-value etaf-test-inline-branch-left))
-                "same")))))))
+    nil)
+  :view
+  (text
+   (expr (progn
+           (cl-incf etaf-test-inline-branch-evals)
+           (if (etaf-value etaf-test-inline-branch-mode)
+               (etaf-value etaf-test-inline-branch-right)
+             (etaf-value etaf-test-inline-branch-left))
+           "same"))))
 
 (etaf-define-component etaf-test-slot-env-child ()
   "Project the caller-owned default slot."
   :setup
-  (lambda ()
-    (cl-incf etaf-test-slot-consumer-renders)
-    (etaf-view (column (slot)))))
+  (progn (cl-incf etaf-test-slot-consumer-renders) nil)
+  :view (column (slot)))
 
 (etaf-define-component etaf-test-slot-env-parent (&key label)
   "Author an inline slot expression from parent LABEL."
-  :setup
-  (lambda ()
+  :setup nil
+  :render
+  (progn
     (cl-incf etaf-test-slot-parent-renders)
-    (etaf-view
-     (etaf-test-slot-env-child
-      (text (expr :value label))))))
+    (etaf-node
+     'etaf-test-slot-env-child nil
+     (list (etaf-node 'text nil (list label))))))
 
 (etaf-define-component etaf-test-slot-env-consumer ()
   "Project a forwarded named header slot."
   :setup
-  (lambda ()
-    (cl-incf etaf-test-slot-consumer-renders)
-    (etaf-view (column (slot :name 'header)))))
+  (progn (cl-incf etaf-test-slot-consumer-renders) nil)
+  :view (column (slot :name 'header)))
 
 (etaf-define-component etaf-test-slot-env-forwarder ()
   "Forward the caller-owned named header slot."
   :setup
-  (lambda ()
-    (cl-incf etaf-test-slot-forwarder-renders)
-    (etaf--component-call-create
-     :spec etaf-test-slot-env-consumer--etaf-component-definition
-     :props nil
-     :slots (list (assq 'header etaf--current-component-slots)))))
+  (progn (cl-incf etaf-test-slot-forwarder-renders) nil)
+  :render
+  (etaf-node 'etaf-test-slot-env-consumer nil
+             nil
+             (list (cons 'header
+                         (etaf-current-slot 'header)))))
 
 (etaf-define-component etaf-test-slot-env-named-parent (&key label)
   "Author a named slot expression from parent LABEL."
-  :setup
-  (lambda ()
+  :setup nil
+  :render
+  (progn
     (cl-incf etaf-test-slot-parent-renders)
-    (etaf-view
-     (etaf-test-slot-env-forwarder
-      (slot :name 'header
-            (text (expr :value label)))))))
+    (etaf-node
+     'etaf-test-slot-env-forwarder nil nil
+     (list (cons 'header
+                 (list (etaf-node 'text nil (list label))))))))
 
 (etaf-define-component etaf-test-slot-range-parent ()
   "Author one reactive default slot Range."
   :setup
   (progn
     (etaf-on-updated (lambda () (cl-incf etaf-test-slot-author-updated)))
-    (lambda ()
-      (cl-incf etaf-test-slot-parent-renders)
-      (etaf-view
-       (etaf-test-slot-env-child
-        (expr :value (etaf-test--slot-range-items)))))))
+    nil)
+  :view
+  (etaf-test-slot-env-child (expr (etaf-test--slot-range-items))))
 
 (etaf-define-component etaf-test-slot-range-named-parent ()
   "Author one reactive named slot through the Forwarder."
   :setup
   (progn
     (etaf-on-updated (lambda () (cl-incf etaf-test-slot-author-updated)))
-    (lambda ()
-      (cl-incf etaf-test-slot-parent-renders)
-      (etaf-view
-       (etaf-test-slot-env-forwarder
-        (slot :name 'header
-              (expr :value (etaf-test--slot-range-items))))))))
+    nil)
+  :view
+  (etaf-test-slot-env-forwarder
+   (slot :name 'header (expr (etaf-test--slot-range-items)))))
 
 (etaf-define-component etaf-test-slot-range-fallback ()
   "Own one reactive fallback slot Range."
@@ -478,11 +494,9 @@
   :setup
   (progn
     (etaf-on-updated (lambda () (cl-incf etaf-test-slot-consumer-updated)))
-    (lambda ()
-      (cl-incf etaf-test-slot-consumer-renders)
-      (etaf-view
-       (column
-        (slot (expr :value (etaf-test--slot-range-items))))))))
+    nil)
+  :view
+  (column (slot (expr (etaf-test--slot-range-items)))))
 
 (etaf-define-component etaf-test-slot-range-two-sites ()
   "Project the same default slot at two material sites."
@@ -495,76 +509,74 @@
   "Author one reactive slot consumed at two projection sites."
   :view
   (etaf-test-slot-range-two-sites
-   (expr :value (etaf-test--slot-range-items))))
+   (expr (etaf-test--slot-range-items))))
 
 (etaf-define-component etaf-test-slot-range-branch-parent (&key mode)
   "Retarget slot dependencies from MODE while preserving equal output."
-  :setup
-  (lambda ()
+  :setup nil
+  :render
+  (progn
     (cl-incf etaf-test-slot-parent-renders)
-    (etaf-view
-     (etaf-test-slot-env-child
-      (expr :value
-            (progn
-              (if mode
-                  (etaf-value etaf-test-slot-branch-right)
-                (etaf-value etaf-test-slot-branch-left))
-              (list (etaf-view (text :key 'same "same")))))))))
+    (etaf-node
+     'etaf-test-slot-env-child nil
+     (list
+      (etaf--expr-create
+       :token 'etaf-test-slot-branch-site
+       :thunk
+       (lambda ()
+         (if mode
+             (progn
+               (etaf-value etaf-test-slot-branch-right)
+               (list (etaf-node 'text (list :key 'same) (list "same"))))
+           (progn
+             (etaf-value etaf-test-slot-branch-left)
+             (list (etaf-node 'text (list :key 'same) (list "same")))))))))))
 
 (etaf-define-component etaf-test-fragment-range-owner ()
   "Own one material fragment Range."
   :setup
-  (lambda ()
-    (cl-incf etaf-test-fragment-owner-renders)
-    (etaf-view
-     (column
-      (fragment
-       (expr :value (etaf-test--fragment-range-items)))))))
+  (progn (cl-incf etaf-test-fragment-owner-renders) nil)
+  :view (column (fragment (expr (etaf-test--fragment-range-items)))))
 
 
 (etaf-define-component etaf-test-transparent-owner ()
   "Render a transparent fragment sequence."
-  :setup
-  (lambda ()
-    (cl-incf etaf-test-transparent-renders)
-    (etaf-view
-     (fragment
-      (expr :value
-            (mapcar (lambda (entry)
-                      (etaf--view-call 'text (list :key (car entry))
-                                       (list (cdr entry))))
-                    (etaf-value etaf-test-transparent-source)))))))
+  :setup nil
+  :view
+  (fragment
+   (expr (progn
+           (cl-incf etaf-test-transparent-renders)
+           (mapcar (lambda (entry)
+                     (etaf--view-call 'text (list :key (car entry))
+                                      (list (cdr entry))))
+                   (etaf-value etaf-test-transparent-source))))))
 
 (etaf-define-component etaf-test-transparent-parent ()
   "Own one transparent child beside static material Hosts."
   :setup
-  (lambda ()
-    (cl-incf etaf-test-transparent-parent-renders)
-    (etaf-view
-     (column
-      (text :key 'before "before")
-      (etaf-test-transparent-owner)
-      (text :key 'after "after")))))
+  (progn (cl-incf etaf-test-transparent-parent-renders) nil)
+  :view
+  (column (text :key 'before "before")
+          (etaf-test-transparent-owner)
+          (text :key 'after "after")))
 
 (etaf-define-component etaf-test-transparent-inner ()
   "Render the inner transparent chain payload."
-  :setup
-  (lambda ()
-    (cl-incf etaf-test-transparent-inner-renders)
-    (etaf-view
-     (fragment
-      (expr :value
-            (mapcar (lambda (entry)
-                      (etaf--view-call 'text (list :key (car entry))
-                                       (list (cdr entry))))
-                    (etaf-value etaf-test-transparent-source)))))))
+  :setup nil
+  :view
+  (fragment
+   (expr (progn
+           (cl-incf etaf-test-transparent-inner-renders)
+           (mapcar (lambda (entry)
+                     (etaf--view-call 'text (list :key (car entry))
+                                      (list (cdr entry))))
+                   (etaf-value etaf-test-transparent-source))))))
 
 (etaf-define-component etaf-test-transparent-outer ()
   "Forward one transparent Component without a visual adapter."
   :setup
-  (lambda ()
-    (cl-incf etaf-test-transparent-outer-renders)
-    (etaf-view (fragment (etaf-test-transparent-inner)))))
+  (progn (cl-incf etaf-test-transparent-outer-renders) nil)
+  :view (fragment (etaf-test-transparent-inner)))
 
 (etaf-define-component etaf-test-transparent-chain-parent ()
   "Place a transparent Component chain in one material parent."
@@ -573,8 +585,7 @@
 (etaf-define-component etaf-test-ancestor-artifact-child ()
   "Render a child whose local update invalidates ancestor artifacts."
   :view
-  (text (expr :value
-              (if (etaf-value etaf-test-ancestor-child-source)
+  (text (expr (if (etaf-value etaf-test-ancestor-child-source)
                   "detail" "child"))))
 
 (etaf-define-component etaf-test-ancestor-artifact-parent ()
@@ -586,60 +597,71 @@
 (etaf-define-component etaf-test-generation-context-consumer ()
   "Render one generation-owned Context dependency."
   :setup
-  (lambda ()
-    (cl-incf etaf-test-context-consumer-renders)
-    (etaf-view (text :color (etaf-inject 'generation-label) "context"))))
+  (progn (cl-incf etaf-test-context-consumer-renders) nil)
+  :view
+  (text :color (etaf-value (etaf-inject 'generation-label)) "context"))
 
 (etaf-define-component etaf-test-generation-context-provider ()
   "Provide a candidate Context value to one retained consumer."
   :setup
-  (lambda ()
+  (progn
+    ;; Context values are provided during setup as stable reactive sources;
+    ;; consumers track the source value without requiring a render-time
+    ;; Context mutation.
+    (etaf-provide 'generation-label etaf-test-context-provider-source)
+    nil)
+  :render
+  (progn
     (cl-incf etaf-test-context-provider-renders)
-    (etaf-provide 'generation-label
-                  (etaf-value etaf-test-context-provider-source))
-    (etaf-view (etaf-test-generation-context-consumer))))
+    (etaf-value etaf-test-context-provider-source)
+    (etaf-node 'etaf-test-generation-context-consumer nil nil)))
 
 (etaf-define-component etaf-test-generation-context-range-provider ()
   "Provide Context directly to a retained child Range effect."
   :setup
-  (lambda ()
-    (etaf-provide 'generation-label
-                  (etaf-value etaf-test-context-provider-source))
-    (etaf-view
-     (column
-      (expr :value
-            (progn
-              (cl-incf etaf-test-context-range-evals)
-              (list (etaf--view-call
-                     'text (list :key 'context-range)
-                     (list (etaf-inject 'generation-label))))))))))
+  (etaf-provide 'generation-label etaf-test-context-provider-source)
+  :render
+  (etaf-node
+   'column nil
+   (list
+    (etaf--expr-create
+     :kind 'interpolation :token 'etaf-test-context-range-site
+     :thunk
+     (lambda ()
+       (cl-incf etaf-test-context-range-evals)
+       (list (etaf-node 'text (list :key 'context-range)
+                        (list (etaf-value
+                               (etaf-inject 'generation-label))))))))))
 
 (etaf-define-component etaf-test-generation-context-slot-consumer ()
   "Project one material slot Range for Context ownership tests."
   :setup
-  (lambda ()
-    (cl-incf etaf-test-slot-consumer-renders)
-    (etaf-view (column (slot)))))
+  (progn (cl-incf etaf-test-slot-consumer-renders) nil)
+  :view (column (slot)))
 
 (etaf-define-component etaf-test-generation-context-slot-provider ()
   "Provide Context to an authored slot Range expression."
   :setup
-  (lambda ()
+  (progn
     (cl-incf etaf-test-context-provider-renders)
-    (etaf-provide 'generation-label
-                  (etaf-value etaf-test-context-provider-source))
-    (etaf-view
-     (etaf-test-generation-context-slot-consumer
-      (expr :value
-            (progn
-              (cl-incf etaf-test-slot-range-evals)
-              (list (etaf--view-call
-                     'text (list :key 'context-slot)
-                     (list (etaf-inject 'generation-label))))))))))
+    (etaf-provide 'generation-label etaf-test-context-provider-source)
+    nil)
+  :render
+  (etaf-node
+   'etaf-test-generation-context-slot-consumer nil
+   (list
+    (etaf--expr-create
+     :kind 'interpolation :token 'etaf-test-context-slot-site
+     :thunk
+     (lambda ()
+       (cl-incf etaf-test-slot-range-evals)
+       (list (etaf-node 'text (list :key 'context-slot)
+                        (list (etaf-value
+                               (etaf-inject 'generation-label))))))))))
 
 (etaf-define-component etaf-test-prop-env-child (&key value)
   "Render VALUE received from a parent Component."
-  :view (text (expr :value value)))
+  :view (text (expr value)))
 
 (etaf-define-component etaf-test-prop-env-parent (&key label)
   "Forward dynamic parent LABEL into a nested Component prop."
@@ -650,15 +672,21 @@
   :setup
   (progn
     (etaf-on-updated (lambda () (cl-incf etaf-test-inline-priority-updated)))
-    (lambda ()
-      (cl-incf etaf-test-inline-priority-renders)
-      (etaf-view
-       (text
-        (expr :value
-              (progn
-                (cl-incf etaf-test-inline-priority-evals)
-                (format "%s/%s" label
-                        (etaf-value etaf-test-inline-priority-source)))))))))
+    nil)
+  :render
+  (progn
+    (cl-incf etaf-test-inline-priority-renders)
+    (let ((input-label label))
+      (etaf-node
+       'text nil
+       (list
+        (etaf--expr-create
+         :kind 'interpolation :token 'etaf-test-inline-priority-site
+         :thunk
+         (lambda ()
+           (cl-incf etaf-test-inline-priority-evals)
+           (format "%s/%s" input-label
+                   (etaf-value etaf-test-inline-priority-source)))))))))
 
 (etaf-define-component etaf-test-inline-styled-owner ()
   "Render a styled inline expression beside a side-effecting Host prop."
@@ -666,8 +694,7 @@
   (box :color (progn (cl-incf etaf-test-inline-host-prop-calls) "red")
    "P"
    (text :font-weight 'bold
-         (expr :value
-               (progn
+         (expr (progn
                  (cl-incf etaf-test-inline-styled-evals)
                  (etaf-value etaf-test-inline-styled-source))))))
 
@@ -683,14 +710,16 @@
             (list
              (etaf--view-call
               'text (list :key 'item :ref 'item)
-              (list (format "%s/%s" marker
+              (list (format "%s/%s" (etaf-current-prop 'marker)
                             (etaf-value etaf-test-range-source)))))))))
-    (lambda ()
-      (cl-incf etaf-test-range-component-renders)
-      (etaf--view-node-create
-       :name 'column :props nil
-       :children (list (etaf--view-call 'text (list :key 'static) (list "S"))
-                       range)))))
+    range)
+  :render
+  (progn
+    (cl-incf etaf-test-range-component-renders)
+    (etaf-node
+     'column nil
+     (list (etaf-node 'text (list :key 'static) (list "S"))
+           (etaf-state)))))
 
 (etaf-define-component etaf-test-next-turn ()
   "Write TARGET after publishing a SOURCE update."
@@ -702,11 +731,13 @@
        (when (and etaf-test-next-turn-target
                   (zerop (etaf-value target-cell)))
          (setf (etaf-value target-cell) 1))))
-    (lambda ()
-      (etaf-view
-       (text (expr :value
-                   (format "%s/%s" (etaf-value source-cell)
-                           (etaf-value target-cell))))))))
+    (list source-cell target-cell))
+  :view
+  (text
+   (expr
+    (format "%s/%s"
+            (etaf-value (car (etaf-state)))
+            (etaf-value (cadr (etaf-state)))))))
 
 (defun etaf-test--render-text (view)
   "Return plain rendered text for VIEW."
@@ -725,18 +756,18 @@
 (etaf-define-component etaf-test-badge (&key label)
   "Render LABEL as a small semantic test Component."
   :view
-  (text :font-weight 'bold (expr :value label)))
+  (text :font-weight 'bold (expr label)))
 
 (etaf-define-component etaf-list (&key label)
   "Render LABEL using the collision-safe `list-view' alias."
   :view
-  (text (expr :value label)))
+  (text (expr label)))
 
 (etaf-define-component etaf-test-slot-card (&key title)
   "Render a title with default and named slot projections."
   :view
   (column
-   (text (expr :value title))
+   (text (expr title))
    (slot :name 'header (text :color "#777777" "Default header"))
    (slot (text :color "#777777" "Default body"))))
 
@@ -820,7 +851,8 @@
   :setup
   (progn
     (etaf-theme-provide '(:color "theme-color" :bgcolor "theme-bg"))
-    (lambda () (etaf-view (text :color nil "Themed")))))
+    nil)
+  :view (text "Themed"))
 
 (etaf-define-component etaf-test-themed-style-token ()
   "Resolve a deferred Theme token from a static Component style."
@@ -829,7 +861,8 @@
   :setup
   (progn
     (etaf-theme-provide '(:color "token-color"))
-    (lambda () (etaf-view (text "Token")))))
+    nil)
+  :view (text "Token"))
 
 (etaf-define-component etaf-test-stateful (&key label)
   "Render a retained counter for Runtime tests."
@@ -840,10 +873,9 @@
     (etaf-on-mounted (lambda () (cl-incf etaf-test-mounted-count)))
     (etaf-on-updated (lambda () (cl-incf etaf-test-updated-count)))
     (etaf-on-unmounted (lambda () (cl-incf etaf-test-unmounted-count)))
-    (lambda ()
-      (etaf-view
-       (text
-        (expr :value (format "%s:%d" label (etaf-value cell))))))))
+    cell)
+  :view
+  (text (expr (format "%s:%d" label (etaf-value (etaf-state))))))
 
 (etaf-define-component etaf-test-provider ()
   "Provide a reactive theme to descendants."
@@ -851,23 +883,22 @@
   (let ((theme (etaf-ref 'dark)))
     (setq etaf-test-theme-cell theme)
     (etaf-provide 'theme theme)
-    (lambda ()
-      (etaf-view (column (slot))))))
+    theme)
+  :view (column (slot)))
 
 (etaf-define-component etaf-test-consumer ()
   "Render the nearest Context theme."
   :setup
-  (let ((theme (etaf-inject 'theme nil t)))
-    (lambda ()
-      (etaf-view (text (expr :value (symbol-name (etaf-value theme))))))))
+  (etaf-inject 'theme nil t)
+  :view (text (expr (symbol-name (etaf-value (etaf-state))))))
 
 (etaf-define-component etaf-test-prop-stateful (&key label)
   "Render a retained label whose prop can change without rerunning setup."
   :setup
   (progn
     (cl-incf etaf-test-setup-count)
-    (lambda ()
-      (etaf-view (text (expr :value label))))))
+    nil)
+  :view (text (expr label)))
 
 (etaf-define-component etaf-test-lifecycle-failure (&key label)
   "Render LABEL and deliberately fail from an update lifecycle hook."
@@ -877,20 +908,21 @@
      (lambda ()
        (when etaf-test-lifecycle-failure-p
          (error "test lifecycle failed"))))
-    (lambda ()
-      (etaf-view (text (expr :value label))))))
+    nil)
+  :view (text (expr label)))
 
 (etaf-define-component etaf-test-rollback (&key fail)
   "Render a candidate that can deliberately fail during reconciliation."
   :setup
   (let ((cell (etaf-ref 0)))
     (setq etaf-test-prop-cell cell)
-    (lambda ()
-      (when fail
-        (signal 'etaf-runtime-error (list "test candidate failed")))
-      (etaf-view
-       (text
-       (expr :value (format "stable:%d" (etaf-value cell))))))))
+    cell)
+  :render
+  (progn
+    (when fail
+      (signal 'etaf-runtime-error (list "test candidate failed")))
+    (etaf-node 'text nil
+               (list (format "stable:%d" (etaf-value (etaf-state)))))))
 
 (etaf-define-component etaf-test-late-branch ()
   "Read a late reactive ref only after switching render branches."
@@ -901,13 +933,13 @@
     (setq etaf-test-branch-page-cell page
           etaf-test-branch-late-cell late
           etaf-test-branch-mode-cell late-branch)
-    (lambda ()
-      (etaf-view
-       (text
-        (expr :value
-              (if (etaf-value late-branch)
-                  (etaf-value late)
-                (etaf-value page))))))))
+    (list page late late-branch))
+  :view
+  (text
+   (expr
+    (if (etaf-value (nth 2 (etaf-state)))
+        (etaf-value (nth 1 (etaf-state)))
+      (etaf-value (nth 0 (etaf-state)))))))
 
 (etaf-define-component etaf-test-event-batch-stateful ()
   "Render a callback with computed, watch, and effect dependents."
@@ -930,19 +962,22 @@
          (unless (equal next last-effect)
            (setq last-effect next)
            (setf (etaf-value effect-value) next)))))
-    (lambda ()
-      (etaf-view
-       (column
-        (text :ref 'event-batch-trigger
-              :on-press (lambda () (setf (etaf-value source) 2))
-              "Update")
-        (text
-         (expr :value
-               (format "source=%d computed=%d %s %s"
-                       (etaf-value source)
-                       (etaf-value computed)
-                       (etaf-value watch-value)
-                       (etaf-value effect-value)))))))))
+    (list :source source :computed computed
+          :watch watch-value :effect effect-value))
+  :view
+  (column
+   (text :ref 'event-batch-trigger
+         :on-press
+         (let ((source (plist-get (etaf-state) :source)))
+           (lambda () (setf (etaf-value source) 2)))
+         "Update")
+   (text
+    (expr
+     (format "source=%d computed=%d %s %s"
+             (etaf-value (plist-get (etaf-state) :source))
+             (etaf-value (plist-get (etaf-state) :computed))
+             (etaf-value (plist-get (etaf-state) :watch))
+             (etaf-value (plist-get (etaf-state) :effect)))))))
 
 (etaf-define-component etaf-test-event-batch-noop ()
   "Render an event callback that performs no state write."
@@ -954,45 +989,46 @@
 (etaf-define-component etaf-test-event-batch-nested ()
   "Render an outer callback that dispatches one nested public event."
   :setup
-  (let ((state (etaf-ref "idle")))
-    (lambda ()
-      (etaf-view
-       (column
-        (text :ref 'event-batch-nested-outer
-              :on-press
-              (lambda ()
-                (etaf-dispatch-event
-                 (etaf-current-runtime)
-                 'event-batch-nested-inner 'press))
-              "Outer")
-        (text :ref 'event-batch-nested-inner
-              :on-press (lambda () (setf (etaf-value state) "nested"))
-              "Inner")
-        (text (expr :value (etaf-value state))))))))
+  (etaf-ref "idle")
+  :view
+  (column
+   (text :ref 'event-batch-nested-outer
+         :on-press
+         (lambda ()
+           (etaf-dispatch-event
+            (etaf-current-runtime) 'event-batch-nested-inner 'press))
+         "Outer")
+   (text :ref 'event-batch-nested-inner
+         :on-press
+         (let ((state (etaf-state)))
+           (lambda () (setf (etaf-value state) "nested")))
+         "Inner")
+   (text (expr (etaf-value (etaf-state))))))
 
 (etaf-define-component etaf-test-event-batch-behavior ()
   "Render a toggleable Behavior whose callback writes two refs."
   :setup
   (let ((left (etaf-ref nil))
         (right (etaf-ref nil)))
-    (lambda ()
-      (etaf-view
-       (column
-        (text :ref 'event-batch-behavior
-              :use
-              (list
-               (etaf-toggleable
-                :value left
-                :on-change
-                (lambda (value)
-                  (setf (etaf-value left) value
-                        (etaf-value right) value))))
-              "Toggle")
-        (text
-         (expr :value
-               (format "left=%s right=%s"
-                       (if (etaf-value left) "on" "off")
-                       (if (etaf-value right) "on" "off")))))))))
+    (list left right))
+  :view
+  (column
+   (text :ref 'event-batch-behavior
+         :use
+         (let ((left (car (etaf-state))) (right (cadr (etaf-state))))
+           (list
+            (etaf-toggleable
+             :value left
+             :on-change
+             (lambda (value)
+               (setf (etaf-value left) value
+                     (etaf-value right) value)))))
+         "Toggle")
+   (text
+    (expr
+     (format "left=%s right=%s"
+             (if (etaf-value (car (etaf-state))) "on" "off")
+             (if (etaf-value (cadr (etaf-state))) "on" "off"))))))
 
 (etaf-define-component etaf-test-event-batch-theme ()
   "Render a computed Theme changed by a public event callback."
@@ -1004,16 +1040,16 @@
                        '(:color "dark")
                      '(:color "light"))))))
     (etaf-theme-provide theme)
-    (lambda ()
-      (etaf-view
-       (column
-        (text :ref 'event-batch-theme-toggle
-              :on-press
-              (lambda ()
-                (setf (etaf-value dark) (not (etaf-value dark))))
-              "Theme")
-        (text (expr :value
-                    (format "theme=%s" (etaf-theme-value :color)))))))))
+    dark)
+  :view
+  (column
+   (text :ref 'event-batch-theme-toggle
+         :on-press
+         (let ((dark (etaf-state)))
+           (lambda ()
+             (setf (etaf-value dark) (not (etaf-value dark)))))
+         "Theme")
+   (text (expr (format "theme=%s" (etaf-theme-value :color))))))
 
 (defvar etaf-test-theme-property-render-count 0)
 (defvar etaf-test-theme-property-cell nil)
@@ -1056,16 +1092,20 @@
                '(:color "#111111" :bgcolor "#FFFFFF"))))))
     (setq etaf-test-theme-property-cell dark)
     (etaf-theme-provide theme)
-    (lambda ()
-      (cl-incf etaf-test-theme-property-render-count)
-      (etaf-view
-       (text :ref 'theme-property-toggle
+    dark)
+  :render
+  (progn
+    (cl-incf etaf-test-theme-property-render-count)
+    (let ((dark (etaf-state)))
+      (etaf-node
+       'text
+       (list :ref 'theme-property-toggle
              :color (etaf-theme-token :color)
              :bgcolor (etaf-theme-token :bgcolor)
              :on-press
              (lambda ()
-               (setf (etaf-value dark) (not (etaf-value dark))))
-             "Theme property")))))
+               (setf (etaf-value dark) (not (etaf-value dark)))))
+       (list "Theme property")))))
 
 (etaf-define-component etaf-test-theme-atomic-child (&key label on-press)
   "Render Theme paint below a Component whose input also changes."
@@ -1074,7 +1114,7 @@
           :color (etaf-theme-token :color)
           :bgcolor (etaf-theme-token :bgcolor)
    (text :ref 'theme-atomic-toggle :on-press on-press
-         (expr :value label))))
+         (expr label))))
 
 (etaf-define-component etaf-test-theme-atomic-owner ()
   "Change Component content and descendant Theme properties in one turn."
@@ -1089,76 +1129,66 @@
          (toggle (lambda ()
                    (setf (etaf-value dark) (not (etaf-value dark))))))
     (etaf-theme-provide theme)
-    (lambda ()
-      (etaf--view-call
-       'column (list :ref 'theme-atomic-root
-                     :bgcolor (etaf-theme-token :bgcolor))
-       (list
-        (etaf--view-call
-         'etaf-test-theme-atomic-child
-         (list :label (if (etaf-value dark) "Dark" "Light")
-               :on-press toggle)
-         nil))))))
+    (list dark toggle))
+  :view
+  (column :ref 'theme-atomic-root
+          :bgcolor (etaf-theme-token :bgcolor)
+   (etaf-test-theme-atomic-child
+    :label (if (etaf-value (car (etaf-state))) "Dark" "Light")
+    :on-press (cadr (etaf-state)))))
 
 (etaf-define-component etaf-test-detached-theme-row (&key row-ref label)
   "Render one keyed Theme-bound row used by detached-subtree tests."
   :setup
-  (lambda ()
-    (cl-incf etaf-test-detached-row-renders)
-    (etaf--view-call
-     'row
-     (list :ref (etaf-current-prop :row-ref)
-           :color (etaf-theme-token :color))
-     (list (etaf--view-call
-            'text nil (list (etaf-current-prop :label)))))))
+  (progn (cl-incf etaf-test-detached-row-renders) nil)
+  :view
+  (row :ref row-ref :color (etaf-theme-token :color)
+   (text (expr label))))
 
 (etaf-define-component etaf-test-detached-theme-list ()
   "Render keyed Components below stable nested Host containers."
   :setup
   (progn
     (etaf-theme-provide etaf-test-detached-theme-source)
-    (lambda ()
-      (etaf--view-call
-       'column (list :key 'shell)
-       (list
-        (etaf--view-call
-         'column (list :key 'body)
-         (mapcar
-          (lambda (entry)
-            (etaf--view-call
-             'etaf-test-detached-theme-row
-             (list :key (car entry) :row-ref (car entry) :label (cdr entry))
-             nil))
-          (etaf-value etaf-test-detached-list-source))))))))
+    nil)
+  :view
+  (column :key 'shell
+   (column :key 'body
+    (etaf-test-detached-theme-row
+     :for (entry (etaf-value etaf-test-detached-list-source))
+     :key (car entry) :row-ref (car entry) :label (cdr entry)))))
 
 (etaf-define-component etaf-test-event-batch-resource (&key resource fail)
   "Render synchronous Resource success and error state transitions."
   :setup
   (let ((instance-resource resource)
         (instance-fail fail))
-    (lambda ()
-      (etaf-view
-       (column
-        (text :ref 'event-batch-resource-success
-              :on-press
-              (lambda ()
-                (setf (etaf-value instance-fail) nil)
-                (etaf-resource-load instance-resource))
-              "Load success")
-        (text :ref 'event-batch-resource-error
-              :on-press
-              (lambda ()
-                (setf (etaf-value instance-fail) t)
-                (etaf-resource-load instance-resource))
-              "Load error")
-        (text
-         (expr :value
-               (format "status=%s value=%s error=%s"
-                       (etaf-resource-status instance-resource)
-                       (or (etaf-resource-value instance-resource) "none")
-                       (if (etaf-resource-error instance-resource)
-                           "yes"
-                         "no")))))))))
+    (list instance-resource instance-fail))
+  :view
+  (column
+   (text :ref 'event-batch-resource-success
+         :on-press
+         (let ((resource (car (etaf-state)))
+               (fail (cadr (etaf-state))))
+           (lambda ()
+             (setf (etaf-value fail) nil)
+             (etaf-resource-load resource)))
+         "Load success")
+   (text :ref 'event-batch-resource-error
+         :on-press
+         (let ((resource (car (etaf-state)))
+               (fail (cadr (etaf-state))))
+           (lambda ()
+             (setf (etaf-value fail) t)
+             (etaf-resource-load resource)))
+         "Load error")
+   (text
+    (expr
+     (let ((resource (car (etaf-state))))
+       (format "status=%s value=%s error=%s"
+               (etaf-resource-status resource)
+               (or (etaf-resource-value resource) "none")
+               (if (etaf-resource-error resource) "yes" "no")))))))
 
 (etaf-define-behavior etaf-test-cleanup-behavior (&rest attributes)
   "Construct a Behavior whose disposal is visible to tests."
@@ -1201,7 +1231,7 @@
   "Evaluate an attribute expression without an extra evaluation wrapper."
   (let ((face 'bold)
         (label "Ready"))
-    (let ((view (etaf-view (text :font-weight face (expr :value label)))))
+    (let ((view (etaf-view (text :font-weight face (expr label)))))
       (should (equal "Ready" (etaf-test--render-text view))))))
 
 (ert-deftest etaf-host-metadata-uses-the-frozen-runtime-grammar ()
@@ -1239,7 +1269,7 @@
      (equal "yes"
             (etaf-test--render-text
              (etaf-view
-              (text (expr :value (if checked "yes" "no")))))))))
+              (text (expr (if checked "yes" "no")))))))))
 
 (ert-deftest etaf-view-expr-can-return-a-view ()
   "Allow an expression to return a dynamically constructed View."
@@ -1249,19 +1279,17 @@
             (etaf-test--render-text
              (etaf-view
               (column
-               (expr
-                :value
-                (when open
+               (expr (when open
                   (etaf-view (text "Details")))))))))))
 
 (ert-deftest etaf-text-expr-requires-one-string ()
   "Reject structural and sequence values at the Text interpolation boundary."
   (dolist (view
            (list
-            (etaf-view (text (expr :value (list "A" "B"))))
+            (etaf-view (text (expr (list "A" "B"))))
             (etaf-view
              (text
-              (expr :value (etaf-view (text :face 'bold "B")))))))
+              (expr (etaf-view (text :face 'bold "B")))))))
     (should-error (etaf-test--render-text view)
                   :type 'etaf-renderer-error)))
 
@@ -1363,7 +1391,7 @@
            buffer-name
            (etaf-view
             (row
-                 (text (expr :value (etaf-value source)))
+                 (text (expr (etaf-value source)))
                  (text "B"))))
           (should (string-match-p "AB" (etaf-test--buffer-text buffer-name)))
           (setf (etaf-value source) "C")
@@ -1388,12 +1416,10 @@
     (should (string-match-p "A" (substring-no-properties (ebox-render node))))
     (should (string-match-p "B" (substring-no-properties (ebox-render node))))))
 
-(ert-deftest etaf-view-prefixed-host-alias-lowers-to-canonical-host ()
-  "Resolve an explicit `etaf-' Host spelling to its core Host name."
-  (should
-   (equal "Hello"
-          (etaf-test--render-text
-           (etaf-view (etaf-text "Hello"))))))
+(ert-deftest etaf-view-prefixed-host-is-not-an-implicit-alias ()
+  "Keep the core Host registry exact instead of deriving prefix aliases."
+  (should-error (etaf-view (etaf-text "Hello"))
+                :type 'etaf-component-call-error))
 
 (ert-deftest etaf-component-view-renders-props ()
   "Render a stateless Component from its declared props."
@@ -1401,19 +1427,19 @@
     (should (etaf--component-call-p view))
     (should (equal "Ready" (etaf-test--render-text view)))))
 
-(ert-deftest etaf-component-prefixed-name-has-short-alias ()
-  "Resolve an `etaf-' Component through its public View alias."
-  (should
-   (equal "Ready"
-          (etaf-test--render-text
-           (etaf-view (test-badge :label "Ready"))))))
+(ert-deftest etaf-component-prefixed-name-is-not-an-implicit-alias ()
+  "Keep an `etaf-' Component name exact in the public registry."
+  (should-error (etaf-view (test-badge :label "Ready"))
+                :type 'etaf-component-call-error))
 
-(ert-deftest etaf-component-alias-avoids-elisp-collision ()
-  "Use a semantic alias when the unprefixed name is an Elisp function."
+(ert-deftest etaf-component-registry-does-not-generate-elisp-aliases ()
+  "Use the exact Component name even when an Elisp function collides."
   (should
    (equal "Items"
           (etaf-test--render-text
-           (etaf-view (list-view :label "Items"))))))
+           (etaf-view (etaf-list :label "Items")))))
+  (should-error (etaf-view (list-view :label "Items"))
+                :type 'etaf-component-call-error))
 
 (ert-deftest etaf-component-rejects-unknown-props ()
   "Reject undeclared Component props at the Component boundary."
@@ -1426,7 +1452,8 @@
   (should
    (macroexpand
     '(etaf-define-component setup-component (&key value)
-       :setup (lambda () (etaf-view (text (expr :value value)))))))
+       :setup value
+       :render (etaf-node 'text nil (list value)))))
   (should
    (macroexpand
     '(etaf-define-component styled-component ()
@@ -1435,8 +1462,8 @@
   (should-error
    (macroexpand
     '(etaf-define-component ambiguous-component (&key value)
-       :setup value
-       :view (text "x")))
+       :view (text "x")
+       :render (etaf-node 'text nil (list value))))
    :type 'etaf-component-definition-error)
   (should-error
    (macroexpand
@@ -2660,6 +2687,98 @@ Event composition is a Runtime contract, not a UI-library helper contract."
     (should (< (etaf--generation-metrics-node-copies batch-metrics)
                (etaf--generation-metrics-node-copies sequential-metrics)))))
 
+(ert-deftest etaf-runtime-generation-batches-effect-source-index-updates ()
+  "Build equivalent Effect/Source indexes with fewer persistent node copies."
+  (let* ((buffer-name " *etaf-generation-effect-batch-test*")
+         (cells (cl-loop repeat 64 collect (etaf-ref 0)))
+         (etaf-test-retained-render-counts (make-hash-table :test #'eql))
+         (original-put-many (symbol-function 'etaf--pvec-put-many))
+         batches runtime)
+    (unwind-protect
+        (progn
+          (cl-letf
+              (((symbol-function 'etaf--pvec-put-many)
+                (lambda (root entries &optional metrics)
+                  (let ((sequential-metrics
+                         (etaf--generation-metrics-create))
+                        (sequential root)
+                        (before (and metrics
+                                     (etaf--generation-metrics-node-copies
+                                      metrics))))
+                    (dolist (entry entries)
+                      (setq sequential
+                            (etaf--pvec-put sequential (car entry) (cdr entry)
+                                            sequential-metrics)))
+                    (let* ((result
+                            (funcall original-put-many root entries metrics))
+                           (values (mapcar #'cdr entries))
+                           (kind
+                            (cond
+                             ((cl-some #'etaf--generation-effect-p values)
+                              'effect-map)
+                             ((cl-some
+                               (lambda (value)
+                                 (and (proper-list-p value)
+                                      (cl-some
+                                       (lambda (item)
+                                         (or (etaf-ref-p item)
+                                             (etaf-computed-p item)))
+                                       value)))
+                               values)
+                              'effect-sources)
+                             ((cl-some
+                               (lambda (value)
+                                 (and value (proper-list-p value)
+                                      (cl-every #'integerp value)))
+                               values)
+                              'source-effects))))
+                      (should (equal result sequential))
+                      (when kind
+                        (push
+                         (list kind
+                               (- (etaf--generation-metrics-node-copies metrics)
+                                  before)
+                               (etaf--generation-metrics-node-copies
+                                sequential-metrics))
+                         batches))
+                      result)))))
+            (etaf-mount
+             buffer-name
+             (lambda ()
+               (etaf--view-call
+                'column nil
+                (cl-loop for cell in cells for index from 0
+                         collect
+                         (etaf--view-call
+                          'etaf-test-retained-leaf
+                          (list :key index :label index :cell cell) nil))))))
+          (setq runtime (etaf-runtime-for-buffer buffer-name))
+          (let* ((generation (etaf-runtime-current-generation runtime))
+                 (effect-map (etaf-generation-effect-map generation))
+                 (source-effects (etaf-generation-source-effects generation))
+                 (effect-sources (etaf-generation-effect-sources generation)))
+            (dolist (source cells)
+              (let ((effect-ids
+                     (etaf--pvec-get source-effects
+                                     (etaf-reactive-source-id source))))
+                (should effect-ids)
+                (should (equal effect-ids
+                               (sort (copy-sequence effect-ids) #'<)))
+                (dolist (effect-id effect-ids)
+                  (let ((effect (etaf--pvec-get effect-map effect-id)))
+                    (should (memq source
+                                  (etaf--generation-effect-deps effect)))
+                    (should (equal
+                             (etaf--generation-effect-deps effect)
+                             (etaf--pvec-get effect-sources effect-id))))))))
+          (dolist (kind '(effect-map effect-sources source-effects))
+            (let ((batch (assq kind batches)))
+              (should batch)
+              (should (= 1 (cl-count kind batches :key #'car)))
+              (should (< (nth 1 batch) (nth 2 batch))))))
+      (when runtime (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+
 (ert-deftest etaf-runtime-component-overlay-does-zero-unrelated-work ()
   "Point-update one of 500 retained Components without Root or sibling work."
   (let* ((buffer-name " *etaf-persistent-generation-test*")
@@ -3310,7 +3429,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (should (integerp range-id))
               (should (etaf--semantic-range-p range))
               (should (integerp (etaf--semantic-range-parent-id range)))
-              (should (= 1 (length (etaf--semantic-range-item-host-ids range))))
+              (should (= 1 (length (etaf--semantic-range-item-root-ids range))))
               (should
                (equal '(range)
                       (mapcar
@@ -3759,7 +3878,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                          (etaf-generation-semantic-nodes generation)
                          (etaf--generation-effect-semantic-id effect))))
             (should (eq 'range (etaf--generation-effect-kind effect)))
-            (should (= 1 (length (etaf--semantic-range-item-host-ids range))))
+            (should (= 1 (length (etaf--semantic-range-item-root-ids range))))
             (should (string-match-p "hello"
                                     (etaf-test--buffer-text buffer-name)))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
@@ -3823,7 +3942,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                      (removed-ids
                       (etaf--runtime-generation-descendant-ids
                        old-generation
-                       (etaf--semantic-range-item-host-ids old-range))))
+                       (etaf--semantic-range-item-root-ids old-range))))
                 (setf (etaf-value etaf-test-nested-range-present) nil)
                 (let ((new-generation
                        (etaf-runtime-current-generation runtime)))
@@ -3839,6 +3958,198 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                     (should-not
                      (etaf--generation-child-ids
                       new-generation semantic-id))))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+
+(ert-deftest etaf-runtime-nested-keyed-range-publishes-deepest-change ()
+  "Retain nested Range anchors and publish only the independently changed one."
+  (let ((buffer-name " *etaf-nested-keyed-range-test*")
+        (etaf-test-nested-outer-source (etaf-ref '((card-a "A" 0))))
+        (etaf-test-nested-inner-source (etaf-ref '((row-a . "one")))))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name (etaf-view (etaf-test-nested-keyed-ranges)))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (generation (etaf-runtime-current-generation runtime))
+                 (outer-effect-id
+                  (car (etaf--generation-source-effects
+                        generation etaf-test-nested-outer-source)))
+                 (inner-effect-id
+                  (car (etaf--generation-source-effects
+                        generation etaf-test-nested-inner-source)))
+                 (outer
+                  (etaf--generation-effect-semantic generation outer-effect-id))
+                 (inner
+                  (etaf--generation-effect-semantic generation inner-effect-id))
+                 (outer-id (etaf--semantic-range-semantic-id outer))
+                 (inner-id (etaf--semantic-range-semantic-id inner))
+                 (outer-ref (etaf--semantic-range-range-ref outer))
+                 (inner-ref (etaf--semantic-range-range-ref inner))
+                 (replace-range (symbol-function
+                                 'ebox-candidate-replace-range-ref))
+                 replacements)
+            (should (etaf--semantic-range-p outer))
+            (should (etaf--semantic-range-p inner))
+            (should-not (= outer-id inner-id))
+            (should (member outer-id
+                            (etaf--runtime-generation-descendant-ids
+                             generation (list outer-id))))
+            (should (member inner-id
+                            (etaf--runtime-generation-descendant-ids
+                             generation (list outer-id))))
+            (cl-letf (((symbol-function 'ebox-candidate-replace-range-ref)
+                       (lambda (candidate range-ref input
+                                &optional reuse-map retain-item-identities-p)
+                         (push range-ref replacements)
+                         (funcall replace-range candidate range-ref
+                                  input reuse-map
+                                  retain-item-identities-p))))
+              (setf (etaf-value etaf-test-nested-inner-source)
+                    '((row-a . "two"))))
+            (should (equal (list inner-ref) (nreverse replacements)))
+            (setq generation (etaf-runtime-current-generation runtime))
+            (let ((new-outer (etaf--pvec-get
+                              (etaf-generation-semantic-nodes generation)
+                              outer-id))
+                  (new-inner (etaf--pvec-get
+                              (etaf-generation-semantic-nodes generation)
+                              inner-id)))
+              (should (equal outer-ref
+                             (etaf--semantic-range-range-ref new-outer)))
+              (should (equal inner-ref
+                             (etaf--semantic-range-range-ref new-inner))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+
+(ert-deftest etaf-runtime-nested-keyed-range-ancestor-absorbs-descendant ()
+  "Publish one outer Range replacement when outer and inner inputs both change."
+  (let ((buffer-name " *etaf-nested-keyed-range-absorb-test*")
+        (etaf-test-nested-outer-source (etaf-ref '((card-a "A" 0))))
+        (etaf-test-nested-inner-source (etaf-ref '((row-a . "one")))))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name (etaf-view (etaf-test-nested-keyed-ranges)))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (generation (etaf-runtime-current-generation runtime))
+                 (outer-effect-id
+                  (car (etaf--generation-source-effects
+                        generation etaf-test-nested-outer-source)))
+                 (inner-effect-id
+                  (car (etaf--generation-source-effects
+                        generation etaf-test-nested-inner-source)))
+                 (outer
+                  (etaf--generation-effect-semantic generation outer-effect-id))
+                 (inner
+                  (etaf--generation-effect-semantic generation inner-effect-id))
+                 (outer-ref (etaf--semantic-range-range-ref outer))
+                 (inner-id (etaf--semantic-range-semantic-id inner))
+                 (inner-parent-id (etaf--semantic-range-parent-id inner))
+                 (inner-ref (etaf--semantic-range-range-ref inner))
+                 (replace-range (symbol-function
+                                 'ebox-candidate-replace-range-ref))
+                 (sort-effects (symbol-function
+                                'etaf--runtime-sort-dirty-effects))
+                 replacements)
+            (cl-letf (((symbol-function 'ebox-candidate-replace-range-ref)
+                       (lambda (candidate range-ref input
+                                &optional reuse-map retain-item-identities-p)
+                         (push range-ref replacements)
+                         (funcall replace-range candidate range-ref
+                                  input reuse-map
+                                  retain-item-identities-p)))
+                      ;; Prove normalization is independent of the incidental
+                      ;; creation order of ancestor and descendant effects.
+                      ((symbol-function 'etaf--runtime-sort-dirty-effects)
+                       (lambda (base effect-ids)
+                         (nreverse (funcall sort-effects base effect-ids)))))
+              (etaf-runtime-event-begin runtime)
+              (setf (etaf-value etaf-test-nested-inner-source)
+                    '((row-a . "two")))
+              (setf (etaf-value etaf-test-nested-outer-source)
+                    '((card-a "A2" 0)))
+              (etaf-runtime-event-end runtime))
+            (should (equal (list outer-ref) (nreverse replacements)))
+            (setq generation (etaf-runtime-current-generation runtime))
+            (let ((retained-inner
+                   (etaf--pvec-get
+                    (etaf-generation-semantic-nodes generation) inner-id)))
+              (should (etaf--semantic-range-p retained-inner))
+              (should (= inner-parent-id
+                         (etaf--semantic-range-parent-id retained-inner)))
+              (should (equal inner-ref
+                             (etaf--semantic-range-range-ref retained-inner))))
+            (should (equal "A2 two" (etaf-test--buffer-text buffer-name)))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
+
+(ert-deftest etaf-runtime-nested-keyed-range-drops-shallow-stable-ancestor ()
+  "Drop an outer artifact staged solely because its descendant changed."
+  (let ((buffer-name " *etaf-nested-keyed-range-shallow-test*")
+        (etaf-test-nested-outer-source (etaf-ref '((card-a "A" 0))))
+        (etaf-test-nested-inner-source (etaf-ref '((row-a . "one")))))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name (etaf-view (etaf-test-nested-keyed-ranges)))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (generation (etaf-runtime-current-generation runtime))
+                 (outer-effect-id
+                  (car (etaf--generation-source-effects
+                        generation etaf-test-nested-outer-source)))
+                 (inner-effect-id
+                  (car (etaf--generation-source-effects
+                        generation etaf-test-nested-inner-source)))
+                 (outer
+                  (etaf--generation-effect-semantic generation outer-effect-id))
+                 (inner
+                  (etaf--generation-effect-semantic generation inner-effect-id))
+                 (outer-ref (etaf--semantic-range-range-ref outer))
+                 (inner-ref (etaf--semantic-range-range-ref inner))
+                 (replace-range (symbol-function
+                                 'ebox-candidate-replace-range-ref))
+                 (normalize (symbol-function
+                             'etaf--runtime-normalize-range-changes))
+                 staged-refs replacements)
+            (cl-letf
+                (((symbol-function 'ebox-candidate-replace-range-ref)
+                  (lambda (candidate range-ref input
+                           &optional reuse-map retain-item-identities-p)
+                    (push range-ref replacements)
+                    (funcall replace-range candidate range-ref
+                             input reuse-map
+                             retain-item-identities-p)))
+                 ((symbol-function 'etaf--runtime-normalize-range-changes)
+                  (lambda (active-runtime base changes)
+                    (let* ((inner-change
+                            (cl-find inner-ref changes
+                                     :key (lambda (change)
+                                            (etaf--semantic-backend-range-ref
+                                             (car change)))
+                                     :test #'equal))
+                           ;; Model the real staging boundary: rebuilding an
+                           ;; ancestor artifact observes the changed descendant
+                           ;; input even though the ancestor semantic payload
+                           ;; and retained identity are unchanged.
+                           (ancestor-change
+                            (list outer outer
+                                  (etaf--runtime-committed-range-input
+                                   active-runtime outer)
+                                  (nth 3 inner-change) nil))
+                           (staged (cons ancestor-change changes)))
+                      (setq staged-refs
+                            (mapcar
+                             (lambda (change)
+                               (etaf--semantic-backend-range-ref (car change)))
+                             staged))
+                      (funcall normalize active-runtime base staged)))))
+              (setf (etaf-value etaf-test-nested-inner-source)
+                    '((row-a . "two"))))
+            (should (member outer-ref staged-refs))
+            (should (member inner-ref staged-refs))
+            (should (equal (list inner-ref) (nreverse replacements)))
+            (should (equal "A two" (etaf-test--buffer-text buffer-name)))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
@@ -4416,12 +4727,16 @@ Event composition is a Runtime contract, not a UI-library helper contract."
             (should (etaf--semantic-component-p parent))
             (should-not (etaf--semantic-component-artifact-key parent))
             (setf (etaf-value etaf-test-ancestor-parent-source) "dark")
-            (should (equal
-                     (plist-get
-                      (etaf-runtime-host-props-for
-                       runtime '(etaf-host (root :view)))
-                      :bgcolor)
-                     "dark"))))
+            (let* ((host
+                    (etaf--pvec-get
+                     (etaf-generation-semantic-nodes generation)
+                     (car (etaf--semantic-component-child-ids parent))))
+                   (host-ref (etaf--semantic-host-host-ref host)))
+              (should (equal
+                       (plist-get
+                        (etaf-runtime-host-props-for runtime host-ref)
+                        :bgcolor)
+                       "dark")))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name)))
@@ -4646,7 +4961,9 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                 etaf-test-slot-consumer-renders 0
                 etaf-test-context-provider-renders 0)
           (setf (etaf-value etaf-test-context-provider-source) "B")
-          (should (= 1 etaf-test-context-provider-renders))
+          ;; The provider publishes a stable reactive Context ref during
+          ;; setup; this direct slot Range update must not rerender it.
+          (should (zerop etaf-test-context-provider-renders))
           (should (= 1 etaf-test-slot-range-evals))
           (should (zerop etaf-test-slot-consumer-renders))
           (should (string-match-p "B" (etaf-test--buffer-text buffer-name)))

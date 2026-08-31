@@ -31,12 +31,23 @@
 (defvar etaf--action-registry (make-hash-table :test #'eq)
   "Action name -> `etaf-action-spec' table.")
 
+(defvar etaf--allow-action-redefinition nil
+  "Non-nil only inside `etaf-action-redefine-run'.")
+
+(defun etaf--action-assert-definition-available (name)
+  "Signal when Action NAME cannot be defined in the current boundary."
+  (when (and (gethash name etaf--action-registry)
+             (not etaf--allow-action-redefinition))
+    (signal 'etaf-action-error
+            (list (format "Duplicate ETAF Action: %S" name)))))
+
 (defun etaf-action-register (name function)
   "Register FUNCTION as named Action NAME and return NAME."
   (etaf--assert-not-rendering 'register-action)
   (unless (and (symbolp name) (not (keywordp name)) (functionp function))
     (signal 'etaf-action-error
             (list (format "Invalid Action registration: %S" name))))
+  (etaf--action-assert-definition-available name)
   (puthash name (etaf--action-spec-create :name name :function function)
            etaf--action-registry)
   name)
@@ -52,11 +63,24 @@ through `etaf-dispatch'."
   (let ((docstring (when (stringp (car body)) (pop body)))
         (function-symbol (intern (format "%s--etaf-action" name))))
     `(progn
+       (etaf--action-assert-definition-available ',name)
        (defun ,function-symbol ,arguments
          ,(or docstring (format "Run ETAF Action `%s'." name))
          ,@body)
        (etaf-action-register ',name #',function-symbol)
        ',name)))
+
+;;;###autoload
+(defun etaf-action-redefine-run (function)
+  "Run FUNCTION while allowing intentional Action redefinition.
+
+Normal duplicate registrations remain errors.  This dynamic authoring
+boundary replaces only the process-global name binding used by future
+`etaf-dispatch' calls; it does not flush or rerender mounted Runtimes."
+  (unless (functionp function)
+    (signal 'wrong-type-argument (list 'functionp function)))
+  (let ((etaf--allow-action-redefinition t))
+    (funcall function)))
 
 ;;;###autoload
 (defun etaf-dispatch (action &rest arguments)
