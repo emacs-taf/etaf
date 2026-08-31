@@ -3200,7 +3200,8 @@ each logical item."
 
 (defun etaf--runtime-keyed-range-metadata
     (expr snapshot item-root-groups item-node-counts)
-  "Return retained metadata for EXPR SNAPSHOT and aligned item spans."
+  "Return retained metadata for EXPR and SNAPSHOT.
+ITEM-ROOT-GROUPS and ITEM-NODE-COUNTS describe aligned item spans."
   (when snapshot
     (let ((items (plist-get snapshot :items))
           (snapshot-keys (etaf--runtime-keyed-range-keys expr snapshot))
@@ -3240,7 +3241,7 @@ each logical item."
 
 (defun etaf--runtime-index-range-item-identities
     (runtime semantic-ids identity-index)
-  "Validate SEMANTIC-IDS and index their Host identities in IDENTITY-INDEX."
+  "Validate RUNTIME SEMANTIC-IDS and index Hosts in IDENTITY-INDEX."
   (dolist (semantic-id semantic-ids)
     (let ((semantic
            (gethash semantic-id
@@ -5069,7 +5070,7 @@ the range is not eligible for keyed incremental rendering."
 
 (defun etaf--runtime-range-direct-node-signature
     (runtime generation semantic-id candidate-p)
-  "Return SEMANTIC-ID's direct material signature.
+  "Return SEMANTIC-ID's direct material signature in RUNTIME.
 When CANDIDATE-P is non-nil, read the candidate overlay before GENERATION.
 Nested Range identity is retained, but its internal artifact is deliberately
 excluded so descendant-only work cannot masquerade as an ancestor change."
@@ -5118,7 +5119,8 @@ excluded so descendant-only work cannot masquerade as an ancestor change."
 
 (defun etaf--runtime-range-direct-payload-equal-p
     (runtime generation old candidate)
-  "Return whether OLD and CANDIDATE own the same direct Range payload."
+  "Return whether OLD and CANDIDATE own the same direct Range payload.
+RUNTIME and GENERATION provide committed and candidate node signatures."
   (and (equal
         (etaf--semantic-backend-range-item-root-ids old)
         (etaf--semantic-backend-range-item-root-ids candidate))
@@ -5135,7 +5137,8 @@ excluded so descendant-only work cannot masquerade as an ancestor change."
          (etaf--semantic-backend-range-item-root-ids candidate)))))
 
 (defun etaf--runtime-normalize-range-changes (runtime generation changes)
-  "Return non-overlapping CHANGES ordered as originally staged.
+  "Normalize RUNTIME CHANGES against GENERATION in staged order.
+Return a non-overlapping change list.
 An ancestor absorbs descendants only when its own direct material payload
 changed.  If its root identity/cardinality and direct payload are stable, its
 staged artifact differs solely because it contains a descendant candidate;

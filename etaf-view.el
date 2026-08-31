@@ -293,7 +293,8 @@ Component semantics.  COMPONENT-NAME labels diagnostics."
     result))
 
 (defun etaf--forward-component-attrs (call attrs component-name)
-  "Return copied root Component CALL receiving caller ATTRS."
+  "Return copied root Component CALL receiving caller ATTRS.
+COMPONENT-NAME identifies the forwarding owner for diagnostics."
   (let* ((copy (copy-sequence call))
          (spec (etaf--component-call-spec call))
          (declared (mapcar #'etaf--component-prop-key
@@ -536,7 +537,7 @@ belong to the anonymous `default' slot."
            children))))
 
 (defun etaf--compile-branch-children (first rest slot-mode)
-  "Compile branch FIRST and adjacent arms from REST.
+  "Compile branch FIRST and adjacent arms from REST under SLOT-MODE.
 Return `(COMPILED . REMAINING)' for one compiler-owned Range program."
   (let ((arms nil)
         (remaining rest)
@@ -650,7 +651,7 @@ Return `(COMPILED . REMAINING)' for one compiler-owned Range program."
           :range-item ,item-renderer)))))
 
 (defun etaf--compile-child-sequence (children slot-mode)
-  "Compile sibling CHILDREN with branch and keyed-list structure."
+  "Compile sibling CHILDREN with branch and keyed-list SLOT-MODE structure."
   (let (compiled)
     (while children
       (let* ((form (car children))

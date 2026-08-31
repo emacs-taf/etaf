@@ -99,7 +99,8 @@
 
 (defun etaf-compiler--compile-children
     (children path programs slot-mode)
-  "Compile sibling CHILDREN below PATH with directive grouping."
+  "Compile sibling CHILDREN below PATH, extending PROGRAMS.
+SLOT-MODE selects ordinary projection or slot compilation."
   (let ((child-index 0)
         blocks)
     (while children
@@ -141,7 +142,8 @@
     (list blocks programs)))
 
 (defun etaf-compiler--compile-block (form path programs slot-mode)
-  "Compile View FORM at PATH, returning `(BLOCK PROGRAMS)' or nil."
+  "Compile View FORM at PATH using PROGRAMS and SLOT-MODE.
+Return `(BLOCK PROGRAMS)' or nil."
   (cond
    ((or (null form) (stringp form))
     (list (list :kind 'literal :value form :path path :static-p t) programs))
@@ -203,7 +205,8 @@
       (cons static dynamic))))
 
 (defun etaf-compiler--compile (form &optional slot-mode)
-  "Compile FORM into `(BLUEPRINT PROGRAM-CODE...)', or return nil."
+  "Compile FORM under optional SLOT-MODE into a View blueprint.
+Return `(BLUEPRINT PROGRAM-CODE...)', or nil."
   (pcase-let* ((`(,roots ,programs)
                 (etaf-compiler--compile-children
                  (list form) nil nil (or slot-mode :projection)))

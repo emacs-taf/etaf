@@ -95,7 +95,7 @@ A defined setup may return nil; setup presence is tracked independently."
   (unless (and (eq etaf--component-phase 'render)
                etaf--current-component-instance)
     (etaf--component-definition-error
-     "etaf-state is available only during Component view/render"))
+     "ETAF state is available only during Component view/render"))
   (unless etaf--current-component-setup-defined-p
     (etaf--component-definition-error
      "Current Component does not declare :setup"))
