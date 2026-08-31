@@ -450,6 +450,14 @@ through one outer reactive dispatch. A local owner evaluates into a candidate
 generation and Ebox logical replacement; disjoint owners are coalesced into
 one TP/Ebox publication. The Root owner is the only complete-root adapter.
 
+The sole mutable pointer to the committed semantic generation belongs to
+`etaf-generation-authority`. Public handler and Host-property queries read that
+generation directly. Same-named Runtime hash tables are one-way compatibility
+mirrors rebuilt from the generation; they neither authorize queries nor write
+back into it. The migration-only `legacy`, `project`, and `shadow` routes prove
+projection equivalence and rollback safety without introducing a second
+committed truth.
+
 Each Runtime flush records a candidate-aware effect tuple containing the
 generation id, effect-to-source edges and source versions, plus an immutable
 semantic-node stamp for candidate input/context/output facts. A repeated tuple

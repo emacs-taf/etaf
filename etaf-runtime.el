@@ -15,6 +15,7 @@
 (require 'etaf-view)
 (require 'etaf-component)
 (require 'etaf-reactive)
+(require 'etaf-generation)
 (require 'etaf-render-port)
 (require 'etaf-renderer)
 (require 'etaf-context)
@@ -284,7 +285,7 @@ the sequential `etaf--pvec-put' contract."
   next-resource-id
   next-effect-id
   next-semantic-id
-  current-generation
+  generation-authority
   artifact-registry
   candidate-artifacts
   candidate-effects
@@ -333,6 +334,33 @@ the sequential `etaf--pvec-put' contract."
   (next-operation-id 0)
   (event-depth 0)
   dirty-effect-queue-tail)
+
+(defcustom etaf-generation-mirror-route 'project
+  "Compatibility mirror route used after a committed generation changes.
+`legacy' preserves incremental Runtime table updates, `project' rebuilds exact
+mirrors from the committed generation, and `shadow' runs legacy updates before
+checking them against a fresh generation projection."
+  :type '(choice (const legacy) (const project) (const shadow))
+  :group 'etaf)
+
+(defun etaf--runtime-generation-authority (runtime)
+  "Return RUNTIME's generation authority, creating its empty owner if needed."
+  (or (etaf-runtime-generation-authority runtime)
+      (setf (etaf-runtime-generation-authority runtime)
+            (etaf-generation-authority-create))))
+
+(defun etaf-runtime-current-generation (runtime)
+  "Return RUNTIME's uniquely authoritative committed generation."
+  (etaf-generation-authority-current
+   (etaf--runtime-generation-authority runtime)))
+
+(defun etaf-runtime--set-current-generation (runtime generation)
+  "Set RUNTIME's compatibility generation pointer to GENERATION."
+  (etaf-generation-authority-set-current
+   (etaf--runtime-generation-authority runtime) generation))
+
+(gv-define-simple-setter etaf-runtime-current-generation
+  etaf-runtime--set-current-generation)
 
 (defun etaf--theme-paint-face-spec (property value)
   "Return PROPERTY's TP face spec for resolved paint VALUE, or nil."
@@ -571,6 +599,81 @@ RESOLVED is the current projected paint value."
   "Return committed Host contribution entries for RUNTIME."
   (copy-tree (etaf--generation-index-entries
               (etaf-runtime-current-generation runtime) 'host-props)))
+
+(defun etaf--runtime-generation-mirror-projection (generation)
+  "Return exact compatibility mirrors projected from GENERATION."
+  (etaf-generation-project-mirrors
+   (etaf--generation-index-entries generation 'handlers)
+   (etaf--generation-index-entries generation 'host-props)))
+
+(defun etaf--runtime-install-legacy-generation-mirrors (runtime full-p)
+  "Install RUNTIME candidate mirrors through the legacy FULL-P route."
+  (if full-p
+      (setf (etaf-runtime-handlers runtime)
+            (etaf-runtime-candidate-handlers runtime)
+            (etaf-runtime-host-props runtime)
+            (etaf-runtime-candidate-host-props runtime))
+    (unless (hash-table-p (etaf-runtime-handlers runtime))
+      (setf (etaf-runtime-handlers runtime) (make-hash-table :test #'equal)))
+    (unless (hash-table-p (etaf-runtime-host-props runtime))
+      (setf (etaf-runtime-host-props runtime)
+            (make-hash-table :test #'equal)))
+    (maphash
+     (lambda (host-ref handlers)
+       (puthash host-ref handlers (etaf-runtime-handlers runtime)))
+     (etaf-runtime-candidate-handlers runtime))
+    (maphash
+     (lambda (host-ref props)
+       (puthash host-ref props (etaf-runtime-host-props runtime)))
+     (etaf-runtime-candidate-host-props runtime))))
+
+(defun etaf--runtime-install-projected-generation-mirrors
+    (runtime projection)
+  "Install detached generation mirror PROJECTION into RUNTIME."
+  (setf (etaf-runtime-handlers runtime) (plist-get projection :handlers)
+        (etaf-runtime-host-props runtime) (plist-get projection :host-props)))
+
+(defun etaf-runtime-generation-mirrors-consistent-p (runtime)
+  "Return non-nil when RUNTIME mirrors equal its committed generation."
+  (let ((projection
+         (etaf--runtime-generation-mirror-projection
+          (etaf-runtime-current-generation runtime))))
+    (and
+     (etaf-generation-mirror-equal-p
+      (or (etaf-runtime-handlers runtime) (make-hash-table :test #'equal))
+      (plist-get projection :handlers))
+     (etaf-generation-mirror-equal-p
+      (or (etaf-runtime-host-props runtime) (make-hash-table :test #'equal))
+      (plist-get projection :host-props)))))
+
+(defun etaf--runtime-install-generation-mirrors
+    (runtime generation full-p)
+  "Install RUNTIME compatibility mirrors for committed GENERATION.
+FULL-P preserves the old route's full-root replacement distinction."
+  (let ((projection (etaf--runtime-generation-mirror-projection generation)))
+    (pcase etaf-generation-mirror-route
+      ('legacy
+       (etaf--runtime-install-legacy-generation-mirrors runtime full-p))
+      ('project
+       (etaf--runtime-install-projected-generation-mirrors runtime projection))
+      ('shadow
+       (etaf--runtime-install-legacy-generation-mirrors runtime full-p)
+       (unless (and
+                (etaf-generation-mirror-equal-p
+                 (etaf-runtime-handlers runtime)
+                 (plist-get projection :handlers))
+                (etaf-generation-mirror-equal-p
+                 (etaf-runtime-host-props runtime)
+                 (plist-get projection :host-props)))
+         (signal 'etaf-generation-error
+                 (list :compatibility-mirror-drift
+                       :generation
+                       (and generation
+                            (etaf-generation-generation-id generation))))))
+      (_
+       (signal 'etaf-generation-error
+               (list :unknown-mirror-route etaf-generation-mirror-route))))
+    runtime))
 
 (defun etaf--runtime-build-contribution-indexes (runtime base full-p)
   "Build RUNTIME immutable generation contributions over BASE.
@@ -5592,12 +5695,8 @@ RENDERED-IDENTITIES names the Component render participants."
        (etaf--runtime-clear-candidate runtime)
        (signal (car err) (cdr err))))
     (etaf--runtime-complete-generation runtime candidate-generation)
-    (maphash (lambda (host-ref handlers)
-               (puthash host-ref handlers (etaf-runtime-handlers runtime)))
-             (etaf-runtime-candidate-handlers runtime))
-    (maphash (lambda (host-ref props)
-               (puthash host-ref props (etaf-runtime-host-props runtime)))
-             (etaf-runtime-candidate-host-props runtime))
+    (etaf--runtime-install-generation-mirrors
+     runtime candidate-generation nil)
     (etaf--runtime-clear-dirty-effects runtime)
     (unwind-protect
         (progn
@@ -5670,11 +5769,9 @@ RENDERED-IDENTITIES names the Component render participants."
                (list :observer #'etaf--runtime-forward-ebox-report)))
             (etaf--runtime-participant-publish participant))
           (etaf--runtime-complete-generation runtime candidate-generation)
+          (etaf--runtime-install-generation-mirrors
+           runtime candidate-generation t)
           (setf (etaf-runtime-root-node runtime) root-node
-                (etaf-runtime-handlers runtime)
-                (etaf-runtime-candidate-handlers runtime)
-                (etaf-runtime-host-props runtime)
-                (etaf-runtime-candidate-host-props runtime)
                 (etaf-runtime-root-dirty-p runtime) nil)
           (etaf--runtime-clear-dirty-effects runtime))
       ((error quit)
@@ -5770,6 +5867,8 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
                      :next-resource-id 0
                      :next-effect-id 0
                      :next-semantic-id 1
+                     :generation-authority
+                     (etaf-generation-authority-create)
                      :root-effect-id 0
                      :root-range-id 1
                      :artifact-registry (make-hash-table :test #'equal)

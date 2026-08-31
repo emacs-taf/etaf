@@ -440,6 +440,13 @@ mounted Component、expr、slot、fragment、raw、inline 和 Root owner 都经�
 replacement；不相交 owner 会合并为一次 TP/Ebox publication。只有 Root owner
 可以进入 complete-root adapter。
 
+已提交 semantic generation 的唯一 mutable pointer 由
+`etaf-generation-authority` 持有。handler 与 Host-prop 等公共查询直接读取该
+generation；Runtime 中同名 hash table 只是由 generation 单向重建的兼容 mirror，
+既不能独立授权查询，也不能反向改写 generation。迁移期的
+`legacy`/`project`/`shadow` 路由只用于证明投影等价与安全回退，不增加第二份
+committed truth。
+
 每次 Runtime flush 都记录 candidate-aware effect tuple：其中包含 generation id、
 effect→source 边和 source version，以及 candidate input/context/output facts 的
 immutable semantic-node stamp。重复 tuple 会报告有序的 effect/edge path；step
