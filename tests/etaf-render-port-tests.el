@@ -234,6 +234,29 @@
         (ebox-unmount-buffer buffer))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
+(ert-deftest etaf-render-port-v1-missing-update-revision-fails-later ()
+  "A committed v1 update may finish, but missing revision evidence fails closed."
+  (let ((buffer (generate-new-buffer " *etaf-v1-missing-revision*"))
+        (etaf-render-port--selected-port (etaf-render-port--v1-fallback))
+        (report (list :strategy 'injected-without-revision)))
+    (unwind-protect
+        (progn
+          (etaf-render-port-initial
+           buffer (ebox-build '(box "one")) #'ignore #'ignore)
+          (cl-letf (((symbol-function 'ebox-commit)
+                     (lambda (_buffer _input framework-stage _rollback)
+                       (funcall framework-stage report)
+                       report)))
+            (should
+             (eq (etaf-render-port-update
+                  buffer (ebox-build '(box "two")) #'ignore #'ignore)
+                 report)))
+          (should-error (etaf-render-port-revision buffer) :type 'error))
+      (when (and (buffer-live-p buffer)
+                 (ebox-surface-buffer-mounted-p buffer))
+        (ebox-unmount-buffer buffer))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (ert-deftest etaf-render-port-is-the-only-protocol-probe-owner ()
   "No downstream ETAF module probes Ebox framework SPI protocol state."
   (dolist (file (directory-files etaf-render-port-test--root t "\\.el\\'"))
