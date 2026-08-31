@@ -27,6 +27,8 @@
                 'ebox-framework-spi-initial))
     (should (eq (etaf-render-port-update-function port)
                 'ebox-framework-spi-update))
+    (should (eq (etaf-render-port-revision-function port)
+                'ebox-surface-buffer-revision))
     (should (eq (etaf-render-port-bootstrap-outcome port)
                 'valid-v2-selected))
     (setcar capabilities 'mutated)
@@ -50,6 +52,8 @@
                     'etaf-render-port--v1-initial))
         (should (eq (etaf-render-port-update-function port)
                     'etaf-render-port--v1-update))
+        (should (eq (etaf-render-port-revision-function port)
+                    'etaf-render-port--v1-revision))
         (should (eq (etaf-render-port-bootstrap-outcome port)
                     'v2-absent-v1-selected))))))
 
@@ -203,6 +207,28 @@
           (cl-letf (((symbol-function 'ebox-surface-buffer-revision)
                      (lambda (_buffer) (error "injected report failure"))))
             (should-error (etaf-render-port-revision buffer) :type 'error)))
+      (when (and (buffer-live-p buffer)
+                 (ebox-surface-buffer-mounted-p buffer))
+        (ebox-unmount-buffer buffer))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest etaf-render-port-v1-revision-needs-no-v2-ebox-accessor ()
+  "A v1-only Ebox retains revisions without a v2-only query symbol."
+  (let ((buffer (generate-new-buffer " *etaf-v1-revision*"))
+        (etaf-render-port--selected-port (etaf-render-port--v1-fallback)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'ebox-surface-buffer-revision) nil))
+          (etaf-render-port-initial
+           buffer (ebox-build '(box "one")) #'ignore #'ignore)
+          (should (= (etaf-render-port-revision buffer) 1))
+          (let ((report
+                 (etaf-render-port-update
+                  buffer (ebox-build '(box "two")) #'ignore #'ignore)))
+            (should (= (etaf-render-port-revision buffer)
+                       (plist-get report :surface-revision))))
+          (with-current-buffer buffer
+            (setq-local etaf-render-port--v1-committed-revision nil))
+          (should-error (etaf-render-port-revision buffer) :type 'error))
       (when (and (buffer-live-p buffer)
                  (ebox-surface-buffer-mounted-p buffer))
         (ebox-unmount-buffer buffer))

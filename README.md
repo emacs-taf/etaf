@@ -112,7 +112,7 @@ There is no separate `etaf-data` install: Data is a core ETAF capability. There 
 
 ## Load and verify
 
-ECSS 0.1.0 and TP 1.0.0 are independent packages and may be installed in either order. Install both before Ebox 2.0.0, then install ETAF. ETAF consumes only the Ebox 2.0 public rendering contract.
+ECSS 0.1.0 and TP 1.0.1 are independent packages and may be installed in either order. Install both before Ebox 2.0.1, then install ETAF 0.1.1. ETAF declares TP directly because Host final-accept authority uses the TP transaction contract; rendering still consumes only the Ebox 2.0 public contract.
 
 During development, load the sibling Ebox checkout before ETAF:
 

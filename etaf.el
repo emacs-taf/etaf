@@ -3,8 +3,8 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; Author: ETAF contributors
-;; Version: 0.1.0
-;; Package-Requires: ((emacs "29.1") (ebox "2.0.0"))
+;; Version: 0.1.1
+;; Package-Requires: ((emacs "29.1") (ebox "2.0.1") (tp "1.0.1"))
 ;; Keywords: ui, tools, convenience
 ;; URL: https://github.com/ginqi7/etaf
 

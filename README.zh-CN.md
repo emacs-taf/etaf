@@ -106,7 +106,7 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 
 ## 加载与验证
 
-ECSS 0.1.0 与 TP 1.0.0 是互相独立的包，安装顺序任意；两者都安装后再安装 Ebox 2.0.0，最后安装 ETAF。ETAF 只使用 Ebox 2.0 的公共渲染契约。
+ECSS 0.1.0 与 TP 1.0.1 是互相独立的包，安装顺序任意；两者都安装后再安装 Ebox 2.0.1，最后安装 ETAF 0.1.1。ETAF 会直接声明 TP 依赖，因为 Host final-accept authority 使用 TP transaction contract；渲染仍只使用 Ebox 2.0 的公共契约。
 
 开发时先把同级 Ebox 检出目录加入 `load-path`：
 

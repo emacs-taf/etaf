@@ -61,6 +61,7 @@
   (tp-protocol nil :read-only t)
   (initial-function nil :read-only t)
   (update-function nil :read-only t)
+  (revision-function nil :read-only t)
   (bootstrap-outcome nil :read-only t)
   (provider nil :read-only t))
 
@@ -91,6 +92,10 @@
 (defun etaf-render-port-update-function (port)
   "Return PORT's update function symbol."
   (etaf-render-port--update-function port))
+
+(defun etaf-render-port-revision-function (port)
+  "Return PORT's committed-revision query function symbol."
+  (etaf-render-port--revision-function port))
 
 (defun etaf-render-port-bootstrap-outcome (port)
   "Return PORT's immutable bootstrap outcome tag."
@@ -262,6 +267,9 @@
 (defvar-local etaf-render-port--v1-cleanup-diagnostics nil
   "Contained cleanup failures from the latest failed v1 initial operation.")
 
+(defvar-local etaf-render-port--v1-committed-revision nil
+  "ETAF-owned revision evidence for a mounted legacy Ebox v1 surface.")
+
 (defun etaf-render-port-v1-cleanup-diagnostics (buffer)
   "Return a defensive copy of BUFFER's latest v1 cleanup diagnostics."
   (and (buffer-live-p (get-buffer buffer))
@@ -312,6 +320,26 @@
       ((error quit)
        (list :phase phase :condition (copy-tree condition))))))
 
+(defun etaf-render-port--v1-record-revision (buffer revision)
+  "Record committed v1 REVISION for BUFFER without postaccept failure."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq-local etaf-render-port--v1-committed-revision
+                  (if (and (integerp revision) (> revision 0))
+                      revision
+                    'unavailable)))))
+
+(defun etaf-render-port--v1-revision (buffer)
+  "Return ETAF's committed revision evidence for legacy v1 BUFFER."
+  (let ((revision
+         (and (buffer-live-p buffer)
+              (buffer-local-value
+               'etaf-render-port--v1-committed-revision buffer))))
+    (unless (and (integerp revision) (> revision 0))
+      (error "Mounted legacy Ebox surface has no committed revision: %S"
+             revision))
+    revision))
+
 (defun etaf-render-port--v1-initial
     (buffer input framework-stage framework-rollback &optional observer)
   "Publish INPUT initially to BUFFER through legacy Ebox.
@@ -327,7 +355,8 @@ through Ebox's legacy initial option."
             (when (ebox-surface-buffer-mounted-p buffer)
               (error "Legacy Ebox initial operation requires an unmounted buffer"))
             (with-current-buffer buffer
-              (setq-local etaf-render-port--v1-cleanup-diagnostics nil))
+              (setq-local etaf-render-port--v1-cleanup-diagnostics nil
+                          etaf-render-port--v1-committed-revision nil))
             (ebox-render-to-buffer
              buffer input (and observer (list :observer observer)))))
         stage-entered)
@@ -335,6 +364,10 @@ through Ebox's legacy initial option."
         (progn
           (setq stage-entered t)
           (funcall framework-stage nil)
+          ;; TP surfaces start at committed revision one.  Legacy Ebox does
+          ;; not expose its surface handle, so ETAF owns this compatibility
+          ;; evidence and advances it from later update reports.
+          (etaf-render-port--v1-record-revision buffer 1)
           result)
       ((error quit)
        (when stage-entered
@@ -353,6 +386,12 @@ through Ebox's legacy initial option."
                       (when (and (buffer-live-p buffer)
                                  (ebox-surface-buffer-mounted-p buffer))
                         (ebox-unmount-buffer buffer))))
+                  (revision-reset
+                   ,(lambda ()
+                      (when (buffer-live-p buffer)
+                        (with-current-buffer buffer
+                          (setq-local
+                           etaf-render-port--v1-committed-revision nil)))))
                   (buffer-restore
                    ,(lambda ()
                       (etaf-render-port--v1-restore-buffer buffer snapshot)))))
@@ -372,7 +411,13 @@ through Ebox's legacy initial option."
 FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK retain their existing Ebox meanings."
   (etaf-render-port--validate-framework-pair
    framework-stage framework-rollback)
-  (ebox-commit buffer input framework-stage framework-rollback))
+  (let ((report
+         (ebox-commit buffer input framework-stage framework-rollback)))
+    ;; Publication is accepted here.  Missing compatibility metadata must not
+    ;; become a rollback-capable error after commit; a later read fails closed.
+    (etaf-render-port--v1-record-revision
+     (get-buffer buffer) (plist-get report :surface-revision))
+    report))
 
 (defun etaf-render-port--v1-fallback ()
   "Return the complete immutable fallback port for an absent Ebox v2 SPI."
@@ -386,6 +431,7 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK retain their existing Ebox meanings."
    :tp-protocol 'tp-transaction-protocol-v1
    :initial-function 'etaf-render-port--v1-initial
    :update-function 'etaf-render-port--v1-update
+   :revision-function 'etaf-render-port--v1-revision
    :bootstrap-outcome 'v2-absent-v1-selected))
 
 (defun etaf-render-port--v2-port (snapshot)
@@ -404,6 +450,7 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK retain their existing Ebox meanings."
      (plist-get (plist-get snapshot :initial) :function)
      :update-function
      (plist-get (plist-get snapshot :update) :function)
+     :revision-function 'ebox-surface-buffer-revision
      :bootstrap-outcome 'valid-v2-selected
      :provider (plist-get snapshot :provider))))
 
@@ -467,7 +514,11 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair."
 
 (defun etaf-render-port-unmount (buffer)
   "Release the retained Ebox surface owned by mounted BUFFER."
-  (ebox-unmount-buffer buffer))
+  (let ((buffer (get-buffer buffer)))
+    (prog1 (ebox-unmount-buffer buffer)
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          (setq-local etaf-render-port--v1-committed-revision nil))))))
 
 (defun etaf-render-port-mounted-p (buffer)
   "Return non-nil when BUFFER owns a live retained Ebox surface."
@@ -479,7 +530,11 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair."
     (if (not (and (buffer-live-p buffer)
                   (ebox-surface-buffer-mounted-p buffer)))
         0
-      (let ((revision (ebox-surface-buffer-revision buffer)))
+      (let ((revision
+             (funcall
+              (etaf-render-port-revision-function
+               etaf-render-port--selected-port)
+              buffer)))
         (unless (and (integerp revision) (>= revision 0))
           (error "Mounted Ebox surface has no committed revision: %S"
                  revision))
