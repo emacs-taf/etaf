@@ -14,6 +14,8 @@
   "ETAF scheduler projection test condition")
 (define-error 'etaf-scheduler-test-body-condition
   "ETAF scheduler body test condition")
+(define-error 'etaf-scheduler-test-render-recovery-condition
+  "ETAF scheduler render recovery condition")
 
 (etaf-define-component etaf-scheduler-test-pair (&key left right)
   "Render reactive LEFT and RIGHT values."
@@ -42,6 +44,16 @@
     (when (eq status 'success)
       (signal 'etaf-scheduler-test-projection-condition '("projection")))
     (etaf-node 'text nil (list (symbol-name status)))))
+
+(etaf-define-component etaf-scheduler-test-render-recovery
+    (&key source fail)
+  "Render SOURCE unless FAIL requests a deterministic render error."
+  :render
+  (progn
+    (when (etaf-value fail)
+      (signal 'etaf-scheduler-test-render-recovery-condition
+              '("expected render failure" :payload recovery)))
+    (etaf-node 'text nil (list (format "Value %s" (etaf-value source))))))
 
 (defun etaf-scheduler-test--text (buffer-name)
   "Return BUFFER-NAME text without properties."
@@ -493,6 +505,66 @@
           (should (equal captured
                          (etaf-value (etaf-data-error controller)))))
       (etaf-data-stop controller))))
+
+(ert-deftest etaf-scheduler-render-failure-keeps-retry-fifo-coherent ()
+  "A failed Component evaluation retries and visibly recovers on new state."
+  (let* ((buffer-name " *etaf-scheduler-render-recovery*")
+         (source (etaf-ref "A"))
+         (fail (etaf-ref nil))
+         captured)
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer-name
+           (etaf--view-call
+            'etaf-scheduler-test-render-recovery
+            (list :source source :fail fail) nil))
+          (setf (etaf-value source) "B")
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (generation (etaf-runtime-generation runtime))
+                 (revision
+                  (plist-get (ebox-buffer-update-report buffer-name)
+                             :surface-revision))
+                 (contents
+                  (with-current-buffer buffer-name (buffer-string))))
+            (condition-case condition
+                (setf (etaf-value fail) t)
+              (etaf-scheduler-test-render-recovery-condition
+               (setq captured condition)))
+            (should
+             (equal captured
+                    '(etaf-scheduler-test-render-recovery-condition
+                      "expected render failure" :payload recovery)))
+            (should (= generation (etaf-runtime-generation runtime)))
+            (should (= revision
+                       (plist-get (ebox-buffer-update-report buffer-name)
+                                  :surface-revision)))
+            (should (equal-including-properties
+                     contents (with-current-buffer buffer-name
+                                (buffer-string))))
+            (should
+             (equal (sort (hash-table-keys
+                           (etaf-runtime-dirty-effect-ids runtime)) #'<)
+                    (sort (copy-sequence
+                           (etaf-runtime-dirty-effect-queue runtime)) #'<)))
+            (etaf-reactive-call-with-batch
+             (lambda ()
+               (setf (etaf-value fail) nil)
+               (setf (etaf-value source) "C")))
+            (should (equal "Value C"
+                           (etaf-scheduler-test--text buffer-name)))
+            (should (= (1+ generation)
+                       (etaf-runtime-generation runtime)))
+            (should (= (1+ revision)
+                       (plist-get (ebox-buffer-update-report buffer-name)
+                                  :surface-revision)))
+            (should-not (hash-table-keys
+                         (etaf-runtime-dirty-effect-ids runtime)))
+            (should-not (etaf-runtime-dirty-effect-queue runtime))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
 
 (ert-deftest etaf-scheduler-detached-route-does-not-enter-fan-out ()
   "An invalidated Runtime route cannot enqueue work in its old context."

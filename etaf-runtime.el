@@ -5734,6 +5734,16 @@ RENDERED-IDENTITIES names the Component render participants."
             (setq owner (etaf--semantic-component-identity semantic))))))
     owner))
 
+(defun etaf--runtime-restore-component-overlay-retry
+    (runtime retry-effect-ids)
+  "Restore failed RUNTIME overlay work for RETRY-EFFECT-IDS."
+  (etaf--runtime-clear-dirty-effects runtime)
+  (dolist (effect-id retry-effect-ids)
+    (etaf--runtime-enqueue-effect runtime effect-id))
+  (etaf--runtime-dispose-created-candidate runtime)
+  (etaf--runtime-rollback-behaviors runtime)
+  (etaf--runtime-clear-candidate runtime))
+
 (defun etaf--runtime-component-overlay (runtime)
   "Publish RUNTIME dirty Component effects without traversing Root."
   (cl-block etaf--runtime-component-overlay
@@ -5749,7 +5759,10 @@ RENDERED-IDENTITIES names the Component render participants."
          backend-component-identities
          journal resource-journal candidate-generation semantic-candidate
          participant)
-    (etaf--runtime-begin-component-overlay runtime old)
+    (let ((evaluation-completed-p nil))
+      (unwind-protect
+          (progn
+            (etaf--runtime-begin-component-overlay runtime old)
     ;; A source notification can race a generation promotion and leave an old
     ;; effect id in the FIFO.  Keep the dirty-id set and FIFO coherent before
     ;; sorting; stale ids are retired by the candidate generation cleanup.
@@ -5844,6 +5857,10 @@ RENDERED-IDENTITIES names the Component render participants."
           (cl-pushnew effect-id
                       (etaf-runtime-candidate-removed-effect-ids runtime)
                       :test #'eql))))
+            (setq evaluation-completed-p t))
+        (unless evaluation-completed-p
+          (etaf--runtime-restore-component-overlay-retry
+           runtime retry-effect-ids))))
     (setq range-changes
           (append (nreverse
                    (etaf-runtime-candidate-eager-range-changes runtime))
@@ -6044,11 +6061,8 @@ RENDERED-IDENTITIES names the Component render participants."
           semantic-candidate))
        (etaf--runtime-rollback-prearm runtime journal)
        (etaf--runtime-rollback-resource-journal runtime resource-journal)
-       (etaf--runtime-clear-dirty-effects runtime)
-       (dolist (effect-id retry-effect-ids)
-         (etaf--runtime-enqueue-effect runtime effect-id))
-       (etaf--runtime-dispose-created-candidate runtime)
-       (etaf--runtime-clear-candidate runtime)
+       (etaf--runtime-restore-component-overlay-retry
+        runtime retry-effect-ids)
        (signal (car err) (cdr err))))
     (etaf--runtime-participant-commit participant)
     (etaf--runtime-complete-generation runtime candidate-generation)
