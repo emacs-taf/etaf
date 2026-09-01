@@ -18,6 +18,7 @@
 (require 'etaf-component)
 (require 'etaf-context)
 (require 'etaf-behavior)
+(require 'etaf-render-port)
 
 (declare-function etaf--runtime-render-component "etaf-runtime" (runtime call path))
 
@@ -843,7 +844,10 @@ OPTIONS is forwarded to `etaf-runtime-mount' when the Runtime is loaded."
       (etaf-runtime-mount buffer-or-name view options)
     (let ((ebox-viewport-width (plist-get options :viewport-width))
           (ebox-viewport-height (plist-get options :viewport-height)))
-      (ebox-render-to-buffer buffer-or-name (etaf-render view)))))
+      (let ((input (etaf-render view))
+            (buffer (get-buffer-create buffer-or-name)))
+        (etaf-render-port-initial buffer input #'ignore #'ignore)
+        buffer))))
 
 (provide 'etaf-renderer)
 

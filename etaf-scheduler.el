@@ -427,13 +427,16 @@ PROJECTION-ID identifies the bounded projection owning the detached turn."
     first-condition))
 
 (defun etaf-scheduler--record-fault
-    (context projection-id condition &optional phase)
-  "Record CONTEXT failure CONDITION for PROJECTION-ID and optional PHASE."
+    (context projection-id condition &optional phase turn-id)
+  "Record CONTEXT failure CONDITION for PROJECTION-ID.
+PHASE is optional diagnostic metadata.  TURN-ID, when non-nil, preserves the
+turn where a contained condition originated before delayed quarantine."
   (setf (etaf-scheduler-context-fault-state context) (copy-tree condition))
   (cl-incf (etaf-scheduler-context-projection-fault-count context))
   (push (append (list :projection-epoch projection-id
                       :turn-id
-                      (etaf-scheduler-context-active-turn-id context))
+                      (or turn-id
+                          (etaf-scheduler-context-active-turn-id context)))
                 (and phase (list :phase phase))
                 (list :condition (copy-tree condition)))
         (etaf-scheduler-context-diagnostics context))
@@ -459,8 +462,9 @@ PROJECTION-ID identifies the bounded projection owning the detached turn."
   "Drain PROJECTION source-first and re-signal its first context fault."
   (let ((projection-id (etaf-scheduler--projection-id projection))
         (failed-contexts (make-hash-table :test #'eq))
+        (contained-context-conditions (make-hash-table :test #'eq))
         (context-steps (make-hash-table :test #'eq))
-        first-condition)
+        first-condition fatal-condition)
     (while (etaf-scheduler--projection-work-p projection)
       (let ((marked-contexts (make-hash-table :test #'eq)))
         ;; All source propagation across every context settles before any
@@ -482,11 +486,19 @@ PROJECTION-ID identifies the bounded projection owning the detached turn."
                     (when-let* ((source-condition
                                  (etaf-scheduler--drain-context-sources
                                   context projection-id)))
-                      (signal (car source-condition)
-                              (cdr source-condition))))
+                      (unless (gethash context contained-context-conditions)
+                        (puthash context
+                                 (list
+                                  :condition source-condition
+                                  :turn-id
+                                  (etaf-scheduler-context-active-turn-id
+                                   context))
+                                 contained-context-conditions))
+                      (unless first-condition
+                        (setq first-condition source-condition))))
                 ((error quit)
                  (puthash context t failed-contexts)
-                 (unless first-condition (setq first-condition condition))
+                 (unless fatal-condition (setq fatal-condition condition))
                  (etaf-scheduler--record-fault
                   context projection-id condition)
                  (etaf-scheduler--reset-pending context)))))))
@@ -502,14 +514,35 @@ PROJECTION-ID identifies the bounded projection owning the detached turn."
                     (when-let* ((runtime-condition
                                  (etaf-scheduler--run-runtime-turn
                                   context turn)))
-                      (signal (car runtime-condition)
-                              (cdr runtime-condition))))
+                      (unless (gethash context contained-context-conditions)
+                        (puthash context
+                                 (list
+                                  :condition runtime-condition
+                                  :turn-id
+                                  (etaf-scheduler-context-active-turn-id
+                                   context))
+                                 contained-context-conditions))
+                      (unless first-condition
+                        (setq first-condition runtime-condition))))
                 ((error quit)
                  (puthash context t failed-contexts)
-                 (unless first-condition (setq first-condition condition))
+                 (unless fatal-condition (setq fatal-condition condition))
                  (etaf-scheduler--record-fault
                   context projection-id condition)
                  (etaf-scheduler--reset-pending context))))))
+        ;; Item-level source/subscriber/Runtime faults are reported only after
+        ;; the detached Runtime turn has consumed work enqueued by successful
+        ;; tail callbacks.  Scheduler-control faults above still reset at once.
+        (dolist (context (etaf-scheduler--projection-contexts projection))
+          (when-let* ((contained
+                       (gethash context contained-context-conditions))
+                      (condition (plist-get contained :condition)))
+            (unless (gethash context failed-contexts)
+              (puthash context t failed-contexts)
+              (etaf-scheduler--record-fault
+               context projection-id condition nil
+               (plist-get contained :turn-id))
+              (etaf-scheduler--reset-pending context))))
         (dolist (context (etaf-scheduler--projection-contexts projection))
           (setf (etaf-scheduler-context-phase context) nil)
           (unless (gethash context failed-contexts)
@@ -519,8 +552,8 @@ PROJECTION-ID identifies the bounded projection owning the detached turn."
         (setf (etaf-scheduler-context-completed-projection-epoch context)
               projection-id
               (etaf-scheduler-context-fault-state context) nil)))
-    (when first-condition
-      (signal (car first-condition) (cdr first-condition)))))
+    (when-let* ((condition (or fatal-condition first-condition)))
+      (signal (car condition) (cdr condition)))))
 
 (defun etaf-scheduler--finish-projection (projection)
   "Restore PROJECTION invariants and return contained finalizer errors."

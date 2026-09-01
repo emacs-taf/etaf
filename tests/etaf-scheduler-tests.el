@@ -269,7 +269,7 @@
 (ert-deftest etaf-scheduler-source-fault-does-not-suppress-context-tail ()
   "A failing source delivery cannot discard later sources in the same turn."
   (let ((context (etaf-scheduler-context-create :name 'source-fault-tail))
-        second-ran captured)
+        second-ran runtime-ran captured)
     (condition-case condition
         (etaf-scheduler-call-with-projection
          (lambda ()
@@ -278,14 +278,84 @@
             (lambda (_context _source _projection-id)
               (signal 'etaf-scheduler-test-source-condition '("first"))))
            (etaf-scheduler-enqueue-source
-            context 'second
+           context 'second
             (lambda (_context _source _projection-id)
-              (setq second-ran t)))))
+              (setq second-ran t)
+              (etaf-scheduler-enqueue-runtime
+               context 'second-runtime
+               (lambda () (setq runtime-ran t)))))))
       (etaf-scheduler-test-source-condition (setq captured condition)))
     (should (equal captured
                    '(etaf-scheduler-test-source-condition "first")))
     (should second-ran)
+    (should runtime-ran)
     (should (= 2 (etaf-scheduler-test--metric context :source-deliveries)))
+    (should (= 1 (etaf-scheduler-test--metric context :runtime-executions)))
+    (should (etaf-scheduler-context-idle-p context))))
+
+(ert-deftest etaf-scheduler-control-fault-precedes-contained-item-fault ()
+  "A later fatal budget fault outranks an earlier contained source condition."
+  (let ((context
+         (etaf-scheduler-context-create
+          :name 'control-fault-precedence :fixed-point-step-budget 1))
+        runtime-ran captured summary)
+    (let ((etaf-scheduler-projection-observer
+           (lambda (value) (setq summary value))))
+      (condition-case condition
+          (etaf-scheduler-call-with-projection
+           (lambda ()
+             (etaf-scheduler-enqueue-source
+              context 'item-fault
+              (lambda (_context _source _projection-id)
+                (signal 'etaf-scheduler-test-source-condition '("item"))))
+             (cl-labels
+                 ((deliver (_context source _projection-id)
+                    (etaf-scheduler-enqueue-source
+                     context (1+ source) #'deliver)))
+               (etaf-scheduler-enqueue-source context 0 #'deliver))
+             (etaf-scheduler-enqueue-runtime
+              context 'runtime (lambda () (setq runtime-ran t)))))
+        ((error quit) (setq captured condition))))
+    (should (eq (car captured) 'etaf-scheduler-error))
+    (should (eq (plist-get (cdr captured) :kind)
+                'fixed-point-step-budget))
+    (should (= (plist-get (cdr captured) :steps) 2))
+    (should (= (plist-get (cdr captured) :budget) 1))
+    (should-not runtime-ran)
+    (should (equal (etaf-scheduler-context-fault-state context) captured))
+    (should (equal (plist-get summary :condition) captured))
+    (should (etaf-scheduler-context-idle-p context))))
+
+(ert-deftest etaf-scheduler-contained-fault-keeps-originating-turn-id ()
+  "Delayed item-fault quarantine records the source turn, not Runtime turn."
+  (let ((context (etaf-scheduler-context-create :name 'fault-origin-turn))
+        runtime-ran captured)
+    (condition-case condition
+        (etaf-scheduler-call-with-projection
+         (lambda ()
+           (etaf-scheduler-enqueue-source
+            context 'item-fault
+            (lambda (_context _source _projection-id)
+              (signal 'etaf-scheduler-test-source-condition '("origin"))))
+           (cl-labels
+               ((deliver (_context source _projection-id)
+                  (when (zerop source)
+                    (etaf-scheduler-enqueue-source
+                     context 1 #'deliver))))
+             (etaf-scheduler-enqueue-source context 0 #'deliver))
+           (etaf-scheduler-enqueue-runtime
+            context 'runtime (lambda () (setq runtime-ran t)))))
+      (etaf-scheduler-test-source-condition (setq captured condition)))
+    (should (equal captured
+                   '(etaf-scheduler-test-source-condition "origin")))
+    (should runtime-ran)
+    (should (= (etaf-scheduler-context-active-turn-id context) 2))
+    (let ((diagnostic
+           (cl-find captured (etaf-scheduler-context-diagnostics context)
+                    :key (lambda (entry) (plist-get entry :condition))
+                    :test #'equal)))
+      (should diagnostic)
+      (should (= (plist-get diagnostic :turn-id) 1)))
     (should (etaf-scheduler-context-idle-p context))))
 
 (ert-deftest etaf-scheduler-subscriber-fault-does-not-suppress-group-tail ()
@@ -293,6 +363,7 @@
   (let* ((context
           (etaf-scheduler-context-create :name 'subscriber-fault-tail))
          second-ran
+         runtime-ran
          (first
           (etaf-runtime-route-create
            :runtime-id 1 :mount-epoch 1 :authority-token 'first
@@ -305,7 +376,12 @@
           (etaf-runtime-route-create
            :runtime-id 2 :mount-epoch 1 :authority-token 'second
            :scheduler-context context
-           :scheduler (lambda (_route _source) (setq second-ran t))))
+           :scheduler
+           (lambda (_route _source)
+             (setq second-ran t)
+             (etaf-scheduler-enqueue-runtime
+              context 'second-runtime
+              (lambda () (setq runtime-ran t))))))
          captured)
     (condition-case condition
         (etaf-scheduler-call-with-projection
@@ -319,7 +395,9 @@
     (should (equal captured
                    '(etaf-scheduler-test-source-condition "subscriber")))
     (should second-ran)
+    (should runtime-ran)
     (should (= 2 (etaf-scheduler-test--metric context :subscriber-visits)))
+    (should (= 1 (etaf-scheduler-test--metric context :runtime-executions)))
     (should (etaf-scheduler-context-idle-p context))))
 
 (ert-deftest etaf-scheduler-authority-predicate-fault-is-diagnostic ()

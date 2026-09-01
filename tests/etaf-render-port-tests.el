@@ -459,6 +459,56 @@
       (should (string-match-p "(etaf-render-port-update" source))
       (should-not (string-match-p "(ebox-commit" source)))))
 
+(ert-deftest etaf-render-port-owns-all-live-publication-routing ()
+  "No ETAF module except the selected-port owner publishes directly to Ebox."
+  (dolist (file (directory-files etaf-render-port-test--root t "\\.el\\'"))
+    (unless (string= (file-name-nondirectory file) "etaf-render-port.el")
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let ((source (buffer-string)))
+          (dolist (call '("(ebox-render-to-buffer"
+                           "(ebox-commit"
+                           "(ebox-surface-"))
+            (should-not (string-match-p (regexp-quote call) source))))))))
+
+(ert-deftest etaf-render-port-routes-standalone-renderer-mount ()
+  "The no-Runtime compatibility mount uses the immutable selected port."
+  (require 'etaf-renderer)
+  (let ((buffer (generate-new-buffer " *etaf-standalone-port-mount*"))
+        seen-input seen-viewport)
+    (unwind-protect
+        (cl-letf (((symbol-function 'etaf-runtime-mount) nil)
+                  ((symbol-function 'etaf-render-port-initial)
+                   (lambda (target input framework-stage framework-rollback
+                                   &optional _observer)
+                     (setq seen-input input
+                           seen-viewport
+                           (list ebox-viewport-width ebox-viewport-height))
+                     (funcall framework-stage nil)
+                     (ignore framework-rollback)
+                     (list :status 'success :buffer target))))
+          (should
+           (eq (etaf-mount
+                buffer (etaf-view (text "standalone"))
+                '(:viewport-width 91 :viewport-height 17))
+               buffer))
+          (should (ebox-canonical-input-p seen-input))
+          (should (equal seen-viewport '(91 17))))
+      (when (and (buffer-live-p buffer)
+                 (ebox-surface-buffer-mounted-p buffer))
+        (ebox-unmount-buffer buffer))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest etaf-render-port-standalone-render-failure-creates-no-buffer ()
+  "Pure lowering must fail before standalone mount allocates its target buffer."
+  (require 'etaf-renderer)
+  (let ((name " *etaf-standalone-render-failure*"))
+    (when-let* ((buffer (get-buffer name))) (kill-buffer buffer))
+    (cl-letf (((symbol-function 'etaf-runtime-mount) nil))
+      (should-error (etaf-mount name 'invalid-etaf-view)
+                    :type 'etaf-renderer-error))
+    (should-not (get-buffer name))))
+
 (ert-deftest etaf-render-port-selected-port-is-process-stable ()
   "Every downstream read returns the one bootstrap-selected port identity."
   (should (eq (etaf-render-port-selected)
