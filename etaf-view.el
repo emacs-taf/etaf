@@ -287,7 +287,7 @@ Component semantics.  COMPONENT-NAME labels diagnostics."
                 (append (etaf--plist-remove-domain result key)
                         (list key value))))
          ((plist-member result key)
-          (setq result (etaf--plist-set result key value)))
+          nil)
          (t
           (setq result (append result (list key value)))))))
     result))
