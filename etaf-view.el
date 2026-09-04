@@ -263,8 +263,8 @@ disposing the old Runtime.")
 (defun etaf--merge-host-attrs (props attrs &optional tag component-name)
   "Merge caller ATTRS into root Host PROPS for TAG.
 Visual Ebox attributes override Component defaults.  Class tokens merge.
-Conflicting Runtime metadata is rejected so fallthrough cannot silently alter
-Component semantics.  COMPONENT-NAME labels diagnostics."
+Forwarded Runtime metadata overrides same-key Component root metadata so Host
+attrs can reach the retained root.  COMPONENT-NAME labels diagnostics."
   (let ((result (copy-sequence props))
         (tail attrs))
     (while tail
