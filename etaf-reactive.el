@@ -284,15 +284,23 @@ of the run."
               (puthash effect t (etaf--source-subscribers source)))
             (setf (etaf-effect-deps effect) old-deps)))))))))
 
-(defun etaf--dispatch-source (source)
-  "Notify every current subscriber of SOURCE once."
+(defun etaf--dispatch-source (source &optional context-filter)
+  "Notify current subscribers of SOURCE once.
+
+When CONTEXT-FILTER is non-nil, it is called with each subscriber's scheduler
+context and only subscribers for which it returns non-nil are included.  The
+filter is an internal reconciliation hook: the ordinary source publication
+path leaves it nil, while a retry can target only contexts that did not finish
+an earlier projection epoch."
   (etaf-scheduler-call-with-projection
    (lambda ()
      (let ((groups (make-hash-table :test #'eq)))
        (maphash
         (lambda (subscriber _)
           (let ((context (etaf--subscriber-scheduler-context subscriber)))
-            (cond
+            (when (or (null context-filter)
+                      (funcall context-filter context))
+              (cond
              ((etaf-runtime-route-p subscriber)
               (if (etaf-runtime-route-live-p subscriber)
                   (puthash context
@@ -300,8 +308,9 @@ of the run."
                 (etaf-scheduler-record-stale-route-drop context)))
              ((and (etaf-effect-p subscriber)
                    (etaf-effect-active-p subscriber))
-              (puthash context
+             (puthash context
                        (cons subscriber (gethash context groups)) groups)))))
+            )
         (etaf--source-subscribers source))
        (let (contexts)
          (maphash (lambda (context _) (push context contexts)) groups)

@@ -12,6 +12,12 @@
     (file-name-directory (or load-file-name buffer-file-name))))
   "ETAF package root used by static bootstrap-owner checks.")
 
+(ert-deftest etaf-render-port-selection-policy-defaults-to-v2 ()
+  "The package's declared bootstrap authority profile defaults to v2."
+  (should
+   (eq (eval (car (get 'etaf-render-port-selection-policy 'standard-value)) t)
+       'v2)))
+
 (ert-deftest etaf-render-port-selects-valid-v2-immutably ()
   "A valid provider produces one immutable v2 selected port."
   (let* ((port (etaf-render-port--bootstrap))
@@ -56,6 +62,28 @@
                     'etaf-render-port--v1-revision))
         (should (eq (etaf-render-port-bootstrap-outcome port)
                     'v2-absent-v1-selected))))))
+
+(ert-deftest etaf-render-port-v1-kill-switch-bypasses-present-provider ()
+  "The explicit v1 profile selects old authority without probing Ebox v2."
+  (let ((etaf-render-port-selection-policy 'v1)
+        (provider-calls 0))
+    (cl-letf (((symbol-function 'ebox-framework-spi-capabilities)
+               (lambda ()
+                 (cl-incf provider-calls)
+                 (error "kill switch must bypass provider"))))
+      (let ((port (etaf-render-port--bootstrap)))
+        (should (featurep 'ebox-framework-spi-v2))
+        (should (fboundp 'ebox-framework-spi-capabilities))
+        (should (= provider-calls 0))
+        (should (eq (etaf-render-port-route port) 'v1))
+        (should (eq (etaf-render-port-bootstrap-outcome port)
+                    'v1-kill-switch-selected))))))
+
+(ert-deftest etaf-render-port-rejects-invalid-selection-policy ()
+  "A malformed render-port selection policy fails before provider probing."
+  (let ((etaf-render-port-selection-policy 'invalid))
+    (should-error (etaf-render-port--bootstrap)
+                  :type 'etaf-spi-bootstrap-error)))
 
 (ert-deftest etaf-render-port-rejects-half-present-v2 ()
   "Feature-only and predicate-only providers fail instead of downgrading."
@@ -511,10 +539,12 @@
 
 (ert-deftest etaf-render-port-selected-port-is-process-stable ()
   "Every downstream read returns the one bootstrap-selected port identity."
-  (should (eq (etaf-render-port-selected)
-              (etaf-render-port-selected)))
-  (should (memq (etaf-render-port-route (etaf-render-port-selected))
-                '(v1 v2))))
+  (let* ((selected (etaf-render-port-selected))
+         (route (etaf-render-port-route selected)))
+    (let ((etaf-render-port-selection-policy (if (eq route 'v1) 'v2 'v1)))
+      (should (eq selected (etaf-render-port-selected)))
+      (should (eq route
+                  (etaf-render-port-route (etaf-render-port-selected)))))))
 
 (provide 'etaf-render-port-tests)
 

@@ -17,6 +17,9 @@
 (define-error 'etaf-scheduler-test-render-recovery-condition
   "ETAF scheduler render recovery condition")
 
+(defvar etaf-scheduler-test-partial-failure-enabled nil)
+(defvar etaf-scheduler-test-partial-failure-context nil)
+
 (etaf-define-component etaf-scheduler-test-pair (&key left right)
   "Render reactive LEFT and RIGHT values."
   :view
@@ -43,6 +46,18 @@
   (let ((status (etaf-value (etaf-data-status controller))))
     (when (eq status 'success)
       (signal 'etaf-scheduler-test-projection-condition '("projection")))
+    (etaf-node 'text nil (list (symbol-name status)))))
+
+(etaf-define-component etaf-scheduler-test-data-partial-failure
+    (&key controller)
+  "Fail the success projection only in one selected scheduler context."
+  :render
+  (let ((status (etaf-value (etaf-data-status controller))))
+    (when (and etaf-scheduler-test-partial-failure-enabled
+               (eq status 'success)
+               (eq (etaf-scheduler-current-context)
+                   etaf-scheduler-test-partial-failure-context))
+      (signal 'etaf-scheduler-test-projection-condition '("partial")))
     (etaf-node 'text nil (list (symbol-name status)))))
 
 (etaf-define-component etaf-scheduler-test-render-recovery
@@ -660,6 +675,79 @@
           (should (= 1 (- (etaf-scheduler-test--metric
                            right-context :runtime-enqueues)
                           right-runtime-before))))
+      (dolist (buffer-name (list left-buffer right-buffer))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+          (etaf-unmount runtime))
+        (when-let* ((buffer (get-buffer buffer-name)))
+          (kill-buffer buffer)))
+      (etaf-data-stop controller))))
+
+(ert-deftest etaf-scheduler-data-partial-retry-only-failed-context ()
+  "A committed Data projection retries only the context that failed."
+  (let* ((left-buffer " *etaf-scheduler-data-partial-left*")
+         (right-buffer " *etaf-scheduler-data-partial-right*")
+         (left-context (etaf-scheduler-context-create :name 'partial-left))
+         (right-context (etaf-scheduler-context-create :name 'partial-right))
+         (load-count 0)
+         (mutate-count 0)
+         (source
+          (etaf-data-source
+           :load
+           (lambda (_query _page _page-size)
+             (cl-incf load-count)
+             (list :items '(new) :total 2))
+           :mutate-v2
+           (lambda (_operation _payload)
+             (cl-incf mutate-count)
+             '(:certainty committed :result changed))))
+         (controller (etaf-data-controller source
+                                           :initial-result
+                                           '(:items (old) :total 1)))
+         (view (etaf--view-call
+                'etaf-scheduler-test-data-partial-failure
+                (list :controller controller) nil))
+         captured)
+    (setq etaf-scheduler-test-partial-failure-enabled nil
+          etaf-scheduler-test-partial-failure-context nil)
+    (unwind-protect
+        (progn
+          (etaf-mount left-buffer view
+                      (list :scheduler-context left-context))
+          (etaf-mount right-buffer view
+                      (list :scheduler-context right-context))
+          (setq etaf-scheduler-test-partial-failure-context left-context
+                etaf-scheduler-test-partial-failure-enabled t)
+          (let ((left-before (etaf-scheduler-test--metric
+                              left-context :runtime-enqueues))
+                (right-before (etaf-scheduler-test--metric
+                               right-context :runtime-enqueues)))
+            (condition-case condition
+                (etaf-data-mutate controller 'update 'payload)
+              (etaf-scheduler-test-projection-condition
+               (setq captured condition)))
+            (should captured)
+            (should (= 1 mutate-count))
+            (should (= 1 load-count))
+            (should (equal '(new)
+                           (etaf-value (etaf-data-items controller))))
+            (should (eq 'render-pending
+                        (etaf-data-reconciliation-state controller)))
+            (let ((right-after (etaf-scheduler-test--metric
+                                 right-context :runtime-enqueues)))
+              (should (> (- (etaf-scheduler-test--metric
+                             left-context :runtime-enqueues)
+                            left-before)
+                         0))
+              (should (> (- right-after right-before) 0))
+              (setq etaf-scheduler-test-partial-failure-enabled nil)
+              (should (etaf-data-retry-render controller))
+              (should (eq 'projected
+                          (etaf-data-reconciliation-state controller)))
+              (should (= right-after
+                         (etaf-scheduler-test--metric
+                          right-context :runtime-enqueues))))))
+      (setq etaf-scheduler-test-partial-failure-enabled nil
+            etaf-scheduler-test-partial-failure-context nil)
       (dolist (buffer-name (list left-buffer right-buffer))
         (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
           (etaf-unmount runtime))

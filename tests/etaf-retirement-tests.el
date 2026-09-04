@@ -156,6 +156,62 @@
       (should (etaf-condition-postcommit-info decorated))
       (should (= 3 (length (cdr decorated)))))))
 
+(ert-deftest etaf-retirement-data-projection-trailer-reader ()
+  "Projection trailers are readable while preserving the condition prefix."
+  (let* ((journal (etaf-retirement-journal-create
+                   :operation-id 11 :outcome-id 12 :generation-id 13
+                   :revision 14))
+         (trailer (etaf-retirement-condition-trailer
+                   journal 'projection
+                   :external-commit-certainty 'committed
+                   :reconciliation-token 'reconcile-1
+                   :projection-token 'projection-1
+                   :result 'mutation-result))
+         (condition (append '(etaf-retirement-test-condition "business"
+                              (:cause original)) (list trailer)))
+         (info (etaf-data-condition-projection-info condition)))
+    (should info)
+    (should (equal (butlast (cdr condition))
+                   '("business" (:cause original))))
+    (should (equal info
+                   (list :kind 'projection :committed-p t
+                         :external-commit-certainty 'committed
+                         :reconciliation-token 'reconcile-1
+                         :projection-token 'projection-1
+                         :result 'mutation-result
+                         :operation-id 11 :outcome-id 12
+                         :generation-id 13 :revision 14
+                         :diagnostic-journal-id
+                         (etaf-retirement-journal-id journal))))
+    (should-not (etaf-condition-postcommit-info condition))
+    ;; Unknown versions, malformed payloads, and non-final lookalikes are inert.
+    (should-not
+     (etaf-data-condition-projection-info
+      '(error (:etaf-condition-trailer/v2 (:kind projection)))))
+    (should-not
+     (etaf-data-condition-projection-info
+      '(error (:etaf-condition-trailer/v1
+               (:kind projection :committed-p t
+                :external-commit-certainty committed
+                :reconciliation-token r :projection-token p
+                :operation-id 1 :outcome-id 2 :generation-id 3 :revision 4
+                :diagnostic-journal-id 5 :unexpected x)))))
+    (should
+     (etaf-data-condition-projection-info
+      (list 'error
+            '(:etaf-condition-trailer/v1
+               (:kind projection :committed-p t
+                :external-commit-certainty committed
+                :reconciliation-token r :projection-token p :result result
+                :operation-id 1 :outcome-id 2 :generation-id 3 :revision 4
+                :diagnostic-journal-id 5))
+            '(:etaf-condition-trailer/v1
+              (:kind projection :committed-p t
+               :external-commit-certainty committed
+               :reconciliation-token r :projection-token p :result result
+               :operation-id 1 :outcome-id 2 :generation-id 3 :revision 4
+               :diagnostic-journal-id 6)))))))
+
 (ert-deftest etaf-retirement-updated-error-is-committed-and-not-rerun ()
   "Updated hook error carries a trailer while generation and buffer stay new."
   (let ((buffer-name " *etaf-retirement-update-test*")

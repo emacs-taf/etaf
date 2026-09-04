@@ -6475,7 +6475,12 @@ unmount.  Host authority is invalidated before any unbounded cleanup."
         (etaf-host-authority-invalidate authority))
       (when-let* ((route (etaf-runtime-route-token runtime)))
         (setf (etaf-runtime-route-active-p route) nil))
-      (setf (etaf-runtime-mounted-p runtime) nil)
+      ;; Invalidation is the one-way boundary for every queued/in-flight
+      ;; delivery.  Clear pending work at that same boundary so a Runtime
+      ;; retained by a buffer-kill hook cannot advertise an impossible tail
+      ;; after its route and buffer are dead.
+      (setf (etaf-runtime-mounted-p runtime) nil
+            (etaf-runtime-pending-p runtime) nil)
       (unwind-protect
           (progn
             (when (buffer-live-p (etaf-runtime-buffer runtime))

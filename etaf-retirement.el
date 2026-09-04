@@ -24,6 +24,12 @@
     :diagnostic-journal-id)
   "Canonical ordered keys in a v1 postcommit condition payload.")
 
+(defconst etaf-retirement--projection-payload-keys
+  '(:kind :committed-p :external-commit-certainty :reconciliation-token
+    :projection-token :result :operation-id :outcome-id :generation-id
+    :revision :diagnostic-journal-id)
+  "Canonical ordered keys in a v1 data projection condition payload.")
+
 (cl-defstruct
     (etaf-retirement-entry
      (:constructor etaf-retirement-entry--create))
@@ -237,47 +243,95 @@ without rerunning the failed operation or changing committed authority."
         (etaf-retirement-journal-diagnostics journal))
   condition)
 
-(defun etaf-retirement-condition-trailer (journal &optional kind)
-  "Return the canonical committed trailer for JOURNAL and optional KIND."
-  (list
-   :etaf-condition-trailer/v1
-   (list :kind (or kind 'postcommit)
-         :committed-p t
-         :operation-id (etaf-retirement-journal-operation-id journal)
-         :outcome-id (etaf-retirement-journal-outcome-id journal)
-         :generation-id (etaf-retirement-journal-generation-id journal)
-         :revision (etaf-retirement-journal-revision journal)
-         :diagnostic-journal-id (etaf-retirement-journal-id journal))))
+(cl-defun etaf-retirement-condition-trailer
+    (journal &optional kind &rest options)
+  "Return the canonical v1 trailer for JOURNAL and KIND.
+
+The legacy POSTCOMMIT form is unchanged.  KIND `projection' additionally
+requires the certainty and both reconciliation/projection tokens, which are
+encoded in the same versioned sentinel wire format."
+  ;; Accept both the historical positional KIND and a keyword-style KIND.
+  (when (keywordp kind)
+    (setq options (cons kind options)
+          kind (plist-get options :kind)))
+  (let ((external-commit-certainty
+         (plist-get options :external-commit-certainty))
+        (reconciliation-token (plist-get options :reconciliation-token))
+        (projection-token (plist-get options :projection-token))
+        (result (plist-get options :result)))
+    (if (eq (or kind 'postcommit) 'projection)
+      (list :etaf-condition-trailer/v1
+            (list :kind 'projection
+                  :committed-p t
+                  :external-commit-certainty external-commit-certainty
+                  :reconciliation-token reconciliation-token
+                  :projection-token projection-token
+                  :result result
+                  :operation-id (etaf-retirement-journal-operation-id journal)
+                  :outcome-id (etaf-retirement-journal-outcome-id journal)
+                  :generation-id (etaf-retirement-journal-generation-id journal)
+                  :revision (etaf-retirement-journal-revision journal)
+                  :diagnostic-journal-id (etaf-retirement-journal-id journal)))
+      (list :etaf-condition-trailer/v1
+          (list :kind (or kind 'postcommit)
+                :committed-p t
+                :operation-id (etaf-retirement-journal-operation-id journal)
+                :outcome-id (etaf-retirement-journal-outcome-id journal)
+                :generation-id (etaf-retirement-journal-generation-id journal)
+                :revision (etaf-retirement-journal-revision journal)
+                :diagnostic-journal-id (etaf-retirement-journal-id journal))))))
+
+(defun etaf-retirement--condition-trailer-payload (condition)
+  "Return the final validated-looking trailer payload in CONDITION, or nil.
+Validation of kind-specific fields is performed by the public readers."
+  (when (and (consp condition) (symbolp (car condition))
+             (proper-list-p (cdr condition)) (cdr condition))
+    (let ((trailer (car (last (cdr condition)))))
+      (when (and (proper-list-p trailer)
+                 (= (length trailer) 2)
+                 (eq (car trailer) :etaf-condition-trailer/v1)
+                 (proper-list-p (cadr trailer)))
+        (cadr trailer)))))
+
+(defun etaf-retirement--valid-payload-p (payload keys kind)
+  "Return non-nil when PAYLOAD exactly matches KEYS and has KIND metadata."
+  (and (= (length payload) (* 2 (length keys)))
+       (equal (cl-loop for (key _value) on payload by #'cddr collect key)
+              keys)
+       (eq (plist-get payload :kind) kind)
+       (eq (plist-get payload :committed-p) t)
+       (integerp (plist-get payload :operation-id))
+       (>= (plist-get payload :operation-id) 0)
+       (plist-get payload :outcome-id)
+       (integerp (plist-get payload :generation-id))
+       (>= (plist-get payload :generation-id) 0)
+       (integerp (plist-get payload :revision))
+       (>= (plist-get payload :revision) 0)
+       (integerp (plist-get payload :diagnostic-journal-id))
+       (> (plist-get payload :diagnostic-journal-id) 0)))
 
 (defun etaf-condition-postcommit-info (condition)
   "Return validated postcommit payload from CONDITION, or nil."
-  (when (and (consp condition) (symbolp (car condition))
-             (proper-list-p (cdr condition)) (cdr condition))
-    (let* ((trailer (car (last (cdr condition))))
-           (payload
-            (and (proper-list-p trailer)
-                 (= (length trailer) 2)
-                 (eq (car trailer) :etaf-condition-trailer/v1)
-                 (cadr trailer))))
-      (when (and (proper-list-p payload)
-                 (= (length payload)
-                    (* 2 (length etaf-retirement--condition-payload-keys)))
-                 (equal
-                  (cl-loop for (key _value) on payload by #'cddr
-                           collect key)
-                  etaf-retirement--condition-payload-keys)
-                 (eq (plist-get payload :committed-p) t)
-                 (eq (plist-get payload :kind) 'postcommit)
-                 (integerp (plist-get payload :operation-id))
-                 (>= (plist-get payload :operation-id) 0)
-                 (plist-get payload :outcome-id)
-                 (integerp (plist-get payload :generation-id))
-                 (>= (plist-get payload :generation-id) 0)
-                 (integerp (plist-get payload :revision))
-                 (>= (plist-get payload :revision) 0)
-                 (integerp (plist-get payload :diagnostic-journal-id))
-                 (> (plist-get payload :diagnostic-journal-id) 0))
-        (copy-tree payload)))))
+  (let ((payload (etaf-retirement--condition-trailer-payload condition)))
+    (when (and payload
+               (etaf-retirement--valid-payload-p
+                payload etaf-retirement--condition-payload-keys 'postcommit))
+      (copy-tree payload))))
+
+(defun etaf-data-condition-projection-info (condition)
+  "Return validated v1 Data projection payload from CONDITION, or nil.
+
+The reader only recognizes the final datum, preserving arbitrary business
+data and earlier lookalike sentinels."
+  (let ((payload (etaf-retirement--condition-trailer-payload condition)))
+    (when (and payload
+               (etaf-retirement--valid-payload-p
+                payload etaf-retirement--projection-payload-keys 'projection)
+               (memq (plist-get payload :external-commit-certainty)
+                     '(committed external-unknown rolled-back))
+               (plist-get payload :reconciliation-token)
+               (plist-get payload :projection-token))
+      (copy-tree payload))))
 
 (defun etaf-retirement-resignal (condition journal)
   "Re-signal original CONDITION with JOURNAL's committed trailer appended."

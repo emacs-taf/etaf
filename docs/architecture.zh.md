@@ -447,6 +447,13 @@ generation；Runtime 中同名 hash table 只是由 generation 单向重建的�
 `legacy`/`project`/`shadow` 路由只用于证明投影等价与安全回退，不增加第二份
 committed truth。
 
+进程 bootstrap 时，`etaf-render-port-selection-policy` 只选择一个不可变的 Ebox
+port。默认值 `v2` 使用兼容的 framework SPI；若在 ETAF 加载前设为 `v1`，则跳过
+provider 探测并选择完整的旧 render/Host port。这个回退只改变跨包 publication
+route；generation/store CAS、兼容投影、retirement 与 scheduler authority 始终只有
+一个 owner，因此新旧 render port 会产生完全一致的 generation、token 与
+store-version outcome。mounted 或 in-flight Runtime 绝不会在两个 port 之间切换。
+
 每个 semantic candidate 同时捕获 expected generation、semantic token，以及
 instance/resource/artifact/route store versions。render 路径在 Ebox framework
 stage 中暂存一次 CAS，失败时由同一个 inverse journal 恢复；没有可见 Ebox

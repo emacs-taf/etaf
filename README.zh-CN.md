@@ -108,6 +108,13 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 
 ECSS 0.1.0 与 TP 1.0.1 是互相独立的包，安装顺序任意；两者都安装后再安装 Ebox 2.0.1，最后安装 ETAF 0.1.1。ETAF 会直接声明 TP 依赖，因为 Host final-accept authority 使用 TP transaction contract；渲染仍只使用 Ebox 2.0 的公共契约。
 
+ETAF 默认选择 Ebox framework SPI v2 port。若要立即按进程完整回退旧
+render/Host port，必须在加载 ETAF 前把
+`etaf-render-port-selection-policy` 设为 `v1`。该选择在当前 Emacs 进程中不可
+变；切换时需要重启 Emacs。这个回退不会创建第二个 generation owner：semantic
+CAS、单向投影的兼容 stores、retirement 和 scheduler authority 仍保持统一，因此
+两个 render port 的 generation、token 与 store-version outcome 完全一致。
+
 开发时先把同级 Ebox 检出目录加入 `load-path`：
 
 ```elisp

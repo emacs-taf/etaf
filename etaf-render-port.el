@@ -5,7 +5,7 @@
 ;;; Commentary:
 
 ;; This file is ETAF's only Ebox framework-SPI bootstrap owner.  It probes the
-;; additive Ebox v2 provider once, selects one immutable port, and exposes that
+;; Ebox v2 provider once, selects one immutable port, and exposes that
 ;; selection to downstream ETAF code without repeated `featurep' or `fboundp'
 ;; protocol guesses.  A completely absent v2 provider receives a complete v1
 ;; fallback; a present but broken or incompatible provider fails closed.
@@ -21,6 +21,17 @@
 (define-error 'etaf-spi-incompatible-error
   "Incompatible Ebox framework SPI provider"
   'etaf-spi-bootstrap-error)
+
+(defcustom etaf-render-port-selection-policy 'v2
+  "ETAF render authority selected during process bootstrap.
+`v2' selects the compatible Ebox SPI v2 port.  `v1' is the complete legacy
+render/Host rollback switch and bypasses provider probing.  Generation stores,
+retirement, and scheduler keep their unified authority so v1 and v2 preserve
+the same generation/token/store-version outcomes.  Set this before loading
+ETAF; the selected port is process-wide and immutable."
+  :type '(choice (const :tag "ETAF v2 authorities" v2)
+                 (const :tag "Complete ETAF v1 route" v1))
+  :group 'etaf)
 
 (defconst etaf-render-port--required-spi-version 2
   "Ebox framework SPI version consumed by this ETAF build.")
@@ -526,8 +537,8 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK retain their existing Ebox meanings."
      (get-buffer buffer) (plist-get report :surface-revision))
     report))
 
-(defun etaf-render-port--v1-fallback ()
-  "Return the complete immutable fallback port for an absent Ebox v2 SPI."
+(defun etaf-render-port--v1-fallback (&optional bootstrap-outcome)
+  "Return the complete immutable v1 port tagged with BOOTSTRAP-OUTCOME."
   (etaf-render-port--create
    :route 'v1
    :spi-version 1
@@ -539,7 +550,7 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK retain their existing Ebox meanings."
    :initial-function 'etaf-render-port--v1-initial
    :update-function 'etaf-render-port--v1-update
    :revision-function 'etaf-render-port--v1-revision
-   :bootstrap-outcome 'v2-absent-v1-selected))
+   :bootstrap-outcome (or bootstrap-outcome 'v2-absent-v1-selected)))
 
 (defun etaf-render-port--v2-port (snapshot)
   "Return an immutable selected v2 port from compatible SNAPSHOT."
@@ -563,25 +574,32 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK retain their existing Ebox meanings."
 
 (defun etaf-render-port--bootstrap ()
   "Probe Ebox exactly once and return one immutable selected render port."
-  (let ((feature-present-p (featurep 'ebox-framework-spi-v2))
-        (predicate-present-p (fboundp 'ebox-framework-spi-capabilities)))
-    (cond
-     ((and (not feature-present-p) (not predicate-present-p))
-      (etaf-render-port--v1-fallback))
-     ((not feature-present-p)
-      (etaf-render-port--bootstrap-error 'predicate-without-v2-feature))
-     ((not predicate-present-p)
-      (etaf-render-port--bootstrap-error 'v2-feature-without-predicate))
-     (t
-      (condition-case condition
-          (etaf-render-port--v2-port
-           (etaf-render-port--provider-snapshot
-            (ebox-framework-spi-capabilities)))
-        ((etaf-spi-incompatible-error etaf-spi-bootstrap-error)
-         (signal (car condition) (cdr condition)))
-        ((error quit)
-         (etaf-render-port--bootstrap-error
-          'provider-predicate-failure condition)))))))
+  (pcase etaf-render-port-selection-policy
+    ('v1
+     (etaf-render-port--v1-fallback 'v1-kill-switch-selected))
+    ('v2
+     (let ((feature-present-p (featurep 'ebox-framework-spi-v2))
+           (predicate-present-p (fboundp 'ebox-framework-spi-capabilities)))
+       (cond
+        ((and (not feature-present-p) (not predicate-present-p))
+         (etaf-render-port--v1-fallback))
+        ((not feature-present-p)
+         (etaf-render-port--bootstrap-error 'predicate-without-v2-feature))
+        ((not predicate-present-p)
+         (etaf-render-port--bootstrap-error 'v2-feature-without-predicate))
+        (t
+         (condition-case condition
+             (etaf-render-port--v2-port
+              (etaf-render-port--provider-snapshot
+               (ebox-framework-spi-capabilities)))
+           ((etaf-spi-incompatible-error etaf-spi-bootstrap-error)
+            (signal (car condition) (cdr condition)))
+           ((error quit)
+            (etaf-render-port--bootstrap-error
+             'provider-predicate-failure condition)))))))
+    (_
+     (etaf-render-port--bootstrap-error
+      'invalid-render-port-selection etaf-render-port-selection-policy))))
 
 (defconst etaf-render-port--selected-port
   (etaf-render-port--bootstrap)
