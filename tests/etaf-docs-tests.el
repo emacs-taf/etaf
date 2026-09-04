@@ -103,6 +103,8 @@
                   "docs/user-guide.zh.md"
                   "docs/implementation-plan.en.md"
                   "docs/implementation-plan.zh.md"
+                  "docs/migration-0.2.en.md"
+                  "docs/migration-0.2.zh.md"
                   "postmortem/2026-08-05-executable-core-examples.en.md"
                   "postmortem/2026-08-05-executable-core-examples.zh.md"))
     (should (file-exists-p (expand-file-name file etaf-docs-test--root)))))

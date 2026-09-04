@@ -12,11 +12,17 @@
     (file-name-directory (or load-file-name buffer-file-name))))
   "ETAF package root used by static bootstrap-owner checks.")
 
-(ert-deftest etaf-render-port-selection-policy-defaults-to-v2 ()
-  "The package's declared bootstrap authority profile defaults to v2."
-  (should
-   (eq (eval (car (get 'etaf-render-port-selection-policy 'standard-value)) t)
-       'v2)))
+(ert-deftest etaf-render-port-package-metadata-requires-final-v2-stack ()
+  "ETAF 0.2.1 declares the Ebox 3 and TP 2 runtime requirements."
+  (require 'package)
+  (with-temp-buffer
+    (insert-file-contents
+     (expand-file-name "etaf.el" etaf-render-port-test--root))
+    (let ((description (package-buffer-info)))
+      (should (equal (package-desc-version description) '(0 2 1)))
+      (should
+       (equal (package-desc-reqs description)
+              '((emacs (29 1)) (ebox (3 0 0)) (tp (2 0 0))))))))
 
 (ert-deftest etaf-render-port-selects-valid-v2-immutably ()
   "A valid provider produces one immutable v2 selected port."
@@ -27,8 +33,8 @@
     (should (= (etaf-render-port-spi-version port) 2))
     (should (eq (etaf-render-port-schema-version port)
                 'ebox-framework-spi-schema/v2))
-    (should (eq (etaf-render-port-tp-protocol port)
-                'tp-transaction-protocol-v1+v2))
+    (should (memq (etaf-render-port-tp-protocol port)
+                  etaf-render-port--accepted-tp-protocols))
     (should (eq (etaf-render-port-initial-function port)
                 'ebox-framework-spi-initial))
     (should (eq (etaf-render-port-update-function port)
@@ -43,47 +49,30 @@
     (should-error
      (eval `(setf (etaf-render-port--route ',port) 'broken)))))
 
-(ert-deftest etaf-render-port-falls-back-only-when-v2-is-fully-absent ()
-  "Only complete feature/predicate absence selects the immutable v1 port."
+(ert-deftest etaf-render-port-requires-v2-provider ()
+  "Complete provider absence fails closed instead of selecting a legacy port."
   (let ((original-featurep (symbol-function 'featurep)))
     (cl-letf (((symbol-function 'featurep)
                (lambda (feature)
                  (and (not (eq feature 'ebox-framework-spi-v2))
                       (funcall original-featurep feature))))
               ((symbol-function 'ebox-framework-spi-capabilities) nil))
-      (let ((port (etaf-render-port--bootstrap)))
-        (should (eq (etaf-render-port-route port) 'v1))
-        (should (= (etaf-render-port-spi-version port) 1))
-        (should (eq (etaf-render-port-initial-function port)
-                    'etaf-render-port--v1-initial))
-        (should (eq (etaf-render-port-update-function port)
-                    'etaf-render-port--v1-update))
-        (should (eq (etaf-render-port-revision-function port)
-                    'etaf-render-port--v1-revision))
-        (should (eq (etaf-render-port-bootstrap-outcome port)
-                    'v2-absent-v1-selected))))))
+      (should-error (etaf-render-port--bootstrap)
+                    :type 'etaf-spi-bootstrap-error))))
 
-(ert-deftest etaf-render-port-v1-kill-switch-bypasses-present-provider ()
-  "The explicit v1 profile selects old authority without probing Ebox v2."
-  (let ((etaf-render-port-selection-policy 'v1)
-        (provider-calls 0))
-    (cl-letf (((symbol-function 'ebox-framework-spi-capabilities)
-               (lambda ()
-                 (cl-incf provider-calls)
-                 (error "kill switch must bypass provider"))))
-      (let ((port (etaf-render-port--bootstrap)))
-        (should (featurep 'ebox-framework-spi-v2))
-        (should (fboundp 'ebox-framework-spi-capabilities))
-        (should (= provider-calls 0))
-        (should (eq (etaf-render-port-route port) 'v1))
-        (should (eq (etaf-render-port-bootstrap-outcome port)
-                    'v1-kill-switch-selected))))))
-
-(ert-deftest etaf-render-port-rejects-invalid-selection-policy ()
-  "A malformed render-port selection policy fails before provider probing."
-  (let ((etaf-render-port-selection-policy 'invalid))
-    (should-error (etaf-render-port--bootstrap)
-                  :type 'etaf-spi-bootstrap-error)))
+(ert-deftest etaf-render-port-accepts-each-v2-capable-tp-manifest ()
+  "Both transitional dual-capability and final v2-only providers are valid."
+  (let ((provider (ebox-framework-spi-capabilities)))
+    (dolist (protocol '(tp-transaction-protocol-v1+v2
+                        tp-transaction-protocol-v2))
+      (cl-letf
+          (((symbol-function 'ebox-framework-spi-capabilities)
+            (lambda () provider))
+           ((symbol-function 'ebox-framework-spi-provider-tp-protocol)
+            (lambda (_provider) protocol)))
+        (should (eq (etaf-render-port-tp-protocol
+                     (etaf-render-port--bootstrap))
+                    protocol))))))
 
 (ert-deftest etaf-render-port-rejects-half-present-v2 ()
   "Feature-only and predicate-only providers fail instead of downgrading."
@@ -147,27 +136,31 @@
       (should-error (etaf-render-port--bootstrap)
                     :type 'etaf-spi-incompatible-error))))
 
-(ert-deftest etaf-render-port-v1-initial-runs-manual-framework-cleanup ()
-  "A failed legacy initial stage invokes its paired cleanup exactly once."
-  (let ((buffer (generate-new-buffer " *etaf-v1-manual-cleanup*")) trace)
+(ert-deftest etaf-render-port-v2-initial-delegates-paired-rollback ()
+  "The selected SPI operation owns stage failure and paired rollback."
+  (let ((buffer (generate-new-buffer " *etaf-v2-paired-rollback*")) trace)
     (unwind-protect
-        (cl-letf (((symbol-function 'ebox-render-to-buffer)
-                   (lambda (&rest _arguments)
+        (cl-letf (((symbol-function 'ebox-framework-spi-initial)
+                   (lambda (_buffer _input stage rollback)
                      (push 'render trace)
-                     buffer)))
+                     (condition-case condition
+                         (funcall stage nil)
+                       (error
+                        (funcall rollback nil)
+                        (signal (car condition) (cdr condition)))))))
           (should-error
-           (etaf-render-port--v1-initial
+           (etaf-render-port-initial
             buffer 'input
             (lambda (_report)
               (push 'stage trace)
-              (error "injected v1 initial failure"))
+              (error "injected v2 initial failure"))
             (lambda (_report) (push 'rollback trace))))
           (should (equal (nreverse trace) '(render stage rollback))))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
-(ert-deftest etaf-render-port-v1-initial-restores-real-ebox-surface ()
-  "A failed legacy stage removes Ebox authority and restores buffer content."
-  (let ((buffer (generate-new-buffer " *etaf-v1-real-cleanup*"))
+(ert-deftest etaf-render-port-v2-initial-restores-real-ebox-surface ()
+  "A failed SPI stage removes Ebox authority and restores buffer content."
+  (let ((buffer (generate-new-buffer " *etaf-v2-real-cleanup*"))
         (input (ebox-build '(box "committed")))
         (rollback-count 0)
         captured)
@@ -175,28 +168,26 @@
         (progn
           (with-current-buffer buffer (insert "sentinel"))
           (condition-case condition
-              (etaf-render-port--v1-initial
+              (etaf-render-port-initial
                buffer input
                (lambda (_report)
-                 (error "injected real v1 stage failure"))
+                 (error "injected real v2 stage failure"))
                (lambda (_report) (cl-incf rollback-count)))
             (error (setq captured condition)))
-          (should (equal captured '(error "injected real v1 stage failure")))
+          (should (equal captured '(error "injected real v2 stage failure")))
           (should (= rollback-count 1))
           (should-not (ebox-surface-buffer-mounted-p buffer))
           (should-not (ebox-surface-buffer-observer buffer))
           (should (equal "sentinel"
-                         (with-current-buffer buffer (buffer-string))))
-          (should-not
-           (etaf-render-port-v1-cleanup-diagnostics buffer)))
+                         (with-current-buffer buffer (buffer-string)))))
       (when (and (buffer-live-p buffer)
                  (ebox-surface-buffer-mounted-p buffer))
         (ebox-unmount-buffer buffer))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
-(ert-deftest etaf-render-port-v1-failure-restores-exact-editor-custody ()
-  "Legacy stage rollback preserves Emacs-owned editor identities and undo."
-  (let ((buffer (generate-new-buffer " *etaf-v1-editor-custody*"))
+(ert-deftest etaf-render-port-v2-failure-restores-exact-editor-custody ()
+  "SPI stage rollback preserves Emacs-owned editor identities and undo."
+  (let ((buffer (generate-new-buffer " *etaf-v2-editor-custody*"))
         (input (ebox-build '(box "committed")))
         overlay left-marker right-marker snapshot captured)
     (unwind-protect
@@ -238,7 +229,7 @@
                    :undo-list (copy-tree buffer-undo-list)
                    :modified-p (buffer-modified-p))))
           (condition-case condition
-              (etaf-render-port--v1-initial
+              (etaf-render-port-initial
                buffer input
                (lambda (_report) (error "editor custody primary"))
                #'ignore)
@@ -292,9 +283,9 @@
         (ebox-unmount-buffer buffer))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
-(ert-deftest etaf-render-port-v1-nonlocal-exit-runs-exact-cleanup ()
-  "A legacy stage throw cannot escape with mounted or editor state retained."
-  (let ((buffer (generate-new-buffer " *etaf-v1-nonlocal-cleanup*"))
+(ert-deftest etaf-render-port-v2-nonlocal-exit-runs-exact-cleanup ()
+  "A SPI stage throw cannot escape with mounted or editor state retained."
+  (let ((buffer (generate-new-buffer " *etaf-v2-nonlocal-cleanup*"))
         (input (ebox-build '(box "committed")))
         (rollback-count 0))
     (unwind-protect
@@ -302,11 +293,11 @@
           (with-current-buffer buffer (insert "before"))
           (should
            (eq
-            (catch 'etaf-v1-test-escape
-              (etaf-render-port--v1-initial
+            (catch 'etaf-v2-test-escape
+              (etaf-render-port-initial
                buffer input
                (lambda (_report)
-                 (throw 'etaf-v1-test-escape 'escaped))
+                 (throw 'etaf-v2-test-escape 'escaped))
                (lambda (_report) (cl-incf rollback-count)))
               'not-escaped)
             'escaped))
@@ -314,15 +305,13 @@
           (should-not (ebox-surface-buffer-mounted-p buffer))
           (should-not (ebox-surface-buffer-observer buffer))
           (should (equal "before"
-                         (with-current-buffer buffer (buffer-string))))
-          (should-not
-           (etaf-render-port-v1-cleanup-diagnostics buffer)))
+                         (with-current-buffer buffer (buffer-string)))))
       (when (and (buffer-live-p buffer)
                  (ebox-surface-buffer-mounted-p buffer))
         (ebox-unmount-buffer buffer))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
-(ert-deftest etaf-render-port-v1-precondition-keeps-existing-mount ()
+(ert-deftest etaf-render-port-v2-precondition-keeps-existing-mount ()
   "Rejecting an already mounted target must not clean up foreign authority."
   (let ((buffer (generate-new-buffer " *etaf-v1-existing-mount*")))
     (unwind-protect
@@ -330,7 +319,7 @@
           (ebox-render-to-buffer buffer (ebox-build '(box "existing")))
           (let ((revision (ebox-surface-buffer-revision buffer)))
             (should-error
-             (etaf-render-port--v1-initial
+             (etaf-render-port-initial
               buffer (ebox-build '(box "replacement")) #'ignore #'ignore)
              :type 'error)
             (should (ebox-surface-buffer-mounted-p buffer))
@@ -342,48 +331,42 @@
         (ebox-unmount-buffer buffer))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
-(ert-deftest etaf-render-port-v1-rollback-throw-cannot-stop-cleanup-tail ()
-  "A framework rollback throw still unmounts and restores legacy editor state."
-  (let ((buffer (generate-new-buffer " *etaf-v1-rollback-throw*"))
+(ert-deftest etaf-render-port-v2-rollback-throw-cannot-stop-cleanup-tail ()
+  "A framework rollback throw propagates only after SPI cleanup completes."
+  (let ((buffer (generate-new-buffer " *etaf-v2-rollback-throw*"))
         (input (ebox-build '(box "committed"))))
     (unwind-protect
         (progn
           (with-current-buffer buffer (insert "before"))
           (should
            (eq
-            (catch 'etaf-v1-rollback-escape
-              (etaf-render-port--v1-initial
+            (catch 'etaf-v2-rollback-escape
+              (etaf-render-port-initial
                buffer input
                (lambda (_report) (error "primary before rollback throw"))
                (lambda (_report)
-                 (throw 'etaf-v1-rollback-escape 'rollback-escaped)))
+                 (throw 'etaf-v2-rollback-escape 'rollback-escaped)))
               'not-escaped)
             'rollback-escaped))
           (should-not (ebox-surface-buffer-mounted-p buffer))
           (should-not (ebox-surface-buffer-observer buffer))
           (should (equal "before"
-                         (with-current-buffer buffer (buffer-string))))
-          (let ((diagnostic
-                 (cl-find 'framework-rollback
-                          (etaf-render-port-v1-cleanup-diagnostics buffer)
-                          :key (lambda (entry) (plist-get entry :phase)))))
-            (should diagnostic)
-            (should (plist-get diagnostic :nonlocal-exit))))
+                         (with-current-buffer buffer (buffer-string)))))
       (when (and (buffer-live-p buffer)
                  (ebox-surface-buffer-mounted-p buffer))
         (ebox-unmount-buffer buffer))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
-(ert-deftest etaf-render-port-v1-cleanup-fault-keeps-primary-and-continues ()
-  "A secondary v1 cleanup fault is diagnosed while Ebox cleanup continues."
-  (let ((buffer (generate-new-buffer " *etaf-v1-cleanup-fault*"))
+(ert-deftest etaf-render-port-v2-cleanup-fault-keeps-primary-and-continues ()
+  "A secondary rollback fault is contained while Ebox cleanup continues."
+  (let ((buffer (generate-new-buffer " *etaf-v2-cleanup-fault*"))
         (input (ebox-build '(box "committed")))
         captured)
     (unwind-protect
         (progn
           (with-current-buffer buffer (insert "before"))
           (condition-case condition
-              (etaf-render-port--v1-initial
+              (etaf-render-port-initial
                buffer input
                (lambda (_report) (error "primary stage failure"))
                (lambda (_report) (error "secondary rollback failure")))
@@ -391,14 +374,7 @@
           (should (equal captured '(error "primary stage failure")))
           (should-not (ebox-surface-buffer-mounted-p buffer))
           (should (equal "before"
-                         (with-current-buffer buffer (buffer-string))))
-          (let ((diagnostics
-                 (etaf-render-port-v1-cleanup-diagnostics buffer)))
-            (should (= 1 (length diagnostics)))
-            (should (eq (plist-get (car diagnostics) :phase)
-                        'framework-rollback))
-            (should (equal (plist-get (car diagnostics) :condition)
-                           '(error "secondary rollback failure")))))
+                         (with-current-buffer buffer (buffer-string)))))
       (when (and (buffer-live-p buffer)
                  (ebox-surface-buffer-mounted-p buffer))
         (ebox-unmount-buffer buffer))
@@ -423,46 +399,25 @@
         (ebox-unmount-buffer buffer))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
-(ert-deftest etaf-render-port-v1-revision-needs-no-v2-ebox-accessor ()
-  "A v1-only Ebox retains revisions without a v2-only query symbol."
-  (let ((buffer (generate-new-buffer " *etaf-v1-revision*"))
-        (etaf-render-port--selected-port (etaf-render-port--v1-fallback)))
+(ert-deftest etaf-render-port-v2-preserves-provider-report-identity ()
+  "Initial and update return the exact report seen by framework staging."
+  (let ((buffer (generate-new-buffer " *etaf-v2-report-identity*"))
+        initial-stage-report update-stage-report)
     (unwind-protect
-        (cl-letf (((symbol-function 'ebox-surface-buffer-revision) nil))
-          (etaf-render-port-initial
-           buffer (ebox-build '(box "one")) #'ignore #'ignore)
-          (should (= (etaf-render-port-revision buffer) 1))
-          (let ((report
+        (let ((initial-report
+               (etaf-render-port-initial
+                buffer (ebox-build '(box "one"))
+                (lambda (report) (setq initial-stage-report report))
+                #'ignore)))
+          (should (eq initial-report initial-stage-report))
+          (let ((update-report
                  (etaf-render-port-update
-                  buffer (ebox-build '(box "two")) #'ignore #'ignore)))
+                  buffer (ebox-build '(box "two"))
+                  (lambda (report) (setq update-stage-report report))
+                  #'ignore)))
+            (should (eq update-report update-stage-report))
             (should (= (etaf-render-port-revision buffer)
-                       (plist-get report :surface-revision))))
-          (with-current-buffer buffer
-            (setq-local etaf-render-port--v1-committed-revision nil))
-          (should-error (etaf-render-port-revision buffer) :type 'error))
-      (when (and (buffer-live-p buffer)
-                 (ebox-surface-buffer-mounted-p buffer))
-        (ebox-unmount-buffer buffer))
-      (when (buffer-live-p buffer) (kill-buffer buffer)))))
-
-(ert-deftest etaf-render-port-v1-missing-update-revision-fails-later ()
-  "A committed v1 update may finish, but missing revision evidence fails closed."
-  (let ((buffer (generate-new-buffer " *etaf-v1-missing-revision*"))
-        (etaf-render-port--selected-port (etaf-render-port--v1-fallback))
-        (report (list :strategy 'injected-without-revision)))
-    (unwind-protect
-        (progn
-          (etaf-render-port-initial
-           buffer (ebox-build '(box "one")) #'ignore #'ignore)
-          (cl-letf (((symbol-function 'ebox-commit)
-                     (lambda (_buffer _input framework-stage _rollback)
-                       (funcall framework-stage report)
-                       report)))
-            (should
-             (eq (etaf-render-port-update
-                  buffer (ebox-build '(box "two")) #'ignore #'ignore)
-                 report)))
-          (should-error (etaf-render-port-revision buffer) :type 'error))
+                       (plist-get update-report :surface-revision)))))
       (when (and (buffer-live-p buffer)
                  (ebox-surface-buffer-mounted-p buffer))
         (ebox-unmount-buffer buffer))
@@ -498,6 +453,15 @@
                            "(ebox-commit"
                            "(ebox-surface-"))
             (should-not (string-match-p (regexp-quote call) source))))))))
+
+(ert-deftest etaf-render-port-production-has-no-v1-render-route ()
+  "Production ETAF contains no retired render-port policy or v1 helper."
+  (dolist (file (directory-files etaf-render-port-test--root t "\\.el\\'"))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (let ((source (buffer-string)))
+        (should-not (string-match-p "etaf-render-port-selection-policy" source))
+        (should-not (string-match-p "etaf-render-port--v1" source))))))
 
 (ert-deftest etaf-render-port-routes-standalone-renderer-mount ()
   "The no-Runtime compatibility mount uses the immutable selected port."
@@ -539,12 +503,9 @@
 
 (ert-deftest etaf-render-port-selected-port-is-process-stable ()
   "Every downstream read returns the one bootstrap-selected port identity."
-  (let* ((selected (etaf-render-port-selected))
-         (route (etaf-render-port-route selected)))
-    (let ((etaf-render-port-selection-policy (if (eq route 'v1) 'v2 'v1)))
-      (should (eq selected (etaf-render-port-selected)))
-      (should (eq route
-                  (etaf-render-port-route (etaf-render-port-selected)))))))
+  (let ((selected (etaf-render-port-selected)))
+    (should (eq selected (etaf-render-port-selected)))
+    (should (eq (etaf-render-port-route selected) 'v2))))
 
 (provide 'etaf-render-port-tests)
 

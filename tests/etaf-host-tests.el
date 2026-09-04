@@ -30,10 +30,10 @@
     (unwind-protect
         (progn
           (cl-letf (((symbol-function 'etaf-host-authority-stage-attach)
-                     (lambda (authority &optional legacy-p)
+                     (lambda (authority)
                        (setq lookup-during-stage
                              (etaf-runtime-for-buffer buffer-name))
-                       (funcall original-stage authority legacy-p))))
+                       (funcall original-stage authority))))
             (etaf-mount
              buffer-name
              (etaf--view-call 'etaf-host-test-component

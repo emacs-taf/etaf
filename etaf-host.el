@@ -5,7 +5,7 @@
 ;;; Commentary:
 
 ;; Owns one mounted Runtime's fixed Host authority token and state machine.
-;; Initial v2 attachment registers a bounded TP final marker so attached
+;; Initial attachment registers a bounded TP final marker so attached
 ;; authority and buffer publication share one final-accept boundary.  Detach
 ;; invalidates authority in O(1) before any unbounded retirement work.
 
@@ -83,10 +83,8 @@
    :index index
    :value value))
 
-(defun etaf-host-authority-stage-attach (authority &optional legacy-p)
-  "Stage AUTHORITY attachment and register its final marker.
-When LEGACY-P is non-nil, publish attached state directly after the legacy Ebox
-initial operation and rely on manual framework rollback."
+(defun etaf-host-authority-stage-attach (authority)
+  "Stage AUTHORITY attachment and register its final marker."
   (unless (eq (etaf-host-authority-state authority) 'attaching)
     (signal 'etaf-host-authority-error
             (list :stage-attach (etaf-host-authority-state authority))))
@@ -94,32 +92,28 @@ initial operation and rely on manual framework rollback."
          (token (etaf-host-authority-token authority))
          (version (etaf-host-authority-version authority)))
     (aset slots etaf-host--state-slot 'provisionally-attached)
-    (if legacy-p
-        (let ((inhibit-quit t))
-          (aset slots etaf-host--state-slot 'attached)
-          (aset slots etaf-host--version-slot (1+ version)))
-      (tp-transaction-register-final-marker
-       :owner-key
-       (list 'etaf-host
-             (etaf-host-authority-host-id authority)
-             (etaf-host-authority-mount-epoch authority))
-       :expected-token
-       (tp-final-marker-expectation-create
-        :target slots :index etaf-host--token-slot :value token)
-       :expected-version
-       (tp-final-marker-expectation-create
-        :target slots :index etaf-host--version-slot :value version)
-       :next-values
-       (vector
-        (etaf-host--slot-write authority etaf-host--state-slot 'attached)
-        (etaf-host--slot-write authority etaf-host--version-slot (1+ version)))
-       :inverse-values
-       (vector
-        (etaf-host--slot-write
-         authority etaf-host--state-slot 'provisionally-attached)
-        (etaf-host--slot-write authority etaf-host--version-slot version))
-       :slot-write-count 2
-       :operation-key 'tp-vector-slots/v1))
+    (tp-transaction-register-final-marker
+     :owner-key
+     (list 'etaf-host
+           (etaf-host-authority-host-id authority)
+           (etaf-host-authority-mount-epoch authority))
+     :expected-token
+     (tp-final-marker-expectation-create
+      :target slots :index etaf-host--token-slot :value token)
+     :expected-version
+     (tp-final-marker-expectation-create
+      :target slots :index etaf-host--version-slot :value version)
+     :next-values
+     (vector
+      (etaf-host--slot-write authority etaf-host--state-slot 'attached)
+      (etaf-host--slot-write authority etaf-host--version-slot (1+ version)))
+     :inverse-values
+     (vector
+      (etaf-host--slot-write
+       authority etaf-host--state-slot 'provisionally-attached)
+      (etaf-host--slot-write authority etaf-host--version-slot version))
+     :slot-write-count 2
+     :operation-key 'tp-vector-slots/v1)
     authority))
 
 (defun etaf-host-authority-rollback-attach (authority)

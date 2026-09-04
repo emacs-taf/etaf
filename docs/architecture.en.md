@@ -458,14 +458,12 @@ back into it. The migration-only `legacy`, `project`, and `shadow` routes prove
 projection equivalence and rollback safety without introducing a second
 committed truth.
 
-At process bootstrap, `etaf-render-port-selection-policy` selects exactly one
-immutable Ebox port. Its default `v2` value uses the compatible framework SPI;
-`v1`, when set before ETAF is loaded, bypasses provider probing and selects the
-complete legacy render/Host port. The rollback changes only that inter-package
-publication route. Generation/store CAS, compatibility projection, retirement,
-and scheduler authority remain single-owner so the old and new render ports
-produce identical generation, token, and store-version outcomes. A mounted or
-in-flight Runtime is never switched between ports.
+At process bootstrap, `etaf-render-port` requires Ebox framework SPI v2 and
+snapshots exactly one immutable port. A missing, malformed, or incompatible
+provider fails closed before any Runtime is mounted. The ordered dependency
+upgrade may expose either a transitional TP v1+v2 manifest or the final v2-only
+manifest; both prove the required v2 capability, and ETAF never calls a v1
+operation. A mounted or in-flight Runtime never switches ports.
 
 Each semantic candidate captures the expected generation, semantic token, and
 instance/resource/artifact/route store versions. The render path stages one CAS

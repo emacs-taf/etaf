@@ -6176,17 +6176,12 @@ RENDERED-IDENTITIES names the Component render participants."
                    (etaf--runtime-participant-publish participant))
                  (lambda (_report)
                    (etaf--runtime-participant-rollback participant))))
-            (let* ((host-authority (etaf-runtime-host-authority runtime))
-                   (legacy-p
-                    (eq (etaf-render-port-route
-                         (etaf-render-port-selected))
-                        'v1)))
+            (let ((host-authority (etaf-runtime-host-authority runtime)))
               (etaf-render-port-initial
                (etaf-runtime-buffer runtime) next-root
                (lambda (_report)
                  (etaf--runtime-participant-publish participant)
-                 (etaf-host-authority-stage-attach
-                  host-authority legacy-p))
+                 (etaf-host-authority-stage-attach host-authority))
                (lambda (_report)
                  (etaf-host-authority-rollback-attach host-authority)
                  (etaf--runtime-participant-rollback participant))

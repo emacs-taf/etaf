@@ -33,7 +33,7 @@
     (combined-participant . etaf-g1-ebox-etaf-combined-participant-same-report)
     (spi-branches . etaf-g1-spi-four-branches-and-selected-port-immutability)
     (generation-host-cas . etaf-g1-generation-cas-and-host-lifecycle-guards)
-    (v1-v2-equivalence . etaf-g1-v1-v2-runtime-equivalence)
+    (v2-runtime-contract . etaf-g1-v2-runtime-contract)
     (runtime-fault-rollback . etaf-g1-runtime-fault-restores-authorities)
     (postcommit-diagnostics . etaf-g1-postcommit-report-fault-keeps-accepted-state)
     (host-unmount-kill . etaf-g1-host-unmount-and-kill-inflight-route)
@@ -47,7 +47,7 @@
 
 (defconst etaf-g1--required-fault-keys
   '(tp-order multi-surface combined-participant spi-branches
-    generation-host-cas v1-v2-equivalence runtime-fault-rollback
+    generation-host-cas v2-runtime-contract runtime-fault-rollback
     postcommit-diagnostics host-unmount-kill nested-runtime-event multi-context
     native-fallback retirement load-path-harness gui-recovery-harness)
   "Required unique behavior keys for the G1 cross-layer gate.")
@@ -192,14 +192,15 @@
           (tp--transaction-precommit-functions nil))
       (should-error
        (tp-with-transaction
-         (tp-transaction-participate
-          'tp-first (lambda () (push 'first-stage etaf-g1--tp-trace))
-          (lambda () (push 'first-rollback etaf-g1--tp-trace)))
-         (tp-transaction-participate
-          'tp-second
-          (lambda () (push 'second-stage etaf-g1--tp-trace)
-            (error "G1 injected partial apply"))
-          (lambda () (push 'second-rollback etaf-g1--tp-trace))))))
+         (tp-transaction-participate-v2
+          :key 'tp-first
+          :stage (lambda () (push 'first-stage etaf-g1--tp-trace))
+          :rollback (lambda () (push 'first-rollback etaf-g1--tp-trace)))
+         (tp-transaction-participate-v2
+          :key 'tp-second
+          :stage (lambda () (push 'second-stage etaf-g1--tp-trace)
+                   (error "G1 injected partial apply"))
+          :rollback (lambda () (push 'second-rollback etaf-g1--tp-trace))))))
     (should
      (equal (nreverse etaf-g1--tp-trace)
             '(first-stage second-stage second-rollback first-rollback))))
@@ -212,12 +213,14 @@
          '(etaf-g1--tp-precommit-probe)))
     (should-error
      (tp-with-transaction
-       (tp-transaction-participate
-        'tp-first (lambda () (push 'first-stage etaf-g1--tp-trace))
-        (lambda () (push 'first-rollback etaf-g1--tp-trace)))
-       (tp-transaction-participate
-        'tp-second (lambda () (push 'second-stage etaf-g1--tp-trace))
-        (lambda () (push 'second-rollback etaf-g1--tp-trace)))))
+       (tp-transaction-participate-v2
+        :key 'tp-first
+        :stage (lambda () (push 'first-stage etaf-g1--tp-trace))
+        :rollback (lambda () (push 'first-rollback etaf-g1--tp-trace)))
+       (tp-transaction-participate-v2
+        :key 'tp-second
+        :stage (lambda () (push 'second-stage etaf-g1--tp-trace))
+        :rollback (lambda () (push 'second-rollback etaf-g1--tp-trace)))))
     (should
      (equal (nreverse etaf-g1--tp-trace)
             '(first-stage second-stage precommit
@@ -632,7 +635,8 @@
                  (and (not (eq feature 'ebox-framework-spi-v2))
                       (funcall original-featurep feature))))
               ((symbol-function 'ebox-framework-spi-capabilities) nil))
-      (should (eq (etaf-render-port-route (etaf-render-port--bootstrap)) 'v1)))
+      (should-error (etaf-render-port--bootstrap)
+                    :type 'etaf-spi-bootstrap-error))
     (should (eq (etaf-render-port-route (etaf-render-port--bootstrap)) 'v2))
     (cl-letf (((symbol-function 'ebox-framework-spi-capabilities)
                (lambda () (error "G1 malformed provider"))))
@@ -661,19 +665,20 @@
       authority generation token versions
       (etaf--generation-create :generation-id 2) 2 versions)
      :type 'etaf-generation-error))
-  (let ((buffer (generate-new-buffer " *g1-host*")))
+  (let ((buffer (generate-new-buffer " *g1-host*"))
+        (source (etaf-ref 0)) runtime)
     (unwind-protect
-        (let ((host (etaf-host-authority-create 'g1-host 1 buffer)))
-          (etaf-host-authority-begin-attach host)
-          ;; Legacy attach is the explicit non-transactional compatibility
-          ;; path; v2 uses the same state transition behind a TP marker.
-          (etaf-host-authority-stage-attach host t)
-          (let ((token (etaf-host-authority-token host)))
+        (progn
+          (etaf-mount buffer (etaf-g1--view source))
+          (setq runtime (etaf-runtime-for-buffer buffer))
+          (let* ((host (etaf-runtime-host-authority runtime))
+                 (token (etaf-host-authority-token host)))
             (should (etaf-host-authority-accepts-token-p host token))
-            (etaf-host-authority-begin-detach host)
-            (etaf-host-authority-invalidate host)
+            (etaf-unmount runtime)
+            (setq runtime nil)
             (should-not (etaf-host-authority-accepts-token-p host token))))
-      (kill-buffer buffer))))
+      (when runtime (etaf-unmount runtime))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
 (defun etaf-g1--run-selected-render-port-route ()
   "Run one lifecycle through the process-selected port and return evidence."
@@ -750,7 +755,6 @@
     (list
      :selected-route (etaf-render-port-route selected)
      :bootstrap-outcome (etaf-render-port-bootstrap-outcome selected)
-     :render-port-selection-policy etaf-render-port-selection-policy
      :generation-mirror-route etaf-generation-mirror-route
      :semantic-commit-route etaf-semantic-commit-route
      :v2-feature-present (featurep 'ebox-framework-spi-v2)
@@ -771,8 +775,8 @@
       (executable-find invocation-name)
       (error "Cannot resolve current Emacs executable: %S" invocation-name)))
 
-(defun etaf-g1--probe-route-in-fresh-emacs (route)
-  "Bootstrap ROUTE in a fresh Emacs process and return its route evidence."
+(defun etaf-g1--probe-v2-in-fresh-emacs ()
+  "Bootstrap the required v2 port in a fresh Emacs and return its evidence."
   (let* ((etaf-root (expand-file-name "etaf" etaf-g1--workspace-root))
          (test-file (expand-file-name "tests/etaf-g1-cross-layer-tests.el"
                                      etaf-root))
@@ -781,15 +785,6 @@
                     (expand-file-name directory etaf-g1--workspace-root))
                   '("etaf" "etaf/examples" "etaf/scripts"
                     "ebox" "tp" "ecss")))
-         (route-setup
-          (pcase route
-            ('v1
-             (list
-              "--eval"
-              "(setq etaf-render-port-selection-policy 'v1)"))
-            ('v2
-             (list "--eval" "(setq etaf-render-port-selection-policy 'v2)"))
-            (_ (error "Unknown G1 render route: %S" route))))
          (arguments
           (append
            '("-Q" "--batch")
@@ -797,7 +792,6 @@
                   (mapcar (lambda (directory) (list "-L" directory))
                           load-directories))
            '("--eval" "(setq load-prefer-newer t)")
-           route-setup
            (list
             "-l" test-file
             "--eval"
@@ -813,60 +807,46 @@
                    (list (current-buffer) t) nil arguments)
             output (buffer-string))
       (unless (and (integerp status) (zerop status))
-        (ert-fail (format "Fresh %S route probe failed (%S):\n%s"
-                          route status output)))
+        (ert-fail (format "Fresh v2 route probe failed (%S):\n%s"
+                          status output)))
       (goto-char (point-min))
       (unless (re-search-forward
                "^ETAF_G1_ROUTE_EVIDENCE:\\([^[:space:]]+\\)$" nil t)
-        (ert-fail (format "Fresh %S route probe emitted no evidence:\n%s"
-                          route output)))
+        (ert-fail (format "Fresh v2 route probe emitted no evidence:\n%s"
+                          output)))
       (setq encoded (match-string-no-properties 1)))
     (read (base64-decode-string encoded))))
 
-(ert-deftest etaf-g1-v1-v2-runtime-equivalence ()
-  "Fresh v1 and v2 bootstraps preserve lifecycle and rollback equivalence."
-  (let* ((v1 (etaf-g1--probe-route-in-fresh-emacs 'v1))
-         (v2 (etaf-g1--probe-route-in-fresh-emacs 'v2))
-         (v1-lifecycle (plist-get v1 :lifecycle-evidence))
-         (v2-lifecycle (plist-get v2 :lifecycle-evidence)))
-    (should (eq (plist-get v1 :selected-route) 'v1))
+(ert-deftest etaf-g1-v2-runtime-contract ()
+  "A fresh v2 bootstrap preserves lifecycle, identity and failed-update state."
+  (let* ((v2 (etaf-g1--probe-v2-in-fresh-emacs))
+         (lifecycle (plist-get v2 :lifecycle-evidence))
+         (initial (plist-get lifecycle :initial))
+         (updated (plist-get lifecycle :updated))
+         (rolled-back (plist-get lifecycle :rolled-back))
+         (host-lifecycle (plist-get lifecycle :lifecycle)))
     (should (eq (plist-get v2 :selected-route) 'v2))
-    (should (eq (plist-get v1 :bootstrap-outcome)
-                'v1-kill-switch-selected))
     (should (eq (plist-get v2 :bootstrap-outcome)
                 'valid-v2-selected))
-    (should (plist-get v1 :v2-feature-present))
-    (should (plist-get v1 :v2-predicate-present))
     (should (plist-get v2 :v2-feature-present))
     (should (plist-get v2 :v2-predicate-present))
-    (should (eq (plist-get v1 :render-port-selection-policy) 'v1))
-    (should (eq (plist-get v1 :generation-mirror-route) 'project))
-    (should (eq (plist-get v1 :semantic-commit-route) 'cas))
-    (should (eq (plist-get v2 :render-port-selection-policy) 'v2))
     (should (eq (plist-get v2 :generation-mirror-route) 'project))
     (should (eq (plist-get v2 :semantic-commit-route) 'cas))
-    (should (plist-get v1 :selected-stable))
     (should (plist-get v2 :selected-stable))
-    (should (eq (plist-get v1 :initial-dispatch)
-                'etaf-render-port--v1-initial))
-    (should (eq (plist-get v1 :update-dispatch)
-                'etaf-render-port--v1-update))
     (should (eq (plist-get v2 :initial-dispatch)
                 'ebox-framework-spi-initial))
     (should (eq (plist-get v2 :update-dispatch)
                 'ebox-framework-spi-update))
-    (dolist (evidence (list v1 v2))
-      (should (= 1 (plist-get evidence :initial-dispatch-count)))
-      (should (= 2 (plist-get evidence :update-dispatch-count))))
-    (dolist (key '(:initial :updated :rolled-back :update-report :lifecycle))
-      (should (equal-including-properties
-               (plist-get v1-lifecycle key) (plist-get v2-lifecycle key))))
-    ;; The v2 Host attaches with one generic final marker; legacy v1 performs
-    ;; its compatible attach inside the reversible manual stage.
-    (should (= 0 (plist-get v1-lifecycle :initial-marker-count)))
-    (should (= 1 (plist-get v2-lifecycle :initial-marker-count)))
-    (should (= 0 (plist-get v1-lifecycle :update-marker-count)))
-    (should (= 0 (plist-get v2-lifecycle :update-marker-count)))))
+    (should (= 1 (plist-get v2 :initial-dispatch-count)))
+    (should (= 2 (plist-get v2 :update-dispatch-count)))
+    (should (equal (plist-get initial :semantic-text) "value=0"))
+    (should (equal (plist-get updated :semantic-text) "value=1"))
+    (should (equal-including-properties updated rolled-back))
+    (should (= 4 (length host-lifecycle)))
+    (should (eq (plist-get (car host-lifecycle) :host-state) 'attached))
+    (should (eq (plist-get (car (last host-lifecycle)) :host-state) 'terminal))
+    (should (= 1 (plist-get lifecycle :initial-marker-count)))
+    (should (= 0 (plist-get lifecycle :update-marker-count)))))
 
 (provide 'etaf-g1-cross-layer-tests)
 ;;; etaf-g1-cross-layer-tests.el ends here

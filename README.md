@@ -112,15 +112,15 @@ There is no separate `etaf-data` install: Data is a core ETAF capability. There 
 
 ## Load and verify
 
-ECSS 0.1.0 and TP 1.0.1 are independent packages and may be installed in either order. Install both before Ebox 2.0.1, then install ETAF 0.1.1. ETAF declares TP directly because Host final-accept authority uses the TP transaction contract; rendering still consumes only the Ebox 2.0 public contract.
+Install ECSS 0.1.0 and TP 2.0.0 before Ebox 3.0.0, then install ETAF 0.2.1.
+ETAF declares TP directly because Host final-accept authority uses the TP
+transaction contract. Rendering requires Ebox framework SPI v2; a missing,
+malformed, or incompatible provider fails during ETAF bootstrap.
 
-ETAF selects the Ebox framework SPI v2 port by default. For an immediate
-process-wide rollback to the complete legacy render/Host port, set
-`etaf-render-port-selection-policy` to `v1` before loading ETAF. The selection
-is immutable for that Emacs process; restart Emacs to change it. This rollback
-does not create a second generation owner: semantic CAS, projected compatibility
-stores, retirement, and scheduler authority stay unified, preserving the same
-generation, token, and store-version outcomes on both render ports.
+ETAF snapshots one immutable v2 render port for the Emacs process. During an
+ordered upgrade it also accepts Ebox's transitional dual-capability TP manifest
+because that manifest contains the required v2 protocol. ETAF never dispatches
+through the retired v1 capability.
 
 During development, load the sibling Ebox checkout before ETAF:
 

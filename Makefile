@@ -4,7 +4,7 @@ SOURCES = etaf-view.el etaf-compiler.el etaf-component.el etaf-scheduler.el etaf
 EXAMPLES = examples/etaf-counter-example.el examples/etaf-data-example.el examples/etaf-resource-example.el
 TESTS = tests/etaf-tests.el tests/etaf-compiler-tests.el tests/etaf-component-frontends-tests.el tests/etaf-resource-tests.el tests/etaf-data-tests.el tests/etaf-theme-tp-tests.el tests/etaf-examples-tests.el tests/etaf-observer-tests.el tests/etaf-performance-tests.el tests/etaf-gui-verifier-tests.el tests/etaf-m0a-current-characterization-tests.el tests/etaf-interaction-contract-tests.el tests/etaf-m0b-component-manifest-tests.el tests/etaf-render-port-tests.el tests/etaf-generation-tests.el tests/etaf-host-tests.el tests/etaf-retirement-tests.el tests/etaf-scheduler-tests.el tests/etaf-g1-cross-layer-tests.el
 
-.PHONY: test compile load checkdoc docs-check scheduler-benchmark check clean
+.PHONY: test compile load checkdoc docs-check metadata-check scheduler-benchmark check clean
 
 test: compile
 	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" \
@@ -24,6 +24,9 @@ docs-check:
 	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" -l tests/etaf-docs-tests.el \
 		-f ert-run-tests-batch-and-exit
 
+metadata-check:
+	$(EMACS) -Q --batch --eval "(progn (require 'package) (with-temp-buffer (insert-file-contents \"etaf.el\") (let ((desc (package-buffer-info))) (unless (and (equal (package-desc-version desc) '(0 2 1)) (equal (package-desc-reqs desc) '((emacs (29 1)) (ebox (3 0 0)) (tp (2 0 0))))) (error \"Unexpected ETAF package metadata: %S\" desc)))))"
+
 scheduler-benchmark:
 	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" \
 		-l scripts/benchmark-scheduler-context.el \
@@ -32,7 +35,7 @@ scheduler-benchmark:
 checkdoc:
 	$(EMACS) -Q --batch --eval '(progn (require (quote checkdoc)) (dolist (directory (list "." "examples" "scripts")) (dolist (file (directory-files directory t)) (when (string-suffix-p ".el" file) (checkdoc-file file)))))'
 
-check: checkdoc compile test docs-check scheduler-benchmark
+check: checkdoc metadata-check compile test docs-check scheduler-benchmark
 
 clean:
 	rm -f *.elc examples/*.elc scripts/*.elc tests/*.elc
