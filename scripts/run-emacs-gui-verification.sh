@@ -4,11 +4,11 @@ set -eu
 
 GUI_CORE_SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
 GUI_ENGINE="$GUI_CORE_SCRIPT_DIR/emacs-gui-verifier.el"
-GUI_RECORDER="$GUI_CORE_SCRIPT_DIR/record-screen.exp"
+GUI_RECORDER_SOURCE="$GUI_CORE_SCRIPT_DIR/record-emacs-window.swift"
+GUI_CAPTURE="$GUI_CORE_SCRIPT_DIR/capture-emacs-window.sh"
 GUI_EMACS_APP=${EMACS_APP:-/Applications/Emacs.app}
 GUI_EMACS_BIN="$GUI_EMACS_APP/Contents/MacOS/Emacs"
 GUI_EMACSCLIENT="$GUI_EMACS_APP/Contents/MacOS/bin/emacsclient"
-GUI_EMACS_APP_NAME=${EMACS_APP_NAME:-Emacs}
 GUI_CODEX_ROOT=${CODEX_HOME:-${HOME}/.codex}
 GUI_DYNAMIC_SKILL=${EMACS_DYNAMIC_UI_SKILL_DIR:-$GUI_CODEX_ROOT/skills/emacs-dynamic-ui-verification}
 GUI_CHECKPOINT_EL="$GUI_DYNAMIC_SKILL/scripts/capture-checkpoint.el"
@@ -18,7 +18,7 @@ usage() {
     echo "usage:" >&2
     echo "  $0 doctor" >&2
     echo "  $0 review RUN_DIR" >&2
-    echo "  $0 run ADAPTER_EL ENTRY_FUNCTION [--run-dir DIR] [--load-path DIR]..." >&2
+    echo "  $0 run ADAPTER_EL ENTRY_FUNCTION [--initialize-function FUNCTION] [--run-dir DIR] [--load-path DIR]..." >&2
     exit 2
 }
 
@@ -33,11 +33,12 @@ doctor() {
     require_file "$GUI_EMACS_BIN"
     require_file "$GUI_EMACSCLIENT"
     require_file "$GUI_ENGINE"
-    require_file "$GUI_RECORDER"
+    require_file "$GUI_RECORDER_SOURCE"
+    require_file "$GUI_CAPTURE"
     require_file "$GUI_CHECKPOINT_EL"
     require_file "$GUI_EVIDENCE_PY"
     command -v osascript >/dev/null 2>&1
-    command -v expect >/dev/null 2>&1
+    xcrun --find swiftc >/dev/null 2>&1
     command -v ffmpeg >/dev/null 2>&1
     command -v python3 >/dev/null 2>&1
     echo "EMACS-GUI-VERIFIER DOCTOR PASS"
@@ -55,7 +56,6 @@ review_run() {
 GUI_DAEMON=""
 GUI_DAEMON_PID=""
 GUI_RECORDER_PID=""
-GUI_RECORDER_CHILD_PID=""
 GUI_DAEMON_STARTED=false
 
 valid_pid() {
@@ -101,22 +101,15 @@ stop_recorder() {
             GUI_RECORDER_STOP_FAILED=1
         elif ! wait_for_exit "$GUI_RECORDER_PID" 50; then
             GUI_RECORDER_STOP_FAILED=1
-            if ! force_owned_exit "$GUI_RECORDER_PID" "recorder wrapper"; then
+            if ! force_owned_exit "$GUI_RECORDER_PID" "window recorder"; then
                 GUI_RECORDER_STOP_FAILED=1
             fi
-        fi
-    fi
-    if process_alive "$GUI_RECORDER_CHILD_PID"; then
-        GUI_RECORDER_STOP_FAILED=1
-        if ! force_owned_exit "$GUI_RECORDER_CHILD_PID" "screen recorder"; then
-            GUI_RECORDER_STOP_FAILED=1
         fi
     fi
     if ! wait "$GUI_RECORDER_PID" 2>/dev/null; then
         GUI_RECORDER_STOP_FAILED=1
     fi
     GUI_RECORDER_PID=""
-    GUI_RECORDER_CHILD_PID=""
     [ "$GUI_RECORDER_STOP_FAILED" -eq 0 ]
 }
 
@@ -165,17 +158,16 @@ trap on_exit EXIT
 trap 'exit 130' HUP INT TERM
 
 activate_emacs() {
-    osascript -e "tell application \"$GUI_EMACS_APP_NAME\" to activate"
+    osascript -e "tell application \"System Events\" to set frontmost of first application process whose unix id is $GUI_DAEMON_PID to true"
     GUI_ACTIVATE_ATTEMPTS=0
     while [ "$GUI_ACTIVATE_ATTEMPTS" -lt 30 ]; do
         GUI_FRONTMOST=$(osascript -e \
-            'tell application "System Events" to get name of first application process whose frontmost is true')
-        case $GUI_FRONTMOST in
-            *Emacs*)
-                sleep 0.2
-                return 0
-                ;;
-        esac
+            'tell application "System Events" to get unix id of first application process whose frontmost is true')
+        if [ "$GUI_FRONTMOST" = "$GUI_DAEMON_PID" ]; then
+            # macOS fullscreen/Space animations continue after focus changes.
+            sleep 1
+            return 0
+        fi
         sleep 0.1
         GUI_ACTIVATE_ATTEMPTS=$((GUI_ACTIVATE_ATTEMPTS + 1))
     done
@@ -184,26 +176,23 @@ activate_emacs() {
 }
 
 start_recorder() {
-    /usr/bin/expect "$GUI_RECORDER" "$GUI_RUN_DIR/recording.mov" \
+    "$GUI_RECORDER" "$GUI_DAEMON_PID" "$GUI_RUN_DIR/recording.mov" \
+        "$GUI_RUN_DIR/recorder.ready" \
         >"$GUI_RUN_DIR/recorder.log" 2>&1 &
     GUI_RECORDER_PID=$!
     GUI_RECORDER_ATTEMPTS=0
-    while [ "$GUI_RECORDER_ATTEMPTS" -lt 30 ]; do
+    while [ "$GUI_RECORDER_ATTEMPTS" -lt 150 ]; do
         if ! kill -0 "$GUI_RECORDER_PID" 2>/dev/null; then
             echo "screen recorder exited before the scenario started" >&2
             exit 1
         fi
-        GUI_RECORDER_CHILD_PID=$(
-            pgrep -P "$GUI_RECORDER_PID" -x screencapture 2>/dev/null |
-                sed -n '1p'
-        )
-        if process_alive "$GUI_RECORDER_CHILD_PID"; then
+        if [ -s "$GUI_RUN_DIR/recorder.ready" ]; then
             return 0
         fi
         sleep 0.1
         GUI_RECORDER_ATTEMPTS=$((GUI_RECORDER_ATTEMPTS + 1))
     done
-    echo "screen recorder did not create its PTY child" >&2
+    echo "window recorder did not produce a verified frame" >&2
     exit 1
 }
 
@@ -214,8 +203,14 @@ parse_run_arguments() {
     shift 2
     GUI_RUN_DIR=""
     GUI_LOAD_PATHS=""
+    GUI_INITIALIZE_FUNCTION=""
     while [ "$#" -gt 0 ]; do
         case $1 in
+            --initialize-function)
+                [ "$#" -ge 2 ] || usage
+                GUI_INITIALIZE_FUNCTION=$2
+                shift 2
+                ;;
             --run-dir)
                 [ "$#" -ge 2 ] || usage
                 GUI_RUN_DIR=$2
@@ -252,9 +247,14 @@ parse_run_arguments() {
 
 run_adapter() {
     doctor >/dev/null
+    GUI_RECORDER="$GUI_RUN_DIR/record-emacs-window"
+    xcrun swiftc -parse-as-library -warnings-as-errors -O \
+        "$GUI_RECORDER_SOURCE" -o "$GUI_RECORDER"
     export ETAF_GUI_RUN_DIR="$GUI_RUN_DIR"
     export ETAF_GUI_LOAD_PATHS="$GUI_LOAD_PATHS"
     export ETAF_GUI_ENTRY="$GUI_ENTRY"
+    export ETAF_GUI_INITIALIZE_FUNCTION="$GUI_INITIALIZE_FUNCTION"
+    export SCREENCAPTURE="$GUI_CAPTURE"
     GUI_DAEMON="emacs-gui-verify-$$"
     "$GUI_EMACS_BIN" -Q --daemon="$GUI_DAEMON" \
         --eval '(setq native-comp-jit-compilation nil load-prefer-newer t)'
@@ -276,8 +276,13 @@ run_adapter() {
            (when (fboundp 'tool-bar-mode) (tool-bar-mode -1))
            (when (fboundp 'menu-bar-mode) (menu-bar-mode -1))
            (when (fboundp 'scroll-bar-mode) (scroll-bar-mode -1))
-           (set-frame-parameter nil 'fullscreen 'maximized)
-           (raise-frame)
+           (setenv \"ETAF_GUI_CAPTURE_PID\" (number-to-string (emacs-pid)))
+           (set-frame-parameter nil 'fullscreen 'fullboth)
+           (when-let* ((initialize (getenv \"ETAF_GUI_INITIALIZE_FUNCTION\"))
+                       ((> (length initialize) 0)))
+             (funcall (intern initialize)))
+           (select-frame-set-input-focus (selected-frame))
+           (message nil)
            (redisplay t)
            t)" >"$GUI_RUN_DIR/bootstrap.out"
     activate_emacs
