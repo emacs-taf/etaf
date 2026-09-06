@@ -18,7 +18,7 @@
 
 | 里程碑 | 已交付职责 | 证据 |
 | --- | --- | --- |
-| P0 grammar | 统一 View 形状、属性优先解析、`etaf-view`、`(expr FORM)`、核心 Host、alias | `tests/etaf-tests.el` 结构和语法测试 |
+| P0 grammar | 统一 View 形状、属性优先解析、`etaf-view`、`(expr FORM)`、核心 Host、准确注册的 Component 名称 | `tests/etaf-tests.el` 结构和语法测试 |
 | P1 Component | `:view`、`:setup`、props、默认/命名 slot、retained instance、生命周期、`:key`、raw Ebox 出口 | Component、slot、mount、prop 更新、raw node、rollback 测试 |
 | P2 Runtime | ref、computed、effect、watch、Scope cleanup、Context、Theme、Behavior、事件、focus、Action | 挂载事件/focus、响应式失败回滚和 cleanup 测试 |
 | P3 presentation | 作用域样式、selector、Theme 优先级、inline text runs、Resource 和 error boundary | 样式、Theme、文本 surface、Resource、error 测试 |
@@ -65,7 +65,8 @@
 
 - `etaf-define-component` 必须在 `:view` 与 `:render` 中恰好选择一个；`:setup` 与
   `:styles` 可选。
-- `:view` 与 `:render` 是互斥 frontend。
+- `:view` 与 `:render` 是同一 View 模型的互斥 frontend；普通 `:render` 可返回
+  `etaf-view`，保留词法作用域与相同的 compiler prop/slot 规则。
 - `:setup` 对每个 retained identity 只运行一次，返回 opaque 状态，并由两个 frontend
   中的 `etaf-state` 读取。
 - Props 更新只重新 render，不重新运行 setup。

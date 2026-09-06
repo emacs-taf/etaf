@@ -1,44 +1,85 @@
 # ETAF
 
-ETAF is a small text-application framework built above the independent [Ebox](../ebox) layout and rendering engine.
+ETAF builds text applications from reusable Components above the independent
+[Ebox](../ebox) layout and rendering engine.
 
-Its complete public model is:
+Start with `etaf-view` and `etaf-mount`. Properties precede children in
+`(name :property value ... child ...)`; property values are ordinary Elisp.
+Evaluate the complete example, switch to `*etaf-hello*`, and activate “Say hello”:
 
-```text
-Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
-```
-
-Every visible structure uses one form:
-
+<!-- etaf-example: hello -->
 ```elisp
-(name :property value ... child ...)
-```
-
-The only child computation bridge is `expr :value`; attribute values are ordinary Elisp expressions.
-
-```elisp
-(etaf-view
- (column
-  (text :font-weight 'bold "Hello")
-  (text
-   :color "#687386"
-   (expr :value (if ready "Ready" "Waiting")))))
-```
-
-Define a Component:
-
-```elisp
-(etaf-define-component status-label (&key label)
-  "Render a status label."
-  :view
-  (text :font-weight 'bold (expr :value label)))
+;;; -*- lexical-binding: t; -*-
+(require 'etaf)
 
 (etaf-mount
- "*etaf-demo*"
- (etaf-view (status-label :label "Connected")))
+ "*etaf-hello*"
+ (etaf-view
+  (column
+    (text :font-weight 'bold "Hello")
+    (box :ref 'hello :role 'button :tab-index 0
+         :on-press (lambda () (message "Hello ETAF"))
+      "Say hello"))))
 ```
 
-`etaf-view` is the single public View constructor. Structural forms do not use quote; quote remains ordinary Elisp data syntax, such as `'bold`. A View returned from ordinary Elisp is explicitly constructed with `(etaf-view ...)` inside `expr`.
+A Component receives declared props and optional content through slots. Use the
+exact name passed to `etaf-define-component`; the registry creates no aliases.
+`(expr FORM)` evaluates one child expression. In a structural child position it
+may return nil, text, a typed Host or Component View, or a proper sequence of
+those values. Inside `text`, an expression must return a string.
+
+<!-- etaf-example: card -->
+```elisp
+;;; -*- lexical-binding: t; -*-
+(require 'etaf)
+
+(etaf-define-component demo-card (&key title)
+  :view
+  (column
+    (text :font-weight 'bold (expr title))
+    (slot)
+    (slot :name 'footer)))
+
+(etaf-mount
+ "*etaf-card*"
+ (etaf-view
+  (demo-card :title "Account"
+    (text "Connected")
+    (slot :name 'footer (text "Footer")))))
+```
+
+Add `:setup` when a Component owns state. It runs once per retained instance;
+`:render` uses ordinary Elisp to capture handles before returning `etaf-view`.
+The shorter `:view` form compiles the same View model.
+
+<!-- etaf-example: counter -->
+```elisp
+;;; -*- lexical-binding: t; -*-
+(require 'etaf)
+
+(etaf-define-component demo-counter ()
+  :setup (etaf-ref 0)
+  :render
+  (let ((count (etaf-state)))
+    (etaf-view
+     (column
+       (text (expr (format "Count: %d" (etaf-value count))))
+       (box :ref 'increment :role 'button :tab-index 0
+            :on-press (lambda () (cl-incf (etaf-value count)))
+         "Increment")))))
+
+(etaf-mount "*etaf-counter*" (etaf-view (demo-counter)))
+```
+
+Keep `etaf-value` reads inside the property or `expr` that should update. Event
+callbacks capture ordinary lexical locals; call `etaf-state` during rendering.
+Use a lexical-binding `.el` file for reusable application code. `etaf-node` is
+available for programmatic View builders. Context, Data, Behavior, and named
+Actions are optional capabilities; simple callbacks need no Action registration.
+
+Use exact catalog names such as `etaf-button` after `(require 'etaf-ui)`.
+Core does not load `.etaf` files: Playground treats them as inert structure,
+with its explicit companion registration handling executable Elisp.
 
 ## Performance records
 
@@ -125,6 +166,8 @@ through the retired v1 capability.
 During development, load the sibling Ebox checkout before ETAF:
 
 ```elisp
+(add-to-list 'load-path "/path/to/github/ecss")
+(add-to-list 'load-path "/path/to/github/tp")
 (add-to-list 'load-path "/path/to/github/ebox")
 (add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)

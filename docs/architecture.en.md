@@ -132,6 +132,9 @@ the other two clauses are optional:
 ```
 
 `:view` and `:render` are mutually exclusive and exactly one is required.
+`:render` is ordinary Elisp and may return `etaf-view` or a programmatically
+built `etaf-node`. Both share View compilation, prop validation, and slot
+projection; `:render` adds no second representation or state model.
 `:setup` and `:styles` are optional and may each appear once. Props are the only declared business inputs; ordinary trailing children and named slots are normalized separately into the Component's slot collection.
 
 The Component definition is the current structure/style/behavior boundary. Keep dynamic state, Action callbacks, and lifecycle work in `:setup`; keep static presentation in `:styles`. A future `.etaf` SFC compiler may produce these definitions, but the Runtime does not load `.etaf` files directly.
@@ -175,7 +178,7 @@ registration; it never returns a render function.
 
 `:key` is stable identity metadata, not a business prop. On a Component call it selects the retained Component instance within the sibling scope; on a Host it is forwarded as the Ebox node key. If a render candidate fails, the Runtime restores the previous instance, handlers, behaviors, and buffer.
 
-In View syntax, canonical Component names may omit the `etaf-` prefix. If the short name would collide with an Elisp function, special form, or Host, the registry assigns a semantic `-view` alias. Ordinary Elisp APIs such as `etaf-value`, `etaf-ref`, and `etaf-mount` always keep their prefix.
+Component calls use the exact registered definition name. The registry creates no automatic prefix or `-view` aliases. Official catalog Components use names such as `etaf-button`; an application may explicitly define its own Component under any valid unoccupied name.
 
 ## 5. Children and slots
 
@@ -221,6 +224,13 @@ The explicit normalized spelling is:
 Named slot names are stable non-keyword symbols. Strings, numbers, variables, and runtime expressions are rejected because a slot name is part of retained structure. A named input may appear only once. An explicitly empty input `(slot :name 'header)` suppresses the outlet fallback. Slot forms do not create Ebox wrappers.
 
 Inside a Component, `slot` projects content. In a Component call's child region, `slot :name` contributes content. The compiler uses the same normalized slot representation for both roles.
+
+Authored slot expressions retain their author's props, state, and Context across
+the entire projected subtree. A Component created in that subtree owns its own
+props, state, styles, and Scope, inheriting Context from the slot author. The
+receiver's own fallback, ordinary children, and View-producing callbacks use
+the receiver environment instead. Table/Grid cell callbacks keep the same
+ordinary rule: their Context is the consuming Table/Grid location.
 
 ## 6. Core Hosts and Ebox
 
@@ -326,32 +336,50 @@ Runtime events are dispatched through `etaf-dispatch-event`, and focus/hit testi
 
 Context is an inherited Component Scope environment:
 
+<!-- etaf-example: context -->
 ```elisp
-(etaf-define-component service-provider ()
-  "Provide a reactive service to descendants."
-  :setup
-  (let ((service (etaf-ref "demo-service")))
-    (etaf-provide 'service service)
-    service)
-  :view (slot))
+(require 'etaf)
 
 (etaf-define-component service-consumer ()
   "Read the inherited service."
   :setup (etaf-inject 'service nil t)
-  :view (text (expr (etaf-value (etaf-state)))))
+  :view (text (expr (format "Service: %s" (etaf-value (etaf-state))))))
 
-(etaf-view (service-provider (service-consumer)))
+(etaf-define-component service-provider ()
+  "Provide a reactive service to its own child Component."
+  :setup
+  (let ((service (etaf-ref "demo-service")))
+    (etaf-provide 'service service)
+    service)
+  :view (service-consumer))
+
+(etaf-mount "*etaf-context*" (etaf-view (service-provider)))
 ```
 
-Keys are stable ordinary symbols. The nearest ancestor wins; a missing required key signals `etaf-context-error`. Theme is a Context value containing a property plist:
+Keys are stable ordinary symbols. The nearest ancestor wins; a missing required
+key signals `etaf-context-error`. Root-authored slots retain the root's empty
+Context throughout their subtree. Migration from the former accidental receiver
+inheritance requires declaring consumers in the provider's own View or calling
+an ordinary View-producing callback there. Projected slots continue to use their
+author's environment. Theme follows this same Context ancestry and contains a
+property plist:
 
+<!-- etaf-example: theme -->
 ```elisp
+(require 'etaf)
+
 (etaf-define-component themed-shell ()
-  "Provide default text colors to a subtree."
+  "Provide semantic colors to its own View."
   :setup
   (etaf-theme-provide
-   '(:color "#F4F6FB" :bgcolor "#202634"))
-  :view (slot))
+   '(:text-color "#F4F6FB" :surface-color "#202634"))
+  :view
+  (text :ref 'themed-content
+        :color (etaf-theme-token :text-color)
+        :background-color (etaf-theme-token :surface-color)
+        "Themed content"))
+
+(etaf-mount "*etaf-theme*" (etaf-view (themed-shell)))
 ```
 
 Palette resolution remains a Theme concern, not a UI catalog concern. Core

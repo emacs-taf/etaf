@@ -18,7 +18,7 @@ The repository is complete for the agreed unified architecture when the mandator
 
 | Milestone | Delivered responsibility | Evidence |
 | --- | --- | --- |
-| P0 grammar | Unified View shape, property-first parsing, `etaf-view`, `(expr FORM)`, core Hosts, aliases | `tests/etaf-tests.el` structural and syntax tests |
+| P0 grammar | Unified View shape, property-first parsing, `etaf-view`, `(expr FORM)`, core Hosts, exact registered Component names | `tests/etaf-tests.el` structural and syntax tests |
 | P1 Components | `:view`, `:setup`, props, default/named slots, retained instances, lifecycle, `:key`, raw Ebox escape | Component, slot, mount, prop-update, raw-node, and rollback tests |
 | P2 Runtime | refs, computed, effects, watches, Scope cleanup, Context, Theme, Behaviors, events, focus, Actions | Mounted event/focus tests, reactive failure rollback, cleanup tests |
 | P3 presentation | scoped styles, selector matching, Theme precedence, inline text runs, Resource and error boundary | Style, Theme, text-surface, Resource, and error tests |
@@ -65,7 +65,9 @@ Do not split a file merely to create a shorter name. Split only when a stable re
 
 - `etaf-define-component` chooses exactly one of `:view` or `:render`; `:setup`
   and `:styles` are optional.
-- `:view` and `:render` are mutually exclusive frontends.
+- `:view` and `:render` are mutually exclusive frontends for one View model;
+  ordinary `:render` may return `etaf-view`, preserving lexical scope and the
+  same compiler prop/slot rules.
 - `:setup` runs once per retained identity and returns opaque state read with
   `etaf-state` during either frontend.
 - Props update render without rerunning setup.

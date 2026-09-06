@@ -128,7 +128,9 @@ ATTRIBUTE = :KEY VALUE
   :styles (styles RULE...))
 ```
 
-`:view` 和 `:render` 互斥且必须恰好出现一个；`:setup` 与 `:styles` 可选且各最多出现一次。Props 是唯一需要声明的业务输入；普通尾部子节点和命名 slot 会被规范化为 Component 的 slot 集合。
+`:view` 和 `:render` 互斥且必须恰好出现一个。`:render` 是普通 Elisp，可以返回
+`etaf-view` 或程序化构造的 `etaf-node`；两者共用 View 编译、prop 校验与 slot
+投影，不增加另一套表示或状态模型。`:setup` 与 `:styles` 可选且各最多出现一次。Props 是唯一需要声明的业务输入；普通尾部子节点和命名 slot 会被规范化为 Component 的 slot 集合。
 
 Component definition 是当前结构/样式/行为边界：动态状态、Action callback 和生命周期工作放进 `:setup`，静态 presentation 放进 `:styles`。未来 `.etaf` SFC compiler 可以生成这些 definition，但 Runtime 不会直接加载 `.etaf` 文件。
 
@@ -170,7 +172,7 @@ state，不重新运行 setup。setup 负责局部 ref、computed、watch、Effe
 
 `:key` 是稳定的 identity metadata，不是业务 prop。放在 Component 调用上时，它选择同级作用域内要保留的 Component instance；放在 Host 上时，它会作为 Ebox node key 向下传递。候选渲染失败时，Runtime 恢复旧 instance、handlers、Behaviors 和 buffer。
 
-在 View 语法中，Component 的规范名称可以省略 `etaf-` 前缀。如果短名称会与 Elisp 函数、special form 或 Host 冲突，注册表会分配语义明确的 `-view` alias。普通 Elisp API，例如 `etaf-value`、`etaf-ref` 和 `etaf-mount`，始终保留前缀。
+Component 调用使用定义时准确注册的名称，注册表不会自动生成省略前缀或 `-view` alias。官方目录组件使用 `etaf-button` 等名称；应用可以显式使用任何合法且尚未占用的名称定义自己的组件。
 
 ## 5. children 与 slot
 
@@ -216,6 +218,12 @@ children 只是匿名/默认 slot 的便捷写法，不是第二套内容模型�
 对用户来说，优先使用前两个简写；只有需要明确名字时才写 `:name`。Slot 名称必须是稳定的、非 keyword 的 symbol。字符串、数字、变量和运行时表达式都会被拒绝，因为 slot 名称属于 retained 结构。同名输入只能出现一次。显式空输入 `(slot :name 'header)` 会抑制 outlet fallback。Slot form 不创建 Ebox wrapper。
 
 在 Component 内，`slot` 表示投影；在 Component 调用的子节点区，带 `:name` 的 `slot` 表示贡献内容。编译器对两种位置使用同一个规范化 slot 表示。
+
+Slot 中作者写下的表达式在整个投影子树中保留作者的 props、state 和 Context。
+其中创建的 Component 拥有自己的 props、state、styles 和 Scope，但其 Context
+从 slot 作者环境继承。接收方自己定义的 fallback、普通子节点和产生 View 的
+callback 使用接收方环境。Table/Grid 的 cell callback 遵循相同的普通规则：
+Context 来自消费它的 Table/Grid 所在位置。
 
 ## 6. Core Host 与 Ebox
 
@@ -318,32 +326,48 @@ Runtime 事件通过 `etaf-dispatch-event` 进入；命中测试和 focus 通过
 
 Context 是继承的 Component Scope 环境：
 
+<!-- etaf-example: context -->
 ```elisp
-(etaf-define-component service-provider ()
-  "Provide a reactive service to descendants."
-  :setup
-  (let ((service (etaf-ref "demo-service")))
-    (etaf-provide 'service service)
-    service)
-  :view (slot))
+(require 'etaf)
 
 (etaf-define-component service-consumer ()
   "Read the inherited service."
   :setup (etaf-inject 'service nil t)
-  :view (text (expr (etaf-value (etaf-state)))))
+  :view (text (expr (format "Service: %s" (etaf-value (etaf-state))))))
 
-(etaf-view (service-provider (service-consumer)))
+(etaf-define-component service-provider ()
+  "Provide a reactive service to its own child Component."
+  :setup
+  (let ((service (etaf-ref "demo-service")))
+    (etaf-provide 'service service)
+    service)
+  :view (service-consumer))
+
+(etaf-mount "*etaf-context*" (etaf-view (service-provider)))
 ```
 
-key 使用稳定的普通 symbol。最近的祖先优先，缺失的 required key 触发 `etaf-context-error`。Theme 是一个 Context value，内容是属性 plist：
+key 使用稳定的普通 symbol。最近的祖先优先，缺失的 required key 触发
+`etaf-context-error`。在根位置编写的 slot 内容及其子树保留根的空 Context。
+迁移旧版本中意外继承接收方 Context 的用法时，应把消费者写进 provider 自己的
+View，或在那里调用普通的 View-producing callback。投影的 slot 继续使用作者
+环境。Theme 遵循同一套 Context 继承关系，内容是属性 plist：
 
+<!-- etaf-example: theme -->
 ```elisp
+(require 'etaf)
+
 (etaf-define-component themed-shell ()
-  "Provide default text colors to a subtree."
+  "Provide semantic colors to its own View."
   :setup
   (etaf-theme-provide
-   '(:color "#F4F6FB" :bgcolor "#202634"))
-  :view (slot))
+   '(:text-color "#F4F6FB" :surface-color "#202634"))
+  :view
+  (text :ref 'themed-content
+        :color (etaf-theme-token :text-color)
+        :background-color (etaf-theme-token :surface-color)
+        "Themed content"))
+
+(etaf-mount "*etaf-theme*" (etaf-view (themed-shell)))
 ```
 
 Palette 解析属于 Theme，而不是 UI 目录。core 提供

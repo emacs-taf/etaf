@@ -112,13 +112,13 @@
     nil)
   :view (text (expr label)))
 
-(etaf-define-component etaf-test-g6b-provider ()
+(etaf-define-component etaf-test-g6b-provider (&key count on-press)
   :setup
   (progn
     (etaf-provide 'g6b-message "Context")
     (etaf-theme-provide '(:color "#34D399"))
     nil)
-  :view (column (slot)))
+  :view (column (etaf-test-g6b-context-action :count count :on-press on-press)))
 
 (etaf-define-component etaf-test-g6b-context-action (&key count on-press)
   :render
@@ -219,9 +219,7 @@
          (etaf-define-component invalid-neither () :setup nil)
          (etaf-define-component invalid-reserved (&key key) :view (box))
          (etaf-define-component invalid-setup-view ()
-           :setup (etaf-node 'box nil nil) :view (box))
-         (etaf-define-component invalid-render-dsl ()
-           :render (etaf-view (box)))))
+           :setup (etaf-node 'box nil nil) :view (box))))
     (should-error (macroexpand definition)
                   :type 'etaf-component-definition-error)))
 
@@ -558,7 +556,7 @@
       (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))
 
 (ert-deftest etaf-component-frontends-compose-context-theme-style-and-behavior ()
-  "A DSL provider and code Component share Context, Theme, style, and events."
+  "Test child inheritance and composition; separate tests cover slot authors."
   (let ((buffer " *etaf-g6b-composition*")
         (count (etaf-ref 0)))
     (unwind-protect
@@ -568,13 +566,12 @@
            (lambda ()
              (etaf-view
               (etaf-test-g6b-provider
-               (etaf-test-g6b-context-action
                 :count (etaf-value count)
                 :on-press
                 (let ((source count))
                   (lambda ()
                     (setf (etaf-value source)
-                          (1+ (etaf-value source))))))))))
+                          (1+ (etaf-value source)))))))))
           (let* ((runtime (etaf-runtime-for-buffer buffer))
                  (face (etaf-test-g6b--face-at buffer "Context 0"))
                  (props
@@ -661,18 +658,13 @@
         (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))
   (let ((buffer " *etaf-g6b-attrs-role*"))
     (unwind-protect
-        (progn
-          (etaf-mount
+        (should-error
+         (etaf-mount
            buffer
            (etaf-view
             (etaf-test-g6b-attr-role
              :role 'navigation :ref 'g6b-attrs-role)))
-          (should
-           (eq 'navigation
-               (plist-get
-                (etaf-runtime-host-props-for
-                 (etaf-runtime-for-buffer buffer) 'g6b-attrs-role)
-                :role))))
+         :type 'etaf-component-call-error)
       (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
         (etaf-unmount runtime))
       (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))

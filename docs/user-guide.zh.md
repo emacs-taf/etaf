@@ -7,6 +7,8 @@ ETAF 使用一套很小的词汇构建文本应用：`View`、`Component`、prop
 ETAF 依赖独立的 Ebox 包。开发时把核心检出目录放入 `load-path`，然后只加载 ETAF 的公共入口：
 
 ```elisp
+(add-to-list 'load-path "/path/to/github/ecss")
+(add-to-list 'load-path "/path/to/github/tp")
 (add-to-list 'load-path "/path/to/github/ebox")
 (add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
@@ -67,6 +69,33 @@ Headless host 或已经知道最终布局上下文的调用方，可以通过可
 
 View 含有状态型 Component、响应式数据、事件或生命周期时，使用 `etaf-mount`。
 
+需要显式请求处理待办更新时，调用 `(etaf-runtime-flush runtime)`。
+它现在返回 **Ebox 已提交 revision 整数**，不再返回旧版的 Ebox 节点。
+Runtime 忙碌或仍处于批处理时，更新可能继续等待；返回值标识此刻读者可见的
+发布版本。活动 Ebox/TP 事务内的调用会在请求更新之前报错，因为事务中的
+revision 可能尚未提交。普通 flush 不导出整棵树，也不强制重建 Root。
+
+需要当前树及其配套 source facts 时，显式获取快照：
+
+```elisp
+(let* ((runtime (etaf-runtime-for-buffer "*etaf-hello*"))
+       (snapshot (etaf-runtime-snapshot runtime)))
+  (list (plist-get snapshot :revision)
+        (plist-get snapshot :mount-id)
+        (ebox-render (plist-get snapshot :input))))
+```
+
+快照包含 `:input`（canonical Ebox input）、`:revision` 和 `:mount-id`
+（本次挂载的身份）。导出成本为 O(N)，会分离节点的普通可变数据；它不处理
+待办更新，不求值 Component，不发布，也不增加 revision。input 在后续提交或
+卸载后仍可使用。callback 等不透明能力保持身份，查询不会冻结这些外部能力或
+显示环境。对未挂载 Runtime 或在活动 Ebox/TP 事务内查询会报错。
+
+已废弃的 `etaf-runtime-root-node` getter 通过上述 O(N) 查询保留读取兼容性，
+返回当前唯一根节点；Runtime 不再保存根节点镜像。请迁移到
+`etaf-runtime-snapshot`，保留 canonical input 中与根节点配套的 source facts；
+不要再把旧 getter 当作低成本字段读取或写入目标。
+
 当前 core 不直接加载 `.etaf`。`etaf-define-component` 是结构/样式/行为单元：用 View 定义结构，用 `:styles` 放静态 presentation，用 `:setup` 管理 retained state、Action 和生命周期。未来 `.etaf` SFC 属于把结果编译成同一套 Component 契约的 compiler layer，而不是第二个 Runtime 入口。
 
 ## 3. 属性与子节点
@@ -94,8 +123,9 @@ View 含有状态型 Component、响应式数据、事件或生命周期时，�
      (etaf-view (text :font-style 'italic "Details"))))))
 ```
 
-`expr` 只接受一个普通 Elisp form，不能有结构子节点。返回值可以是字符串、typed
-View、typed View proper sequence 或 `nil`。`if`、`when`、`cond`、`let`、`mapcar` 和
+`expr` 只接受一个普通 Elisp form，不能有结构子节点。在结构子节点位置，返回值
+可以是字符串、typed Host 或 Component View、这些值组成的 proper sequence 或 `nil`。
+在 `text` Host 内，表达式必须返回字符串。`if`、`when`、`cond`、`let`、`mapcar` 和
 `cl-loop` 仍是普通 Elisp。
 
 quote 只有普通 Elisp 的含义：
@@ -105,6 +135,11 @@ quote 只有普通 Elisp 的含义：
 - Elisp 表达式需要构造 View 时，在其中使用 `(etaf-view ...)`。
 
 例如 `'bold` 是 `:font-weight` 的 symbol 值，而 `'(text "data")` 只是数据，不会渲染。动态 View 必须写成 `(etaf-view (text "data"))`。
+
+间距由布局 Host 决定：`row` 与 `column` 使用 `:item-gap`，例如
+`(row :item-gap 1 ...)`；`flex` 与 `grid` 使用 `:gap`。切换 Host 时也要选择
+对应的间距属性，两者不是可互换的 alias。例如将 `(row :gap 1 ...)` 改为
+`(row :item-gap 1 ...)`。
 
 核心 `grid` Host 用于二维布局：
 
@@ -143,20 +178,20 @@ quote 只有普通 Elisp 的含义：
   (status-label :label "Connected")))
 ```
 
-Component 的规范名称可以带 `etaf-` 前缀：
+调用时使用传给 `etaf-define-component` 的准确名称：
 
 ```elisp
-(etaf-view (etaf-status-label :label "Connected"))
+(etaf-view (status-label :label "Connected"))
 ```
 
-在 View 位置，ETAF 也会注册短 alias `status-label`。如果短名称会与 Elisp 冲突，注册表会使用以 `-view` 结尾的语义 alias。这个规则只作用于 View 名称；普通函数仍然保留前缀。
+注册表不会自动生成 alias。定义为 `etaf-status-label` 的组件必须使用这个准确名称；上面的 `status-label` 是本节自己显式定义的名称。加载 `etaf-ui` 后，官方目录使用 `etaf-button`、`etaf-checkbox` 等准确名称。
 
 定义宏只接受这些关键字：
 
 | 关键字 | 作用 |
 | --- | --- |
 | `:view` | 声明式 View frontend，与 `:render` 互斥 |
-| `:render` | 普通 Elisp frontend，通过 `etaf-node` 返回一个 typed View |
+| `:render` | 普通 Elisp 返回一个 typed View，通常使用 `etaf-view`；程序化构造也可使用 `etaf-node` |
 | `:setup` | 可选的一次性初始化，返回由 `etaf-state` 读取的 opaque 状态 |
 | `:styles` | 可选的静态作用域样式声明 |
 
@@ -170,28 +205,35 @@ Component 自己拥有状态时使用 `:setup`：
 (etaf-define-component counter (&key title)
   "Render a retained counter."
   :setup
-  (let ((count (etaf-ref 0)))
+  (let ((count (etaf-ref 0))
+        (initial-title title))
     (etaf-on-mounted
-     (lambda () (message "%s mounted" title)))
+     (lambda () (message "%s mounted" initial-title)))
     (etaf-on-unmounted
-     (lambda () (message "%s unmounted" title)))
+     (lambda () (message "%s unmounted" initial-title)))
     count)
-  :view
-  (column
-   (text :font-weight 'bold (expr title))
-   (text (expr (format "Count: %d" (etaf-value (etaf-state)))))
-   (text
-    :role 'button
-    :on-press
-    (let ((count (etaf-state)))
-      (lambda () (cl-incf (etaf-value count))))
-    "Increment")))
+  :render
+  (let ((count (etaf-state))
+        (caption title))
+    (etaf-view
+     (column
+       (text :font-weight 'bold (expr caption))
+       (text (expr (format "Count: %d" (etaf-value count))))
+       (text :role 'button :tab-index 0
+             :on-press (lambda () (cl-incf (etaf-value count)))
+         "Increment")))))
 ```
 
 Setup 对 retained instance 只执行一次，返回一个 opaque 状态值。选定的 `:view` 或
 `:render` frontend 在更新时运行，并通过 `etaf-state` 读取这个准确值。
 `etaf-on-mounted`、`etaf-on-updated` 和 `etaf-on-unmounted` 注册该 Component 的生命周期
 callback。Scope 释放时会自动停止响应式 effect 并运行 cleanup。
+
+`:view` 和 `:render` 共用编译、slot 投影与 prop 校验。用普通 `let`/`let*`
+为回调捕获 state 句柄或当前 prop 值；`etaf-state` 只在 render 时读取，不留到
+事件触发时调用。把 `etaf-value` 保留在需要更新的属性或 `expr` 内；提取句柄
+不需要提前读取它的值。含有持久闭包的组件代码放在启用 lexical-binding 的 `.el`
+文件中。简单本地回调不需要定义 Action。
 
 响应式 API 只有一套模型：
 
@@ -255,6 +297,12 @@ callback。Scope 释放时会自动停止响应式 effect 并运行 cleanup。
 
 默认 slot 的两个用户简写是 `(slot)` 和 `(slot FALLBACK...)`。内部统一形式是 `(slot :name 'default FALLBACK...)`。调用处的普通子节点填充 `default`；命名内容写成 `(slot :name 'header CHILD...)`。显式空的 `(slot :name 'header)` 会抑制 fallback。字符串、数字、变量和运行时表达式都不是合法 slot name。
 
+Slot 中作者写下的表达式在整个投影子树中保留作者的 props、state 和 Context。
+其中创建的 Component 仍有自己的 props、state、styles 和 Scope，其 Context 从
+slot 作者环境继承。接收 slot 的 Component 不会把自己的 Context 注入调用者内容。
+它自己定义的 fallback、普通子节点，以及产生 View 的 callback 使用接收方环境。
+Table/Grid 的 cell callback 同样使用消费它的 Table/Grid 所在位置的 Context。
+
 在结构边界，`expr` 可以返回 typed View 或 typed View 的 proper sequence，但它不暴露、
 也不接受 ETAF 私有 struct。同一个 Component 可以组合 keyed `:for`、结构表达式和
 命名 footer slot：
@@ -308,13 +356,22 @@ variant 需要明确覆盖，应使用显式 Host 属性或不同的属性键。
 
 Theme 是 Context 的便捷形式，不是另一个 Runtime 对象：
 
+<!-- etaf-example: theme -->
 ```elisp
+(require 'etaf)
+
 (etaf-define-component themed-shell ()
-  "Provide default text colors to a subtree."
+  "Provide semantic colors to its own View."
   :setup
   (etaf-theme-provide
-   '(:color "#F4F6FB" :bgcolor "#202634"))
-  :view (slot))
+   '(:text-color "#F4F6FB" :surface-color "#202634"))
+  :view
+  (text :ref 'themed-content
+        :color (etaf-theme-token :text-color)
+        :background-color (etaf-theme-token :surface-color)
+        "Themed content"))
+
+(etaf-mount "*etaf-theme*" (etaf-view (themed-shell)))
 ```
 
 如果应用有亮/暗两套 palette，应把语义 role 集中放在一份 palette plist 中，
@@ -390,10 +447,30 @@ Behavior 用来打包可复用的非视觉属性和 cleanup：
 
 Installer 需要 Runtime 或 Host path 时，可以调用 `etaf-current-behavior-context`。Behavior 被替换时，旧 cleanup 会在新状态成为当前状态前运行。Behavior equality 对 function 和 reactive value 使用 `eq`；因此新建的 installer closure 会被视为有意替换，而不是错误复用。替换状态先以 mounted resource registry 的 staged resource 保存，generation commit 后才成为 authority。
 
-组合规则固定：Host callback 先于 Behavior callback，Behavior 按声明顺序运行，callback
-error 会 short-circuit 剩余 callback。非事件属性先由 Host 获胜，否则由第一个
-Behavior 获胜（first-wins）。重复 Behavior name 在 installer 前失败；稳定 installer 会复用，每个
-已安装 cleanup exactly-once。dispatch 只命中准确 Host，不存在 capture 或 bubble。
+<a id="interaction-migration"></a>
+
+根事件透传采用追加规则：内部业务 handler 最先运行（first），然后是由内到外
+wrapper 附加的 callback，最后是按声明顺序运行的 Behavior。每个声明位置执行
+一次。Checkbox 的 `:on-change` 仍先收到下一个布尔值，附加的 `:on-press`
+观察回调随后运行。callback 报错会 short-circuit 剩余回调；UI 回滚不会撤销外部
+业务写入。dispatch 只命中准确 Host，不存在 capture 或 bubble。
+
+wrapper 的 `:use` 列表顺序连接，重复 Behavior name 在任何 installer 运行前报错。
+非事件 Behavior 默认值仍由 Host 优先、其余 first-wins；`:disabled` 则取 OR。
+每次更新都重新计算内外禁用输入：调用方可进一步禁用控件；解除外层禁用时，只有
+内部也为 nil 才能启用。禁用 Host 的 `etaf-dispatch-event` 和 `etaf-focus` 会抛出
+`etaf-event-error`。禁用时不安装输入 Behavior；提交禁用时清理已安装资源，重新启用
+时再安装。
+
+命中测试先选择最深的交互边界，再检查是否启用。点击禁用 cell 按钮不会激活父行，
+即使按钮与行的 bounds 相同。普通非交互行文本仍可选择该行；显式聚焦行后也可触发
+行动作。
+
+迁移时注意：附加的根 `:on-*` 现在追加执行，不再覆盖原动作。需要不同业务动作时，
+使用组件显式公开的业务 callback prop，或定义具有该行为的组件。透传属性不能把
+已有的 `:role` 或 `:aria-checked` 等归组件所有的 aria 状态改成冲突值，否则报
+Component 输入错误；有意提供语义变体时应公开业务 prop。调用方仍可覆盖
+`:aria-label` 与 `:aria-description` 的可访问性文字。
 
 Action name 使用 application/feature-prefixed symbol；重复 Action 注册默认报错。显式
 reload 用 `etaf-action-redefine-run` 包住替换，它只改变未来按 name 的 dispatch，不会
@@ -415,14 +492,9 @@ Focus 和 hit testing 是 Runtime 操作：
 
 Context 适合跨多层共享依赖，不适合普通 label：
 
+<!-- etaf-example: context -->
 ```elisp
-(etaf-define-component application-shell ()
-  "Provide a service to descendants."
-  :setup
-  (let ((service (etaf-ref "demo-service")))
-    (etaf-provide 'service service)
-    service)
-  :view (slot))
+(require 'etaf)
 
 (etaf-define-component service-label ()
   "Read the inherited service."
@@ -430,12 +502,26 @@ Context 适合跨多层共享依赖，不适合普通 label：
   :view
   (text (expr (format "Service: %s" (etaf-value (etaf-state))))))
 
+(etaf-define-component application-shell ()
+  "Provide a service to its own child Component."
+  :setup
+  (let ((service (etaf-ref "demo-service")))
+    (etaf-provide 'service service)
+    service)
+  :view (service-label))
+
 (etaf-mount
  "*etaf-context*"
- (etaf-view (application-shell (service-label))))
+ (etaf-view (application-shell)))
 ```
 
 Context key 是稳定的普通 symbol，最近的祖先优先。`etaf-inject` 对可选依赖返回 default，对必需但缺失的依赖触发 `etaf-context-error`。注入的 ref 或 computed 保留自身响应式 identity。
+
+迁移：在根位置编写的 slot 内容保留根的空 Context，其中的嵌套 Component 也
+不会意外接收 slot 接收方的 provider 或 Theme。若消费者需要 provider 的
+Context，应像上例一样写在 provider 自己的 View 中；需要外部定制时，可接收
+普通的 View-producing callback 并在该位置调用。内容需要保留作者 Context 时
+使用 slot。
 
 ## 10. Data Controller 与 DataGrid
 
@@ -657,7 +743,7 @@ observer，不修改任何函数。
 
 | API 家族 | 主要入口 | 何时使用 |
 | --- | --- | --- |
-| View 与 Runtime | `etaf-view`、`etaf-render`、`etaf-mount`、`etaf-unmount`、`etaf-runtime-flush` | 构建、渲染、挂载或显式 flush 应用 |
+| View 与 Runtime | `etaf-view`、`etaf-render`、`etaf-mount`、`etaf-unmount`、`etaf-runtime-flush`、`etaf-runtime-snapshot` | 构建、渲染、挂载、flush 或显式导出已提交应用 |
 | Component | `etaf-define-component`、`etaf-current-prop`、`etaf-current-slots`、`etaf-component-set-styles`、`etaf-component-redefine-run` | 复用 View、保留局部状态、设置 authoring 样式或显式重载代码 |
 | 响应式状态 | `etaf-ref`、`etaf-value`、`etaf-set-value`、`etaf-computed` | 保存或派生状态 |
 | 响应式 effect | `etaf-watch`、`etaf-watch-effect`、`etaf-effect-scope`、`etaf-scope-run` | 观察状态或同步外部资源 |
@@ -685,7 +771,7 @@ observer，不修改任何函数。
 - 产品级控件使用 `etaf-ui` Component；core Host 只是结构基础。
 - owner 不再需要时，停止 Data Controller 并卸载 Runtime。
 
-对于保留式更新，建议保持 pair 结构：`.etaf` 只放静态 shell，同名 `.el` companion
-负责 state、Component 和 action。响应式写入会合并为一次 generation publication；
-发布失败可以在同一旧状态上重试，non-converging effect 会报告错误，不会让界面
-持续占用事件循环。
+普通应用在启用 lexical-binding 的 `.el` 文件中定义并挂载 Component。可选的
+Playground 使用 inert `.etaf` 结构与显式注册的 `.el` companion；core 不会自动
+发现或执行这组文件。同一 batch 内的响应式写入合并为一次 generation publication；
+发布失败可以重试，non-converging effect 会报告错误，不会持续占用事件循环。

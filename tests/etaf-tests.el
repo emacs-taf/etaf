@@ -55,6 +55,7 @@
 (defvar etaf-test-nested-range-present nil)
 (defvar etaf-test-nested-range-source nil)
 (defvar etaf-test-nested-range-evals 0)
+(defvar etaf-test-nested-inner-range-evals 0)
 (defvar etaf-test-nested-outer-source nil)
 (defvar etaf-test-nested-inner-source nil)
 (defvar etaf-test-inline-shared nil)
@@ -151,6 +152,7 @@
 
 (defun etaf-test--nested-range-children ()
   "Return keyed nested Hosts from the nested Range source."
+  (cl-incf etaf-test-nested-inner-range-evals)
   (let ((state (etaf-value etaf-test-nested-range-source)))
     (append
      (and (cdr state)
@@ -351,7 +353,7 @@
   (etaf-node 'column nil (list "prefix" (etaf-state) "suffix")))
 
 (etaf-define-component etaf-test-unsupported-direct-range ()
-  "Start with a Host Range whose later unsupported output must fail."
+  "Start with a Host Range and then produce nested dynamic Components."
   :setup
   (let ((range (etaf--expr-create
                 :token 'etaf-test-unsupported-range-site
@@ -884,7 +886,7 @@
     (setq etaf-test-theme-cell theme)
     (etaf-provide 'theme theme)
     theme)
-  :view (column (slot)))
+  :view (column (etaf-test-consumer)))
 
 (etaf-define-component etaf-test-consumer ()
   "Render the nearest Context theme."
@@ -1938,14 +1940,13 @@
     (should (equal theme left-value))))
 
 (ert-deftest etaf-context-provide-inject-follows-component-tree ()
-  "Resolve the nearest Context and react to its provided ref."
+  "Test Component inheritance; separate slot tests cover author environments."
   (let ((buffer-name " *etaf-context-test*"))
     (unwind-protect
         (progn
           (etaf-mount buffer-name
                       (etaf-view
-                       (etaf-test-provider
-                        (etaf-test-consumer))))
+                       (etaf-test-provider)))
           (with-current-buffer buffer-name
             (should (equal "dark" (buffer-string))))
           (setf (etaf-value etaf-test-theme-cell) 'light)
@@ -2371,17 +2372,21 @@ Event composition is a Runtime contract, not a UI-library helper contract."
         (should (plist-get condition :path))
         (should (= 3 (length (plist-get condition :path))))))))
 
-(ert-deftest etaf-runtime-skips-descendant-range-under-rendered-component ()
-  "A freshly rendered Component absorbs its old descendant Range effect."
+(ert-deftest etaf-runtime-skips-reevaluated-descendant-range-effects ()
+  "Only actual candidate evaluation absorbs a queued descendant Range effect."
   (let* ((component
           (etaf--semantic-component-create
            :semantic-id 7 :identity '(parent-component)))
          (range
           (etaf--semantic-range-create
            :semantic-id 8 :effect-id 8 :component-id 7 :parent-id 7))
+         (effect
+          (etaf--generation-effect-create
+           :effect-id 8 :kind 'range :semantic-id 8))
          (generation
           (etaf--generation-create
            :generation-id 1
+           :effect-map (etaf--pvec-put nil 8 effect)
            :semantic-nodes (etaf--pvec-put
                             (etaf--pvec-put nil 7 component) 8 range)))
          (runtime
@@ -2389,16 +2394,19 @@ Event composition is a Runtime contract, not a UI-library helper contract."
            :candidate-rendered-identities '((parent-component))
            :candidate-effects (make-hash-table :test #'eql)
            :candidate-graph-nodes (make-hash-table :test #'eql))))
-    (puthash 8
-             (etaf--generation-effect-create
-              :effect-id 8 :kind 'range :semantic-id 8)
-             (etaf-runtime-candidate-effects runtime))
+    (puthash 8 effect (etaf-runtime-candidate-effects runtime))
     (puthash 8 range (etaf-runtime-candidate-graph-nodes runtime))
-    (should (etaf--runtime-range-owned-by-rendered-component-p
-             runtime generation range))
+    (should-not (etaf--runtime-range-effect-staged-p runtime generation effect))
+    ;; Reparenting or invalidating a semantic record is not effect evaluation.
+    (puthash 8 (copy-sequence range) (etaf-runtime-candidate-graph-nodes runtime))
+    (should-not (etaf--runtime-range-effect-staged-p runtime generation effect))
+    (puthash 8 (copy-sequence effect) (etaf-runtime-candidate-effects runtime))
+    (should (etaf--runtime-range-effect-staged-p runtime generation effect))
+    ;; Root-owned Range ancestors have the same completed-work certificate.
     (setf (etaf-runtime-candidate-rendered-identities runtime) nil)
-    (should-not (etaf--runtime-range-owned-by-rendered-component-p
-                 runtime generation range))))
+    (should (etaf--runtime-range-effect-staged-p runtime generation effect))
+    (remhash 8 (etaf-runtime-candidate-graph-nodes runtime))
+    (should-not (etaf--runtime-range-effect-staged-p runtime generation effect))))
 
 
 (ert-deftest etaf-stateful-props-update-without-rerunning-setup ()
@@ -3004,8 +3012,11 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (let* ((runtime (etaf-runtime-for-buffer buffer-name))
                  (generation (etaf-runtime-current-generation runtime))
                  (effects (etaf--generation-source-effects generation source))
-                 (parent (etaf--generation-semantic
-                          generation '(etaf-test-local-style-parent (root)))))
+                 (parent
+                  (cl-loop for identity being the hash-keys of
+                           (etaf-generation-identity-index generation)
+                           when (eq (car-safe identity) 'etaf-test-local-style-parent)
+                           return (etaf--generation-semantic generation identity))))
             (should-not (memq (etaf--semantic-component-effect-id parent)
                               effects))
             (setf (etaf-value source) "B")
@@ -3628,6 +3639,32 @@ Event composition is a Runtime contract, not a UI-library helper contract."
     (should (equal '(20 30)
                    (etaf-runtime-candidate-removed-semantic-ids runtime)))))
 
+(ert-deftest etaf-runtime-range-closure-preserves-removals-and-rejects-unknown ()
+  "Completing a reused graph cannot revive tombstones or invent owners."
+  (let* ((retained (etaf--semantic-host-create :semantic-id 1 :name 'text))
+         (generation
+          (etaf--generation-create
+           :semantic-nodes (etaf--pvec-put nil 1 retained)))
+         (runtime
+          (etaf--runtime-create
+           :generation-authority (etaf-generation-authority-create generation)
+           :candidate-graph-nodes (make-hash-table :test #'eql)
+           :candidate-graph-children (make-hash-table :test #'eql)
+           :candidate-removed-semantic-ids '(1))))
+    (cl-letf (((symbol-function 'etaf--runtime-carry-committed-subtree)
+               (lambda (&rest _) (error "A removed owner was resurrected"))))
+      (dolist (id '(1 99))
+        (let ((ids (etaf--runtime-candidate-descendant-ids runtime (list id))))
+          (should (equal ids (list id)))
+          (should-error
+           (etaf--runtime-index-range-item-identities
+            runtime ids (make-hash-table :test #'equal))
+           :type 'etaf-runtime-error))))
+    (should (zerop (hash-table-count
+                    (etaf-runtime-candidate-graph-nodes runtime))))
+    (should (eq retained (etaf--pvec-get
+                         (etaf-generation-semantic-nodes generation) 1)))))
+
 (ert-deftest etaf-runtime-two-direct-ranges-batch-one-publication ()
   "Evaluate and splice two disjoint Ranges once in one logical commit."
   (let ((buffer-name " *etaf-two-range-test*")
@@ -3833,8 +3870,8 @@ Event composition is a Runtime contract, not a UI-library helper contract."
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name))) (kill-buffer buffer)))))
 
-(ert-deftest etaf-runtime-direct-range-rejects-step4b-output-without-reownership ()
-  "Reject direct Component output while retaining Range-only dependency."
+(ert-deftest etaf-runtime-direct-range-accepts-nested-components-without-reownership ()
+  "Retain ordinary and nested Components under one Range-only dependency."
   (dolist (unsupported '(component deep-component
                          deep-expr-component))
     (let ((buffer-name (format " *etaf-range-unsupported-%S*" unsupported))
@@ -3845,11 +3882,11 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                         (etaf-view (etaf-test-unsupported-direct-range)))
             (let* ((runtime (etaf-runtime-for-buffer buffer-name))
                    (generation (etaf-runtime-current-generation runtime)))
-              (should-error
-               (setf (etaf-value etaf-test-unsupported-range-source)
-                     unsupported)
-               :type 'etaf-runtime-error)
-              (should (eq generation (etaf-runtime-current-generation runtime)))
+              (setf (etaf-value etaf-test-unsupported-range-source) unsupported)
+              (should-not (eq generation (etaf-runtime-current-generation runtime)))
+              (setq generation (etaf-runtime-current-generation runtime))
+              (should (string-match-p "component\\|deep"
+                                      (etaf-test--buffer-text buffer-name)))
               (should
                (equal '(range)
                       (mapcar
@@ -3892,7 +3929,8 @@ Event composition is a Runtime contract, not a UI-library helper contract."
   (let ((buffer-name " *etaf-nested-range-hosts-test*")
         (etaf-test-nested-range-present (etaf-ref t))
         (etaf-test-nested-range-source (etaf-ref (cons "A" nil)))
-        (etaf-test-nested-range-evals 0))
+        (etaf-test-nested-range-evals 0)
+        (etaf-test-nested-inner-range-evals 0))
     (unwind-protect
         (progn
           (etaf-mount buffer-name (etaf-view (etaf-test-nested-host-range)))
@@ -3904,19 +3942,29 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                  (range-id (etaf--generation-effect-semantic-id effect))
                  (range (etaf--pvec-get
                          (etaf-generation-semantic-nodes generation) range-id))
+                 (outer-effect-id
+                  (car (etaf--generation-source-effects
+                        generation etaf-test-nested-range-present)))
                  (nested-id
                   (cl-loop for identity being the hash-keys of
                            (etaf--semantic-range-item-identity-index range)
                            using (hash-values semantic-id)
                            when (equal (plist-get (cddr identity) :key) 'nested)
                            return semantic-id)))
-            (setq etaf-test-nested-range-evals 0)
+            (should (= 1 etaf-test-nested-range-evals))
+            (should (= 1 etaf-test-nested-inner-range-evals))
+            (should-not (= effect-id outer-effect-id))
+            (setq etaf-test-nested-range-evals 0
+                  etaf-test-nested-inner-range-evals 0)
             (cl-letf (((symbol-function 'etaf--runtime-render-dirty-component)
                        (lambda (&rest _)
                          (error "Nested Range entered Component owner"))))
               (setf (etaf-value etaf-test-nested-range-source)
                     (cons "B" t)))
-            (should (= 1 etaf-test-nested-range-evals))
+            ;; The Host boundary gives this source to the inner Range alone.
+            (should (= 0 etaf-test-nested-range-evals))
+            (should (= 1 etaf-test-nested-inner-range-evals))
+            (should (equal "S sibling B" (etaf-test--buffer-text buffer-name)))
             (should (= 1 (plist-get
                           (plist-get (ebox-buffer-update-report buffer-name)
                                      :range-metrics)
@@ -3940,12 +3988,17 @@ Event composition is a Runtime contract, not a UI-library helper contract."
                        (etaf--generation-source-effects
                         generation etaf-test-nested-range-source))))
               (let* ((old-generation generation)
-                     (old-range range)
+                     (old-range
+                      (etaf--generation-effect-semantic
+                       old-generation outer-effect-id))
                      (removed-ids
                       (etaf--runtime-generation-descendant-ids
                        old-generation
                        (etaf--semantic-range-item-root-ids old-range))))
                 (setf (etaf-value etaf-test-nested-range-present) nil)
+                (should (= 1 etaf-test-nested-range-evals))
+                (should (= 1 etaf-test-nested-inner-range-evals))
+                (should (equal "S" (etaf-test--buffer-text buffer-name)))
                 (let ((new-generation
                        (etaf-runtime-current-generation runtime)))
                   (dolist (semantic-id removed-ids)
@@ -4010,6 +4063,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
               (setf (etaf-value etaf-test-nested-inner-source)
                     '((row-a . "two"))))
             (should (equal (list inner-ref) (nreverse replacements)))
+            (should (equal "A two" (etaf-test--buffer-text buffer-name)))
             (setq generation (etaf-runtime-current-generation runtime))
             (let ((new-outer (etaf--pvec-get
                               (etaf-generation-semantic-nodes generation)
@@ -4724,8 +4778,10 @@ Event composition is a Runtime contract, not a UI-library helper contract."
           (let* ((runtime (etaf-runtime-for-buffer buffer-name))
                  (generation (etaf-runtime-current-generation runtime))
                  (parent
-                  (etaf--generation-semantic
-                   generation '(etaf-test-ancestor-artifact-parent (root)))))
+                  (cl-loop for identity being the hash-keys of
+                           (etaf-generation-identity-index generation)
+                           when (eq (car-safe identity) 'etaf-test-ancestor-artifact-parent)
+                           return (etaf--generation-semantic generation identity))))
             (should (etaf--semantic-component-p parent))
             (should-not (etaf--semantic-component-artifact-key parent))
             (setf (etaf-value etaf-test-ancestor-parent-source) "dark")
@@ -4842,6 +4898,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
   (let ((runtime
          (etaf--runtime-create
           :candidate-removed-host-refs '(stable other)
+          :behaviors (make-hash-table :test #'equal)
           :candidate-host-props (make-hash-table :test #'equal)
           :candidate-handlers (make-hash-table :test #'equal)
           :candidate-semantic-nodes (make-hash-table :test #'equal)
@@ -4902,6 +4959,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
   (let ((etaf-generation-index-max-depth 4)
         (runtime
          (etaf--runtime-create
+          :behaviors (make-hash-table :test #'equal)
           :candidate-handlers (make-hash-table :test #'equal)
           :candidate-host-props (make-hash-table :test #'equal)
           :candidate-semantic-nodes (make-hash-table :test #'equal)

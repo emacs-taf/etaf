@@ -7,6 +7,8 @@ ETAF builds text applications from one small vocabulary: `View`, `Component`, pr
 ETAF depends on the independent Ebox package. During development, put the core checkouts on `load-path` and load the one public ETAF entry:
 
 ```elisp
+(add-to-list 'load-path "/path/to/github/ecss")
+(add-to-list 'load-path "/path/to/github/tp")
 (add-to-list 'load-path "/path/to/github/ebox")
 (add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
@@ -67,6 +69,38 @@ that viewport directly instead of immediately rerendering:
 
 Use `etaf-mount` whenever a View contains a stateful Component, reactive data, events, or lifecycle.
 
+To request pending work explicitly, call `(etaf-runtime-flush runtime)`.
+Its return value is now the **integer committed Ebox revision**, replacing the
+previous Ebox-node return type. Busy or batched work may remain pending; the
+returned revision identifies the publication currently visible to readers.
+Calls inside an active Ebox/TP transaction fail before requesting work, since
+that transaction's revision may still be provisional. Ordinary flushes do not
+export a tree or force a Root rebuild.
+
+For a current tree and its matching source facts, request an explicit snapshot:
+
+```elisp
+(let* ((runtime (etaf-runtime-for-buffer "*etaf-hello*"))
+       (snapshot (etaf-runtime-snapshot runtime)))
+  (list (plist-get snapshot :revision)
+        (plist-get snapshot :mount-id)
+        (ebox-render (plist-get snapshot :input))))
+```
+
+The snapshot contains `:input` (a canonical Ebox input), `:revision`, and
+`:mount-id` (the identity of this mount). Exporting costs O(N) and detaches
+ordinary mutable node payload; it does not drain pending work, evaluate
+Components, publish, or increment the revision. The input remains usable after
+later commits or unmount. Opaque capabilities such as callbacks keep their
+identity; the query does not freeze external capabilities or the display
+environment. Unmounted Runtime and active Ebox/TP transaction queries fail.
+
+The obsolete `etaf-runtime-root-node` getter remains read-compatible through
+this O(N) query and returns the current single root. Runtime no longer stores a
+root mirror. Migrate consumers to `etaf-runtime-snapshot` so the canonical input
+retains the root's matching source facts; do not treat the obsolete getter as a
+cheap field read or use it as a mutation target.
+
 The current core has no direct `.etaf` loader. `etaf-define-component` is the structure/style/behavior unit: use its View for structure, `:styles` for static presentation, and `:setup` for retained state, Actions, and lifecycle. A future `.etaf` SFC belongs to a compiler layer that emits this same Component contract; it is not a second Runtime entry point.
 
 ## 3. Properties and children
@@ -95,7 +129,9 @@ The child region is structural. `expr` is the one explicit bridge for ordinary E
 ```
 
 `expr` accepts exactly one ordinary Elisp form and no structural children. Its
-result can be a string, typed View, proper typed View sequence, or `nil`.
+result in structural child positions can be a string, typed Host or Component
+View, a proper sequence of these values, or `nil`. Inside a `text` Host an
+expression must return a string.
 `if`, `when`, `cond`, `let`, `mapcar`, and `cl-loop` remain normal Elisp.
 
 Quote has one ordinary Elisp meaning:
@@ -105,6 +141,11 @@ Quote has one ordinary Elisp meaning:
 - Use `(etaf-view ...)` inside an expression when the expression must construct a View.
 
 For example, `'bold` is the `:font-weight` symbol, while `'(text "data")` is only data and will not render. A dynamic View must be written as `(etaf-view (text "data"))`.
+
+Spacing follows the layout Host: `row` and `column` use `:item-gap`, for
+example `(row :item-gap 1 ...)`; `flex` and `grid` use `:gap`. Changing the Host
+also changes which spacing property to use; these are not interchangeable
+aliases. For example, migrate `(row :gap 1 ...)` to `(row :item-gap 1 ...)`.
 
 The core `grid` Host is the two-dimensional layout choice:
 
@@ -143,20 +184,20 @@ The beginner form is a stateless `:view` Component:
   (status-label :label "Connected")))
 ```
 
-The canonical Component name may include the `etaf-` prefix:
+Use the exact name supplied to `etaf-define-component`:
 
 ```elisp
-(etaf-view (etaf-status-label :label "Connected"))
+(etaf-view (status-label :label "Connected"))
 ```
 
-In a View position, ETAF also registers the short alias `status-label`. If a short name conflicts with Elisp, the registry uses a semantic alias ending in `-view`. This alias rule applies only to View names; ordinary functions remain prefixed.
+The registry creates no automatic aliases. A Component defined as `etaf-status-label` must be called by that exact name; the `status-label` above is the name explicitly defined in this guide. Official catalog names are `etaf-button`, `etaf-checkbox`, and so on, after requiring `etaf-ui`.
 
 The definition macro accepts only these keywords:
 
 | Keyword | Meaning |
 | --- | --- |
 | `:view` | Declarative View frontend; mutually exclusive with `:render` |
-| `:render` | Ordinary-Elisp frontend returning one typed View through `etaf-node` |
+| `:render` | Ordinary Elisp returning one typed View, usually with `etaf-view`; programmatic builders may use `etaf-node` |
 | `:setup` | Optional one-time initialization returning opaque state read with `etaf-state` |
 | `:styles` | Optional static scoped style declaration |
 
@@ -170,22 +211,23 @@ Use `:setup` when the Component owns local state:
 (etaf-define-component counter (&key title)
   "Render a retained counter."
   :setup
-  (let ((count (etaf-ref 0)))
+  (let ((count (etaf-ref 0))
+        (initial-title title))
     (etaf-on-mounted
-     (lambda () (message "%s mounted" title)))
+     (lambda () (message "%s mounted" initial-title)))
     (etaf-on-unmounted
-     (lambda () (message "%s unmounted" title)))
+     (lambda () (message "%s unmounted" initial-title)))
     count)
-  :view
-  (column
-   (text :font-weight 'bold (expr title))
-   (text (expr (format "Count: %d" (etaf-value (etaf-state)))))
-   (text
-    :role 'button
-    :on-press
-    (let ((count (etaf-state)))
-      (lambda () (cl-incf (etaf-value count))))
-    "Increment")))
+  :render
+  (let ((count (etaf-state))
+        (caption title))
+    (etaf-view
+     (column
+       (text :font-weight 'bold (expr caption))
+       (text (expr (format "Count: %d" (etaf-value count))))
+       (text :role 'button :tab-index 0
+             :on-press (lambda () (cl-incf (etaf-value count)))
+         "Increment")))))
 ```
 
 Setup runs once for the retained instance and returns one opaque state value.
@@ -193,6 +235,14 @@ The selected `:view` or `:render` frontend runs on each update and reads that
 exact value with `etaf-state`. `etaf-on-mounted`, `etaf-on-updated`, and
 `etaf-on-unmounted` register lifecycle callbacks for that Component instance.
 Scope disposal automatically stops reactive effects and cleanup.
+
+`:view` and `:render` share compilation, slot projection, and prop validation.
+Use ordinary `let`/`let*` to capture state handles or current prop values for
+callbacks. `etaf-state` is a render-time accessor, not an event-time accessor.
+Keep reactive `etaf-value` reads inside the property or `expr` that needs the
+update; extracting a handle does not require reading its value early. Component
+code with retained closures belongs in an `.el` file with lexical binding.
+Simple local callbacks need no Action definition.
 
 The small reactive API is:
 
@@ -256,6 +306,14 @@ Named slots use `:name` and must use a stable non-keyword symbol:
 
 The two default-slot shorthands are `(slot)` and `(slot FALLBACK...)`. The normalized spelling is `(slot :name 'default FALLBACK...)`. At a call site, ordinary children fill `default`; a named input uses `(slot :name 'header CHILD...)`. An explicit empty `(slot :name 'header)` suppresses the fallback. Strings, numbers, variables, and runtime expressions are not valid slot names.
 
+Slot expressions keep their author's props, state, and Context throughout the
+projected subtree. Components created inside that subtree still own their own
+props, state, styles, and Scope; they inherit Context from the slot author's
+environment. A receiving Component does not inject its own Context into caller
+content. Its fallback, ordinary children, and View-producing callbacks use its
+own environment. A Table/Grid cell callback likewise runs in the consuming
+Table/Grid's Context.
+
 `expr` may return a typed View or a proper sequence of typed Views at a
 structural boundary.  It never exposes or accepts ETAF's private structs.  The
 same Component can combine a keyed `:for`, a structural expression, and a
@@ -311,13 +369,22 @@ Styles are scoped to the Component that authored a View node. A parent rule does
 
 Theme is a Context convenience, not another runtime object:
 
+<!-- etaf-example: theme -->
 ```elisp
+(require 'etaf)
+
 (etaf-define-component themed-shell ()
-  "Provide default text colors to a subtree."
+  "Provide semantic colors to its own View."
   :setup
   (etaf-theme-provide
-   '(:color "#F4F6FB" :bgcolor "#202634"))
-  :view (slot))
+   '(:text-color "#F4F6FB" :surface-color "#202634"))
+  :view
+  (text :ref 'themed-content
+        :color (etaf-theme-token :text-color)
+        :background-color (etaf-theme-token :surface-color)
+        "Themed content"))
+
+(etaf-mount "*etaf-theme*" (etaf-view (themed-shell)))
 ```
 
 For a light/dark application palette, keep the semantic roles in one palette
@@ -395,12 +462,36 @@ For a reusable installer, reserve `:install` for the cleanup-producing part of t
 
 The installer can call `etaf-current-behavior-context` when it needs the current Runtime or Host path. Replacing the Behavior runs the old cleanup before the new state becomes current. Behavior equality keeps function and reactive-value identity with `eq`; a newly-created installer closure is therefore a deliberate replacement, not an accidental reuse. The replacement is staged under the mounted resource registry and becomes authoritative only when its generation commits.
 
-Composition rules are fixed: the Host callback runs before Behavior callbacks,
-Behaviors follow declaration order, and a callback error short-circuits the
-rest. For non-event attributes the Host wins, then the first Behavior wins.
-Duplicate Behavior names fail before installation. Stable installers are reused
-and each installed cleanup runs exactly once. Dispatch targets one exact Host;
-there is no capture or bubble phase.
+<a id="interaction-migration"></a>
+
+Root event forwarding is additive: the internal business handler runs first,
+then extra wrapper callbacks from inner to outer, then Behaviors in declaration
+order. Each declaration runs once. For a Checkbox, `:on-change` still receives
+the next boolean before an added `:on-press` observer. A callback error
+short-circuits the remaining callbacks; UI rollback does not undo external
+business writes. Dispatch targets one exact Host, with no capture or bubble.
+
+Wrapper `:use` lists concatenate; duplicate Behavior names fail before any
+installer runs. Non-event Behavior defaults retain first-wins order after Host
+attributes, except `:disabled`, which combines with OR. Inner and outer disabled
+inputs are recomputed on every update: callers can further disable a control,
+and clearing the outer input enables it only when its inner input is also nil.
+Disabled Hosts reject `etaf-dispatch-event` and `etaf-focus` with
+`etaf-event-error`. Their input Behaviors are not installed; a committed disable
+cleans up installed resources, and re-enabling installs them again.
+
+Hit testing selects the deepest interaction boundary before checking whether
+it is enabled. Clicking a disabled cell button does not activate its parent
+row, including when their bounds coincide. Ordinary non-interactive row text
+can still select the row; explicitly focusing the row can activate its action.
+
+Migration: an extra root `:on-*` callback now appends instead of replacing the
+existing action. To define a different business action, use the Component's
+explicit business callback prop or define a Component with that behavior.
+Fallthrough cannot change an existing `:role` or owned aria state such as
+`:aria-checked` to a conflicting value; that signals a Component input error.
+Expose an intentional semantic variation as a business prop. Caller-provided
+`:aria-label` and `:aria-description` can still override accessible text.
 
 Use application- or feature-prefixed Action names. Duplicate Action
 registration is an error. During deliberate reload, wrap the replacement in
@@ -423,14 +514,9 @@ Mounted buffers enable `etaf-input-mode` automatically. `TAB` focuses the next H
 
 Use Context for a dependency shared across component depth, not for ordinary props:
 
+<!-- etaf-example: context -->
 ```elisp
-(etaf-define-component application-shell ()
-  "Provide a service to descendants."
-  :setup
-  (let ((service (etaf-ref "demo-service")))
-    (etaf-provide 'service service)
-    service)
-  :view (slot))
+(require 'etaf)
 
 (etaf-define-component service-label ()
   "Read the inherited service."
@@ -438,12 +524,27 @@ Use Context for a dependency shared across component depth, not for ordinary pro
   :view
   (text (expr (format "Service: %s" (etaf-value (etaf-state))))))
 
+(etaf-define-component application-shell ()
+  "Provide a service to its own child Component."
+  :setup
+  (let ((service (etaf-ref "demo-service")))
+    (etaf-provide 'service service)
+    service)
+  :view (service-label))
+
 (etaf-mount
  "*etaf-context*"
- (etaf-view (application-shell (service-label))))
+ (etaf-view (application-shell)))
 ```
 
 Context keys are ordinary stable symbols. The nearest ancestor wins. `etaf-inject` returns its default for an optional dependency and signals `etaf-context-error` for a required missing dependency. A provided ref or computed value keeps its reactive identity.
+
+Migration: root-authored slot content retains the root's empty Context, including
+nested Components. It no longer accidentally receives the slot receiver's
+providers or Theme. Put a consumer in the provider's own View, as above, or
+accept an ordinary View-producing callback and call it there when the consumer
+must use the provider's Context. Use slots when content should retain its
+author's Context.
 
 ## 10. Data Controllers and DataGrid
 
@@ -675,7 +776,7 @@ rewrite any function.
 
 | API family | Main entry points | Use it when |
 | --- | --- | --- |
-| View and Runtime | `etaf-view`, `etaf-render`, `etaf-mount`, `etaf-unmount`, `etaf-runtime-flush` | Build, render, mount, or explicitly flush an application |
+| View and Runtime | `etaf-view`, `etaf-render`, `etaf-mount`, `etaf-unmount`, `etaf-runtime-flush`, `etaf-runtime-snapshot` | Build, render, mount, flush, or explicitly export the committed application |
 | Components | `etaf-define-component`, `etaf-current-prop`, `etaf-current-slots`, `etaf-component-set-styles`, `etaf-component-redefine-run` | Share a View, retain local state, style an authoring surface, or deliberately reload code |
 | Reactive state | `etaf-ref`, `etaf-value`, `etaf-set-value`, `etaf-computed` | Store or derive state |
 | Reactive effects | `etaf-watch`, `etaf-watch-effect`, `etaf-effect-scope`, `etaf-scope-run` | Observe state or synchronize external resources |
@@ -703,8 +804,8 @@ Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, 
 - Use `etaf-ui` Components for product controls; core Hosts are the structural foundation.
 - Stop a Data Controller and unmount a Runtime when their owner is no longer needed.
 
-For retained updates, keep the application pair declarative: `.etaf` contains
-the static shell and the same-basename `.el` companion owns state, Components,
-and actions. Reactive writes are batched into one generation publication;
-failed publication is retryable, and a non-converging effect is reported rather
-than allowed to keep the UI busy.
+Ordinary applications define and mount Components from lexical-binding `.el`
+files. The optional Playground uses inert `.etaf` structure plus an explicitly
+registered `.el` companion; core does not discover or execute that pair.
+Reactive writes within a batch publish one generation. Failed publication is
+retryable, and a non-converging effect is reported instead of keeping the UI busy.

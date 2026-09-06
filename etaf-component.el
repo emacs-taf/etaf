@@ -4,13 +4,14 @@
 
 ;;; Commentary:
 
-;; Components have one public definition boundary with two strict authoring
+;; Components have one public definition boundary with two authoring
 ;; frontends: compiled `:view' DSL and ordinary Elisp `:render'.  Optional
 ;; `:setup' runs once and returns opaque state read through `etaf-state'.
 
 ;;; Code:
 
 (require 'cl-lib)
+(require 'macroexp)
 (require 'etaf-view)
 (require 'etaf-compiler)
 
@@ -229,8 +230,11 @@ or:
     :styles (styles (SELECTOR ATTR ...)))
 
 `:setup' runs once per retained identity and returns opaque state.  `:view'
-is unquoted DSL; `:render' is ordinary Elisp and constructs nodes with
-`etaf-node'."
+is unquoted DSL; `:render' is ordinary Elisp returning the same typed View,
+usually through `etaf-view'.  `etaf-node' also constructs Views
+programmatically.  Both frontends use the same prop and slot rules.  Bind state
+handles and prop snapshots to lexical locals for later event callbacks; keep
+reactive value reads inside the View properties or expressions they update."
   (declare (indent 2) (debug defun))
   (unless (symbolp name)
     (etaf--component-definition-error
@@ -292,10 +296,6 @@ is unquoted DSL; `:render' is ordinary Elisp and constructs nodes with
                (memq (car setup-form) '(lambda function)))
       (etaf--component-definition-error
        "Component %S :setup cannot return a render function" name))
-    (when (and saw-render
-               (etaf--component-form-contains-head-p render-form '(etaf-view)))
-      (etaf--component-definition-error
-       "Component %S :render cannot embed the DSL frontend" name))
     (let* ((props (etaf--parse-component-props arguments))
            (styles-form (etaf--validate-styles-form styles-form name))
            (definition-symbol
@@ -305,13 +305,18 @@ is unquoted DSL; `:render' is ordinary Elisp and constructs nodes with
                (let ((etaf--current-component-props etaf--component-props)
                      (etaf--current-component-slots etaf--component-slots)
                      (etaf--component-phase 'render))
-                   (cl-symbol-macrolet
-                       ,(etaf--component-prop-symbol-macros props)
-                     ,(if saw-view
-                        (let ((etaf--compiling-component-props props))
-                          (etaf-compiler-expand-view
-                           view-form :projection))
-                      render-form)))))
+                 ,(let ((etaf--compiling-component-props props))
+                    ;; Expand every embedded View inside its Component prop
+                    ;; grammar, including Views produced by lexical macros.
+                    ;; Include the prop bindings so they shadow outer symbol
+                    ;; macros while ordinary let/lambda shadowing is preserved.
+                    (macroexpand-all
+                     `(cl-symbol-macrolet
+                          ,(etaf--component-prop-symbol-macros props)
+                        ,(if saw-view
+                             (etaf-compiler-expand-view view-form :projection)
+                           render-form))
+                     macroexpand-all-environment)))))
            (setup-lambda
             (when saw-setup
               `(lambda (etaf--component-props _etaf--component-slots)

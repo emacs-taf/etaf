@@ -260,11 +260,41 @@ disposing the old Runtime.")
    (etaf--resolve-property-value root-value)
    (etaf--resolve-property-value caller-value)))
 
+(defun etaf--compose-event-callbacks (primary secondary)
+  "Compose PRIMARY then SECONDARY, preserving the primary return value.
+An error stops the chain.  This shared value operation lives with View
+composition so pure render and Runtime Behavior use the same contract."
+  (dolist (callback (list primary secondary))
+    (unless (or (null callback) (functionp callback))
+      (etaf--component-error "Event callback must be a function or nil: %S"
+                             callback)))
+  (cond
+   ((null primary) secondary)
+   ((null secondary) primary)
+   (t
+    (lambda (&rest arguments)
+      (prog1 (apply primary arguments)
+        (apply secondary arguments))))))
+
+(defun etaf--owned-semantic-property-p (property)
+  "Return non-nil when fallthrough PROPERTY must preserve root semantics."
+  (or (eq property :role)
+      (and (etaf--aria-property-p property)
+           (not (memq property '(:aria-label :aria-description))))))
+
+(defun etaf--merge-use-input (root-value caller-value)
+  "Concatenate possibly lazy ROOT-VALUE and CALLER-VALUE Behavior sources.
+Runtime validates all names before installing any resources."
+  (let ((root (etaf--resolve-property-value root-value))
+        (caller (etaf--resolve-property-value caller-value)))
+    (append (if (proper-list-p root) root (list root))
+            (if (proper-list-p caller) caller (list caller)))))
+
 (defun etaf--merge-host-attrs (props attrs &optional tag component-name)
   "Merge caller ATTRS into root Host PROPS for TAG.
-Visual Ebox attributes override Component defaults.  Class tokens merge.
-Conflicting Runtime metadata is rejected so fallthrough cannot silently alter
-Component semantics.  COMPONENT-NAME labels diagnostics."
+Non-nil visual attributes override defaults; class and Behavior sources merge.
+Callbacks append, disabled combines with OR, and owned semantic conflicts
+are rejected.  COMPONENT-NAME labels diagnostics."
   (let ((result (copy-sequence props))
         (tail attrs))
     (while tail
@@ -282,10 +312,36 @@ Component semantics.  COMPONENT-NAME labels diagnostics."
                 (etaf--plist-set
                  result :class
                  (etaf--merge-class-input (plist-get result :class) value))))
-         (style-p
+         ((etaf--event-property-p key)
           (setq result
-                (append (etaf--plist-remove-domain result key)
-                        (list key value))))
+                (etaf--plist-set
+                 result key
+                 (etaf--compose-event-callbacks
+                  (etaf--resolve-property-value (plist-get result key))
+                  (etaf--resolve-property-value value)))))
+         ((eq key :use)
+          (setq result
+                (etaf--plist-set
+                 result key (etaf--merge-use-input (plist-get result key) value))))
+         ((eq key :disabled)
+          (let ((inner (etaf--resolve-property-value (plist-get result key)))
+                (outer (etaf--resolve-property-value value)))
+            (unless (and (memq inner '(nil t)) (memq outer '(nil t)))
+              (etaf--component-error "Component %S :disabled must be boolean"
+                                     component-name))
+            (setq result (etaf--plist-set result key (or inner outer)))))
+         (style-p
+          (when (etaf--resolve-property-value value)
+            (setq result
+                  (append (etaf--plist-remove-domain result key)
+                          (list key value)))))
+         ((and (etaf--owned-semantic-property-p key)
+               (plist-member result key)
+               (not (equal (etaf--resolve-property-value (plist-get result key))
+                           (etaf--resolve-property-value value))))
+          (etaf--component-error
+           "Component %S root Host %S owns %S; conflicting fallthrough value %S"
+           component-name tag key value))
          ((plist-member result key)
           (setq result (etaf--plist-set result key value)))
          (t
@@ -306,7 +362,11 @@ COMPONENT-NAME identifies the forwarding owner for diagnostics."
       (let ((key (pop tail))
             (value (pop tail)))
         (if (memq key declared)
-            (setq props (etaf--plist-set props key value))
+            ;; Consuming a declared prop must retain the inner declaration
+            ;; and the outer subscription, and must not forward either twice.
+            (setq props
+                  (etaf--merge-host-attrs props (list key value)
+                                         nil component-name))
           (setq forwarded
                 (etaf--merge-host-attrs
                  forwarded (list key value) nil component-name)))))
@@ -745,7 +805,9 @@ FORM uses one grammar for Hosts and Component calls:
   (NAME :PROPERTY VALUE ... CHILD ...)
 
 Properties must come first and children must come last.  Property values are
-ordinary Elisp expressions.  `(expr FORM)' is text interpolation only."
+ordinary Elisp expressions.  In structural child positions, `(expr FORM)'
+returns nil, strings, typed Views, or proper sequences of those values.
+Inside a `text' Host, an expression must return one string."
   (declare (indent 1) (debug (form)))
   (if (fboundp 'etaf-compiler-expand-view)
       (etaf-compiler-expand-view form :projection)

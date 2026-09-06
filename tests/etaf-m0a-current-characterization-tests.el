@@ -184,11 +184,12 @@
       (skip-chars-forward " \t\r\n")
       (should (eobp)))
     (should (equal golden (etaf-m0a-document-example-signatures)))
-    (should (= 122 (length blocks)))
+    (should (= 124 (length blocks)))
     (should (= 0 (cl-count 'read-error blocks
                            :key (lambda (entry)
                                   (plist-get entry :drift)))))
-    (should (= 4 (cl-count 'macroexpand-error blocks
+    ;; Canonical README expressions no longer carry the four baseline errors.
+    (should (= 0 (cl-count 'macroexpand-error blocks
                             :key (lambda (entry)
                                    (plist-get entry :drift)))))
     (should (cl-every

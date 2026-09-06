@@ -117,6 +117,21 @@
 (defvar etaf--rendering-range-p nil
   "Non-nil while eagerly lowering descendants of one Range item Host.")
 
+(defvar etaf--render-parent-path nil
+  "Structural path of the current retained semantic parent.")
+
+(defvar etaf--render-site-counts nil
+  "Occurrence counts distinguishing reused compiled sites under each parent.")
+
+(defun etaf--render-site-token (token)
+  "Qualify repeated TOKEN occurrences within their mounted semantic parent."
+  (if (or (null token) (null etaf--render-site-counts))
+      token
+    (let* ((key (list etaf--current-semantic-parent-id token))
+           (index (gethash key etaf--render-site-counts 0)))
+      (puthash key (1+ index) etaf--render-site-counts)
+      (if (zerop index) token (list :site token :occurrence index)))))
+
 (defvar etaf--ebox-source-builder nil
   "Source builder owned by the current ETAF lowering boundary.")
 
@@ -125,10 +140,8 @@
   (unless etaf--ebox-source-builder
     (signal 'etaf-renderer-error
             (list "Canonical Ebox input escaped its lowering boundary")))
-  (ebox-source-builder-import
-   etaf--ebox-source-builder
-   (ebox-canonical-input--source-index input))
-  (copy-sequence (ebox-canonical-input--nodes input)))
+  (ebox-canonical-input-import-roots
+   input (ebox-canonical-input-roots input) etaf--ebox-source-builder))
 
 (defun etaf--ebox-input-for-nodes (nodes)
   "Snapshot current source facts for canonical forest NODES."
@@ -143,12 +156,11 @@
   "Return PROPS' explicit Host reference or one generated for PATH.
 SITE-TOKEN replaces PATH as the generated call-site identity when non-nil."
   (or (plist-get props :ref)
-      (let ((site (or site-token (copy-sequence path))))
+      (let ((site (or (and (plist-get props :key)
+                           (list :key (plist-get props :key)))
+                      site-token (copy-sequence path))))
         (list 'etaf-host
               (cond
-               (etaf--rendering-range-p
-                  (list :range etaf--current-semantic-parent-id
-                        :site site))
                (etaf--render-runtime
                 (list :parent etaf--current-semantic-parent-id :site site))
                (t
@@ -267,12 +279,18 @@ tokens, not Ebox Host properties, and therefore are not materialized here."
              (props (copy-sequence
                      (etaf--resolve-property-plist
                       (etaf--view-node-props node))))
-             (template (etaf--theme-host-defaults defaults name)))
+             (template (etaf--theme-host-defaults defaults name))
+             (present (make-hash-table :test #'eq)))
+        (cl-loop for (key value) on props by #'cddr
+                 when value do
+                 (puthash (etaf--property-domain-key key) t present))
         (while template
           (let ((key (pop template))
                 (value (pop template)))
-            (unless (plist-get props key)
-              (setq props (etaf--merge-property props key value)))))
+            (unless (gethash (etaf--property-domain-key key) present)
+              (setq props (etaf--merge-property props key value))
+              (when value
+                (puthash (etaf--property-domain-key key) t present)))))
         (etaf--view-node-create
          :name name
          :token (etaf--view-node-token node)
@@ -494,11 +512,11 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
            :class (plist-get props :class)
            :declarations declarations
            :provenance (list :adapter 'etaf-renderer :tag tag))))
-    (let ((ebox-canonical--source-builder etaf--ebox-source-builder))
-      (ebox-box-create
-       :layout layout :outer outer :children children
-       :owned-facts (ebox-canonical-facts-from-declarations tag declarations)
-       :source-handle source-handle))))
+    (ebox-box-create
+     :layout layout :outer outer :children children
+     :source-builder etaf--ebox-source-builder
+     :owned-facts (ebox-canonical-facts-from-declarations tag declarations)
+     :source-handle source-handle)))
 
 (defun etaf--ebox-forest-root (nodes source-identity)
   "Return one canonical backend root for ordered forest NODES.
@@ -624,12 +642,27 @@ multi-root forest; a single material root is returned unchanged."
 (defun etaf--render-value-list (value path)
   "Render VALUE at structural PATH into a list of Ebox nodes."
   (let* ((items (etaf--flatten-view-value value))
-         (multiple-p (> (length items) 1)))
+         (multiple-p (or (proper-list-p value) (> (length items) 1)))
+         (etaf--render-site-counts
+          (or etaf--render-site-counts (make-hash-table :test #'equal)))
+         (keys (make-hash-table :test #'equal)))
+    ;; Validate the entire sibling set before any Component setup runs.
+    (dolist (item items)
+      (let* ((props (cond ((etaf--view-node-p item)
+                          (etaf--view-node-props item))
+                         ((etaf--component-call-p item)
+                          (etaf--component-call-props item))))
+             (key (etaf--resolve-property-value (plist-get props :key))))
+        (when key
+          (when (gethash key keys)
+            (signal (if etaf--render-runtime
+                        'etaf-runtime-error 'etaf-renderer-error)
+                    (list (format "View at %S has duplicate sibling key: %S"
+                                  path key))))
+          (puthash key t keys))))
     (cl-loop for item in items
              for index from 0
-             for item-path = (if multiple-p
-                                 (append path (list index))
-                               path)
+             for item-path = (if multiple-p (append path (list index)) path)
              append
              (cond
               ((stringp item)
@@ -670,7 +703,11 @@ multi-root forest; a single material root is returned unchanged."
 
 (defun etaf--render-node (node path)
   "Render normalized Host NODE at structural PATH."
-  (let* ((node (if (and etaf--render-runtime
+  (let* ((node (let ((copy (copy-sequence node)))
+                 (setf (etaf--view-node-token copy)
+                       (etaf--render-site-token (etaf--view-node-token node)))
+                 copy))
+         (node (if (and etaf--render-runtime
                         (fboundp 'etaf--runtime-behavior-node))
                    (etaf--runtime-behavior-node
                     etaf--render-runtime node path)
@@ -736,6 +773,7 @@ multi-root forest; a single material root is returned unchanged."
        (etaf--render-value-list children (append path (list :fragment))))
       ((or 'box 'row 'column 'flex 'grid)
        (let ((nodes nil)
+             (etaf--render-parent-path path)
              (index 0)
              (range-child-p nil)
              (semantic-id
@@ -819,7 +857,7 @@ RANGE-CHILD-P preserves the direct material Range parent."
     ((or 'box 'row 'column 'flex 'grid)
      (etaf--layout-node name props children range-child-p))
     (_ (signal 'etaf-renderer-error
-               (list (format "Semantic Host requires Step4b lowering: %S"
+               (list (format "Expected text, box, row, column, flex, or grid Host; received %S"
                              name))))))
 
 ;;;###autoload

@@ -63,7 +63,8 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
   (update-function nil :read-only t)
   (revision-function nil :read-only t)
   (bootstrap-outcome nil :read-only t)
-  (provider nil :read-only t))
+  (provider nil :read-only t)
+  (snapshot-function nil :read-only t))
 
 (defun etaf-render-port-route (port)
   "Return selected PORT route, always `v2'."
@@ -94,8 +95,12 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
   (etaf-render-port--update-function port))
 
 (defun etaf-render-port-revision-function (port)
-  "Return PORT's committed-revision query function symbol."
+  "Return PORT's current-revision query function symbol."
   (etaf-render-port--revision-function port))
+
+(defun etaf-render-port-snapshot-function (port)
+  "Return PORT's explicit committed-snapshot query function symbol."
+  (etaf-render-port--snapshot-function port))
 
 (defun etaf-render-port-bootstrap-outcome (port)
   "Return PORT's immutable bootstrap outcome tag."
@@ -107,7 +112,7 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
           (list :reason reason :detail detail)))
 
 (defun etaf-render-port--ensure-accessors ()
-  "Require every public Ebox v2 record accessor before reading a provider."
+  "Require Ebox's public v2 accessors and explicit snapshot query."
   (dolist
       (function
        '(ebox-framework-spi-provider-p
@@ -126,7 +131,8 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
          ebox-framework-spi-operation-argument-schema
          ebox-framework-spi-operation-result-schema
          ebox-framework-spi-operation-paired-stage-rollback-p
-         ebox-framework-spi-initial-observation-reports))
+         ebox-framework-spi-initial-observation-reports
+         ebox-surface-buffer-snapshot))
     (unless (fboundp function)
       (etaf-render-port--bootstrap-error
        'missing-provider-accessor function))))
@@ -272,6 +278,7 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
      :update-function
      (plist-get (plist-get snapshot :update) :function)
      :revision-function 'ebox-surface-buffer-revision
+     :snapshot-function 'ebox-surface-buffer-snapshot
      :bootstrap-outcome 'valid-v2-selected
      :provider (plist-get snapshot :provider))))
 
@@ -338,7 +345,9 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair."
   (ebox-surface-buffer-mounted-p buffer))
 
 (defun etaf-render-port-revision (buffer)
-  "Return BUFFER's committed Ebox revision, or zero when it is unmounted."
+  "Return BUFFER's current Ebox revision, or zero when it is unmounted.
+During an active TP transaction this can be a provisional revision for the
+paired publication stage.  Public committed queries must exclude that extent."
   (let ((buffer (get-buffer buffer)))
     (if (not (and (buffer-live-p buffer)
                   (ebox-surface-buffer-mounted-p buffer)))
@@ -352,6 +361,23 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair."
           (error "Mounted Ebox surface has no committed revision: %S"
                  revision))
         revision))))
+
+(defun etaf-render-port-snapshot (buffer)
+  "Export BUFFER's committed canonical input, revision, and mount identity.
+Ebox owns this explicit O(N) detached export and rejects unavailable or
+transactional reads.  The port validates only its envelope and never copies,
+publishes, or queries private renderer state."
+  (let ((snapshot
+         (funcall
+          (etaf-render-port-snapshot-function etaf-render-port--selected-port)
+          buffer)))
+    (unless (and (proper-list-p snapshot)
+                 (ebox-canonical-input-p (plist-get snapshot :input))
+                 (integerp (plist-get snapshot :revision))
+                 (> (plist-get snapshot :revision) 0)
+                 (integerp (plist-get snapshot :mount-id)))
+      (error "Malformed Ebox committed snapshot"))
+    snapshot))
 
 (provide 'etaf-render-port)
 

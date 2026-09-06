@@ -27,6 +27,7 @@
 (declare-function etaf-runtime-handler-entries "etaf-runtime" (runtime))
 (declare-function etaf-runtime-host-props-for "etaf-runtime" (runtime host-ref))
 (declare-function etaf-runtime-host-props-entries "etaf-runtime" (runtime))
+(declare-function etaf-runtime-host-ancestries "etaf-runtime" (runtime host-refs))
 (declare-function etaf-runtime-focus-ref "etaf-runtime" (runtime))
 (declare-function etaf-runtime-set-focus-ref "etaf-runtime" (runtime host-ref))
 (declare-function etaf-runtime-event-begin "etaf-runtime" (runtime))
@@ -71,6 +72,11 @@ otherwise call the local callback with no arguments."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (let* ((dispatch
          (lambda ()
+           (when (plist-get (etaf-runtime-host-props-for runtime host-ref)
+                            :disabled)
+             (signal 'etaf-event-error
+                     (list (format "Cannot dispatch to disabled Host reference: %S"
+                                   host-ref))))
            (let ((callback (etaf--event-handler runtime host-ref kind)))
              (unless callback
                (signal 'etaf-event-error
@@ -119,51 +125,81 @@ otherwise call the local callback with no arguments."
    (t nil)))
 
 (defun etaf--activation-candidate-before-p (left right)
-  "Return non-nil when activation candidate LEFT precedes RIGHT."
+  "Return non-nil when hit candidate LEFT is inside or smaller than RIGHT."
   (let ((left-length (nth 2 left))
         (right-length (nth 2 right))
         (left-start (nth 1 left))
-        (right-start (nth 1 right)))
-    (or (< left-length right-length)
-        (and (= left-length right-length)
-             (or (< left-start right-start)
-                 (and (= left-start right-start)
-                      (string< (prin1-to-string (car left))
-                               (prin1-to-string (car right)))))))))
+        (right-start (nth 1 right))
+        (left-lineage (nth 3 left))
+        (right-lineage (nth 3 right)))
+    (cond
+     ((and right-lineage (memq (car right-lineage) left-lineage)) t)
+     ((and left-lineage (memq (car left-lineage) right-lineage)) nil)
+     (t (or (< left-length right-length)
+            (and (= left-length right-length)
+                 (< left-start right-start)))))))
+
+(defun etaf--interaction-boundary-p (props)
+  "Return non-nil when committed PROPS describe an interaction boundary.
+Disabled and callbackless controls still own their hit area.  Ordinary text
+with only a reference or accessibility label remains part of its parent."
+  (or (functionp (plist-get props :on-press))
+      (plist-get props :disabled)
+      (numberp (plist-get props :tab-index))
+      (member (let ((role (plist-get props :role)))
+                (if (symbolp role) (symbol-name role) role))
+              '("button" "checkbox" "combobox" "link" "menuitem" "option"
+                "radio" "slider" "spinbutton" "switch" "tab" "textbox"
+                "treeitem"))))
 
 (defun etaf--activation-at-position (runtime position &optional quiet)
-  "Activate the smallest enabled Host at POSITION in RUNTIME.
+  "Activate the deepest interaction boundary at POSITION in RUNTIME.
 
 When QUIET is non-nil, return nil instead of signaling when no callback owns
 the position."
   (let (candidates)
-    (dolist (entry (etaf-runtime-handler-entries runtime))
-      (let ((host-ref (car entry)) (handlers (cdr entry)))
-       (let* ((press (assq 'press handlers))
-              (props (etaf-runtime-host-props-for runtime host-ref))
-              (bounds (ebox-host-ref-bounds
-                       (etaf-runtime-buffer runtime) host-ref))
-              (start (and bounds (car bounds)))
-              (end (and bounds (cdr bounds))))
-         (when (and press (not (plist-get props :disabled))
-                    start end (<= start position) (< position end))
-           (push (list host-ref start (- end start)) candidates)))))
-    (setq candidates (sort candidates #'etaf--activation-candidate-before-p))
-    (if-let* ((candidate (car candidates)))
-        (etaf-dispatch-event runtime (car candidate) 'press)
+    (dolist (entry (etaf-runtime-host-props-entries runtime))
+      (let ((host-ref (car entry)) (props (cdr entry)))
+        (when (etaf--interaction-boundary-p props)
+          (let* ((bounds (ebox-host-ref-bounds
+                          (etaf-runtime-buffer runtime) host-ref))
+                 (start (and bounds (car bounds)))
+                 (end (and bounds (cdr bounds))))
+            (when (and start end (<= start position) (< position end))
+              (push (list host-ref start (- end start)) candidates))))))
+    (when (cdr candidates)
+      (let ((ancestries
+             (etaf-runtime-host-ancestries runtime (mapcar #'car candidates))))
+        (dolist (candidate candidates)
+          (setcdr (last candidate) (list (gethash (car candidate) ancestries)))))
+      (setq candidates (cl-stable-sort
+                        candidates #'etaf--activation-candidate-before-p)))
+    (if-let* ((candidate (car candidates))
+              (ref (car candidate))
+              ((not (plist-get (etaf-runtime-host-props-for runtime ref)
+                               :disabled)))
+              ((etaf--event-handler runtime ref 'press)))
+        (etaf-dispatch-event runtime ref 'press)
       (unless quiet
         (user-error "No interactive ETAF Host at point")))))
 
 ;;;###autoload
 (defun etaf-activate (&optional runtime)
-  "Dispatch `press' for the smallest enabled Host containing point.
+  "Dispatch `press' for the focused Host, or the interaction boundary at point.
 
 RUNTIME is the mounted Runtime to activate, or nil for the current buffer."
   (interactive)
   (setq runtime (etaf-runtime-require-mounted runtime))
-  (let ((position (with-current-buffer (etaf-runtime-buffer runtime)
-                    (point))))
-    (etaf--activation-at-position runtime position)))
+  (let ((position (with-current-buffer (etaf-runtime-buffer runtime) (point)))
+        (focus-ref (etaf-runtime-focus-ref runtime)))
+    (if (and focus-ref
+             (equal position (etaf-host-ref-position runtime focus-ref)))
+        (if (and (not (plist-get
+                       (etaf-runtime-host-props-for runtime focus-ref) :disabled))
+                 (etaf--event-handler runtime focus-ref 'press))
+            (etaf-dispatch-event runtime focus-ref 'press)
+          (user-error "No interactive ETAF Host at point"))
+      (etaf--activation-at-position runtime position))))
 
 (defun etaf--focus-candidate-before-p (left right)
   "Return non-nil when focus candidate LEFT precedes RIGHT."
@@ -191,6 +227,30 @@ RUNTIME is the mounted Runtime to activate, or nil for the current buffer."
                     candidates))))))
     (sort candidates #'etaf--focus-candidate-before-p)))
 
+(defun etaf-events-call-with-preserved-focus (runtime function)
+  "Call FUNCTION while retaining RUNTIME's active focus through publication.
+Follow a Host's new position only when point started at that focused Host,
+the same focus survives, and a new generation actually committed.  Manual
+point movement and failed candidate publication keep their existing behavior."
+  (let* ((buffer (etaf-runtime-buffer runtime))
+         (focus-ref (etaf-runtime-focus-ref runtime))
+         (follow-p
+          (and focus-ref (buffer-live-p buffer)
+               (equal (with-current-buffer buffer (point))
+                      (ebox-host-ref-position buffer focus-ref)))))
+    (if (not follow-p)
+        (funcall function)
+      (let ((generation (etaf-runtime-current-generation runtime)))
+        (unwind-protect
+            (funcall function)
+          (when (and (etaf-runtime-mounted-p runtime)
+                     (buffer-live-p buffer)
+                     (equal focus-ref (etaf-runtime-focus-ref runtime))
+                     (not (eq generation
+                              (etaf-runtime-current-generation runtime))))
+            (when-let* ((position (ebox-host-ref-position buffer focus-ref)))
+              (with-current-buffer buffer (goto-char position)))))))))
+
 ;;;###autoload
 (defun etaf-focus (&optional runtime host-ref)
   "Move focus to HOST-REF in mounted RUNTIME and move point to its position.
@@ -202,6 +262,9 @@ When called interactively without arguments, focus the first visible Host."
     (setq host-ref (nth 3 (car (etaf--focus-candidates runtime))))
     (unless host-ref
       (user-error "No focusable ETAF Host")))
+  (when (plist-get (etaf-runtime-host-props-for runtime host-ref) :disabled)
+    (signal 'etaf-event-error
+            (list (format "Cannot focus disabled Host reference: %S" host-ref))))
   (let ((position (etaf-host-ref-position runtime host-ref)))
     (unless position
       (signal 'etaf-event-error

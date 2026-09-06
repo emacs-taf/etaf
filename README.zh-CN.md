@@ -1,44 +1,82 @@
 # ETAF
 
-ETAF 是构建在独立 [Ebox](../ebox) 布局与渲染引擎之上的小型文本应用框架。
+ETAF 在独立的 [Ebox](../ebox) 布局与渲染引擎上，使用可复用的 Component 构建文本应用。
 
-完整的公共模型是：
+从 `etaf-view` 和 `etaf-mount` 开始。`(name :property value ... child ...)`
+中属性在前、子节点在后，属性值是普通 Elisp。求值下面完整例子，切换到
+`*etaf-hello*`，即可激活 “Say hello”：
 
-```text
-Component(props, Scope) → View → Renderer → Ebox Node → Emacs buffer
-```
-
-所有可见结构都使用一种形式：
-
+<!-- etaf-example: hello -->
 ```elisp
-(name :property value ... child ...)
-```
-
-子节点中唯一的计算桥接是 `expr :value`；属性值则是普通 Elisp 表达式。
-
-```elisp
-(etaf-view
- (column
-  (text :font-weight 'bold "Hello")
-  (text
-   :color "#687386"
-   (expr :value (if ready "Ready" "Waiting")))))
-```
-
-定义 Component：
-
-```elisp
-(etaf-define-component status-label (&key label)
-  "Render a status label."
-  :view
-  (text :font-weight 'bold (expr :value label)))
+;;; -*- lexical-binding: t; -*-
+(require 'etaf)
 
 (etaf-mount
- "*etaf-demo*"
- (etaf-view (status-label :label "Connected")))
+ "*etaf-hello*"
+ (etaf-view
+  (column
+    (text :font-weight 'bold "Hello")
+    (box :ref 'hello :role 'button :tab-index 0
+         :on-press (lambda () (message "Hello ETAF"))
+      "Say hello"))))
 ```
 
-`etaf-view` 是唯一的公共 View 构造入口。结构 form 不使用 quote；quote 仍然是普通 Elisp 数据语法，例如 `'bold`。普通 Elisp 返回 View 时，必须在 `expr` 中显式使用 `(etaf-view ...)` 构造它。
+Component 通过声明的 props 接收业务输入，通过 slot 接收内容。调用时使用
+`etaf-define-component` 中的准确名称，注册表不会自动生成 alias。
+`(expr FORM)` 执行一个子节点表达式：结构位置可以返回 nil、字符串、typed
+Host 或 Component View，或这些值组成的 proper sequence；`text` 内的表达式必须返回字符串。
+
+<!-- etaf-example: card -->
+```elisp
+;;; -*- lexical-binding: t; -*-
+(require 'etaf)
+
+(etaf-define-component demo-card (&key title)
+  :view
+  (column
+    (text :font-weight 'bold (expr title))
+    (slot)
+    (slot :name 'footer)))
+
+(etaf-mount
+ "*etaf-card*"
+ (etaf-view
+  (demo-card :title "Account"
+    (text "Connected")
+    (slot :name 'footer (text "Footer")))))
+```
+
+组件拥有状态时才增加 `:setup`，它对每个保留的实例执行一次。
+`:render` 使用普通 Elisp 捕获句柄，再返回 `etaf-view`；更短的 `:view`
+形式编译为同一种 View 模型。
+
+<!-- etaf-example: counter -->
+```elisp
+;;; -*- lexical-binding: t; -*-
+(require 'etaf)
+
+(etaf-define-component demo-counter ()
+  :setup (etaf-ref 0)
+  :render
+  (let ((count (etaf-state)))
+    (etaf-view
+     (column
+       (text (expr (format "Count: %d" (etaf-value count))))
+       (box :ref 'increment :role 'button :tab-index 0
+            :on-press (lambda () (cl-incf (etaf-value count)))
+         "Increment")))))
+
+(etaf-mount "*etaf-counter*" (etaf-view (demo-counter)))
+```
+
+把 `etaf-value` 放在需要更新的属性或 `expr` 内，保留局部更新边界。
+事件回调捕获普通词法变量，`etaf-state` 在 render 时读取。可复用应用代码放进
+启用 lexical-binding 的 `.el` 文件。程序化构造 View 时也可使用 `etaf-node`。
+Context、Data、Behavior 和命名 Action 按需学习，简单回调不需要注册 Action。
+
+加载 `(require 'etaf-ui)` 后，使用 `etaf-button` 等准确目录名称。
+Core 不加载 `.etaf` 文件；Playground 将它们作为 inert 结构，由其显式的 companion
+注册入口管理可执行 Elisp。
 
 ## 性能记录面板
 
@@ -118,6 +156,8 @@ ETAF 为当前 Emacs 进程 snapshot 一个不可变的 v2 render port。按依�
 开发时先把同级 Ebox 检出目录加入 `load-path`：
 
 ```elisp
+(add-to-list 'load-path "/path/to/github/ecss")
+(add-to-list 'load-path "/path/to/github/tp")
 (add-to-list 'load-path "/path/to/github/ebox")
 (add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
