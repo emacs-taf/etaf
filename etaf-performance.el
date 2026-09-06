@@ -112,12 +112,24 @@
    :stages (mapcar #'etaf-performance--copy-stage
                    (etaf-performance-operation-stages operation))))
 
-(defun etaf-performance-records ()
-  "Return newest-first immutable snapshots of completed records."
-  (if etaf-performance--record-ring
-      (mapcar #'etaf-performance--copy-operation
-              (ring-elements etaf-performance--record-ring))
-    nil))
+(defun etaf-performance-records (&optional runtime-id)
+  "Return newest-first immutable snapshots of completed records.
+When RUNTIME-ID is non-nil, select only that integer observer report identity,
+as exposed by `etaf-performance-operation-runtime-id'.  This also selects
+historical records after unmount or reuse of a buffer name.  Omitted or nil
+RUNTIME-ID selects all retained records."
+  (unless (or (null runtime-id) (integerp runtime-id))
+    (signal 'wrong-type-argument (list 'integerp runtime-id)))
+  (let ((records (and etaf-performance--record-ring
+                      (ring-elements etaf-performance--record-ring))))
+    (mapcar #'etaf-performance--copy-operation
+            (if runtime-id
+                (seq-filter
+                 (lambda (operation)
+                   (equal runtime-id
+                          (etaf-performance-operation-runtime-id operation)))
+                 records)
+              records))))
 
 (defun etaf-performance--percentile (samples percentile)
   "Return nearest-rank PERCENTILE from numeric SAMPLES."
@@ -180,10 +192,12 @@ durations may overlap and are therefore never presented as exclusive time."
                    (> (plist-get left :duration-ms)
                       (plist-get right :duration-ms))))))
 
-(defun etaf-performance-summary (&optional records)
-  "Summarize completed RECORDS by operation kind and label."
+(cl-defun etaf-performance-summary
+    (&optional (records (etaf-performance-records)))
+  "Summarize completed RECORDS by operation kind and label.
+Omitted RECORDS selects all retained records; explicit nil selects none."
   (let ((groups (make-hash-table :test #'equal)) result)
-    (dolist (operation (or records (etaf-performance-records)))
+    (dolist (operation records)
       (let ((key (cons (etaf-performance-operation-kind operation)
                        (etaf-performance-operation-label operation))))
         (puthash key
@@ -469,20 +483,23 @@ BATTERY-OUTPUT identifies the active source; CUSTOM-OUTPUT contains settings."
         :power-state (etaf-performance--power-state)))
 
 ;;;###autoload
-(defun etaf-performance-report-data (&optional records)
-  "Return a portable report for completed performance RECORDS."
-  (let ((records (or records (etaf-performance-records))))
-    (list :format-version etaf-performance-report-format-version
-          :generated-at (format-time-string "%Y-%m-%dT%H:%M:%S%z")
-          :environment (etaf-performance-environment-data)
-          :summary (etaf-performance-summary records)
-          :operations
-          (mapcar #'etaf-performance--operation-report-data
-                  (reverse (copy-sequence records))))))
+(cl-defun etaf-performance-report-data
+    (&optional (records (etaf-performance-records)))
+  "Return a portable report for completed performance RECORDS.
+Omitted RECORDS selects all retained records; explicit nil selects none."
+  (list :format-version etaf-performance-report-format-version
+        :generated-at (format-time-string "%Y-%m-%dT%H:%M:%S%z")
+        :environment (etaf-performance-environment-data)
+        :summary (etaf-performance-summary records)
+        :operations
+        (mapcar #'etaf-performance--operation-report-data
+                (reverse (copy-sequence records)))))
 
 ;;;###autoload
-(defun etaf-performance-report-string (&optional records)
-  "Return completed performance RECORDS as a readable report string."
+(cl-defun etaf-performance-report-string
+    (&optional (records (etaf-performance-records)))
+  "Return completed performance RECORDS as a readable report string.
+Omitted RECORDS selects all retained records; explicit nil selects none."
   (concat ";; ETAF performance report\n"
           (pp-to-string (etaf-performance-report-data records))))
 

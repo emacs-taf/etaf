@@ -116,6 +116,13 @@ computes operation p50/p95/max statistics on demand, while
 `etaf-performance-operation-stage-summary` groups one operation's flat stages
 by provider category.  `etaf-performance-records` returns defensive operation
 and stage snapshots; caller mutation cannot rewrite retained history.
+Pass a numeric observer runtime ID to `etaf-performance-records` to select one
+mount's history even when a buffer name is reused. Summary and report functions
+use all retained records when called without an argument; an explicit `nil`
+means an empty selection. The exported environment describes report generation,
+not each historical operation. These synchronous operation durations do not
+measure physical input-to-presentation latency; use the GUI measurement entry
+in [scripts/README.md](scripts/README.md) for per-action condition checks.
 
 Use `etaf-performance-call-operation` or
 `etaf-performance-with-operation` to trace an arbitrary operation that has no

@@ -108,6 +108,11 @@ p50/p95/max、每次 operation、GC 增量和有序 provider 阶段；面板 hea
 `etaf-performance-operation-stage-summary` 则按 provider category 汇总单次
 operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage 的防御性
 快照，调用方修改返回值不会改写已保留的历史。
+向 `etaf-performance-records` 传入 observer 报告中的数字 runtime ID，可以隔离
+同名 buffer 重建前后的记录。summary/report 函数省略参数时读取全部历史，
+显式传入 `nil` 时保持空结果。导出的环境是生成报告时的状态，不是每次历史操作
+的状态；同步 operation 耗时也不等于物理输入到画面呈现的延迟。逐次 GUI 条件
+检查使用 [scripts/README.md](scripts/README.md) 中的测量入口。
 
 没有内置公共边界的任意操作，可以使用
 `etaf-performance-call-operation` 或 `etaf-performance-with-operation`

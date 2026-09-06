@@ -10,6 +10,9 @@
   及既有 Makefile 入口；公共机制归 `scripts/`，具体业务场景归示例仓库。
 - 现有 Emacs 的截图与录像默认保留用户当前应用焦点，使用已登记的窗口捕获
   入口；后台视觉证据须检查内容更新，后台耗时与前台输入到显示延迟分别报告。
+- 交互回调测量使用 `etaf-gui-verifier-measure-action`，按 scripts/README.md
+  固定场景、计时边界与前后台条件；保留全部样本，阶段记录按 observer runtime ID
+  隔离，不能用可复用的 buffer 名隔离。该入口不证明 compositor 已呈现。
 - 连续 resize 使用 `scripts/benchmark-ebox-resize.el` 的
   `ebox-resize-benchmark-start`，适用于现有 ETAF 或独立 Ebox buffer。
   按 README 选择范围、轮数和新证据文件；先验证前台与已加载版本，保留全部样本，

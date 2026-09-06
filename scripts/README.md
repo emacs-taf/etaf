@@ -13,7 +13,8 @@ scenarios live in their respective example repositories:
 
 - `emacs-gui-verifier.el` defines `Scenario`, ordered `Action`, run-local
   `Context`, checkpoint sequencing, assertions, completion, and fail-closed
-  evidence finalization.
+  evidence finalization. Its `etaf-gui-verifier-measure-action` entry records
+  callback wall/CPU/GC time and GUI conditions without taking application focus.
 - `benchmark-ebox-resize.el` drives continuous pixel-width sweeps of any
   existing mounted Ebox buffer, including ETAF apps, without taking over its
   observer. See the existing-server entry below.
@@ -67,6 +68,44 @@ off-Space and locked-session behavior is not covered by this procedure. Backgrou
 Lisp callbacks and runtime timing do not require application activation; report
 them as background measurements, separately from foreground input-to-display
 latency. Use Emacs-local operations while another app is active, not global input.
+
+## Measuring an existing GUI action
+
+Reuse `etaf-gui-verifier-measure-action` with the adapter's Context and Action:
+
+```elisp
+;; Prepare the target control and fixture before entering the measured callback.
+(etaf-gui-verifier-measure-action context action t)
+(car (etaf-gui-verifier-context-measurements context))
+```
+
+The final `t` requires an already selected foreground target. It rejects a
+background, hidden, unknown or wrong target before running the action, and
+invalidates a sample if focus, target, font or geometry changes. It never raises
+Emacs. Omit that argument for background functional work; those samples are
+explicitly labeled and must not be reported as foreground latency.
+
+Timing covers exactly `Action.execute`, excluding target inspection,
+checkpoints and the verifier's intentional settle waits. Keep fixture setup,
+control lookup and focus navigation outside an activation measurement. If the
+chosen boundary includes an explicit `redisplay`, put that call in `execute`
+and describe the boundary accordingly. Returning from redisplay still does not
+prove compositor presentation. Each record says `presentation_measured=nil`.
+
+Context retains every measurement, including first use, warmups, failures and
+rejections. Failed callbacks retain their own timing and original condition;
+rejections have no duration. Checkpoints export only the most recent record.
+Report the full sample count and all-sample maximum as well as any explicitly
+labeled steady-state statistics. Compare identical payload/page size, viewport,
+loaded code, recording mode and foreground class; do not discard a slow group
+because another run is faster. The historical `.omx/component-api-implementation/
+current-workbench-sample.el` probe is superseded by this measurement boundary.
+
+For provider traces, scope `etaf-performance-records` by its numeric observer
+runtime ID, not buffer name, which can be reused after unmount. Pass the selected
+records explicitly to summary/export functions: an empty selection stays empty.
+Check operation IDs/counts as well as runtime ID when sampling the same mounted
+instance again; the recorder's bounded history is not a per-run sample store.
 
 ## Continuous resize on the existing server
 

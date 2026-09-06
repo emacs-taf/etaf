@@ -765,6 +765,14 @@ requested.  `etaf-performance-operation-stage-summary` groups the flat stages
 of one recorded operation by provider category.  `etaf-performance-records`
 returns defensive operation and stage snapshots; caller mutation cannot alter
 retained history.
+Its optional numeric runtime ID selects the identity from observer reports,
+including history from a retired mount whose buffer name has since been reused.
+Summary and report functions read all retained records when their argument is
+omitted; explicit `nil` keeps an empty selection empty. The report's environment
+is observed at export time, not at every recorded operation. Runtime durations
+end at synchronous return and do not certify input-to-presentation latency;
+use [the GUI action measurement entry](../scripts/README.md#measuring-an-existing-gui-action)
+to record per-action foreground/target conditions and callback wall/CPU/GC time.
 
 Use `etaf-performance-call-operation` or `etaf-performance-with-operation` for
 application work that does not enter through a built-in public boundary.  Both

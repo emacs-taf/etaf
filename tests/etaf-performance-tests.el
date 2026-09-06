@@ -236,6 +236,89 @@
                        (plist-get (etaf-performance-stage-metadata stage)
                                   :detail)))))))
 
+(ert-deftest etaf-performance-records-filter-by-runtime-report-identity ()
+  "Select isolated history by report identity when buffer names are reused."
+  (etaf-performance-test--isolated
+    (dolist (entry '((1 101 "first mount")
+                     (1 202 "second mount")
+                     (2 101 "first unmount")))
+      (etaf-performance--retain
+       (etaf-performance--operation-create
+        :id (nth 0 entry) :runtime-id (nth 1 entry) :label (nth 2 entry)
+        :buffer-name " *reused performance buffer*"
+        :metadata '(:detail ("stable")))))
+    (should (= 3 (length (etaf-performance-records))))
+    (should (equal (etaf-performance-records)
+                   (etaf-performance-records nil)))
+    (let ((first (etaf-performance-records 101))
+          (second (etaf-performance-records 202)))
+      (should (equal '("first unmount" "first mount")
+                     (mapcar #'etaf-performance-operation-label first)))
+      (should (equal '("second mount")
+                     (mapcar #'etaf-performance-operation-label second)))
+      (setf (etaf-performance-operation-label (car first)) "changed")
+      (setcar (plist-get (etaf-performance-operation-metadata (car first))
+                         :detail)
+              "changed")
+      (let ((retained (car (etaf-performance-records 101))))
+        (should (equal "first unmount"
+                       (etaf-performance-operation-label retained)))
+        (should (equal '("stable")
+                       (plist-get (etaf-performance-operation-metadata retained)
+                                  :detail)))))
+    (should-not (etaf-performance-records 303))
+    (should-error (etaf-performance-records "101")
+                  :type 'wrong-type-argument)))
+
+(ert-deftest etaf-performance-summary-keeps-explicit-empty-selection ()
+  "An omitted selection summarizes all records; an explicit nil stays empty."
+  (etaf-performance-test--isolated
+    (etaf-performance--retain
+     (etaf-performance--operation-create
+      :kind 'report :label "retained fixture" :elapsed 1.0))
+    (should (= 1 (length (etaf-performance-summary))))
+    (should-not (etaf-performance-summary nil))))
+
+(ert-deftest etaf-performance-report-data-keeps-explicit-empty-selection ()
+  "An empty data export cannot fall back to previously retained records."
+  (etaf-performance-test--isolated
+    (etaf-performance--retain
+     (etaf-performance--operation-create
+      :kind 'report :label "retained fixture" :elapsed 1.0))
+    (let ((all (etaf-performance-report-data))
+          (empty (etaf-performance-report-data nil)))
+      (should (= 1 (length (plist-get all :summary))))
+      (should (= 1 (length (plist-get all :operations))))
+      (should-not (plist-get empty :summary))
+      (should-not (plist-get empty :operations)))))
+
+(ert-deftest etaf-performance-report-string-keeps-explicit-empty-selection ()
+  "Report strings preserve both omitted and explicitly empty selections."
+  (etaf-performance-test--isolated
+    (etaf-performance--retain
+     (etaf-performance--operation-create
+      :kind 'report :label "retained fixture" :elapsed 1.0))
+    (let ((all (read (etaf-performance-report-string)))
+          (empty (read (etaf-performance-report-string nil))))
+      (should (= 1 (length (plist-get all :summary))))
+      (should (= 1 (length (plist-get all :operations))))
+      (should-not (plist-get empty :summary))
+      (should-not (plist-get empty :operations)))))
+
+(ert-deftest etaf-performance-reports-keep-empty-runtime-selection ()
+  "An unmatched runtime report identity produces empty summary and exports."
+  (etaf-performance-test--isolated
+    (etaf-performance--retain
+     (etaf-performance--operation-create
+      :runtime-id 101 :kind 'report :label "retained fixture" :elapsed 1.0))
+    (let ((records (etaf-performance-records 202)))
+      (should-not records)
+      (should-not (etaf-performance-summary records))
+      (dolist (report (list (etaf-performance-report-data records)
+                            (read (etaf-performance-report-string records))))
+        (should-not (plist-get report :summary))
+        (should-not (plist-get report :operations))))))
+
 (ert-deftest etaf-performance-summary-uses-flat-duration ()
   "Summaries expose percentiles and overlapping provider durations honestly."
   (etaf-performance-test--isolated

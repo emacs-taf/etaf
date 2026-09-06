@@ -733,6 +733,11 @@ Ebox、TP、Data、Resource 与 SQLite 可以贡献按 sequence 排列的 flat p
 `etaf-performance-operation-stage-summary` 会按 provider category 汇总某条记录
 中的 flat 阶段。`etaf-performance-records` 返回 operation/stage 的防御性快照，
 调用方修改返回值不会影响保留的历史。
+该函数可选的数字 runtime ID 来自 observer 报告，可隔离 buffer 同名重建前后的
+记录。summary/report 函数省略参数时读取全部历史，显式传入 `nil` 时保持空结果。
+报告中的环境是导出时观测的状态，不是每次历史操作的状态。Runtime 耗时截至
+同步调用返回，不能证明输入到画面呈现的延迟；逐次前后台、目标与回调 wall/CPU/GC
+检查使用[GUI action 测量入口](../scripts/README.md#measuring-an-existing-gui-action)。
 
 没有经过内置公共边界的应用操作可以使用
 `etaf-performance-call-operation`/`etaf-performance-with-operation`；它们直接委托
