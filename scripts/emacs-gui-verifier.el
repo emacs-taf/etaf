@@ -147,7 +147,6 @@
     (cl-incf (etaf-gui-verifier-context-action-count context))
     (etaf-gui-verifier--checkpoint
      context action-id "after-action" nil)
-    (raise-frame)
     (etaf-gui-verifier--settle-action context action)
     (etaf-gui-verifier--checkpoint
      context action-id "after-redisplay"

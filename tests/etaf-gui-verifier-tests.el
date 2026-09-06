@@ -6,6 +6,42 @@
 (require 'cl-lib)
 (require 'emacs-gui-verifier)
 
+(ert-deftest etaf-gui-verifier-runs-and-settles-without-raising-frame ()
+  "Actions and settled checkpoints must complete without raising Emacs."
+  (let ((context (etaf-gui-verifier--context-create))
+        (settle-checks 0)
+        events)
+    (cl-letf (((symbol-function 'raise-frame)
+               (lambda (&rest _arguments)
+                 (error "GUI verifier must preserve application focus")))
+              ((symbol-function 'etaf-gui-verifier--checkpoint)
+               (lambda (_context _action-id phase _screenshot &optional _extra)
+                 (push phase events))))
+      (etaf-gui-verifier--run-action
+       context
+       (etaf-gui-verifier-action-create
+        :id "background-action" :settle-interval 0.001
+        :execute
+        (lambda (current)
+          (etaf-gui-verifier-context-put current 'executed t)
+          (push 'execute events))
+        :settled-p
+        (lambda (current)
+          (should (etaf-gui-verifier-context-get current 'executed))
+          (cl-incf settle-checks)
+          (push 'settle events)
+          t)
+        :assertions
+        (lambda (_current)
+          (push 'assertions events)
+          (list (etaf-gui-verifier-assert "action-settled" t))))))
+    (should (= 1 (etaf-gui-verifier-context-action-count context)))
+    (should (= 2 settle-checks))
+    (should
+     (equal '("before-action" execute "after-action" settle settle
+              assertions "after-redisplay")
+            (nreverse events)))))
+
 (ert-deftest etaf-gui-verifier-composes-generic-scenario-actions ()
   "The engine should own ordering while adapters own actions and assertions."
   (let ((buffer (generate-new-buffer " *etaf-gui-verifier-test*"))
