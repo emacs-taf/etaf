@@ -8,6 +8,10 @@
 
 - GUI 与性能自动化先查 `scripts/README.md`、`scripts/emacs-gui-verifier.el`
   及既有 Makefile 入口；公共机制归 `scripts/`，具体业务场景归示例仓库。
+- 连续 resize 使用 `scripts/benchmark-ebox-resize.el` 的
+  `ebox-resize-benchmark-start`，适用于现有 ETAF 或独立 Ebox buffer。
+  按 README 选择范围、轮数和新证据文件；先验证前台与已加载版本，保留全部样本，
+  检查 `:valid` 与 `:within-limit`，同时比较内容规模，不能只比较 p95。
 - 遇到重复的渲染、交互、resize 或验证需求，优先扩展已登记入口。稳定的通用
   操作应主动固化为带参数、验证和说明的仓库工具，随后更新工具索引及本节路由。
 - `.omx/` 中的临时诊断是历史调查材料，不是日常运行入口。不要从中复制新的
