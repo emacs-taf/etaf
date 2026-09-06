@@ -8,6 +8,8 @@
 
 - GUI 与性能自动化先查 `scripts/README.md`、`scripts/emacs-gui-verifier.el`
   及既有 Makefile 入口；公共机制归 `scripts/`，具体业务场景归示例仓库。
+- 现有 Emacs 的截图与录像默认保留用户当前应用焦点，使用已登记的窗口捕获
+  入口；后台视觉证据须检查内容更新，后台耗时与前台输入到显示延迟分别报告。
 - 连续 resize 使用 `scripts/benchmark-ebox-resize.el` 的
   `ebox-resize-benchmark-start`，适用于现有 ETAF 或独立 Ebox buffer。
   按 README 选择范围、轮数和新证据文件；先验证前台与已加载版本，保留全部样本，
