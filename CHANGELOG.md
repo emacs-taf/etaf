@@ -4,6 +4,9 @@
 
 ### Added
 
+- Preserve Host role, ARIA attributes and disabled state in Ebox selector
+  subjects, including successful reactive updates and failed-candidate rollback.
+
 - `etaf-local-ref` allocates stable instance-local Host handles during setup.
   Reusable components can address same-named internal controls independently,
   retaining targets across keyed reorder and failed publication.

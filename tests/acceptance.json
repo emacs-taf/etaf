@@ -648,6 +648,16 @@
       "name": "etaf-component-rules-defer-theme-value-validation",
       "file": "tests/etaf-rules-tests.el",
       "purpose": "Theme token rules validate property facts statically and actual values after contextual resolution."
+    },
+    {
+      "name": "etaf-selector-facts-pure-hosts-preserve-semantics",
+      "file": "tests/etaf-selector-facts-tests.el",
+      "purpose": "Host role, ARIA presence and disabled state are visible to shared structural selectors."
+    },
+    {
+      "name": "etaf-selector-facts-follow-accepted-reactive-properties",
+      "file": "tests/etaf-selector-facts-tests.el",
+      "purpose": "Accepted reactive metadata reaches Ebox selectors while failed candidates preserve committed facts."
     }
   ]
 }

@@ -386,7 +386,7 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
       (let ((key (pop props))
             (value (pop props)))
         (cond
-         ((memq key '(:face :surface-properties))
+         ((memq key '(:face :surface-properties :selector-attributes :selector-state))
           (signal 'etaf-renderer-error
                   (list (format
                          "%S is not a canonical ETAF property" key))))
@@ -405,6 +405,17 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
             (push key ebox-props)
             (push value ebox-props))))))
     (setq ebox-props (nreverse ebox-props))
+    (let ((attributes
+           (cl-loop for (key value) on source-props by #'cddr
+                    when (or (and (eq key :role) value)
+                             (etaf--aria-property-p key))
+                    collect (cons key value))))
+      (when attributes
+        (setq ebox-props
+              (etaf--merge-property ebox-props :selector-attributes attributes))))
+    (when (plist-get source-props :disabled)
+      (setq ebox-props
+            (etaf--merge-property ebox-props :selector-state '(disabled))))
     (setq ebox-props
           (etaf--merge-property
            ebox-props :source-identity
@@ -412,7 +423,7 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
     ebox-props))
 
 (defconst etaf--ebox-source-fields
-  '(:source-identity :key :class :id)
+  '(:source-identity :key :class :id :selector-attributes :selector-state)
   "ETAF source facts compiled into one opaque Ebox source handle.")
 
 (defvar etaf--ebox-declaration-cache (make-hash-table :test #'equal)
@@ -485,6 +496,8 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
            :key (plist-get props :key)
            :id (plist-get props :id)
            :class (plist-get props :class)
+           :selector-attributes (plist-get props :selector-attributes)
+           :selector-state (plist-get props :selector-state)
            :declarations declarations
            :provenance '(:adapter etaf-renderer :tag text))))
     (ebox-text-create
@@ -510,6 +523,8 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
            :key (plist-get props :key)
            :id (plist-get props :id)
            :class (plist-get props :class)
+           :selector-attributes (plist-get props :selector-attributes)
+           :selector-state (plist-get props :selector-state)
            :declarations declarations
            :provenance (list :adapter 'etaf-renderer :tag tag))))
     (ebox-box-create

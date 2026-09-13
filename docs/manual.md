@@ -166,6 +166,26 @@ The core `grid` Host is the two-dimensional layout choice:
 
 Use `auto`, `min-content`, `max-content`, `(fr FACTOR)`, `(minmax MIN MAX)`, and `(repeat COUNT TRACK-LIST)` in track templates. `:grid-auto-columns` and `:grid-auto-rows` size implicit tracks; `:grid-auto-flow` accepts `row` or `column`. Children may use `:grid-column`, `:grid-row`, `:grid-column-span`, and `:grid-row-span`; Ebox performs measurement, placement, and item/content alignment. The optional native backend falls back to the Elisp Ebox renderer for Grid trees.
 
+Host metadata also feeds the shared Ebox/ECSS selector subjects. `:class` and
+`:id` use Ebox normalization; a non-nil `:role` and every explicitly supplied
+`:aria-*` property become selector attributes. Values retain their Elisp meaning:
+ARIA nil remains present and compares as `nil`, and t compares as `t`, using ECSS's
+normal attribute formatting. A true `:disabled` adds the `disabled` state; nil
+removes it. These facts follow successful reactive publication and remain unchanged
+when a candidate fails. Structural selectors use the rendered Host tree.
+`:selector-attributes` and `:selector-state` are reserved adapter facts, not View
+properties. Use the semantic properties above to declare Host metadata.
+
+```elisp
+(ebox-selector-query-all
+ (etaf-render
+  (etaf-view
+   (column :role 'group
+     (text :role 'checkbox :disabled t :aria-checked nil "Option"))))
+ "[role=group] > text[role=checkbox]:disabled[aria-checked=nil]")
+;; Returns one matching Host handle.
+```
+
 ## 4. Define a Component
 
 The beginner form is a stateless `:view` Component:
