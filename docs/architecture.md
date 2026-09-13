@@ -176,6 +176,14 @@ Re-render reads current props and state without rerunning setup. Setup is the
 owner for local refs, computed values, watches, Effects, and cleanup
 registration; it never returns a render function.
 
+`etaf-prop` gives setup a stable computed source backed by the Component semantic
+inputs, without duplicating authoritative mutable state. Candidate prop changes
+invalidate dependent computations and retained descendant render effects. A
+candidate journal preserves affected cache values and dependency edges; rejection
+restores those edges and makes caches recompute from committed props and live
+application refs. Successful publication discards the journal and notifies reactive
+subscribers. Instance Scope and semantic ownership checks reject disposed sources.
+
 Input default values belong to the committed Component semantic record. A
 candidate resolves missing inputs before setup/render and copies only the
 property container, preserving supplied and default object identities. Newly

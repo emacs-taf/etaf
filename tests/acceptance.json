@@ -598,6 +598,31 @@
       "name": "etaf-behavior-context-candidate-facts-do-not-publish-early",
       "file": "tests/etaf-behavior-context-tests.el",
       "purpose": "Candidate context facts remain distinct from committed Host inputs during failure and replacement cleanup."
+    },
+    {
+      "name": "etaf-tracked-props-follow-publication-and-disposal",
+      "file": "tests/etaf-tracked-props-tests.el",
+      "purpose": "Setup-derived values and watch notifications follow successful prop updates and stop on disposal."
+    },
+    {
+      "name": "etaf-tracked-props-reach-retained-descendants",
+      "file": "tests/etaf-tracked-props-tests.el",
+      "purpose": "Root and local input changes publish retained descendant consumers before notifying watchers."
+    },
+    {
+      "name": "etaf-tracked-props-restore-successful-computation-after-late-failure",
+      "file": "tests/etaf-tracked-props-tests.el",
+      "purpose": "A late render failure rolls back successful candidate computations and preserves committed callbacks."
+    },
+    {
+      "name": "etaf-tracked-props-rollback-restores-conditional-dependencies",
+      "file": "tests/etaf-tracked-props-tests.el",
+      "purpose": "Rejected prop-driven branches restore computed dependencies while ordinary business refs remain live."
+    },
+    {
+      "name": "etaf-tracked-props-defaults-and-applications-are-independent",
+      "file": "tests/etaf-tracked-props-tests.el",
+      "purpose": "Tracked sources include defaults, retain per-instance identity and reject reads from disposed owners."
     }
   ]
 }

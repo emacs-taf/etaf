@@ -4,6 +4,10 @@
 
 ### Added
 
+- `etaf-prop` supplies stable read-only Component inputs for setup computed values
+  and watches. Updates notify after publication; rejected candidates preserve
+  committed inputs and dependency tracking. Sources expire with their instance.
+
 - `etaf-behavior-context-info` exposes installation Runtime, Host reference and
   semantic properties through a public snapshot query usable during cleanup.
 

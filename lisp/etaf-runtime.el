@@ -67,6 +67,7 @@
   scope
   state
   (setup-complete-p nil)
+  prop-sources
   context
   mounted-hooks
   updated-hooks
@@ -323,6 +324,8 @@ the sequential `etaf--pvec-put' contract."
   candidate-live
   candidate-semantic-nodes
   candidate-component-envs
+  candidate-computed-snapshots
+  candidate-prop-values
   candidate-graph-nodes
   candidate-identity-entries
   candidate-graph-children
@@ -1618,6 +1621,183 @@ reading Runtime storage fields."
     (etaf-runtime-set-observer runtime replacement)
     t))
 
+(defun etaf--runtime-snapshot-computed (runtime computed)
+  "Record COMPUTED before RUNTIME candidate changes its cache or dependencies."
+  (when-let* ((journal (etaf-runtime-candidate-computed-snapshots runtime))
+              (changes (etaf-runtime-candidate-prop-values runtime))
+              ((> (hash-table-count changes) 0)))
+    (unless (gethash computed journal)
+      (puthash computed
+               (list (copy-sequence computed)
+                     (copy-sequence (etaf-effect-deps (etaf-computed-effect computed))))
+               journal))))
+
+(defun etaf--runtime-restore-computeds (runtime)
+  "Restore property-dependent cache edges after rejecting RUNTIME input."
+  (when-let* ((journal (etaf-runtime-candidate-computed-snapshots runtime)))
+    (let ((affected (make-hash-table :test #'eq))
+          (changes (etaf-runtime-candidate-prop-values runtime))
+          restore)
+      (cl-labels
+          ((depends
+            (source)
+            (or (and changes (gethash source changes))
+                (eq (gethash source affected) 'yes)
+                (and (etaf-computed-p source)
+                     (not (gethash source affected))
+                     (progn
+                       (puthash source 'visiting affected)
+                       (let ((result
+                              (or (and changes
+                                       (not (eq (gethash source changes :missing) :missing)))
+                                  (cl-some #'depends
+                                           (append
+                                            (cadr (gethash source journal))
+                                            (etaf-effect-deps (etaf-computed-effect source)))))))
+                         (puthash source (if result 'yes 'no) affected)
+                         result))))))
+        (maphash (lambda (computed entry)
+                   (when (depends computed) (push (cons computed entry) restore))) journal))
+      (dolist (item restore)
+        (let* ((computed (car item)) (entry (cdr item))
+               (old (car entry)) (effect (etaf-computed-effect computed)))
+          (when (etaf-effect-active-p effect)
+            (etaf--clear-effect-deps effect)
+            (dolist (source (cadr entry))
+              (puthash effect t (etaf--source-subscribers source)))
+            (setf (etaf-effect-deps effect) (cadr entry)))
+          (setf (etaf-computed-value computed) (etaf-computed-value old)
+                (etaf-computed-version computed) (etaf-computed-version old)
+                ;; Business refs are live even when display publication fails.
+                ;; Recompute against committed props and those live refs.
+                (etaf-computed-dirty-p computed) t
+                (etaf-computed-evaluated-p computed) (etaf-computed-evaluated-p old)))))))
+
+(defun etaf--runtime-stage-prop-inputs (runtime instance old-props props)
+  "Invalidate INSTANCE property sources for candidate PROPS against OLD-PROPS."
+  (let ((generation (etaf-runtime-current-generation runtime))
+        (seen (make-hash-table :test #'eq)))
+    (cl-labels
+        ((invalidate
+          (source)
+          (unless (gethash source seen)
+            (puthash source t seen)
+            (etaf--runtime-snapshot-computed runtime source)
+            (setf (etaf-computed-dirty-p source) t)
+            (when generation
+              (dolist (effect-id (etaf--generation-source-effects generation source))
+                (etaf--runtime-enqueue-effect runtime effect-id)
+                ;; Root renders need to enter retained descendant components
+                ;; before their invalidated leaf expressions can be rebuilt.
+                (let* ((effect (etaf--generation-effect generation effect-id))
+                       (id (and effect (etaf--generation-effect-semantic-id effect))))
+                  (while id
+                    (let ((node (etaf--pvec-get
+                                 (etaf-generation-semantic-nodes generation) id)))
+                      (when (and (etaf--semantic-component-p node)
+                                 (not (equal (etaf--semantic-component-identity node)
+                                             (etaf--component-instance-identity instance))))
+                        (etaf--runtime-enqueue-effect
+                         runtime (etaf--semantic-component-effect-id node))))
+                    (setq id (etaf--generation-parent-id generation id))))))
+            (maphash
+             (lambda (subscriber _)
+               (when (and (etaf-effect-p subscriber)
+                          (etaf-effect-active-p subscriber)
+                          (etaf-effect-output-source subscriber))
+                 (invalidate (etaf-effect-output-source subscriber))))
+             (etaf--source-subscribers source)))))
+      (dolist (entry (etaf--component-instance-prop-sources instance))
+        (let* ((key (car entry)) (source (cdr entry))
+               (missing (make-symbol "missing"))
+               (last (gethash source (etaf-runtime-candidate-prop-values runtime) missing))
+               (before (if (eq last missing) (plist-get old-props key) (cdr last)))
+               (next (plist-get props key)))
+          (unless (etaf--reactive-same-p before next)
+            (puthash source (cons instance next) (etaf-runtime-candidate-prop-values runtime))
+            (invalidate source)))))))
+
+(defun etaf--runtime-accept-prop-inputs (runtime)
+  "Accept RUNTIME computed caches and notify property watchers after publication."
+  (let ((sources (etaf-runtime-candidate-prop-values runtime)))
+    (setf (etaf-runtime-candidate-computed-snapshots runtime) nil
+          (etaf-runtime-candidate-prop-values runtime) nil)
+    (when sources
+      (maphash
+       (lambda (source change)
+         (let* ((instance (car change))
+                (semantic (etaf--generation-semantic
+                           (etaf-runtime-current-generation runtime)
+                           (etaf--component-instance-identity instance))))
+           (when (and semantic
+                      (equal (etaf--semantic-component-resource-key semantic)
+                             (etaf--component-instance-resource-key instance))
+                      (etaf-effect-active-p (etaf-computed-effect source)))
+             (etaf--dispatch-source source))))
+       sources))))
+
+;;;###autoload
+(defun etaf-prop (name)
+  "Return the current Component's stable read-only reactive input NAME.
+Call during setup, then read the returned source with `etaf-value' inside
+computed getters or watchers.  NAME must identify a declared prop; keywords
+and ordinary symbols are accepted.  Defaults are included.  A plain prop
+variable remains an evaluation snapshot, while this source follows inputs.
+Candidate rendering sees candidate inputs; watchers are notified only after
+successful publication.  Rejected publication restores derived caches.
+The Component owns this source; reads after disposal signal an error."
+  (unless (and (eq etaf--component-phase 'setup)
+               etaf--current-component-instance etaf--current-runtime)
+    (etaf--component-definition-error "etaf-prop requires Component setup"))
+  (let* ((instance etaf--current-component-instance)
+         (runtime etaf--current-runtime)
+         (id etaf--current-component-semantic-id)
+         (key (and (symbolp name) (etaf--component-prop-key name)))
+         (declared (mapcar #'etaf--component-prop-key
+                          (etaf--component-spec-props
+                           (etaf--component-instance-spec instance)))))
+    (unless (memq key declared)
+      (etaf--component-definition-error "Component %S has no declared prop %S"
+                                       (car (etaf--component-instance-identity instance)) name))
+    (or (cdr (assq key (etaf--component-instance-prop-sources instance)))
+        (let* ((validate
+                (lambda ()
+                  (let* ((generation (etaf-runtime-current-generation runtime))
+                         (committed (and generation
+                                         (etaf--pvec-get
+                                          (etaf-generation-semantic-nodes generation) id)))
+                         (env (and (or etaf--render-phase-p
+                                       (eq etaf--component-phase 'setup))
+                                   (gethash id (etaf-runtime-candidate-component-envs runtime)))))
+                    (unless (and (etaf-effect-scope-active-p
+                                  (etaf--component-instance-scope instance))
+                                 (or (eq instance (plist-get env :instance))
+                                     (and committed
+                                          (equal (etaf--component-instance-resource-key instance)
+                                                 (etaf--semantic-component-resource-key committed)))))
+                      (etaf--component-definition-error "Component prop %S is disposed" name)))))
+               (source
+                (etaf-computed
+                 (lambda ()
+                   (funcall validate)
+                   (let* ((candidate-p
+                           (or etaf--render-phase-p
+                               (and (eq etaf--component-phase 'setup)
+                                    (eq etaf--current-component-instance instance))))
+                          (env (and candidate-p
+                                    (gethash id (etaf-runtime-candidate-component-envs runtime))))
+                          (generation (etaf-runtime-current-generation runtime))
+                          (component (and generation
+                                          (etaf--pvec-get
+                                           (etaf-generation-semantic-nodes generation) id))))
+                     (plist-get (if (plist-member env :props)
+                                    (plist-get env :props)
+                                  (and component (etaf--semantic-component-props component))) key)))
+                 :name (list 'prop name))))
+          (setf (etaf-computed-validator source) validate)
+          (push (cons key source) (etaf--component-instance-prop-sources instance))
+          source))))
+
 (defun etaf--runtime-watch-scheduler (runtime job _flush)
   "Run watcher JOB while RUNTIME remains mounted."
   (when (etaf-runtime-mounted-p runtime)
@@ -2641,6 +2821,9 @@ subtrees keep their committed resources without being traversed."
              (list :identity identity :instance instance
                    :props props :attrs attrs :slots slots)
              (etaf-runtime-candidate-component-envs runtime))
+    (when old
+      (etaf--runtime-stage-prop-inputs
+       runtime instance (etaf--semantic-component-props old) props))
     (when (and old
                (or etaf--rendering-component-effect-p
                    (not (equal-including-properties
@@ -3844,7 +4027,10 @@ cleanup after ORDERING-PREFIX instead of running them inline."
 
 (defun etaf--runtime-clear-candidate (runtime)
   "Clear transient candidate bookkeeping in RUNTIME."
-  (setf (etaf-runtime-candidate-created runtime) nil
+  (etaf--runtime-restore-computeds runtime)
+  (setf (etaf-runtime-candidate-computed-snapshots runtime) nil
+        (etaf-runtime-candidate-prop-values runtime) nil
+        (etaf-runtime-candidate-created runtime) nil
         (etaf-runtime-candidate-old-instances runtime) nil
         (etaf-runtime-candidate-live runtime) nil
         (etaf-runtime-candidate-semantic-nodes runtime) nil
@@ -3959,7 +4145,9 @@ RETIREMENT-JOURNAL owns hooks and Scope disposal after successful publication."
 (defun etaf--runtime-begin-candidate (runtime)
   "Reset candidate bookkeeping before a RUNTIME render."
   (setq etaf--rendered-range-container-nodes nil)
-  (setf (etaf-runtime-candidate-live runtime) (make-hash-table :test #'equal)
+  (setf (etaf-runtime-candidate-computed-snapshots runtime) (make-hash-table :test #'eq)
+        (etaf-runtime-candidate-prop-values runtime) (make-hash-table :test #'eq)
+        (etaf-runtime-candidate-live runtime) (make-hash-table :test #'equal)
         (etaf-runtime-candidate-semantic-nodes runtime)
         (make-hash-table :test #'equal)
         (etaf-runtime-candidate-component-envs runtime)
@@ -4809,6 +4997,12 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
                  (nreverse deps))
            (puthash (etaf--semantic-component-identity semantic) candidate
                     (etaf-runtime-candidate-semantic-nodes runtime))
+           (puthash (etaf--semantic-component-semantic-id semantic)
+                    (list :instance instance :identity (etaf--semantic-component-identity semantic)
+                          :props props :attrs attrs :slots slots)
+                    (etaf-runtime-candidate-component-envs runtime))
+           (etaf--runtime-stage-prop-inputs
+            runtime instance (etaf--semantic-component-props semantic) props)
            (puthash effect-id
                     (etaf--generation-effect-create
                      :effect-id effect-id :kind 'component-input
@@ -5813,7 +6007,9 @@ RENDERED-IDENTITIES names the Component render participants."
 (defun etaf--runtime-component-overlay (runtime)
   "Publish RUNTIME dirty Component effects without traversing Root."
   (cl-block etaf--runtime-component-overlay
-    (let* ((old (etaf-runtime-current-generation runtime))
+    (let* ((etaf--computed-snapshot-observer
+             (lambda (computed) (etaf--runtime-snapshot-computed runtime computed)))
+           (old (etaf-runtime-current-generation runtime))
          (queued-effect-ids
           (copy-sequence (etaf-runtime-dirty-effect-queue runtime)))
          (retry-effect-ids
@@ -6157,6 +6353,8 @@ RENDERED-IDENTITIES names the Component render participants."
            (etaf--runtime-install-generation-mirrors
             runtime candidate-generation nil)))
         (etaf--runtime-clear-dirty-effects runtime)
+        (run-step 'prop-input-notification
+                  (lambda () (etaf--runtime-accept-prop-inputs runtime)))
         (unwind-protect
             (progn
               (run-step
@@ -6194,7 +6392,9 @@ RENDERED-IDENTITIES names the Component render participants."
 (defun etaf--runtime-render-effect (runtime)
   "Build and publish one Root-owned candidate for RUNTIME."
   (setf (etaf-runtime-candidate-full-rebuild-p runtime) t)
-  (let ((old-generation (etaf-runtime-current-generation runtime))
+  (let ((etaf--computed-snapshot-observer
+         (lambda (computed) (etaf--runtime-snapshot-computed runtime computed)))
+        (old-generation (etaf-runtime-current-generation runtime))
         next-root root-node candidate-generation semantic-candidate
         journal resource-journal participant)
     (condition-case err
@@ -6295,6 +6495,8 @@ RENDERED-IDENTITIES names the Component render participants."
             runtime candidate-generation t)))
         (setf (etaf-runtime-root-dirty-p runtime) nil)
         (etaf--runtime-clear-dirty-effects runtime)
+        (run-step 'prop-input-notification
+                  (lambda () (etaf--runtime-accept-prop-inputs runtime)))
         (unwind-protect
             (progn
               (run-step

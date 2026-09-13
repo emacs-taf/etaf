@@ -36,6 +36,7 @@
                (:constructor etaf--computed-create))
   "A lazy cached reactive value."
   getter
+  validator
   value
   test
   (version 0)
@@ -51,6 +52,7 @@
                (:constructor etaf--effect-create))
   "A dependency-tracked computation owned by a Scope."
   function
+  output-source
   scheduler
   deps
   owner-scope
@@ -345,10 +347,16 @@ TEST optionally compares old and new values.  NAME is used in diagnostics."
                     :source-id (cl-incf etaf--source-id-counter)
                     :name name))
 
+(defvar etaf--computed-snapshot-observer nil
+  "Optional candidate observer called before a computed cache changes.")
+
 (defun etaf--computed-value (computed)
   "Read COMPUTED, evaluating it when its dependencies are dirty."
+  (when-let* ((validate (etaf-computed-validator computed))) (funcall validate))
   (etaf--track-source computed)
   (when (etaf-computed-dirty-p computed)
+    (when etaf--computed-snapshot-observer
+      (funcall etaf--computed-snapshot-observer computed))
     (when (etaf-computed-evaluating-p computed)
       (error "Recursive ETAF computed evaluation: %S"
              (or (etaf-computed-name computed) computed)))
@@ -391,6 +399,7 @@ computed value."
              (unless (etaf-computed-dirty-p computed)
                (setf (etaf-computed-dirty-p computed) t)
                (etaf--dispatch-source computed)))))
+    (setf (etaf-effect-output-source (etaf-computed-effect computed)) computed)
     computed))
 
 ;;;###autoload

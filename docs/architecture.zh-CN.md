@@ -170,6 +170,12 @@ Component definition 是当前结构/样式/行为边界：动态状态、Action
 state，不重新运行 setup。setup 负责局部 ref、computed、watch、Effect 和 cleanup，
 不返回 render 函数。
 
+`etaf-prop` 向 setup 提供由 Component semantic 输入支持的稳定 computed 来源，
+不复制一份可变权威状态。候选属性变化使派生计算及保留的后代渲染 effect
+失效。候选日志保存受影响的缓存和依赖边；拒绝发布时恢复依赖边，缓存重新
+根据已提交 props 与实时业务 ref 求值。发布成功后丢弃日志并通知响应式
+订阅者。实例 Scope 与 semantic 所有权校验阻止读取已释放来源。
+
 输入默认值由已提交的 Component semantic record 持有。候选在 setup/render 前
 解析缺省输入，只复制属性容器，保留传入值及默认值的对象身份。新默认值与
 画面一同发布，回滚时丢弃；求值及所有权约定见[用户手册](manual.zh-CN.md)。

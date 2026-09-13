@@ -252,6 +252,29 @@ callback。Scope 释放时会自动停止响应式 effect 并运行 cleanup。
 不需要提前读取它的值。含有持久闭包的组件代码放在启用 lexical-binding 的 `.el`
 文件中。简单本地回调不需要定义 Action。
 
+若 setup 中创建的 computed 或 watch 需要跟随后续输入，在 setup 调用
+`etaf-prop` 取得来源，再用 `etaf-value` 显式读取：
+
+```elisp
+(etaf-define-component greeting (&key (name "World"))
+  :setup
+  (let ((input (etaf-prop 'name)))
+    (etaf-computed (lambda () (concat "Hello, " (etaf-value input)))))
+  :view (text (expr (etaf-value (etaf-state)))))
+
+(let ((name (etaf-ref "Ada")))
+  (etaf-mount (get-buffer-create "*Greeting*")
+              (etaf-view (greeting :name (etaf-value name))))
+  (setf (etaf-value name) "Grace"))
+```
+
+来源在组件实例内保持同一身份，包含解析后的默认值。它是只读、浅响应式的：
+原地修改传入对象不会通知订阅者。候选渲染读取候选输入，其他时刻读取已提交
+输入。watch 在成功发布后收到变化，回调可以查询更新后的 buffer；设置立即
+执行的 watch 仍会在 setup 首次运行。更新失败恢复已提交输入及派生依赖，
+不会撤销业务 ref 的写入。组件拥有来源及 setup 中的计算与 watch；卸载会
+停止它们，释放后读取 prop 来源会报错。普通 setup prop 变量仍捕获初始值。
+
 响应式 API 只有一套模型：
 
 ```elisp

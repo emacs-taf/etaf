@@ -649,6 +649,15 @@
 ;;;###autoload (autoload 'etaf-performance-with-operation "etaf" nil nil 'macro)
 ;; Evaluate BODY through RUNTIME's canonical operation boundary.
 ;;
+;; Function: etaf-prop (name)
+;;;###autoload (autoload 'etaf-prop "etaf" nil nil)
+;; Return the current Component's stable read-only reactive input NAME.
+;; Call during setup, then read with `etaf-value` in computed getters or watches.
+;; NAME is a declared prop name or keyword; defaults are included. Plain prop
+;; variables remain snapshots. Candidate rendering reads candidate input;
+;; watchers are notified after successful publication. Rejection restores caches.
+;; The Component owns the source; reads after disposal signal an error.
+;;
 ;; Function: etaf-provide (key value)
 ;;;###autoload (autoload 'etaf-provide "etaf" nil nil)
 ;; Provide VALUE under stable Context KEY to the current subtree.

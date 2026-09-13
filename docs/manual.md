@@ -266,6 +266,32 @@ update; extracting a handle does not require reading its value early. Component
 code with retained closures belongs in an `.el` file with lexical binding.
 Simple local callbacks need no Action definition.
 
+For a computed value or watch created in setup to follow later inputs, obtain
+an `etaf-prop` source during setup. Read it explicitly with `etaf-value`:
+
+```elisp
+(etaf-define-component greeting (&key (name "World"))
+  :setup
+  (let ((input (etaf-prop 'name)))
+    (etaf-computed (lambda () (concat "Hello, " (etaf-value input)))))
+  :view (text (expr (etaf-value (etaf-state)))))
+
+(let ((name (etaf-ref "Ada")))
+  (etaf-mount (get-buffer-create "*Greeting*")
+              (etaf-view (greeting :name (etaf-value name))))
+  (setf (etaf-value name) "Grace"))
+```
+
+The source is stable within its Component instance and includes resolved defaults.
+It is read-only and shallow: mutating a supplied object in place does not notify
+subscribers. Candidate rendering reads candidate inputs; later reads use committed
+inputs. Watches receive changes after successful publication, so their callbacks
+can inspect the updated buffer. An immediate watch still runs initially in setup.
+A rejected update restores committed input and derived dependency tracking; it does
+not undo writes to application refs. The Component owns the source and its setup
+computations/watches; unmount stops them, and reading the prop source after disposal
+signals an error. Plain setup prop variables continue to capture initial values.
+
 The small reactive API is:
 
 ```elisp
