@@ -41,6 +41,11 @@
 
 ### Changed
 
+- Theme defaults now use ECSS UA origin through Ebox scopes. Normal defaults
+  remain below author properties; UA-important defaults take precedence over
+  author-important declarations. Remove importance from Theme defaults that
+  callers should override. Reactive updates retain layout and deferred values.
+
 - Component `:styles` and `etaf-component-set-styles` now accept a plain
   ordered rule list. Remove the `styles` wrapper; normal Elisp arguments still
   quote literal lists. Rules validate through the shared Ebox/ECSS contract.

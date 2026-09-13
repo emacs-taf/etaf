@@ -668,6 +668,21 @@
       "name": "etaf-layout-values-publish-reactively-and-reject-invalid-input",
       "file": "tests/etaf-cascade-layout-tests.el",
       "purpose": "Reactive tagged layout changes match fresh provider output and invalid candidates preserve committed display."
+    },
+    {
+      "name": "etaf-theme-defaults-use-ecss-origin-on-retained-updates",
+      "file": "tests/etaf-theme-cascade-tests.el",
+      "purpose": "Reactive Theme defaults use UA precedence, survive inline updates and reject invalid candidate values."
+    },
+    {
+      "name": "etaf-theme-defaults-match-provider-ua-origin",
+      "file": "tests/etaf-theme-cascade-tests.el",
+      "purpose": "Mounted Component output matches Ebox UA-important precedence over inline importance."
+    },
+    {
+      "name": "etaf-theme-defaults-update-empty-layout-and-isolate-apps",
+      "file": "tests/etaf-theme-cascade-tests.el",
+      "purpose": "Empty Theme defaults acquire and remove geometry through retained updates matching fresh mounts without changing another application."
     }
   ]
 }

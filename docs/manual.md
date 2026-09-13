@@ -467,16 +467,16 @@ Theme token declarations validate property facts when defined and actual values
 after contextual resolution. Unknown properties fail before installation; an
 invalid resolved value fails publication through the Ebox schema.
 
-Precedence is fixed:
-
-```text
-explicit Host properties > Component :styles > inherited Theme defaults
-```
+Theme defaults are Ebox scope declarations at ECSS UA origin. Normal author
+properties override normal defaults; importance and inheritance follow ECSS,
+including UA-important declarations winning over author-important declarations.
+Changing a reactive Theme republishes these defaults without converting them to
+inline properties. Unknown Theme keys remain Context tokens.
 
 Within one Component style scope, the first matching declaration fills an
 unspecified Host property; later rules do not overwrite that resolved default.
-A non-nil Host property remains protected, and a nil Host property is treated
-as omitted and may receive the Component or Theme default. Use explicit Host
+Component rules currently retain this simplified matching behavior. A nil Host
+property is treated as omitted and may receive the Component or Theme default. Use explicit Host
 props or distinct properties when a variant needs a deliberate override.
 
 Styles are scoped to the Component that authored a View node. A parent rule does not enter a nested Component's internals; content supplied through a caller slot keeps the caller scope, while a Component's own slot fallback keeps the child scope.

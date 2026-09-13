@@ -165,8 +165,9 @@ There is no separate `etaf-data` install: Data is a core ETAF capability. There 
 ## Load and verify
 
 Install ECSS 0.1.0 and TP 2.0.0 before Ebox 3.0.0, then install ETAF 0.2.1.
-ETAF declares TP directly because Host final-accept authority uses the TP
-transaction contract. Rendering requires Ebox framework SPI v2; a missing,
+ETAF declares ECSS directly to preserve deferred cascade values when resolving
+Theme tokens. ETAF declares TP directly because Host final-accept authority uses
+the TP transaction contract. Rendering requires Ebox framework SPI v2; a missing,
 malformed, or incompatible provider fails during ETAF bootstrap.
 
 ETAF snapshots one immutable v2 render port for the Emacs process. During an

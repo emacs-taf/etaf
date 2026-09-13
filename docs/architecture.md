@@ -413,7 +413,11 @@ When a static Component rule needs one Theme value, use
 `etaf-theme-token`; ETAF resolves the deferred token at the style boundary so
 the rule remains static for retained Hosts.
 
-Explicit Host props override Component styles, and Component styles override Theme defaults.
+Theme defaults lower to immutable Ebox scopes at UA origin, rooted on their Host.
+ECSS owns their precedence, including importance and inheritance. Host updates
+resolve author props and defaults separately before candidate publication; deferred
+ECSS values bypass concrete TP paint slots. Component rules still use the existing
+simplified matching and inline projection; their shared cascade migration is pending.
 
 Style ownership follows the Component that authored each View node. A nested Component is a style boundary: parent rules do not penetrate its internals. Caller-provided slot content is rendered with the caller scope, while a child's own fallback content remains in the child scope.
 

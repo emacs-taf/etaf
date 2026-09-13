@@ -32,7 +32,7 @@
 (declare-function etaf--runtime-register-semantic-host
                   "etaf-runtime"
                   (runtime name props backend-props path
-                           &optional theme-bindings theme-deps
+                           &optional theme-deps
                            property-bindings property-deps
                            property-context-deps base-props site-token))
 (declare-function etaf--runtime-resolve-host-properties
@@ -267,39 +267,41 @@ not create another visual node category."
         (puthash name result by-name)
         result))))
 
-(defun etaf--apply-theme-defaults (node)
-  "Apply known inherited Theme defaults to NODE without overriding props.
-Unknown Theme keys remain readable through `etaf-theme-value' but are design
-tokens, not Ebox Host properties, and therefore are not materialized here."
+(defvar etaf--theme-scope-cache (make-hash-table :test #'equal)
+  "Bounded cache of immutable UA default scopes.")
+
+(defun etaf--resolve-host-theme (name props identity)
+  "Return resolved PROPS, dependencies and a UA scope for NAME at IDENTITY."
   (let* ((source (etaf--theme-source))
-         (defaults (etaf--theme-source-value source nil nil)))
-    (if (null defaults)
-        node
-      (let* ((name (etaf--view-node-name node))
-             (props (copy-sequence
-                     (etaf--resolve-property-plist
-                      (etaf--view-node-props node))))
-             (template (etaf--theme-host-defaults defaults name))
-             (present (make-hash-table :test #'eq)))
-        (cl-loop for (key value) on props by #'cddr
-                 when value do
-                 (puthash (etaf--property-domain-key key) t present))
-        (while template
-          (let ((key (pop template))
-                (value (pop template)))
-            (unless (gethash (etaf--property-domain-key key) present)
-              (setq props (etaf--merge-property props key value))
-              (when value
-                (puthash (etaf--property-domain-key key) t present)))))
-        (etaf--view-node-create
-         :name name
-         :token (etaf--view-node-token node)
-         :props props
-         :children (etaf--view-node-children node))))))
+         (defaults (etaf--theme-source-value source nil nil))
+         (inline (etaf--resolve-theme-property-plist props))
+         (theme (etaf--resolve-theme-property-plist
+                 (and defaults (etaf--theme-host-defaults defaults name))))
+         (declarations (cl-loop for (key value) on (car theme) by #'cddr
+                                when value append (list key value)))
+         (scope-key (list identity declarations))
+         (scope
+          (when declarations
+            (or (gethash scope-key etaf--theme-scope-cache)
+                (let ((scope (ebox-style-scope-create
+                              (list (cons "&" declarations)) :origin 'ua)))
+                  (when (>= (hash-table-count etaf--theme-scope-cache) 512)
+                    (clrhash etaf--theme-scope-cache))
+                  (puthash (copy-tree scope-key) scope etaf--theme-scope-cache)
+                  scope)))))
+    (list (car inline)
+          (delete-dups (append (nth 1 inline) (nth 1 theme)
+                              (and (or (etaf-ref-p source) (etaf-computed-p source))
+                                   (list source)))) scope)))
+
+(defun etaf--host-theme-properties (props scope)
+  "Attach default SCOPE to canonical backend PROPS."
+  (if (null scope) props
+    (append props (list :ecss-scopes (list scope) :ecss-scope-roots (list scope)))))
 
 (defun etaf--resolve-theme-property-plist (props)
-  "Return resolved PROPS, Theme bindings, and reactive dependencies."
-  (let ((source (etaf--theme-source)) resolved bindings deps)
+  "Return resolved PROPS and reactive Theme dependencies."
+  (let ((source (etaf--theme-source)) resolved deps)
     (while props
       (let ((property (pop props))
             (value (pop props)))
@@ -314,14 +316,10 @@ tokens, not Ebox Host properties, and therefore are not materialized here."
                       resolved-value)
                     resolved)
               (when (or (etaf-ref-p source) (etaf-computed-p source))
-                (push (etaf--theme-property-binding-create
-                       :property property :token (copy-tree value)
-                       :source source)
-                      bindings)
                 (cl-pushnew source deps :test #'eq)))
           (push property resolved)
           (push value resolved))))
-    (list (nreverse resolved) (nreverse bindings) (nreverse deps))))
+    (list (nreverse resolved) (nreverse deps))))
 
 (defun etaf--theme-ebox-property-p (key)
   "Return non-nil when Theme KEY is a known Ebox property.
@@ -386,7 +384,8 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
       (let ((key (pop props))
             (value (pop props)))
         (cond
-         ((memq key '(:face :surface-properties :selector-attributes :selector-state))
+         ((memq key '(:face :surface-properties :selector-attributes :selector-state
+                        :ecss-scopes :ecss-scope-roots))
           (signal 'etaf-renderer-error
                   (list (format
                          "%S is not a canonical ETAF property" key))))
@@ -423,7 +422,8 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
     ebox-props))
 
 (defconst etaf--ebox-source-fields
-  '(:source-identity :key :class :id :selector-attributes :selector-state)
+  '(:source-identity :key :class :id :selector-attributes :selector-state
+    :ecss-scopes :ecss-scope-roots)
   "ETAF source facts compiled into one opaque Ebox source handle.")
 
 (defvar etaf--ebox-declaration-cache (make-hash-table :test #'equal)
@@ -474,6 +474,8 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
            :class (plist-get props :class)
            :selector-attributes (plist-get props :selector-attributes)
            :selector-state (plist-get props :selector-state)
+           :ecss-scopes (plist-get props :ecss-scopes)
+           :ecss-scope-roots (plist-get props :ecss-scope-roots)
            :declarations declarations
            :provenance '(:adapter etaf-renderer :tag text))))
     (ebox-text-create
@@ -498,6 +500,8 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
            :class (plist-get props :class)
            :selector-attributes (plist-get props :selector-attributes)
            :selector-state (plist-get props :selector-state)
+           :ecss-scopes (plist-get props :ecss-scopes)
+           :ecss-scope-roots (plist-get props :ecss-scope-roots)
            :declarations declarations
            :provenance (list :adapter 'etaf-renderer :tag tag))))
     (ebox-box-create
@@ -719,16 +723,16 @@ multi-root forest; a single material root is returned unchanged."
          (node (if (fboundp 'etaf--runtime-style-node)
                    (etaf--runtime-style-node node path)
                  node))
-          (node (etaf--apply-theme-defaults node))
          (name (etaf--view-node-name node))
          (theme-result
-          (etaf--resolve-theme-property-plist
-           (etaf--resolve-property-plist (etaf--view-node-props node))))
+          (etaf--resolve-host-theme
+           name (etaf--resolve-property-plist (etaf--view-node-props node))
+           (etaf--generated-host-ref base-props path (etaf--view-node-token node))))
          (raw-props (nth 0 theme-result))
-         (theme-bindings (nth 1 theme-result))
-         (theme-deps (nth 2 theme-result))
-         (props (etaf--ebox-properties
-                 raw-props path (etaf--view-node-token node)))
+         (theme-deps (nth 1 theme-result))
+         (props (etaf--host-theme-properties
+                 (etaf--ebox-properties raw-props path (etaf--view-node-token node))
+                 (nth 2 theme-result)))
          (children (etaf--view-node-children node)))
     (pcase name
       ('text
@@ -736,7 +740,7 @@ multi-root forest; a single material root is returned unchanged."
               (and etaf--render-runtime
                     (etaf--runtime-register-semantic-host
                      etaf--render-runtime name raw-props props path
-                     theme-bindings theme-deps property-bindings
+                     theme-deps property-bindings
                      property-deps property-context-deps base-props
                      (etaf--view-node-token node))))
               (child-path (append path (list :text)))
@@ -770,7 +774,7 @@ multi-root forest; a single material root is returned unchanged."
               (and etaf--render-runtime
                    (etaf--runtime-register-semantic-host
                     etaf--render-runtime name raw-props props path
-                    theme-bindings theme-deps property-bindings
+                    theme-deps property-bindings
                     property-deps property-context-deps base-props
                     (etaf--view-node-token node)))))
          (dolist (child children)

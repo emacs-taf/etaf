@@ -393,7 +393,10 @@ Palette 解析属于 Theme，而不是 UI 目录。core 提供
 静态 Component 规则如果需要读取一个 Theme 值，应使用 `etaf-theme-token`；
 ETAF 会在样式边界解析这个延迟 token，使 retained Host 仍然走静态样式路径。
 
-显式 Host props 覆盖 Component styles，Component styles 覆盖 Theme defaults。
+Theme 默认值降为根位于当前 Host 的不可变 Ebox UA 作用域；ECSS 负责其优先级、
+importance 和继承。Host 更新分别解析 author 属性与默认值，再进入候选发布。
+延迟 ECSS 值不进入只接受具体绘制值的 TP paint slot。Component 规则目前仍采用
+简化匹配与行内投影，接入共享层叠的迁移尚未完成。
 
 样式所有权跟随创建每个 View node 的 Component。嵌套 Component 是样式边界：父规则不会穿透其内部。调用者提供的 slot 内容使用 caller scope，子组件自有的 fallback 内容保留在 child scope。
 

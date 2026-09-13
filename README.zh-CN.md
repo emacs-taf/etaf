@@ -153,6 +153,7 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 ## 加载与验证
 
 先安装 ECSS 0.1.0 与 TP 2.0.0，再安装 Ebox 3.0.0，最后安装 ETAF 0.2.1。
+ETAF 直接声明 ECSS 依赖，以便主题解析保留延迟层叠值。
 ETAF 会直接声明 TP 依赖，因为 Host final-accept authority 使用 TP transaction
 contract。渲染要求 Ebox framework SPI v2；provider 缺失、格式错误或不兼容时，
 ETAF 会在 bootstrap 阶段 fail closed。

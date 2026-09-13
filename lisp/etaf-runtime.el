@@ -12,6 +12,7 @@
 
 (require 'cl-lib)
 (require 'ebox)
+(require 'ecss)
 (require 'etaf-view)
 (require 'etaf-component)
 (require 'etaf-scheduler)
@@ -94,7 +95,7 @@
 
 (cl-defstruct (etaf--semantic-host (:constructor etaf--semantic-host-create))
   semantic-id identity parent-id component-id child-ids host-ref key name effect-id
-  property-bindings theme-bindings deps context-deps
+  property-bindings deps context-deps
   ;; Host inputs after Behavior composition and expression resolution, before
   ;; scoped style and Theme resolution.
   ;; Reactive expressions are retained separately in property-bindings.
@@ -449,6 +450,7 @@ checking them against a fresh generation projection."
   "Return RUNTIME's stable paint slot for PROPERTY TOKEN from SOURCE.
 RESOLVED is the current projected paint value."
   (if (not (and runtime
+                (not (ecss-declaration-value-tagged-p resolved))
                 (etaf--runtime-theme-paint-property-p property)
                 (or (etaf-ref-p source) (etaf-computed-p source))))
       resolved
@@ -2086,7 +2088,7 @@ receive an independent Host effect."
 
 (defun etaf--runtime-register-semantic-host
     (runtime name props backend-props path
-             &optional theme-bindings theme-deps
+             &optional theme-deps
              property-bindings property-deps property-context-deps base-props
              site-token)
   "Register visual Host NAME at PATH in RUNTIME and return its semantic id."
@@ -2109,7 +2111,7 @@ receive an independent Host effect."
           (etaf--runtime-register-host
            runtime props path site-token old))
          (effect-id
-          (and (or theme-bindings property-bindings)
+          (and (or theme-deps property-bindings)
                (or (and (etaf--semantic-host-p old)
                         (etaf--semantic-host-effect-id old))
                    (cl-incf (etaf-runtime-next-effect-id runtime)))))
@@ -2120,7 +2122,6 @@ receive an independent Host effect."
                   :host-ref (etaf--generated-host-ref props path site-token)
                   :key key :name name :effect-id effect-id
                   :property-bindings property-bindings
-                  :theme-bindings theme-bindings
                   :deps (delete-dups
                          (append property-deps theme-deps))
                   :context-deps property-context-deps
@@ -5116,17 +5117,8 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
          (host-ref (etaf--semantic-host-host-ref base))
          (property-bindings
           (copy-sequence (etaf--semantic-host-property-bindings base)))
-         (host-props
-          (copy-tree
-           (if property-bindings
-               (etaf--semantic-host-base-props base)
-             ;; The public contribution index contains only semantic/event
-             ;; Hosts.  Anonymous layout Hosts retain their complete styled
-             ;; input here so a Theme paint delta cannot erase geometry.
-             (etaf--semantic-host-resolved-props base))))
-         (theme-bindings
-          (copy-sequence (etaf--semantic-host-theme-bindings base)))
-         deps context-deps next-base-props)
+         (host-props (copy-tree (etaf--semantic-host-base-props base)))
+         theme-scope deps context-deps next-base-props)
     ;; Property expressions and style/Theme transforms are one Host render
     ;; evaluation.  Share its owner, write guard, paint slots and dependency
     ;; collectors; no user transform may escape into publication scope.
@@ -5148,48 +5140,30 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
                             (etaf--host-property-binding-property binding)
                             (etaf--resolve-property-value
                              (etaf--host-property-binding-expression binding)))))
-         (setq next-base-props
-               (if property-bindings
-                   (copy-tree host-props)
-                 (etaf--semantic-host-base-props base)))
-         (if property-bindings
-             (let* ((node
-                     (etaf--view-node-create
-                      :name (etaf--semantic-host-name base)
-                      :token (etaf--semantic-host-site-token base)
-                      :props host-props :children nil))
-                    (etaf--render-style-stack
-                     (copy-tree (etaf--semantic-host-style-identity base)))
-                    (styled (etaf--runtime-style-node
-                             node (etaf--semantic-host-path base)))
-                    (themed (etaf--apply-theme-defaults styled))
-                    (theme-result
-                     (etaf--resolve-theme-property-plist
-                      (etaf--view-node-props themed))))
-               (setq host-props (nth 0 theme-result)
-                     theme-bindings (nth 1 theme-result))
-               (dolist (source (nth 2 theme-result))
-                 (cl-pushnew source deps :test #'eq)))
-           (dolist (binding theme-bindings)
-             (let* ((property (etaf--theme-property-binding-property binding))
-                    (source (etaf--theme-property-binding-source binding))
-                    (token (etaf--theme-property-binding-token binding))
-                    (resolved
-                     (etaf--theme-token-resolve-from-source token source))
-                    (value
-                     (etaf--runtime-theme-paint-value
-                      runtime property token source resolved)))
-               (setq host-props (plist-put host-props property value))
-               (when (or (etaf-ref-p source) (etaf-computed-p source))
-                 (cl-pushnew source deps :test #'eq))))))))
+         (setq next-base-props (copy-tree host-props))
+         (let* ((node (etaf--view-node-create
+                       :name (etaf--semantic-host-name base)
+                       :token (etaf--semantic-host-site-token base)
+                       :props host-props :children nil))
+                (etaf--render-style-stack
+                 (copy-tree (etaf--semantic-host-style-identity base)))
+                (styled (etaf--runtime-style-node node (etaf--semantic-host-path base)))
+                (theme-result (etaf--resolve-host-theme
+                               (etaf--semantic-host-name base)
+                               (etaf--view-node-props styled) host-ref)))
+           (setq host-props (nth 0 theme-result)
+                 theme-scope (nth 2 theme-result))
+           (dolist (source (nth 1 theme-result))
+             (cl-pushnew source deps :test #'eq))))))
     (let ((backend-props
            (etaf--merge-property
-            (etaf--ebox-properties host-props
-                                   (etaf--semantic-host-path base)
-                                   (etaf--semantic-host-site-token base))
+            (etaf--host-theme-properties
+             (etaf--ebox-properties host-props
+                                    (etaf--semantic-host-path base)
+                                    (etaf--semantic-host-site-token base))
+             theme-scope)
             :source-identity host-ref)))
     (setf (etaf--semantic-host-property-bindings candidate) property-bindings
-          (etaf--semantic-host-theme-bindings candidate) theme-bindings
           (etaf--semantic-host-base-props candidate) next-base-props
           (etaf--semantic-host-resolved-props candidate) host-props
           (etaf--semantic-host-props-signature candidate) backend-props

@@ -42,11 +42,6 @@ Caching the defensive copy by that shared value avoids validating and copying
 the complete palette once per consumer while keeping Context dependency reads
 unchanged.")
 
-(cl-defstruct (etaf--theme-property-binding
-               (:constructor etaf--theme-property-binding-create))
-  "One reactive Theme token bound to a concrete Host property."
-  property token source)
-
 (defvar etaf--context-inject-recorder nil
   "Candidate-local function recording Context provider reads.")
 

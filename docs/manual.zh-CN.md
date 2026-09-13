@@ -440,15 +440,14 @@ Table/Grid 的 cell callback 同样使用消费它的 Table/Grid 所在位置的
 Theme token 声明在定义时校验属性事实，在上下文解析后校验实际值。未知属性
 在安装前报错；解析出非法值时，Ebox schema 阻止发布。
 
-优先级固定为：
-
-```text
-显式 Host 属性 > Component :styles > 继承的 Theme 默认值
-```
+Theme 默认值作为 ECSS UA 来源的作用域声明进入 Ebox。普通 author 属性覆盖
+普通默认值；importance 和继承遵循 ECSS，包括 UA-important 高于 author-important。
+响应式主题变化会重新发布默认声明，不会将其转换为行内属性。未知 Theme 键仍是
+Context token。
 
 在同一个 Component 样式作用域内，第一条匹配声明会填充尚未指定的 Host
-属性；后续规则不会覆盖已经解析出的默认值。非 nil 的 Host 属性始终受
-保护，nil Host 属性按省略处理，可以接收 Component 或 Theme 默认值。若
+属性；后续规则不会覆盖已经解析出的默认值。Component 规则目前仍使用这套简化
+匹配行为。nil Host 属性按省略处理，可以接收 Component 或 Theme 默认值。若
 variant 需要明确覆盖，应使用显式 Host 属性或不同的属性键。
 
 样式作用域归属于创建 View node 的 Component。父组件规则不会进入嵌套 Component 的内部；调用者通过 slot 提供的内容保留 caller scope，Component 自己定义的 slot fallback 保留 child scope。

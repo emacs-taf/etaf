@@ -4,7 +4,7 @@
 
 ;; Author: ETAF contributors
 ;; Version: 0.2.1
-;; Package-Requires: ((emacs "29.1") (ebox "3.0.0") (tp "2.0.0"))
+;; Package-Requires: ((emacs "29.1") (ebox "3.0.0") (ecss "0.1.0") (tp "2.0.0"))
 ;; Keywords: ui, tools, convenience
 ;; URL: https://github.com/ginqi7/etaf
 
@@ -909,9 +909,10 @@
 ;; Provide THEME property defaults to the current Component subtree.
 ;;
 ;; THEME is a property plist such as `(:color "#F4F6FB" :bgcolor "#202634")'.
-;; Explicit Host properties and matching Component `:styles' declarations take
-;; precedence over these defaults.  A reactive ref containing such a plist is
-;; also accepted and remains tracked by the current render effect.
+;; Defaults enter Ebox as UA-origin declarations and follow ECSS precedence,
+;; including UA-important precedence over author-important values. Normal Host
+;; and Component declarations override normal defaults. Reactive ref/computed
+;; plists remain tracked; invalid resolved values reject candidate publication.
 ;;
 ;; Function: etaf-theme-resolve-palette (palette mode)
 ;;;###autoload (autoload 'etaf-theme-resolve-palette "etaf" nil nil)
