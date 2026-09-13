@@ -994,6 +994,25 @@ Playground 使用 inert `.etaf` 结构与显式注册的 `.el` companion；core 
 
 在仓库根目录运行 `make check EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs`。门禁会编译这些文件、检查 docstring 与公开边界，并驱动真实挂载后的交互路径。
 
+## GUI 场景验收工具
+
+`scripts/emacs-gui-verifier.el` 接受应用仓库提供的 Scenario 和 Action，
+在已有 Emacs server 中依次执行动作、等待可观察结果并记录断言。
+`etaf-gui-verifier-run` 直接写入 `manifest.jsonl`、窗口截图和原子更新的
+`result.json`，不再依赖外部 skill 才能保存证据。加载检出目录中的引擎与
+场景适配器后，通过定时器调用场景入口，让客户端请求及时返回；轮询新证据
+目录中的 `result.json`，直到 `running` 变为 `passed` 或 `failed`。
+
+断言为假、动作报错、等待超时或截图不可用都会失败；已有结果不会被覆盖。
+`passed` 仅表示场景功能断言通过，`visual_review` 仍为 `required`，
+`foreground_latency` 仍为 `not-certified`。检查失败检查点和实际截图，
+不要用回调耗时或截图替代前台性能验收。
+
+截图要求一个可见图形 frame、一个选中的目标 window，且没有活动 minibuffer。
+工具保持应用焦点，截图期间目标变化会失败。`make check` 包含可移植的
+`make tool-check` 场景与证据契约检查；macOS 上另运行 `make gui-tool-check`，
+使用系统 Swift SDK 检查截图和录制命令。完整测量边界见[英文 GUI 指南](manual.md#measuring-an-existing-gui-action)。
+
 ## 提供方契约
 
 ETAF 通过公共 [Ebox framework SPI](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.zh-CN.md#框架集成契约) 选择渲染能力，该契约由 Ebox 维护。应用 Component 使用本手册中的 ETAF View 和生命周期 API。

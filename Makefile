@@ -32,7 +32,14 @@ scheduler-benchmark:
 checkdoc:
 	$(EMACS) -Q --batch --eval '(progn (require (quote checkdoc)) (dolist (directory (list "lisp" "examples" "scripts")) (dolist (file (directory-files directory t)) (when (string-suffix-p ".el" file) (checkdoc-file file)))))'
 
-check: structure-check compile acceptance api-check
+check: structure-check compile acceptance api-check tool-check
+
+.PHONY: tool-check gui-tool-check
+tool-check:
+	EMACS="$(EMACS)" python3 -m unittest discover -s tests/tools -p 'test_gui_scenarios.py'
+
+gui-tool-check:
+	EMACS="$(EMACS)" python3 -m unittest discover -s tests/tools -p 'test_*.py'
 
 clean:
 	rm -f *.elc lisp/*.elc examples/*.elc scripts/*.elc benchmarks/*.elc tests/*.elc

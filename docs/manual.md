@@ -1088,7 +1088,13 @@ scenarios live in their respective example repositories:
 
 - `emacs-gui-verifier.el` defines `Scenario`, ordered `Action`, run-local
   `Context`, checkpoint sequencing, assertions, completion, and fail-closed
-  evidence finalization. Its `etaf-gui-verifier-measure-action` entry records
+  evidence writing. `etaf-gui-verifier-run` writes `manifest.jsonl`, window
+  screenshots and an atomic `result.json` directly, without a skill dependency.
+  False assertions, callback errors, unsettled actions and unavailable captures
+  fail the run; an existing manifest or result is never overwritten. A `passed`
+  result means the scenario's functional assertions passed: its `visual_review`
+  remains `required` and `foreground_latency` remains `not-certified`.
+  Its `etaf-gui-verifier-measure-action` entry records
   callback wall/CPU/GC time and GUI conditions without taking application focus.
 - `benchmark-ebox-resize.el` drives continuous pixel-width sweeps of any
   existing mounted Ebox buffer, including ETAF apps, without taking over its
@@ -1109,7 +1115,18 @@ scenarios live in their respective example repositories:
   the video helper using the system Swift compiler; no package install is needed.
 
 Concrete repositories provide adapter files that construct a Scenario and an
-entry function. They can run through the existing server. The following command
+entry function. They can run through the existing server. Load the engine and
+adapter from their checkout, then schedule the adapter's entry on a timer;
+this lets the client request return while the scenario yields between actions.
+Poll the fresh directory's `result.json` for `running`, `passed` or `failed`,
+then inspect failed checkpoints and the saved images. Screenshot actions require
+one visible graphical frame and one selected target window, with no active
+minibuffer. They preserve application focus and reject a target change during
+capture. `make tool-check` runs the portable scenario/evidence contracts and is
+included in `make check`. On macOS, `make gui-tool-check` additionally checks
+the window capture and recorder commands using the system Swift SDK.
+
+The following command
 instead starts the legacy isolated environment; use it only when that separate
 environment is explicitly intended:
 

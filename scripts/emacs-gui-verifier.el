@@ -11,14 +11,12 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'json)
 
-(declare-function emacs-dynamic-ui-verification-start
-                  "capture-checkpoint" (directory run-id claim required-phases))
-(declare-function emacs-dynamic-ui-verification-checkpoint
-                  "capture-checkpoint"
-                  (action-id phase adapter assertions screenshot))
-(declare-function emacs-dynamic-ui-verification-finish
-                  "capture-checkpoint" (completed adapter))
+(defconst etaf-gui-verifier--capture-program
+  (expand-file-name "capture-emacs-window.sh"
+                    (file-name-directory (or load-file-name buffer-file-name)))
+  "Window-only capture tool distributed with this engine.")
 
 (cl-defstruct (etaf-gui-verifier-action
                (:constructor etaf-gui-verifier-action-create))
@@ -35,7 +33,72 @@
                (:constructor etaf-gui-verifier--context-create))
   "Mutable execution state owned only by one verifier run."
   scenario target-buffer data (action-count 0) (last-duration-ms 0.0)
-  measurements)
+  measurements directory started-at (sequence 0))
+
+(defun etaf-gui-verifier--write-json (file value &optional append)
+  "Write JSON VALUE to FILE as UTF-8, optionally APPENDing a record."
+  (let ((coding-system-for-write 'utf-8-unix))
+    (with-temp-buffer
+      (insert (decode-coding-string (json-serialize value :null-object nil) 'utf-8-unix) "\n")
+      (write-region (point-min) (point-max) file append 'silent))))
+
+(defun etaf-gui-verifier--record (context value)
+  "Append evidence VALUE to CONTEXT's manifest."
+  (unless (equal (alist-get 'kind value) "run-start")
+    (cl-incf (etaf-gui-verifier-context-sequence context))
+    (setq value
+          (append value
+                  `((sequence . ,(etaf-gui-verifier-context-sequence context))
+                    (elapsed_ms . ,(* 1000.0
+                                     (- (float-time)
+                                        (etaf-gui-verifier-context-started-at context))))))))
+  (etaf-gui-verifier--write-json
+   (expand-file-name "manifest.jsonl" (etaf-gui-verifier-context-directory context))
+   value t))
+
+(defun etaf-gui-verifier--result (context status &optional failure)
+  "Save CONTEXT's functional STATUS and optional FAILURE atomically.
+Visual review and latency certification remain separate from assertions."
+  (let* ((directory (etaf-gui-verifier-context-directory context))
+         (pending (expand-file-name "result.json.tmp" directory)))
+    (etaf-gui-verifier--write-json
+     pending
+     `((schema . 1) (status . ,status) (error . ,failure)
+       (scenario . ,(etaf-gui-verifier-scenario-name
+                     (etaf-gui-verifier-context-scenario context)))
+       (pid . ,(emacs-pid)) (emacs . ,(emacs-version))
+       (action_count . ,(etaf-gui-verifier-context-action-count context))
+       (visual_review . "required") (foreground_latency . "not-certified")
+       (measurements . ,(vconcat
+                         (reverse (etaf-gui-verifier-context-measurements context))))))
+    (rename-file pending (expand-file-name "result.json" directory) t)))
+
+(defun etaf-gui-verifier--capture (context action-id)
+  "Capture CONTEXT's selected window for ACTION-ID without activation."
+  (let* ((before (etaf-gui-verifier--measurement-state context))
+         (facts (cdr before))
+         (path (expand-file-name
+                (format "frames/%06d-%s.png"
+                        (1+ (etaf-gui-verifier-context-sequence context))
+                        (replace-regexp-in-string "[^[:alnum:]_-]" "-" action-id))
+                (etaf-gui-verifier-context-directory context)))
+         (process-environment (copy-sequence process-environment)))
+    (unless (and (alist-get 'graphic facts)
+                 (alist-get 'target_selected facts)
+                 (equal (alist-get 'frame_visible facts) "visible")
+                 (= (length (cl-remove-if-not #'display-graphic-p (frame-list))) 1)
+                 (= (length (window-list nil 'no-minibuf)) 1)
+                 (not (active-minibuffer-window)))
+      (error "Capture requires one visible graphical frame and its selected target"))
+    (make-directory (file-name-directory path) t)
+    (setenv "ETAF_GUI_CAPTURE_PID" (number-to-string (emacs-pid)))
+    (unless (and (zerop (call-process etaf-gui-verifier--capture-program
+                                    nil nil nil "-x" path))
+                 (file-regular-p path) (> (file-attribute-size (file-attributes path)) 0))
+      (error "Window capture failed: %s" path))
+    (unless (equal before (etaf-gui-verifier--measurement-state context))
+      (error "GUI target changed during capture: %s" path))
+    path))
 
 (defun etaf-gui-verifier-context-put (context key value)
   "Store adapter VALUE for KEY in CONTEXT and return VALUE."
@@ -227,11 +290,38 @@ input-to-presentation latency."
 (defun etaf-gui-verifier--checkpoint
     (context action-id phase screenshot &optional extra)
   "Capture CONTEXT ACTION-ID PHASE with SCREENSHOT and EXTRA assertions."
-  (emacs-dynamic-ui-verification-checkpoint
-   action-id phase
-   (etaf-gui-verifier--adapter-data context)
-   (append (etaf-gui-verifier--scenario-assertions context) extra)
-   screenshot))
+  (let* ((assertions (append (etaf-gui-verifier--scenario-assertions context) extra))
+         (failed (cl-remove-if (lambda (entry) (eq (alist-get 'passed entry) t))
+                               assertions))
+         (window (selected-window))
+         (buffer (window-buffer window))
+         (start (window-start window))
+         (end (or (window-end window t) start)))
+    (etaf-gui-verifier--record
+     context
+     `((kind . "checkpoint") (action_id . ,action-id) (phase . ,phase)
+       (screenshot . ,(and screenshot
+                           (etaf-gui-verifier--capture context action-id)))
+       (window . ((count . ,(length (window-list nil 'no-minibuf)))
+                  (edges_px . ,(vconcat (window-pixel-edges window)))
+                  (window-start . ,start) (window-end . ,end)))
+       (buffer . ((name . ,(buffer-name buffer))
+                  (visible-text-sha256
+                   . ,(with-current-buffer buffer
+                        (secure-hash 'sha256
+                                     (buffer-substring-no-properties start end))))))
+       (assertions . ,(vconcat
+                       (mapcar (lambda (entry)
+                                 (cons (cons 'passed (if (eq (alist-get 'passed entry) t)
+                                                        t :false))
+                                       (assq-delete-all 'passed (copy-tree entry))))
+                               assertions)))
+       (adapter . ,(append
+                    (etaf-gui-verifier--adapter-data context)
+                    `((environment . ,(cdr (etaf-gui-verifier--measurement-state context))))))))
+    (when failed
+      (error "GUI assertion failed at %s/%s: %s" action-id phase
+             (mapconcat (lambda (entry) (alist-get 'name entry)) failed ", ")))))
 
 (defun etaf-gui-verifier--settle-action (context action)
   "Wait until ACTION's visible result is settled in CONTEXT."
@@ -287,20 +377,37 @@ input-to-presentation latency."
 
 ;;;###autoload
 (defun etaf-gui-verifier-run (scenario run-directory)
-  "Execute generic SCENARIO and write temporal evidence to RUN-DIRECTORY."
+  "Execute SCENARIO and save assertions and window evidence to RUN-DIRECTORY.
+Use the current Emacs server; do not create frames or change application focus.
+RUN-DIRECTORY must not contain a previous manifest or result.  Write a JSONL
+manifest and an atomic result.json with functional status, all callback timings
+and outstanding visual/latency review requirements.  A failed assertion or
+callback records failure and signals.  Screenshots use the distributed macOS
+window-only tool; no external skill installation is required.
+
+For long scenarios call this from a timer so the emacsclient request returns
+promptly.  The existing scenario settle loop yields to Emacs between actions."
   (unless (etaf-gui-verifier-scenario-p scenario)
     (signal 'wrong-type-argument
             (list 'etaf-gui-verifier-scenario-p scenario)))
-  (let* ((context
-          (etaf-gui-verifier--context-create :scenario scenario))
+  (let* ((directory (file-name-as-directory (expand-file-name run-directory)))
+         (context
+          (etaf-gui-verifier--context-create
+           :scenario scenario :directory directory :started-at (float-time)))
          (initialize (etaf-gui-verifier-scenario-initialize scenario))
          (completion (etaf-gui-verifier-scenario-completion scenario))
          finished-p)
-    (emacs-dynamic-ui-verification-start
-     run-directory
-     (etaf-gui-verifier-scenario-name scenario)
-     (etaf-gui-verifier-scenario-claim scenario)
-     '("before-action" "after-action" "after-redisplay"))
+    (dolist (name '("manifest.jsonl" "result.json"))
+      (when (file-exists-p (expand-file-name name directory))
+        (error "GUI evidence already exists: %s" directory)))
+    (make-directory directory t)
+    (etaf-gui-verifier--result context "running")
+    (etaf-gui-verifier--record
+     context
+     `((kind . "run-start") (schema_version . 1)
+       (run_id . ,(etaf-gui-verifier-scenario-name scenario))
+       (claim . ,(etaf-gui-verifier-scenario-claim scenario))
+       (required_phases . ["before-action" "after-action" "after-redisplay"])))
     (condition-case error-data
         (progn
           (when initialize (funcall initialize context))
@@ -309,8 +416,10 @@ input-to-presentation latency."
           (let ((completed (if completion
                                (funcall completion context)
                              t)))
-            (emacs-dynamic-ui-verification-finish
-             completed (etaf-gui-verifier--adapter-data context))
+            (etaf-gui-verifier--record
+             context `((kind . "run-end") (completed . ,(if completed t :false))
+                       (adapter . ,(etaf-gui-verifier--adapter-data context))))
+            (etaf-gui-verifier--result context (if completed "passed" "failed"))
             (setq finished-p t)
             (unless completed
               (error "GUI scenario completion predicate failed")))
@@ -318,8 +427,12 @@ input-to-presentation latency."
       ((error quit)
        (unless finished-p
          (condition-case finish-error
-             (emacs-dynamic-ui-verification-finish
-              nil (etaf-gui-verifier--adapter-data context))
+             (progn
+               (etaf-gui-verifier--record
+                context `((kind . "run-end") (completed . :false)
+                          (adapter . ((error . ,(error-message-string error-data))))))
+               (etaf-gui-verifier--result
+                context "failed" (error-message-string error-data)))
            (error
             (message "GUI verifier could not record failed completion: %s"
                      (error-message-string finish-error)))))

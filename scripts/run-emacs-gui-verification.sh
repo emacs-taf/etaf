@@ -11,7 +11,6 @@ GUI_EMACS_BIN="$GUI_EMACS_APP/Contents/MacOS/Emacs"
 GUI_EMACSCLIENT="$GUI_EMACS_APP/Contents/MacOS/bin/emacsclient"
 GUI_CODEX_ROOT=${CODEX_HOME:-${HOME}/.codex}
 GUI_DYNAMIC_SKILL=${EMACS_DYNAMIC_UI_SKILL_DIR:-$GUI_CODEX_ROOT/skills/emacs-dynamic-ui-verification}
-GUI_CHECKPOINT_EL="$GUI_DYNAMIC_SKILL/scripts/capture-checkpoint.el"
 GUI_EVIDENCE_PY="$GUI_DYNAMIC_SKILL/scripts/evidence.py"
 
 usage() {
@@ -35,7 +34,6 @@ doctor() {
     require_file "$GUI_ENGINE"
     require_file "$GUI_RECORDER_SOURCE"
     require_file "$GUI_CAPTURE"
-    require_file "$GUI_CHECKPOINT_EL"
     require_file "$GUI_EVIDENCE_PY"
     command -v osascript >/dev/null 2>&1
     xcrun --find swiftc >/dev/null 2>&1
@@ -270,7 +268,6 @@ run_adapter() {
         "(progn
            (dolist (path (split-string (or (getenv \"ETAF_GUI_LOAD_PATHS\") \"\") path-separator t))
              (add-to-list 'load-path path))
-           (load \"$GUI_CHECKPOINT_EL\" nil nil t)
            (load \"$GUI_ENGINE\" nil nil t)
            (load \"$GUI_ADAPTER\" nil nil t)
            (when (fboundp 'tool-bar-mode) (tool-bar-mode -1))
