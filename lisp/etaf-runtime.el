@@ -37,8 +37,6 @@
                   "etaf-renderer" (nodes source-identity))
 (declare-function etaf--ebox-import-input "etaf-renderer" (input))
 (declare-function etaf--ebox-input-for-nodes "etaf-renderer" (nodes))
-(declare-function etaf-events-enable-input "etaf-events" (buffer))
-(declare-function etaf-events-disable-input "etaf-events" (buffer))
 (declare-function ebox-range-ref-present-p "ebox" (buffer-or-name range-ref))
 (declare-function ebox-call-with-render-burst
                   "ebox-buffer-backend" (function &rest arguments))
@@ -450,10 +448,7 @@ checking them against a fresh generation projection."
         (let ((map (ebox-keymap-create
                     :activate
                     (lambda ()
-                      (etaf--dispatch-activation
-                       runtime (or (and (not (mouse-event-p last-input-event))
-                                        (etaf--focused-activation-ref runtime))
-                                   host-ref))))))
+                      (etaf--dispatch-activation runtime host-ref)))))
           (when (>= (hash-table-count maps) 512) (clrhash maps))
           (puthash host-ref map maps)
           map))))
@@ -6681,8 +6676,6 @@ Use `etaf-runtime-snapshot' to retain the root's matching source facts."
             (when (etaf-runtime-pending-p runtime)
               (setf (etaf-runtime-pending-p runtime) nil)
               (etaf--runtime-request-flush runtime))
-            (when (fboundp 'etaf-events-enable-input)
-              (etaf-events-enable-input buffer))
             buffer)
         ((error quit)
          ;; Postaccept lifecycle errors leave an attached Runtime queryable.
@@ -6783,8 +6776,6 @@ unmount.  Host authority is invalidated before any unbounded cleanup."
             (when (buffer-live-p (etaf-runtime-buffer runtime))
               (with-current-buffer (etaf-runtime-buffer runtime)
                 (remove-hook 'kill-buffer-hook #'etaf--runtime-kill-buffer t)))
-            (when (fboundp 'etaf-events-disable-input)
-              (etaf-events-disable-input (etaf-runtime-buffer runtime)))
             (unless (eq cause 'buffer-kill)
               (when (etaf-render-port-mounted-p
                      (etaf-runtime-buffer runtime))

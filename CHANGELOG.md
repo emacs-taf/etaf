@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Removed
+
+- `etaf-input-mode` and its independent keyboard map. Mounted applications use
+  `ebox-buffer-mode` automatically; remove calls and hook setup for the old mode.
+  Update Ebox together with ETAF and use its shared buffer map for custom keys.
+
 ### Added
 
 - ECSS-tagged Box layout and outer values now use Ebox's canonical projection,
@@ -41,13 +47,18 @@
 
 ### Changed
 
+- Mounted keyboard navigation and activation now use Ebox's buffer mode and
+  target selection. `etaf-activate` and native commands share focus precedence;
+  mouse clicks continue to use their clicked target. Configure
+  `ebox-buffer-mode-map` after requiring Ebox to customize input.
+
 - Focus APIs now operate Ebox's single mounted focus and published tab order.
   Direct Ebox focus changes are visible through ETAF. Reorder follows stable
   source identity; hidden, disabled or removed targets clear focus. Manual point
   movement preserves a clamped numeric position and rejected publication restores
   focus. Negative or absent tab index skips navigation but no longer clears an
   explicitly focused surviving Host; call `(ebox-focus nil buffer)` to clear it.
-  Update Ebox together with ETAF. Keyboard bindings remain in `etaf-input-mode`.
+  Update Ebox together with ETAF; it also supplies shared keyboard bindings.
 
 - Mounted press handlers now use Ebox native keymaps and activation lookup;
   Ebox navigation can discover ETAF controls. Disabled and callbackless children

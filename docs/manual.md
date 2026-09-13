@@ -707,10 +707,13 @@ the accessible buffer. Publication rejection restores focus and point. Each
 buffer has its own focus, shared by its windows; operations do not select one.
 Unmount releases the shared focus. See the [Ebox interaction contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction).
 
-Mounted buffers still enable `etaf-input-mode` to bind TAB and Shift-TAB/backtab
-to cyclic shared navigation. `etaf-activate` retains explicit keyboard focus
-precedence at overlapping positions and otherwise uses Ebox position activation.
-This keyboard routing remains in ETAF; unmount disables the mode.
+Mounted buffers use Ebox's `ebox-buffer-mode` for TAB and Shift-TAB/backtab
+cyclic navigation and RET/return activation. Ebox also chooses logical focus
+for generated activation bindings at overlapping positions; mouse events use
+the clicked target. `etaf-activate` delegates to the same Ebox entry. ETAF only
+runs the chosen Host's committed handler within its application event batch.
+Unmount releases Ebox's buffer bindings. Customize `ebox-buffer-mode-map`
+after requiring Ebox to change shared bindings; no ETAF input mode is needed.
 
 ## 9. Context / Provide / Inject
 
@@ -1004,7 +1007,7 @@ rewrite any function.
 | Reactive effects | `etaf-watch`, `etaf-watch-effect`, `etaf-effect-scope`, `etaf-scope-run` | Observe state or synchronize external resources |
 | Lifecycle | `etaf-on-mounted`, `etaf-on-updated`, `etaf-on-unmounted` | Attach Component lifecycle work |
 | Context | `etaf-provide`, `etaf-inject`, `etaf-theme-provide`, `etaf-theme-token`, `etaf-theme-resolve-palette`, `etaf-theme-current-mode` | Share ambient dependencies and resolve semantic Theme palettes |
-| Events and focus | `etaf-dispatch-event`, `etaf-activate`, `etaf-focus`, `etaf-focus-next`, `etaf-focus-previous`, `etaf-input-mode` | Enter interactive Runtime behavior |
+| Events and focus | `etaf-dispatch-event`, `etaf-activate`, `etaf-focus`, `etaf-focus-next`, `etaf-focus-previous` | Enter interactive Runtime behavior |
 | Actions | `etaf-action-define`, `etaf-dispatch` | Name and reuse business mutations |
 | Behaviors | `etaf-behavior-create`, `etaf-define-behavior`, `etaf-current-behavior-context`, `etaf-focusable`, `etaf-toggleable` | Reuse non-visual interaction bundles |
 | Data | `etaf-data-source`, `etaf-data-controller`, `etaf-data-memory-source`, `etaf-data-*` | Query, paginate, mutate, select, resolve the selected item, and stop data |

@@ -738,6 +738,11 @@
       "name": "etaf-focus-follows-identity-across-removal-rejection-and-apps",
       "file": "tests/etaf-focus-tests.el",
       "purpose": "Shared focus follows references through reorder, isolates mounts and rejects candidates."
+    },
+    {
+      "name": "etaf-native-keyboard-uses-shared-buffer-bindings-and-activation",
+      "file": "tests/etaf-native-activation-tests.el",
+      "purpose": "ETAF mounts use Ebox TAB and activation, sharing focus and releasing mode bindings on unmount."
     }
   ]
 }

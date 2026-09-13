@@ -328,8 +328,9 @@ Host press 绑定与规范 source 事实一起降为 Ebox 原生 keymap。每个
 控件边界发布显式 nil map。Ebox 解析可见位置归属；ETAF 不再扫描 Host bounds
 选择激活目标。Tab index 和禁用声明发布为 Ebox 交互事实；焦点身份、导航顺序、可见性、
 point 保持与回滚均由 Ebox 管理。ETAF 的焦点 API 转换 Runtime 上下文并保持公开错误条件，
-Runtime 不再保存焦点字段、扫描排序 Host 候选或包装 flush 来修正 point。ETAF input mode
-及父子位置重合时的键盘激活优先级仍是消费者路由。
+Runtime 不再保存焦点字段、扫描排序 Host 候选或包装 flush 来修正 point。挂载的 Ebox
+buffer mode 管理默认输入绑定和键盘焦点优先级，包括父子位置重合的情况。ETAF 不再
+有独立输入模式或目标覆盖；原生回调只分派所选 Host 已提交的 handler。
 
 交互组合是确定的：显式 Host `:on-*` callback 先运行，然后按声明顺序运行 Behavior
 callback；任一错误会 short-circuit 后续 callback。非事件属性由显式 Host 值优先，

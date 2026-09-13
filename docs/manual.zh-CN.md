@@ -650,9 +650,11 @@ Ebox 保留其数值位置并限制在可访问范围内。发布被拒绝时恢
 有独立焦点，同一 buffer 的窗口共享它；操作不选择窗口。卸载释放共享焦点，详见
 [Ebox 交互契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.zh-CN.md#native-node-interaction)。
 
-挂载 buffer 仍启用 `etaf-input-mode`，把 TAB 与 Shift-TAB/backtab 绑定到共享循环导航。
-`etaf-activate` 仍负责位置重合时的显式键盘焦点优先级，否则使用 Ebox 位置激活。
-这部分键盘路由仍在 ETAF，卸载时禁用该 mode。
+挂载 buffer 使用 Ebox 的 `ebox-buffer-mode` 提供 TAB 与 Shift-TAB/backtab 循环
+导航、RET/return 激活。位置重合时，Ebox 为生成的激活绑定选择逻辑焦点；鼠标事件
+使用点击目标。`etaf-activate` 委托给同一个 Ebox 入口，ETAF 只在应用事件批处理中
+执行所选 Host 已提交的 handler。卸载释放 Ebox buffer 绑定。require Ebox 后可配置
+`ebox-buffer-mode-map` 修改共享按键，不需要 ETAF 输入模式。
 
 ## 9. Context / Provide / Inject
 
@@ -929,7 +931,7 @@ observer，不修改任何函数。
 | 响应式 effect | `etaf-watch`、`etaf-watch-effect`、`etaf-effect-scope`、`etaf-scope-run` | 观察状态或同步外部资源 |
 | 生命周期 | `etaf-on-mounted`、`etaf-on-updated`、`etaf-on-unmounted` | 绑定 Component 生命周期工作 |
 | Context | `etaf-provide`、`etaf-inject`、`etaf-theme-provide`、`etaf-theme-token`、`etaf-theme-resolve-palette`、`etaf-theme-current-mode` | 跨层级共享依赖并解析语义 Theme palette |
-| 事件与 focus | `etaf-dispatch-event`、`etaf-activate`、`etaf-focus`、`etaf-focus-next`、`etaf-focus-previous`、`etaf-input-mode` | 进入交互 Runtime |
+| 事件与 focus | `etaf-dispatch-event`、`etaf-activate`、`etaf-focus`、`etaf-focus-next`、`etaf-focus-previous` | 进入交互 Runtime |
 | Action | `etaf-action-define`、`etaf-dispatch` | 命名和复用业务变更 |
 | Behavior | `etaf-behavior-create`、`etaf-define-behavior`、`etaf-current-behavior-context`、`etaf-focusable`、`etaf-toggleable` | 复用非视觉交互 bundle |
 | Data | `etaf-data-source`、`etaf-data-controller`、`etaf-data-memory-source`、`etaf-data-*` | 查询、分页、变更、选择、解析选中项和停止数据 |

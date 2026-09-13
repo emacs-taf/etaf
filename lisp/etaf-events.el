@@ -115,12 +115,6 @@ otherwise call the local callback with no arguments."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (ebox-host-ref-position (etaf-runtime-buffer runtime) host-ref))
 
-(defun etaf--focused-activation-ref (runtime)
-  "Return RUNTIME's focused target when point still addresses it."
-  (let ((ref (ebox-focused-host-ref (etaf-runtime-buffer runtime))))
-    (and ref (equal (with-current-buffer (etaf-runtime-buffer runtime) (point))
-                    (etaf-host-ref-position runtime ref)) ref)))
-
 (defun etaf--dispatch-activation (runtime host-ref)
   "Dispatch an enabled committed HOST-REF activation in RUNTIME."
   (if (and (not (plist-get (etaf-runtime-host-props-for runtime host-ref) :disabled))
@@ -135,10 +129,8 @@ otherwise call the local callback with no arguments."
 RUNTIME is the mounted Runtime to activate, or nil for the current buffer."
   (interactive)
   (setq runtime (etaf-runtime-require-mounted runtime))
-  (if-let* ((ref (etaf--focused-activation-ref runtime)))
-      (etaf--dispatch-activation runtime ref)
-    (with-current-buffer (etaf-runtime-buffer runtime)
-      (ebox-activate))))
+  (with-current-buffer (etaf-runtime-buffer runtime)
+    (ebox-activate)))
 
 ;;;###autoload
 (defun etaf-focus (&optional runtime host-ref)
@@ -175,39 +167,6 @@ navigation; a negative or absent index permits explicit focus."
   "Focus the previous visible Host in mounted RUNTIME."
   (interactive)
   (ebox-focus-previous 1 t (etaf-runtime-buffer (etaf-runtime-require-mounted runtime))))
-
-(defvar etaf-input-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "TAB") #'etaf-focus-next)
-    (define-key map [tab] #'etaf-focus-next)
-    (define-key map (kbd "<backtab>") #'etaf-focus-previous)
-    (define-key map [backtab] #'etaf-focus-previous)
-    (define-key map (kbd "S-TAB") #'etaf-focus-previous)
-    (define-key map (kbd "RET") #'etaf-activate)
-    (define-key map (kbd "<return>") #'etaf-activate)
-    map)
-  "Keymap for mounted ETAF Runtime input.")
-
-;;;###autoload
-(define-minor-mode etaf-input-mode
-  "Enable keyboard focus and activation commands for a mounted ETAF Runtime."
-  :init-value nil
-  :lighter " ETAF"
-  :keymap etaf-input-mode-map)
-
-;;;###autoload
-(defun etaf-events-enable-input (buffer)
-  "Enable `etaf-input-mode' in mounted BUFFER."
-  (with-current-buffer buffer
-    (etaf-input-mode 1)))
-
-;;;###autoload
-(defun etaf-events-disable-input (buffer)
-  "Disable `etaf-input-mode' in BUFFER after Runtime unmount."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (when (bound-and-true-p etaf-input-mode)
-        (etaf-input-mode -1)))))
 
 (provide 'etaf-events)
 

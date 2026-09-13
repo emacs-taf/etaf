@@ -345,8 +345,10 @@ Tab index and disabled declarations are published as Ebox interaction facts.
 Ebox owns the focus identity, navigation order, visibility, point retention and
 rollback. ETAF's focus APIs translate Runtime context and preserve their public
 error conditions; Runtime stores no focus field and no longer scans or sorts
-Host candidates or wraps flushes to repair point. The ETAF input mode and explicit
-keyboard activation precedence at coincident positions remain consumer routing.
+Host candidates or wraps flushes to repair point. The mounted Ebox buffer mode
+owns default input bindings and keyboard focus precedence, including coincident
+parent/child positions. ETAF has no independent input mode or target override;
+its native callback simply dispatches the selected committed Host handler.
 
 Interaction composition is deterministic.  An explicit Host `:on-*` callback
 runs first, followed by Behavior callbacks in declaration order; an error

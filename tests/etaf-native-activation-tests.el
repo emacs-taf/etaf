@@ -125,5 +125,41 @@
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(ert-deftest etaf-native-keyboard-uses-shared-buffer-bindings-and-activation ()
+  "ETAF mounts use Ebox TAB and activation, sharing focus and releasing mode bindings on unmount."
+  (let ((buffer (generate-new-buffer " *etaf-shared-keyboard*")) events)
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (etaf-view
+            (column
+              (box :ref 'parent :tab-index 0 :on-press (lambda () (push 'parent events))
+                (text :ref 'child :tab-index 1 :on-press (lambda () (push 'child events)) "Child"))
+              (text :ref 'blocked :tab-index 2 :disabled t "Blocked"))))
+          (with-current-buffer buffer
+            (let ((runtime (etaf-runtime-for-buffer buffer))
+                  (forward (key-binding (kbd "TAB"))))
+              (should (eq forward (lookup-key ebox-buffer-mode-map (kbd "TAB"))))
+              (call-interactively forward)
+              (should (eq (etaf-focused-host-ref runtime) 'parent))
+              (let ((last-input-event ?\r)) (call-interactively (key-binding (kbd "RET"))))
+              (ebox-activate)
+              (etaf-activate runtime)
+              (should (equal events '(parent parent parent)))
+              (call-interactively forward)
+              (should (eq (ebox-focused-host-ref) 'child))
+              (let ((last-input-event ?\r)) (call-interactively (key-binding (kbd "RET"))))
+              (should (equal events '(child parent parent parent)))
+              (call-interactively forward)
+              (should (eq (ebox-focused-host-ref) 'parent))
+              (call-interactively (key-binding (kbd "<backtab>")))
+              (should (eq (ebox-focused-host-ref) 'child))
+              (etaf-unmount runtime)
+              (should-not (eq (key-binding (kbd "TAB")) forward))
+              (should-not (ebox-focused-host-ref)))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
 (provide 'etaf-native-activation-tests)
 ;;; etaf-native-activation-tests.el ends here

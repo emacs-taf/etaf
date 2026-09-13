@@ -46,7 +46,7 @@
 ;; RUNTIME is the mounted Runtime to activate, or nil for the current buffer.
 ;; Position lookup uses committed Ebox node keymaps. Enabled press handlers are
 ;; native activation/navigation targets; disabled or callbackless controls block
-;; ancestor activation. Explicit keyboard focus retains precedence at point.
+;; ancestor activation. Ebox owns keyboard focus precedence and target selection.
 ;;
 ;; Function: etaf-behavior-context-info (context)
 ;;;###autoload (autoload 'etaf-behavior-context-info "etaf" nil nil)
@@ -461,26 +461,6 @@
 ;; DEFAULT is returned when KEY is absent.  When REQUIRED-P is non-nil, absence
 ;; signals an error.  The optional third argument is explicit so a provided nil
 ;; can be distinguished from a missing dependency.
-;;
-;; Function: etaf-input-mode (&optional arg)
-;;;###autoload (autoload 'etaf-input-mode "etaf" nil t)
-;; Enable keyboard focus and activation commands for a mounted ETAF Runtime.
-;;
-;; This is a minor mode.  If called interactively, toggle the `ETAF-Input
-;; mode' mode.  If the prefix argument is positive, enable the mode, and if
-;; it is zero or negative, disable the mode.
-;;
-;; If called from Lisp, toggle the mode if ARG is `toggle'.  Enable the
-;; mode if ARG is nil, omitted, or is a positive number.  Disable the mode
-;; if ARG is a negative number.
-;;
-;; To check whether the minor mode is enabled in the current buffer,
-;; evaluate the variable `etaf-input-mode'.
-;;
-;; The mode's hook is called both when the mode is enabled and when it is
-;; disabled.
-;;
-;; \{etaf-input-mode-map}
 ;;
 ;; Function: etaf-mount (buffer-or-name view &optional options)
 ;;;###autoload (autoload 'etaf-mount "etaf" nil nil)
