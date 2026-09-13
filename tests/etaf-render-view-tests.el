@@ -1,20 +1,23 @@
-;;; etaf-render-view-tests.el --- Ordinary Elisp View frontend -*- lexical-binding: t; -*-
+;;; etaf-render-view-tests.el --- Public API acceptance -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;;; Commentary:
-
-;; The render frontend shares View compilation and retained runtime semantics.
+;; Test supported package inputs, outputs, errors and lifecycle.
+;; Internal implementation details are outside this contract.
 
 ;;; Code:
-
+(require 'cl-lib)
 (require 'ert)
-(require 'bytecomp)
 (require 'etaf)
+(require 'bytecomp)
 
 (defvar etaf-rv--renders 0)
+
 (defvar etaf-rv--left-reads 0)
+
 (defvar etaf-rv--right-reads 0)
+
 (defvar etaf-rv--events nil)
 
 (defun etaf-rv--define (name arguments &rest clauses)
@@ -35,18 +38,18 @@
 (ert-deftest etaf-render-view-equivalent-to-view-and-node ()
   "All frontends produce the same visible structure and Host properties."
   (etaf-rv--define 'etaf-rv-view '(&key label)
-                   :view '(column :padding-inline 1
+                   :view '(column :padding-inline '(ch 1)
                             (text :font-weight 'bold (expr label))
                             (text "Body")))
   (etaf-rv--define 'etaf-rv-render '(&key label)
                    :render '(let ((caption label))
                               (etaf-view
-                               (column :padding-inline 1
+                               (column :padding-inline '(ch 1)
                                  (text :font-weight 'bold (expr caption))
                                  (text "Body")))))
   (etaf-rv--define 'etaf-rv-node '(&key label)
                    :render '(etaf-node
-                             'column '(:padding-inline 1)
+                             'column '(:padding-inline (ch 1))
                              (list (etaf-node 'text '(:font-weight bold)
                                               (list label))
                                    (etaf-node 'text nil '("Body")))))

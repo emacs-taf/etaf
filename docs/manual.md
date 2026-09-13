@@ -1020,7 +1020,7 @@ matching origins are marked `:reloaded t`. Choose the affected modules; do not r
 application component declarations blindly. Without this option, report code
 origin observations separately from independent evidence of a fresh GUI load.
 
-Run the tool's regression checks with `make resize-benchmark-tests`; they also
+Run the tool's regression checks with `make test`; they also
 run in the full `make check` gate. Application-specific data setup and interaction
 assertions remain in the example repositories, not this resize driver.
 

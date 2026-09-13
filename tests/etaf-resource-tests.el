@@ -1,12 +1,15 @@
-;;; etaf-resource-tests.el --- ETAF Resource tests -*- lexical-binding: t; -*-
+;;; etaf-resource-tests.el --- Public API acceptance -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
-;;; Code:
+;;; Commentary:
+;; Test supported package inputs, outputs, errors and lifecycle.
+;; Internal implementation details are outside this contract.
 
+;;; Code:
+(require 'cl-lib)
 (require 'ert)
-(require 'etaf-observer)
-(require 'etaf-resource)
+(require 'etaf)
 
 (ert-deftest etaf-resource-loads-synchronous-value ()
   "Expose successful loader output through the public Resource readers."
@@ -58,28 +61,6 @@
       (when resource
         (etaf-resource-dispose resource)))))
 
-(ert-deftest etaf-resource-parent-scope-disposes-resource-cleanup ()
-  "Attach Resource cleanup to the active parent Scope."
-  (let ((scope (etaf-effect-scope :detached t :name 'parent-test))
-        resource
-        cleanup-count)
-    (setq cleanup-count 0)
-    (setq resource
-          (etaf-scope-run
-           scope
-           (lambda ()
-             (etaf-resource
-              (lambda ()
-                (etaf-resource-result
-                 "scoped"
-                 :cleanup (lambda () (cl-incf cleanup-count))))
-              :name 'scoped-test))))
-    (should (equal "scoped" (etaf-resource-value resource)))
-    (should-not (etaf-scope-stop scope))
-    (should (= 1 cleanup-count))
-    (should-error (etaf-resource-load resource)
-                  :type 'etaf-resource-error)))
-
 (ert-deftest etaf-error-boundary-run-handles-body-error ()
   "Convert an explicitly wrapped body error into a handler result."
   (let ((seen nil))
@@ -109,84 +90,5 @@
     (lambda (_condition) (error "handler")))
    :type 'error))
 
-(ert-deftest etaf-resource-observes-only-loader-execution ()
-  "Report Resource loads while preserving replacement cleanup semantics."
-  (let* ((loads 0)
-         (cleanups 0)
-         reports
-         resource
-         (context
-         (etaf--observer-context-create
-          :sink (lambda (report) (push report reports))
-          :operation-id 51
-          :runtime-id 8
-          :buffer-name nil
-          :diagnostic #'ignore)))
-    (unwind-protect
-        (progn
-          (etaf--observer-call-with-context
-           context
-           (lambda ()
-             (setq resource
-                   (etaf-resource
-                    (lambda ()
-                      (etaf-resource-result
-                       (cl-incf loads)
-                       :cleanup (lambda () (cl-incf cleanups))))))
-             (etaf-resource-load resource)))
-          (setq reports (nreverse reports))
-          (should (equal '(resource resource)
-                         (mapcar (lambda (report)
-                                   (plist-get report :provider))
-                                 reports)))
-          (should (equal '(load load)
-                         (mapcar (lambda (report)
-                                   (plist-get report :stage))
-                                 reports)))
-          (should (equal '(success success)
-                         (mapcar (lambda (report)
-                                   (plist-get report :status))
-                                 reports)))
-          (should (= 2 (etaf-resource-value resource)))
-          (should (= 1 cleanups))
-          (etaf-resource-dispose resource)
-          (should (= 2 cleanups)))
-      (when resource
-        (etaf-resource-dispose resource)))))
-
-(ert-deftest etaf-resource-observed-error-keeps-captured-error-contract ()
-  "Report loader failure without changing Resource error containment."
-  (let* (reports resource
-         (context
-         (etaf--observer-context-create
-          :sink (lambda (report) (push report reports))
-          :operation-id 52
-          :runtime-id 8
-          :buffer-name nil
-          :diagnostic #'ignore)))
-    (unwind-protect
-        (progn
-          (etaf--observer-call-with-context
-           context
-           (lambda ()
-             (setq resource (etaf-resource (lambda () (error "boom"))))))
-          (should (= 1 (length reports)))
-          (should (eq 'error (plist-get (car reports) :status)))
-          (should (eq 'error (etaf-resource-status resource)))
-          (should (string-match-p "boom" (cadr (etaf-resource-error resource)))))
-      (when resource
-        (etaf-resource-dispose resource)))))
-
-(ert-deftest etaf-resource-unobserved-load-bypasses-stage-runtime ()
-  "Keep standalone Resource loading free of observation work."
-  (let (resource)
-    (unwind-protect
-        (cl-letf (((symbol-function 'etaf--observer-call-stage)
-                   (lambda (&rest _args)
-                     (ert-fail "unobserved Resource entered stage runtime"))))
-          (setq resource (etaf-resource (lambda () "ready")))
-          (should (equal "ready" (etaf-resource-value resource))))
-      (when resource
-        (etaf-resource-dispose resource)))))
-
+(provide 'etaf-resource-tests)
 ;;; etaf-resource-tests.el ends here

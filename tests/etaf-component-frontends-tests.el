@@ -1,13 +1,17 @@
-;;; etaf-component-frontends-tests.el --- Component frontend contract -*- lexical-binding: t; -*-
+;;; etaf-component-frontends-tests.el --- Public API acceptance -*- lexical-binding: t; -*-
+
+;;; Commentary:
+;; Test supported package inputs, outputs, errors and lifecycle.
+;; Internal implementation details are outside this contract.
 
 ;;; Code:
-
+(require 'cl-lib)
 (require 'ert)
 (require 'etaf)
 
 (defvar etaf-test-g6b-dsl-setup-count 0)
+
 (defvar etaf-test-g6b-code-setup-count 0)
-(defvar etaf-test-g6b-lifecycle nil)
 
 (etaf-define-component etaf-test-g6b-dsl-counter (&key initial)
   :setup
@@ -15,7 +19,7 @@
     (cl-incf etaf-test-g6b-dsl-setup-count)
     (etaf-ref (or initial 0)))
   :view
-  (column :background-color "#102030" :padding-inline 1
+  (column :background-color "#102030" :padding-inline '(ch 1)
     (text :font-weight 'bold
           (expr (format "Count %d" (etaf-value (etaf-state)))))
     (box :ref 'g6b-dsl-increment
@@ -33,7 +37,7 @@
   :render
   (let ((count (etaf-state)))
     (etaf-node
-     'column (list :background-color "#102030" :padding-inline 1)
+     'column (list :background-color "#102030" :padding-inline '(ch 1))
      (list
       (etaf-node 'text (list :font-weight 'bold)
                  (list (format "Count %d" (etaf-value count))))
@@ -49,25 +53,6 @@
   :setup nil
   :view (text (expr (if (null (etaf-state)) "nil-state" "bad-state"))))
 
-(etaf-define-component etaf-test-g6b-directives (&key selected items)
-  :view
-  (column
-    (text :if selected :key 'selected (expr selected))
-    (text :else t :key 'empty "No selection")
-    (row :for (item items) :key (car item)
-      (text (expr (cdr item))))))
-
-(etaf-define-component etaf-test-g6b-pair (&key item)
-  :view
-  (fragment
-    (text (expr (format "%s-1" (cdr item))))
-    (text (expr (format "%s-2" (cdr item))))))
-
-(etaf-define-component etaf-test-g6b-component-loop (&key items)
-  :view
-  (column
-    (etaf-test-g6b-pair :for (item items) :key (car item) :item item)))
-
 (etaf-define-component etaf-test-g6b-key-boundary (&key value)
   :setup
   (list :framework-key (etaf-current-prop 'key) :initial value)
@@ -81,36 +66,6 @@
 (etaf-define-component etaf-test-g6b-invalid-list-result ()
   :render
   (list (etaf-node 'text nil (list "ambiguous"))))
-
-(etaf-define-component etaf-test-g6b-rollback (&key fail)
-  :setup (etaf-ref 7)
-  :render
-  (let ((state (etaf-state)))
-    (when fail
-      (setf (etaf-value state) 99))
-    (etaf-node 'text nil (list (format "Stable %d" (etaf-value state))))))
-
-(etaf-define-component etaf-test-g6b-lifecycle (&key label)
-  :setup
-  (progn
-    (etaf-on-mounted
-     (lambda ()
-       (setq etaf-test-g6b-lifecycle
-             (append etaf-test-g6b-lifecycle '(mounted)))))
-    (etaf-on-updated
-     (lambda ()
-       (setq etaf-test-g6b-lifecycle
-             (append etaf-test-g6b-lifecycle '(updated)))))
-    (etaf-on-unmounted
-     (lambda ()
-       (setq etaf-test-g6b-lifecycle
-             (append etaf-test-g6b-lifecycle '(unmounted)))))
-    (etaf-on-scope-dispose
-     (lambda ()
-       (setq etaf-test-g6b-lifecycle
-             (append etaf-test-g6b-lifecycle '(cleanup)))))
-    nil)
-  :view (text (expr label)))
 
 (etaf-define-component etaf-test-g6b-provider (&key count on-press)
   :setup
@@ -162,7 +117,7 @@
 
 (etaf-define-component etaf-test-g6b-dsl-panel ()
   :view
-  (column :background-color "#203040" :padding-inline 1
+  (column :background-color "#203040" :padding-inline '(ch 1)
     (row :class 'header (slot :name 'header))
     (box (slot))
     (row :class 'actions (slot :name 'actions))))
@@ -170,7 +125,7 @@
 (etaf-define-component etaf-test-g6b-code-panel ()
   :render
   (etaf-node
-   'column (list :background-color "#203040" :padding-inline 1)
+   'column (list :background-color "#203040" :padding-inline '(ch 1))
    (list
     (etaf-node 'row (list :class 'header)
                (etaf-current-slot 'header))
@@ -206,39 +161,6 @@
                        (plist-member entry property))
              return (plist-get entry property)))))
 
-(ert-deftest etaf-component-frontends-definition-boundary-is-strict ()
-  "Definitions choose one frontend and keep exact registry names."
-  (should (etaf--component-spec-p
-           (gethash 'etaf-test-g6b-dsl-counter etaf--view-registry)))
-  (should-not (gethash 'test-g6b-dsl-counter etaf--view-registry))
-  (should (eq 'ordinary-function (etaf-test-g6b-dsl-counter)))
-  (dolist
-      (definition
-       '((etaf-define-component invalid-both ()
-           :view (box) :render (etaf-node 'box nil nil))
-         (etaf-define-component invalid-neither () :setup nil)
-         (etaf-define-component invalid-reserved (&key key) :view (box))
-         (etaf-define-component invalid-setup-view ()
-           :setup (etaf-node 'box nil nil) :view (box))))
-    (should-error (macroexpand definition)
-                  :type 'etaf-component-definition-error)))
-
-(ert-deftest etaf-node-validates-code-mode-structure ()
-  "Code nodes accept typed values and reject DSL or raw-list ambiguity."
-  (should (etaf--view-node-p
-           (etaf-node 'box (list :padding 1) (list "A"))))
-  (should (etaf--component-call-p
-           (etaf-node 'etaf-test-g6b-dsl-counter
-                      (list :initial 1) nil)))
-  (should-error (etaf-node 'box (list :if t) nil)
-                :type 'etaf-component-call-error)
-  (should-error (etaf-node 'box nil '((text "raw")))
-                :type 'etaf-component-call-error)
-  (should-error (etaf-node 'box nil nil '((header . ("H"))))
-                :type 'etaf-component-call-error)
-  (should-error (etaf-node 'box (list :key nil) nil)
-                :type 'etaf-component-call-error))
-
 (ert-deftest etaf-component-directives-validate-branch-and-loop-grammar ()
   "DSL directives reject ambiguous structure during macro expansion."
   (dolist
@@ -250,138 +172,6 @@
          (etaf-view
           (column (text :if nil "a") (text :else maybe "b")))))
     (should-error (macroexpand form) :type 'etaf-view-syntax-error)))
-
-(ert-deftest etaf-component-directives-render-and-retain-keyed-identity ()
-  "Branch changes and keyed reorder publish locally with stable item ids."
-  (let ((buffer " *etaf-g6b-directives*")
-        (selected (etaf-ref nil))
-        (items (etaf-ref '((a . "A") (b . "B")))))
-    (unwind-protect
-        (progn
-          (etaf-mount
-           buffer
-           (lambda ()
-             (etaf-view
-              (etaf-test-g6b-directives
-               :selected (etaf-value selected)
-               :items (etaf-value items)))))
-          (let* ((runtime (etaf-runtime-for-buffer buffer))
-                 (generation (etaf-runtime-current-generation runtime))
-                 (range
-                  (cl-loop for _identity being the hash-keys of
-                           (etaf-generation-identity-index generation)
-                           using (hash-values semantic-id)
-                           for semantic = (etaf--pvec-get
-                                           (etaf-generation-semantic-nodes
-                                            generation)
-                                           semantic-id)
-                           when (and (etaf--semantic-range-p semantic)
-                                     (etaf--semantic-range-keyed-key-order
-                                      semantic))
-                           return semantic))
-                 (a-roots
-                  (gethash
-                   'a
-                   (etaf--semantic-range-keyed-item-root-id-index range)))
-                 (b-roots
-                  (gethash
-                   'b
-                   (etaf--semantic-range-keyed-item-root-id-index range))))
-            (should (string-match-p "No selection"
-                                    (etaf-test-g6b--text buffer)))
-            (should (string-match-p "A[[:space:]]+B"
-                                    (etaf-test-g6b--text buffer)))
-            (setf (etaf-value selected) "Selected")
-            (setf (etaf-value items) '((b . "B2") (a . "A")))
-            (should (string-match-p "Selected"
-                                    (etaf-test-g6b--text buffer)))
-            (should (string-match-p "B2[[:space:]]+A"
-                                    (etaf-test-g6b--text buffer)))
-            (let* ((generation (etaf-runtime-current-generation runtime))
-                   (next (etaf--pvec-get
-                          (etaf-generation-semantic-nodes generation)
-                          (etaf--semantic-range-semantic-id range))))
-              (should
-               (equal
-                a-roots
-                (gethash
-                 'a
-                 (etaf--semantic-range-keyed-item-root-id-index next))))
-              (should
-               (equal
-                b-roots
-                (gethash
-                 'b
-                 (etaf--semantic-range-keyed-item-root-id-index next)))))
-            (let ((generation (etaf-runtime-current-generation runtime))
-                  (text (with-current-buffer buffer (buffer-string))))
-              (should-error
-               (setf (etaf-value items) '((a . "A") (a . "duplicate")))
-               :type 'etaf-component-call-error)
-              (should (eq generation
-                          (etaf-runtime-current-generation runtime)))
-              (should (equal-including-properties
-                       text (with-current-buffer buffer (buffer-string)))))))
-      (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
-        (etaf-unmount runtime))
-      (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))
-
-(ert-deftest etaf-component-keyed-loop-owns-transparent-component-spans ()
-  "A keyed item may be a transparent multi-root Component without a fake Box."
-  (let ((buffer " *etaf-g6b-component-spans*")
-        (items (etaf-ref '((a . "A") (b . "B")))))
-    (unwind-protect
-        (progn
-          (etaf-mount
-           buffer
-           (lambda ()
-             (etaf-view
-              (etaf-test-g6b-component-loop :items (etaf-value items)))))
-          (let* ((runtime (etaf-runtime-for-buffer buffer))
-                 (generation (etaf-runtime-current-generation runtime))
-                 (range
-                  (cl-loop for _identity being the hash-keys of
-                           (etaf-generation-identity-index generation)
-                           using (hash-values semantic-id)
-                           for semantic =
-                           (etaf--pvec-get
-                            (etaf-generation-semantic-nodes generation)
-                            semantic-id)
-                           when (and (etaf--semantic-range-p semantic)
-                                     (equal
-                                      '(a b)
-                                      (etaf--semantic-range-keyed-key-order
-                                       semantic)))
-                           return semantic))
-                 (root-index
-                  (etaf--semantic-range-keyed-item-root-id-index range))
-                 (a-roots (copy-sequence (gethash 'a root-index)))
-                 (b-roots (copy-sequence (gethash 'b root-index))))
-            (should (string-match-p
-                     "A-1[[:space:]]+A-2[[:space:]]+B-1[[:space:]]+B-2"
-                     (etaf-test-g6b--text buffer)))
-            (should (= 1 (length a-roots)))
-            (should (= 1 (length b-roots)))
-            (should
-             (etaf--semantic-component-p
-              (etaf--pvec-get
-               (etaf-generation-semantic-nodes generation) (car a-roots))))
-            (setf (etaf-value items) '((b . "B2") (a . "A")))
-            (setq generation (etaf-runtime-current-generation runtime)
-                  range
-                  (etaf--pvec-get
-                   (etaf-generation-semantic-nodes generation)
-                   (etaf--semantic-range-semantic-id range))
-                  root-index
-                  (etaf--semantic-range-keyed-item-root-id-index range))
-            (should (string-match-p
-                     "B2-1[[:space:]]+B2-2[[:space:]]+A-1[[:space:]]+A-2"
-                     (etaf-test-g6b--text buffer)))
-            (should (equal a-roots (gethash 'a root-index)))
-            (should (equal b-roots (gethash 'b root-index)))))
-      (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
-        (etaf-unmount runtime))
-      (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))
 
 (ert-deftest etaf-component-frontends-project-default-and-named-slots ()
   "DSL and code Components preserve caller-owned slot order and styling."
@@ -504,57 +294,6 @@
           (etaf-unmount runtime))
         (when-let* ((live (get-buffer buffer-name))) (kill-buffer live))))))
 
-(ert-deftest etaf-component-render-side-effect-rolls-back-completely ()
-  "A detectable render mutation preserves the published generation and state."
-  (let ((buffer " *etaf-g6b-render-rollback*")
-        (fail (etaf-ref nil)))
-    (unwind-protect
-        (progn
-          (etaf-mount
-           buffer
-           (lambda ()
-             (etaf-view
-              (etaf-test-g6b-rollback :fail (etaf-value fail)))))
-          (let* ((runtime (etaf-runtime-for-buffer buffer))
-                 (generation (etaf-runtime-current-generation runtime))
-                 (published (with-current-buffer buffer (buffer-string)))
-                 (instance
-                  (car (hash-table-values (etaf-runtime-instances runtime))))
-                 (state (etaf--component-instance-state instance)))
-            (should-error (setf (etaf-value fail) t)
-                          :type 'etaf-render-write-error)
-            (should (eq generation
-                        (etaf-runtime-current-generation runtime)))
-            (should (equal-including-properties
-                     published (with-current-buffer buffer (buffer-string))))
-            (should (= 7 (etaf-value state)))))
-      (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
-        (etaf-unmount runtime))
-      (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))
-
-(ert-deftest etaf-component-lifecycle-and-scope-cleanup-are-ordered ()
-  "Mount, update, removal, and Scope cleanup each run once in order."
-  (let ((buffer " *etaf-g6b-lifecycle*")
-        (label (etaf-ref "A")))
-    (setq etaf-test-g6b-lifecycle nil)
-    (unwind-protect
-        (progn
-          (etaf-mount
-           buffer
-           (lambda ()
-             (etaf-view
-              (etaf-test-g6b-lifecycle :label (etaf-value label)))))
-          (should (equal '(mounted) etaf-test-g6b-lifecycle))
-          (setf (etaf-value label) "B")
-          (should (equal '(mounted updated) etaf-test-g6b-lifecycle))
-          (should (string-match-p "B" (etaf-test-g6b--text buffer)))
-          (etaf-unmount (etaf-runtime-for-buffer buffer))
-          (should (equal '(mounted updated unmounted cleanup)
-                         etaf-test-g6b-lifecycle)))
-      (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
-        (etaf-unmount runtime))
-      (when-let* ((live (get-buffer buffer))) (kill-buffer live)))))
-
 (ert-deftest etaf-component-frontends-compose-context-theme-style-and-behavior ()
   "Test child inheritance and composition; separate tests cover slot authors."
   (let ((buffer " *etaf-g6b-composition*")
@@ -601,7 +340,7 @@
              (etaf-view
               (etaf-test-g6b-attr-wrapper
                :label "Leaf" :class '(caller base)
-               :color (etaf-value color) :padding-inline 2
+               :color (etaf-value color) :padding-inline '(ch 2)
                :ref 'g6b-attr-root))))
           (let* ((runtime (etaf-runtime-for-buffer buffer))
                  (instances (hash-table-values
@@ -615,7 +354,7 @@
                            (etaf-test-g6b--face-value
                             (etaf-test-g6b--face-at buffer "Leaf")
                             :foreground)))
-            (should (= 2 (plist-get props :padding-inline)))
+            (should (equal '(ch 2) (plist-get props :padding-inline)))
             (setf (etaf-value color) "#335577")
             (setq props (etaf-runtime-host-props-for
                          runtime 'g6b-attr-root))

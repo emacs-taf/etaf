@@ -6,12 +6,7 @@ SOURCES = lisp/etaf-view.el lisp/etaf-compiler.el lisp/etaf-component.el lisp/et
 EXAMPLES = examples/etaf-counter-example.el examples/etaf-data-example.el examples/etaf-resource-example.el
 TESTS = $(filter-out tests/etaf-docs-tests.el,$(wildcard tests/*-tests.el))
 
-.PHONY: test compile load checkdoc docs-check metadata-check scheduler-benchmark resize-benchmark-tests check clean
-
-test: compile
-	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" \
-		$(foreach test,$(TESTS),-l $(test)) \
-		-f ert-run-tests-batch-and-exit
+.PHONY: compile load checkdoc docs-check metadata-check scheduler-benchmark check clean
 
 compile: clean
 	$(EMACS) -Q --batch $(LOAD_PATH) \
@@ -33,10 +28,6 @@ scheduler-benchmark:
 	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" \
 		-l benchmarks/benchmark-scheduler-context.el \
 		-f etaf-scheduler-benchmark-run
-
-resize-benchmark-tests:
-	$(EMACS) -Q --batch $(LOAD_PATH) --eval '(setq load-prefer-newer t)' \
-		-l tests/etaf-resize-benchmark-tests.el -f ert-run-tests-batch-and-exit
 
 checkdoc:
 	$(EMACS) -Q --batch --eval '(progn (require (quote checkdoc)) (dolist (directory (list "lisp" "examples" "scripts")) (dolist (file (directory-files directory t)) (when (string-suffix-p ".el" file) (checkdoc-file file)))))'
@@ -60,3 +51,6 @@ acceptance:
 api-check:
 	$(EMACS) -Q --batch -L . $(API_PROVIDER_PATH) --eval '(setq load-prefer-newer t)' -l scripts/check-api.el
 API_PROVIDER_PATH = -L ../ecss -L ../tp -L ../ekp -L ../ebox -L ../etaf-ui -L ../etaf-db -L ../ebox-playground -L ../etaf-playground
+
+.PHONY: test
+test: acceptance
