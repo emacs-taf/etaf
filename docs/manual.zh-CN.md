@@ -229,9 +229,13 @@ Setup 对 retained instance 只执行一次，返回一个 opaque 状态值。�
 `etaf-on-mounted`、`etaf-on-updated` 和 `etaf-on-unmounted` 注册该 Component 的生命周期
 callback。Scope 释放时会自动停止响应式 effect 并运行 cleanup。
 
-`:view` 和 `:render` 共用编译、slot 投影与 prop 校验。用普通 `let`/`let*`
-为回调捕获 state 句柄或当前 prop 值；`etaf-state` 只在 render 时读取，不留到
-事件触发时调用。把 `etaf-value` 保留在需要更新的属性或 `expr` 内；提取句柄
+`:view` 和 `:render` 共用编译、slot 投影与 prop 校验。声明的 props 是每次求值的
+词法快照，延后执行的回调可直接使用 `title`，无需额外的 `let`。更新成功发布后
+安装捕获新 props 的回调；候选失败保留旧回调。Setup 闭包保留初始 props。
+传入的 ref 保留原有身份，在回调中通过 `etaf-value` 读取实时值；普通值不会
+被深复制或自动变成响应式来源。用普通 `let`/`let*` 为回调捕获 state 句柄；
+`etaf-state` 只在 render 时读取，不留到事件触发时调用。把 `etaf-value` 保留在
+需要更新的属性或 `expr` 内；提取句柄
 不需要提前读取它的值。含有持久闭包的组件代码放在启用 lexical-binding 的 `.el`
 文件中。简单本地回调不需要定义 Action。
 

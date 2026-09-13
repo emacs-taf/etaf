@@ -314,9 +314,11 @@
 ;; `:setup' runs once per retained identity and returns opaque state.  `:view'
 ;; is unquoted DSL; `:render' is ordinary Elisp returning the same typed View,
 ;; usually through `etaf-view'.  `etaf-node' also constructs Views
-;; programmatically.  Both frontends use the same prop and slot rules.  Bind state
-;; handles and prop snapshots to lexical locals for later event callbacks; keep
-;; reactive value reads inside the View properties or expressions they update.
+;; programmatically.  Both frontends use the same prop and slot rules.  Declared
+;; props are lexical snapshots for each setup or render evaluation; callbacks
+;; may refer to them directly.  Passed refs retain identity and live value reads.
+;; Bind state handles during rendering, and keep reactive value reads inside
+;; the View properties or expressions they update.
 ;;
 ;; Function: etaf-dispatch (action &rest arguments)
 ;;;###autoload (autoload 'etaf-dispatch "etaf" nil nil)

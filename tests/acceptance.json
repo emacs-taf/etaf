@@ -538,6 +538,11 @@
       "name": "etaf-mount-accepts-final-initial-viewport",
       "file": "tests/etaf-tests.el",
       "purpose": "Publish the first generation at its final viewport without a rerender."
+    },
+    {
+      "name": "etaf-prop-callbacks-follow-successful-publication",
+      "file": "tests/etaf-prop-callback-tests.el",
+      "purpose": "Deferred callbacks retain committed prop snapshots, preserve live refs and recover after rejected output."
     }
   ]
 }

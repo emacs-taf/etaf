@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- Component callbacks can directly capture declared props in both `:view` and
+  `:render`. Successful updates replace their snapshots; rejected renders keep
+  the committed callbacks. Setup closures retain initial inputs, and props
+  containing refs preserve live reads and reference identity.
+
 ### Changed
 
 - Expose the package entry at the repository root, document supported APIs in

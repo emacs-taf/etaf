@@ -171,8 +171,8 @@ does not depend on ETAF's private registry flag."
           (cdr entry))
       fallback)))
 
-(defun etaf--component-prop-symbol-macros (props)
-  "Return symbol macros that read current Component PROPS."
+(defun etaf--component-prop-bindings (props)
+  "Return lexical bindings for the current Component PROPS."
   (mapcar (lambda (prop)
             `(,prop (etaf-current-prop ',prop)))
           props))
@@ -232,9 +232,11 @@ or:
 `:setup' runs once per retained identity and returns opaque state.  `:view'
 is unquoted DSL; `:render' is ordinary Elisp returning the same typed View,
 usually through `etaf-view'.  `etaf-node' also constructs Views
-programmatically.  Both frontends use the same prop and slot rules.  Bind state
-handles and prop snapshots to lexical locals for later event callbacks; keep
-reactive value reads inside the View properties or expressions they update."
+programmatically.  Both frontends use the same prop and slot rules.  Declared
+props are lexical snapshots for each setup or render evaluation; callbacks
+may refer to them directly.  Passed refs retain identity and live value reads.
+Bind state handles during rendering, and keep reactive value reads inside
+the View properties or expressions they update."
   (declare (indent 2) (debug defun))
   (unless (symbolp name)
     (etaf--component-definition-error
@@ -308,11 +310,11 @@ reactive value reads inside the View properties or expressions they update."
                  ,(let ((etaf--compiling-component-props props))
                     ;; Expand every embedded View inside its Component prop
                     ;; grammar, including Views produced by lexical macros.
-                    ;; Include the prop bindings so they shadow outer symbol
-                    ;; macros while ordinary let/lambda shadowing is preserved.
+                    ;; Lexical props belong to this evaluation and its closures.
+                    ;; Nested let/lambda bindings retain normal Elisp shadowing.
                     (macroexpand-all
-                     `(cl-symbol-macrolet
-                          ,(etaf--component-prop-symbol-macros props)
+                     `(let ,(etaf--component-prop-bindings props)
+                        (ignore ,@props)
                         ,(if saw-view
                              (etaf-compiler-expand-view view-form :projection)
                            render-form))
@@ -323,8 +325,8 @@ reactive value reads inside the View properties or expressions they update."
                  (let ((etaf--current-component-props etaf--component-props)
                        (etaf--current-component-slots nil)
                        (etaf--component-phase 'setup))
-                   (cl-symbol-macrolet
-                       ,(etaf--component-prop-symbol-macros props)
+                   (let ,(etaf--component-prop-bindings props)
+                     (ignore ,@props)
                      ,setup-form))))))
       `(progn
          (defconst ,definition-symbol
