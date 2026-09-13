@@ -197,6 +197,19 @@ quote 只有普通 Elisp 的含义：
 
 没有单独的 children、slot、event、state 或 variant 声明块。业务 props 通过 `(&key ...)` 声明，children 和 slot 是隐式内容。
 
+Props 支持 `(&key NAME (NAME DEFAULT) ...)`。实例首次缺少对应输入时求值
+DEFAULT；显式 nil 属于已传入的值。默认值按声明顺序解析，表达式可读取前面的
+props。成功发布后，实例保留默认值直到替换或卸载，期间调用方暂时传入覆盖值
+不会丢弃默认值。失败候选不发布新求值的默认值，因此表达式必须可以重试，不能
+执行外部写入；有清理需求的资源放在 setup 中。可变默认值用 `list` 或 `vector`
+构造，不要共享引用的常量对象。纯 `etaf-render` 没有保留实例，每次调用重新
+解析默认值。
+
+```elisp
+(etaf-define-component titled-card (&key (title "Untitled"))
+  :view (text (expr (or title "No title"))))
+```
+
 ## 5. 局部状态与生命周期
 
 Component 自己拥有状态时使用 `:setup`：

@@ -170,6 +170,10 @@ Component definition 是当前结构/样式/行为边界：动态状态、Action
 state，不重新运行 setup。setup 负责局部 ref、computed、watch、Effect 和 cleanup，
 不返回 render 函数。
 
+输入默认值由已提交的 Component semantic record 持有。候选在 setup/render 前
+解析缺省输入，只复制属性容器，保留传入值及默认值的对象身份。新默认值与
+画面一同发布，回滚时丢弃；求值及所有权约定见[用户手册](manual.zh-CN.md)。
+
 `:key` 是稳定的 identity metadata，不是业务 prop。放在 Component 调用上时，它选择同级作用域内要保留的 Component instance；放在 Host 上时，它会作为 Ebox node key 向下传递。候选渲染失败时，Runtime 恢复旧 instance、handlers、Behaviors 和 buffer。
 
 Component 调用使用定义时准确注册的名称，注册表不会自动生成省略前缀或 `-view` alias。官方目录组件使用 `etaf-button` 等名称；应用可以显式使用任何合法且尚未占用的名称定义自己的组件。

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- Component props accept `(name default)` declarations. Missing inputs lazily
+  initialize instance-owned defaults; explicit nil remains a supplied value.
+  Published defaults survive overrides and are discarded on unmount.
+
 ### Fixed
 
 - Component callbacks can directly capture declared props in both `:view` and

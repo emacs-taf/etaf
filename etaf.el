@@ -320,6 +320,12 @@
 ;; Bind state handles during rendering, and keep reactive value reads inside
 ;; the View properties or expressions they update.
 ;;
+;; Props accept NAME or (NAME DEFAULT) after &key.  Defaults evaluate in order
+;; on first missing input and can read earlier props.  Explicit nil is supplied.
+;; Mounted instances retain successfully published defaults until replacement or
+;; unmount; pure rendering evaluates defaults anew.  Default expressions must be
+;; safe to retry after rejected publication; allocate mutable values explicitly.
+;;
 ;; Function: etaf-dispatch (action &rest arguments)
 ;;;###autoload (autoload 'etaf-dispatch "etaf" nil nil)
 ;; Dispatch named ACTION through the active Runtime with ARGUMENTS.

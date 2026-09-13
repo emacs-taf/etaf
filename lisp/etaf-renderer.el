@@ -615,8 +615,9 @@ multi-root forest; a single material root is returned unchanged."
   "Render stateless CALL at PATH without a retained Runtime."
   (let* ((spec (etaf--component-call-spec call))
          (render (etaf--component-spec-render spec))
-         (props (etaf--resolve-property-plist
-                 (etaf--component-business-props call)))
+         (props (car (etaf--component-resolve-defaults
+                      spec (etaf--resolve-property-plist
+                            (etaf--component-business-props call)) nil)))
          (attrs (etaf--resolve-property-plist
                  (etaf--component-call-attrs call))))
     (when (etaf--component-spec-setup spec)

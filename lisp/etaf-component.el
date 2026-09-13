@@ -59,19 +59,23 @@
         (etaf--component-definition-error
          "Component props must use (&key NAME ...), got %S" arguments)))
     (dolist (entry tail)
-      (unless (symbolp entry)
+      (unless (or (symbolp entry)
+                  (and (proper-list-p entry) (= (length entry) 2)
+                       (symbolp (car entry))))
         (etaf--component-definition-error
-         "Component props must be symbols without defaults: %S" entry))
-      (when (or (keywordp entry) (memq entry '(nil t)))
-        (etaf--component-definition-error
-         "Component prop name must be an ordinary symbol: %S" entry))
-      (when (memq entry prop-names)
-        (etaf--component-definition-error
-         "Duplicate Component prop: %S" entry))
-      (when (memq entry etaf--component-reserved-props)
-        (etaf--component-definition-error
-         "Component prop %S is reserved by the View grammar" entry))
-      (push entry prop-names))
+         "Component props must be NAME or (NAME DEFAULT): %S" entry))
+      (let ((name (if (consp entry) (car entry) entry)))
+        (when (or (keywordp name) (memq name '(nil t))
+                  (string-prefix-p "&" (symbol-name name)))
+          (etaf--component-definition-error
+           "Component prop name must be an ordinary symbol: %S" name))
+        (when (memq name prop-names)
+          (etaf--component-definition-error
+           "Duplicate Component prop: %S" name))
+        (when (memq name etaf--component-reserved-props)
+          (etaf--component-definition-error
+           "Component prop %S is reserved by the View grammar" name))
+        (push name prop-names)))
     (nreverse prop-names)))
 
 (defun etaf--component-prop-key (name)
@@ -177,6 +181,42 @@ does not depend on ETAF's private registry flag."
             `(,prop (etaf-current-prop ',prop)))
           props))
 
+(defun etaf--component-default-resolver (arguments)
+  "Compile ARGUMENTS into an instance-default resolver, or nil."
+  (when (cl-some #'consp (cdr arguments))
+    (let ((input (make-symbol "input"))
+          (cache (make-symbol "defaults"))
+          bindings)
+      (dolist (entry (cdr arguments))
+        (let* ((name (if (consp entry) (car entry) entry))
+               (key (etaf--component-prop-key name)))
+          (push
+           `(,name
+             ,(if (consp entry)
+                  `(if (plist-member ,input ,key)
+                       (plist-get ,input ,key)
+                     (unless (plist-member ,cache ,key)
+                       (setq ,cache (plist-put ,cache ,key ,(cadr entry))))
+                     (setq ,input
+                           (plist-put ,input ,key (plist-get ,cache ,key)))
+                     (plist-get ,input ,key))
+                `(plist-get ,input ,key)))
+           bindings)))
+      `(lambda (,input ,cache)
+         (setq ,input (copy-sequence ,input)
+               ,cache (copy-sequence ,cache))
+         (let* ,(nreverse bindings)
+           (ignore ,@(mapcar (lambda (entry)
+                              (if (consp entry) (car entry) entry))
+                            (cdr arguments)))
+           (cons ,input ,cache))))))
+
+(defun etaf--component-resolve-defaults (spec props defaults)
+  "Return (PROPS . DEFAULTS) for SPEC without mutating either input."
+  (if-let* ((resolver (etaf--component-spec-defaults spec)))
+      (funcall resolver props defaults)
+    (cons props defaults)))
+
 (defun etaf--validate-styles-form (form name)
   "Validate static Component styles FORM for Component NAME."
   (when form
@@ -236,7 +276,13 @@ programmatically.  Both frontends use the same prop and slot rules.  Declared
 props are lexical snapshots for each setup or render evaluation; callbacks
 may refer to them directly.  Passed refs retain identity and live value reads.
 Bind state handles during rendering, and keep reactive value reads inside
-the View properties or expressions they update."
+the View properties or expressions they update.
+
+Props accept NAME or (NAME DEFAULT) after &key.  Defaults evaluate in order
+on first missing input and can read earlier props.  Explicit nil is supplied.
+Mounted instances retain successfully published defaults until replacement or
+unmount; pure rendering evaluates defaults anew.  Default expressions must be
+safe to retry after rejected publication; allocate mutable values explicitly."
   (declare (indent 2) (debug defun))
   (unless (symbolp name)
     (etaf--component-definition-error
@@ -333,6 +379,7 @@ the View properties or expressions they update."
            (etaf--component-spec-create
             :name ',name
             :props ',props
+            :defaults ,(etaf--component-default-resolver arguments)
             :render ,render-lambda
             :setup ,setup-lambda
             :styles ',styles-form)

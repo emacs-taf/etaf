@@ -43,6 +43,7 @@
   "Internal definition of one ETAF Component."
   name
   props
+  defaults
   render
   setup
   styles)

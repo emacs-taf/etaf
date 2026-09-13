@@ -203,6 +203,22 @@ The definition macro accepts only these keywords:
 
 There is no separate declaration block for children, slots, events, state, or variants. Props are declared with `(&key ...)`; children and slots are implicit content.
 
+Props accept `(&key NAME (NAME DEFAULT) ...)`. Missing inputs evaluate their
+DEFAULT expression on first use by an instance; explicit nil is a supplied
+value. Defaults are resolved in declaration order and may read earlier props.
+A successful publication retains those default values until the instance is
+replaced or unmounted, even if a caller temporarily supplies an override.
+Failed candidates do not publish newly evaluated defaults. Default expressions
+must be safe to retry and must not perform external writes; use setup for
+owned resources. Construct mutable defaults with `list` or `vector` rather than
+sharing a quoted object. Pure `etaf-render` has no retained instance and resolves
+defaults anew on each call.
+
+```elisp
+(etaf-define-component titled-card (&key (title "Untitled"))
+  :view (text (expr (or title "No title"))))
+```
+
 ## 5. Local state and lifecycle
 
 Use `:setup` when the Component owns local state:

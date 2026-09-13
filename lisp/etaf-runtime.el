@@ -77,6 +77,7 @@
 (cl-defstruct (etaf--semantic-component
                (:constructor etaf--semantic-component-create))
   semantic-id identity input-effect-id effect-id resource-key props attrs slots
+  defaults
   input-props input-attrs input-slots output-signature artifact-key
   path caller-style-stack input-deps deps
   parent-id caller-component-id child-ids raw-slot-reader-p
@@ -2615,7 +2616,7 @@ subtrees keep their committed resources without being traversed."
                           (cl-incf (etaf-runtime-next-semantic-id runtime))))
          (input-props (etaf--component-business-props call))
          (input-attrs (etaf--component-call-attrs call))
-         props attrs input-deps render-deps context-deps slot-retargeted-p)
+         props attrs defaults input-deps render-deps context-deps slot-retargeted-p)
     (unless (etaf-context-owner-id (etaf--component-instance-context instance))
       (setf (etaf-context-owner-id (etaf--component-instance-context instance))
             semantic-id))
@@ -2627,8 +2628,16 @@ subtrees keep their committed resources without being traversed."
            (lambda (source) (cl-pushnew source input-deps :test #'eq)))
           (etaf--active-effect nil)
           (etaf--render-phase-p t))
-      (setq props (etaf--resolve-property-plist input-props)
-            attrs (etaf--resolve-property-plist input-attrs)))
+      (let ((resolved
+             (etaf--component-resolve-defaults
+              (etaf--component-instance-spec instance)
+              (etaf--resolve-property-plist input-props)
+              (and old
+                   (equal (etaf--component-instance-resource-key instance)
+                          (etaf--semantic-component-resource-key old))
+                   (etaf--semantic-component-defaults old)))))
+        (setq props (car resolved) defaults (cdr resolved)
+              attrs (etaf--resolve-property-plist input-attrs))))
     (puthash semantic-id
              (list :identity identity :instance instance
                    :props props :attrs attrs :slots slots)
@@ -2647,6 +2656,8 @@ subtrees keep their committed resources without being traversed."
                  (gethash effect-id (etaf-runtime-dirty-effect-ids runtime))
                  (and slots etaf--rendering-component-effect-p
                       (not slot-retargeted-p))
+                 (not (equal-including-properties
+                       defaults (etaf--semantic-component-defaults old)))
                  (not (equal-including-properties
                        props (etaf--semantic-component-props old)))
                  (not (equal-including-properties
@@ -2748,9 +2759,10 @@ subtrees keep their committed resources without being traversed."
                    :input-effect-id input-effect-id :effect-id effect-id
                    :resource-key
                    (copy-tree (etaf--component-instance-resource-key instance))
-                   :props (copy-tree props) :attrs (copy-tree attrs)
+                   :props (copy-sequence props) :attrs (copy-tree attrs)
+                   :defaults defaults
                    :slots (copy-tree slots)
-                   :input-props (copy-tree input-props)
+                   :input-props (copy-sequence input-props)
                    :input-attrs (copy-tree input-attrs)
                    :input-slots (copy-tree slots)
                    :output-signature (copy-tree output-signature)
@@ -4774,15 +4786,24 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
               (lambda (source) (cl-pushnew source deps :test #'eq)))
              (etaf--active-effect nil)
              (etaf--render-phase-p t))
-         (let* ((props (etaf--resolve-property-plist
-                        (etaf--semantic-component-input-props semantic)))
+         (let* ((instance
+                 (gethash (etaf--semantic-component-resource-key semantic)
+                          (etaf-runtime-resource-registry runtime)))
+                (resolved
+                 (etaf--component-resolve-defaults
+                  (etaf--component-instance-spec instance)
+                  (etaf--resolve-property-plist
+                   (etaf--semantic-component-input-props semantic))
+                  (etaf--semantic-component-defaults semantic)))
+                (props (car resolved))
                 (attrs (etaf--resolve-property-plist
                         (etaf--semantic-component-input-attrs semantic)))
                 (slots (etaf--semantic-component-input-slots semantic))
                 (candidate (copy-sequence semantic))
                 (effect-id
                  (etaf--semantic-component-input-effect-id semantic)))
-           (setf (etaf--semantic-component-props candidate) (copy-tree props)
+           (setf (etaf--semantic-component-defaults candidate) (cdr resolved)
+                 (etaf--semantic-component-props candidate) (copy-sequence props)
                  (etaf--semantic-component-attrs candidate) (copy-tree attrs)
                  (etaf--semantic-component-slots candidate) (copy-tree slots)
                  (etaf--semantic-component-input-deps candidate)
@@ -5065,7 +5086,7 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
                        runtime committed))))))
         (setf (etaf--semantic-component-output-signature candidate)
               (copy-tree output-signature)
-              (etaf--semantic-component-props candidate) (copy-tree props)
+              (etaf--semantic-component-props candidate) (copy-sequence props)
               (etaf--semantic-component-attrs candidate) (copy-tree attrs)
               (etaf--semantic-component-slots candidate) (copy-tree slots)
               (etaf--semantic-component-deps candidate) (nreverse deps)

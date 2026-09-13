@@ -543,6 +543,36 @@
       "name": "etaf-prop-callbacks-follow-successful-publication",
       "file": "tests/etaf-prop-callback-tests.el",
       "purpose": "Deferred callbacks retain committed prop snapshots, preserve live refs and recover after rejected output."
+    },
+    {
+      "name": "etaf-component-defaults-retain-instance-values",
+      "file": "tests/etaf-component-defaults-tests.el",
+      "purpose": "Absent inputs use retained defaults; explicit nil, overrides and rejected candidates preserve the input contract."
+    },
+    {
+      "name": "etaf-component-defaults-isolate-instances-and-remounts",
+      "file": "tests/etaf-component-defaults-tests.el",
+      "purpose": "Mutable default values belong to one retained component and are released across remounts."
+    },
+    {
+      "name": "etaf-component-defaults-validate-declarations",
+      "file": "tests/etaf-component-defaults-tests.el",
+      "purpose": "Invalid default declarations fail with a component definition error."
+    },
+    {
+      "name": "etaf-component-defaults-support-pure-rendering",
+      "file": "tests/etaf-component-defaults-tests.el",
+      "purpose": "Stateless default inputs work through etaf-render without a runtime."
+    },
+    {
+      "name": "etaf-component-defaults-publish-first-use-atomically",
+      "file": "tests/etaf-component-defaults-tests.el",
+      "purpose": "A rejected first use cannot commit default inputs; recovery initializes and retains the successful value."
+    },
+    {
+      "name": "etaf-component-defaults-preserve-list-identity-on-local-updates",
+      "file": "tests/etaf-component-defaults-tests.el",
+      "purpose": "Component-local updates preserve default list object identity in published callbacks."
     }
   ]
 }
