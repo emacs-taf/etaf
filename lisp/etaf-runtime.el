@@ -2026,14 +2026,14 @@ receive an independent Host effect."
         (etaf-behavior-spec-attributes left)
         (etaf-behavior-spec-attributes right))))
 
-(defun etaf--runtime-install-behavior (runtime spec path props)
-  "Install Behavior SPEC for RUNTIME at PATH and return its state."
+(defun etaf--runtime-install-behavior (runtime spec props)
+  "Install Behavior SPEC for RUNTIME with PROPS and return its state."
   (let ((install (etaf-behavior-spec-install spec))
         cleanup)
     (when install
       (let ((etaf--current-behavior-context
              (etaf--behavior-context-create
-              :runtime runtime :path path :host-props props)))
+              :runtime runtime :host-props (copy-sequence props))))
         (setq cleanup (funcall install))))
     (unless (or (null cleanup) (functionp cleanup))
       (signal 'etaf-behavior-error
@@ -2133,8 +2133,7 @@ Installers receive final Host props including the effective public reference."
                          (equal ref (etaf--semantic-host-host-ref old-host))
                          (etaf--runtime-behavior-spec-equal-p (car old) spec)) old)
                    (t (etaf--runtime-install-behavior
-                       runtime spec (etaf--semantic-host-path host)
-                       (etaf--plist-set props :ref ref)))))
+                       runtime spec (etaf--plist-set props :ref ref)))))
                  (key
                   (cond
                    ((and candidate (eq state candidate))

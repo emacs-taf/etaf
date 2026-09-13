@@ -26,7 +26,6 @@
                (:constructor etaf--behavior-context-create))
   "Runtime context supplied to an optional Behavior installer."
   runtime
-  path
   host-props)
 
 (defvar etaf--current-behavior-context nil
@@ -36,6 +35,25 @@
 (defun etaf-current-behavior-context ()
   "Return the Behavior context active during an installer, or nil."
   etaf--current-behavior-context)
+
+;;;###autoload
+(defun etaf-behavior-context-info (context)
+  "Return CONTEXT's installation facts as a fresh plist.
+CONTEXT comes from `etaf-current-behavior-context' during an installer.
+Keys are :runtime (the owning Runtime), :host-ref (the effective Host reference)
+and :properties (installation-time semantic Host properties).
+The plist and property container are fresh; contained values retain identity
+and must be treated as read-only.  These facts remain readable after cleanup,
+but do not certify that the candidate published or the Host is still mounted.
+Use Runtime public queries for committed state, and return installer cleanup
+to release resources on replacement, rollback or unmount.
+Invalid CONTEXT signals `etaf-behavior-error'."
+  (unless (etaf-behavior-context-p context)
+    (signal 'etaf-behavior-error (list "Expected a Behavior installation context")))
+  (let ((props (etaf-behavior-context-host-props context)))
+    (list :runtime (etaf-behavior-context-runtime context)
+          :host-ref (plist-get props :ref)
+          :properties (copy-sequence props))))
 
 (defun etaf-behavior-create (name &rest attributes)
   "Create a Behavior spec named NAME from keyword ATTRIBUTES.

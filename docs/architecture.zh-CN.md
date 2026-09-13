@@ -310,7 +310,7 @@ Behavior = 安装多个非视觉能力的可复用 bundle
 
 当变更需要命名并被多个入口复用时，使用 `etaf-action-define` 和 `etaf-dispatch`。当多个 Host 需要同一套非视觉能力时，使用 `etaf-define-behavior` 或 `etaf-behavior-create`，并通过 `:use` 安装。Behavior 不是 View 节点，也不直接修改 buffer。
 
-`etaf-behavior-create` 接受保留的 `:install` 属性，用于可选的零参数 installer。Installer 可以返回 cleanup；运行期间可通过 `etaf-current-behavior-context` 读取当前 Runtime、结构路径和 Host props。Behavior 被替换或 owner 卸载时，installer 状态会被释放。
+`etaf-behavior-create` 接受保留的 `:install` 属性，用于可选的零参数 installer。Installer 可以返回 cleanup；`etaf-current-behavior-context` 返回不透明安装上下文，`etaf-behavior-context-info` 查询其 Runtime、实际 Host 引用及安装时语义属性。这些信息不授予候选输入权。替换、候选回滚或 owner 卸载时释放 installer 状态；成功发布之前，已提交状态仍是权威。
 
 交互组合是确定的：显式 Host `:on-*` callback 先运行，然后按声明顺序运行 Behavior
 callback；任一错误会 short-circuit 后续 callback。非事件属性由显式 Host 值优先，

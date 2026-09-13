@@ -481,12 +481,25 @@ Behavior 用来打包可复用的非视觉属性和 cleanup：
          (append attributes
                  (list :install
                        (lambda ()
-                         (message "Behavior installed")
-                         (lambda ()
-                           (message "Behavior removed")))))))
+                         (let* ((context (etaf-current-behavior-context))
+                                (info (etaf-behavior-context-info context))
+                                (target (plist-get info :host-ref)))
+                           (message "Behavior installed for %S" target)
+                           (lambda ()
+                             (message "Behavior removed for %S" target))))))))
 ```
 
-Installer 需要 Runtime 或 Host path 时，可以调用 `etaf-current-behavior-context`。Behavior 被替换时，旧 cleanup 会在新状态成为当前状态前运行。Behavior equality 对 function 和 reactive value 使用 `eq`；因此新建的 installer closure 会被视为有意替换，而不是错误复用。替换状态先以 mounted resource registry 的 staged resource 保存，generation commit 后才成为 authority。
+Installer 内将 `etaf-current-behavior-context` 交给 `etaf-behavior-context-info`，
+即可查询 Runtime、实际 Host 引用和安装时的语义属性。上下文是安装快照，
+不是实时 Host 查询，也不证明候选已经发布；清理期间及之后仍可读取。发布后
+用返回的 Runtime/引用调用 `etaf-runtime-host-props-for` 查询已提交属性，不能
+用候选安装信息提前激活输入。返回的容器是新建的，其中的值保持身份并应视为只读。
+
+Behavior equality 对 function 和 reactive value 使用 `eq`，新 installer 闭包
+表示替换。规格和 Host 引用稳定时，其他 Host 属性变化可以复用安装，其上下文
+保留原安装信息。替换资源先暂存，generation 成功发布后才成为权威；旧 cleanup
+在成功发布后运行，回滚只清理候选并保留旧安装。Installer 应为取得的每项资源
+返回 cleanup，以便替换、回滚或卸载时释放；候选资源不得在发布前接收输入。
 
 <a id="interaction-migration"></a>
 

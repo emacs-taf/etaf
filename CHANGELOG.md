@@ -4,6 +4,9 @@
 
 ### Added
 
+- `etaf-behavior-context-info` exposes installation Runtime, Host reference and
+  semantic properties through a public snapshot query usable during cleanup.
+
 - Standalone effect scopes have public `etaf-scope-stop` and
   `etaf-on-scope-dispose` lifecycle operations. Cleanup registration rejects
   stopped scopes, and teardown returns cleanup failures while continuing.

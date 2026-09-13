@@ -320,7 +320,7 @@ Use a local callback for one interaction:
 
 Use `etaf-action-define` and `etaf-dispatch` when the mutation is named and shared. Use `etaf-define-behavior` or `etaf-behavior-create` when several Hosts need the same non-visual capability. Attach Behaviors with `:use`; a Behavior never becomes a View node and never writes the buffer directly.
 
-`etaf-behavior-create` accepts the reserved `:install` attribute for an optional zero-argument installer. The installer may return a cleanup function; `etaf-current-behavior-context` exposes the current Runtime, structural path, and Host props while it runs. Installer state is disposed when the Behavior is replaced or its owner is unmounted.
+`etaf-behavior-create` accepts the reserved `:install` attribute for an optional zero-argument installer. The installer may return a cleanup function; `etaf-current-behavior-context` returns an opaque installation context; `etaf-behavior-context-info` exposes its Runtime, effective Host reference and installation-time semantic props. These facts do not authorize candidate input. Installer state is disposed on replacement, candidate rollback or owner unmount; committed state remains authoritative until successful publication.
 
 Interaction composition is deterministic.  An explicit Host `:on-*` callback
 runs first, followed by Behavior callbacks in declaration order; an error

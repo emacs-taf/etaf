@@ -503,12 +503,32 @@ For a reusable installer, reserve `:install` for the cleanup-producing part of t
          (append attributes
                  (list :install
                        (lambda ()
-                         (message "Behavior installed")
-                         (lambda ()
-                           (message "Behavior removed")))))))
+                         (let* ((context (etaf-current-behavior-context))
+                                (info (etaf-behavior-context-info context))
+                                (target (plist-get info :host-ref)))
+                           (message "Behavior installed for %S" target)
+                           (lambda ()
+                             (message "Behavior removed for %S" target))))))))
 ```
 
-The installer can call `etaf-current-behavior-context` when it needs the current Runtime or Host path. Replacing the Behavior runs the old cleanup before the new state becomes current. Behavior equality keeps function and reactive-value identity with `eq`; a newly-created installer closure is therefore a deliberate replacement, not an accidental reuse. The replacement is staged under the mounted resource registry and becomes authoritative only when its generation commits.
+Pass `etaf-current-behavior-context` to `etaf-behavior-context-info` inside
+an installer to obtain its Runtime, effective Host reference and semantic
+installation properties. The context is an installation snapshot, not a live
+Host lookup or proof of successful publication. It remains readable during and
+after cleanup. Query committed properties with `etaf-runtime-host-props-for`
+and the returned Runtime/reference after publication; do not use installation
+facts to activate provisional input. The returned containers are fresh, while
+contained values retain identity and must be treated as read-only.
+
+Behavior equality keeps function and reactive-value identity with `eq`; a new
+installer closure requests replacement. A stable specification and Host
+reference reuse the installation even when unrelated Host properties change;
+its context keeps the original installation facts. Replacement resources are
+staged and become authoritative only when the generation commits. Old cleanup
+runs after successful publication; rollback cleans the candidate and preserves
+the old installation. Return cleanup from the installer for every acquired
+resource, and release it on replacement, rollback or unmount. Behavior-owned
+resources must not receive input from a candidate before publication.
 
 <a id="interaction-migration"></a>
 

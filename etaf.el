@@ -45,6 +45,19 @@
 ;;
 ;; RUNTIME is the mounted Runtime to activate, or nil for the current buffer.
 ;;
+;; Function: etaf-behavior-context-info (context)
+;;;###autoload (autoload 'etaf-behavior-context-info "etaf" nil nil)
+;; Return CONTEXT's installation facts as a fresh plist.
+;; CONTEXT comes from `etaf-current-behavior-context` during an installer.
+;; Keys are :runtime (the owning Runtime), :host-ref (the effective Host reference)
+;; and :properties (installation-time semantic Host properties).
+;; The plist and property container are fresh; contained values retain identity
+;; and must be treated as read-only. These facts remain readable after cleanup,
+;; but do not certify that the candidate published or the Host is still mounted.
+;; Use Runtime public queries for committed state, and return installer cleanup
+;; to release resources on replacement, rollback or unmount.
+;; Invalid CONTEXT signals `etaf-behavior-error`.
+;;
 ;; Function: etaf-behavior-create (name &rest attributes)
 ;;;###autoload (autoload 'etaf-behavior-create "etaf" nil nil)
 ;; Create a Behavior spec named NAME from keyword ATTRIBUTES.

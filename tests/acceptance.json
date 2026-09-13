@@ -588,6 +588,16 @@
       "name": "etaf-scope-rejects-cleanup-registration-after-stop",
       "file": "tests/etaf-scope-tests.el",
       "purpose": "Disposed scopes cannot acquire unreachable cleanup during a still-active call."
+    },
+    {
+      "name": "etaf-behavior-context-reports-installation-and-cleanup",
+      "file": "tests/etaf-behavior-context-tests.el",
+      "purpose": "Installers can query owning Runtime, effective reference and protected installation properties through cleanup."
+    },
+    {
+      "name": "etaf-behavior-context-candidate-facts-do-not-publish-early",
+      "file": "tests/etaf-behavior-context-tests.el",
+      "purpose": "Candidate context facts remain distinct from committed Host inputs during failure and replacement cleanup."
     }
   ]
 }
