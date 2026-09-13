@@ -695,7 +695,11 @@ single buffer focus; direct `ebox-focus` calls are immediately visible through
 ETAF and vice versa. No Runtime focus copy or separate navigation list exists.
 Calling `etaf-focus` without a Host reference selects the first eligible stop,
 leaving existing focus unchanged if none exists. Explicit invalid or disabled
-Host targets still signal `etaf-event-error`.
+Host targets still signal `etaf-event-error`. Component `:styles` can match
+`:focus` through the same Ebox cascade, for example `("&:focus" :color "#ff0000")`
+for a focused component root. Focus paint and layout follow accepted reactive
+updates; pure rendering has no mounted focus. Rules that make a newly requested
+focus target inaccessible reject the operation and preserve the old view.
 
 Focus follows source identity through reorder and accepted layout changes.
 Published hiding, disabling or removal clears focus; subsequent navigation

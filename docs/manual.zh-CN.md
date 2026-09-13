@@ -641,7 +641,10 @@ ETAF 把 `:tab-index` 与 `:disabled` 转为 Ebox 已提交的交互事实。`et
 `etaf-focused-host-ref` 以及前后导航操作同一个 Ebox buffer 焦点；直接调用
 `ebox-focus` 的结果立即在 ETAF 中可见，反之亦然。Runtime 不保留焦点副本或独立导航表。
 `etaf-focus` 省略 Host 引用时选择第一个有效停靠点，没有停靠点则保持原焦点；显式
-无效或禁用目标仍抛出 `etaf-event-error`。
+无效或禁用目标仍抛出 `etaf-event-error`。组件 `:styles` 可以通过同一 Ebox cascade
+匹配 `:focus`，例如 `("&:focus" :color "#ff0000")` 为获得焦点的组件根设置颜色。
+焦点绘制与布局随已接受的响应式更新保持一致，纯渲染不带挂载焦点。规则让新请求的
+目标不可访问时，焦点设置失败并保留旧画面。
 
 焦点跟随 source identity 经过重排与已接受的布局变化。发布隐藏、禁用或删除会清空
 焦点，后续导航从首个／末个有效停靠点开始。负值或缺失的 tab index 跳过导航，仍允许

@@ -748,6 +748,11 @@
       "name": "etaf-disabled-state-shares-provider-cascade",
       "file": "tests/etaf-component-cascade-tests.el",
       "purpose": "Reactive disabled input gives pure and mounted component rules the same state."
+    },
+    {
+      "name": "etaf-component-focus-rules-follow-shared-publication",
+      "file": "tests/etaf-component-cascade-tests.el",
+      "purpose": "Component focus rules share Ebox focus, reactive publication and pure isolation."
     }
   ]
 }

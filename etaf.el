@@ -396,9 +396,10 @@
 ;;;###autoload (autoload 'etaf-focus "etaf" nil t)
 ;; Move focus to HOST-REF in mounted RUNTIME and move point to its position.
 ;;
-;; Ebox owns the mounted focus, navigation and publication lifecycle. Without
-;; HOST-REF, select its first eligible tab stop; an empty list leaves focus and
-;; point unchanged and signals user-error. Explicit invalid targets signal
+;; Ebox owns mounted focus, navigation and publication, including :focus
+;; component rules and their paint/layout changes. Pure views carry no focus.
+;; Without HOST-REF, select its first eligible tab stop; an empty list leaves
+;; focus and point unchanged and signals user-error. Explicit invalid targets signal
 ;; etaf-event-error. Negative or absent tab indexes still allow explicit focus.
 ;; Removal, hiding and disabling clear focus; a tab-index change alone does not.
 ;; Layout follows point only when it stayed at the target; manual point stays

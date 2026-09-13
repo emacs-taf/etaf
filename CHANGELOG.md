@@ -47,6 +47,10 @@
 
 ### Changed
 
+- Component `:focus` rules now follow shared Ebox focus, including reactive
+  layout, hiding and rollback. Update Ebox with ETAF; pure rendering and other
+  mounted buffers remain independent of the selected buffer's focus.
+
 - Disabled component styles use Ebox's shared interaction-derived selector
   state. Update Ebox together with ETAF so pure and mounted disabled rules keep
   their behavior during reactive updates.

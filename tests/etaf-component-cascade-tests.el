@@ -180,5 +180,46 @@
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(etaf-define-component etaf-component-cascade-test-focus (&key label hidden)
+  :styles (("&" :color "#111111")
+           ("&:focus" :color "#ff0000")
+           ("&.concealed" :visibility hidden))
+  :view (text :ref 'control :tab-index 0
+              :class (and (etaf-value hidden) 'concealed)
+              (expr (etaf-value label))))
+
+(ert-deftest etaf-component-focus-rules-follow-shared-publication ()
+  "Component focus rules share Ebox focus, reactive publication and pure isolation."
+  (let* ((label (etaf-ref "Control")) (hidden (etaf-ref nil))
+         (view (etaf-view (etaf-component-cascade-test-focus :label label :hidden hidden)))
+         (buffer (generate-new-buffer " *etaf-focus-cascade*")))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer view)
+          (let ((runtime (etaf-runtime-for-buffer buffer)))
+            (etaf-focus runtime 'control)
+            (with-current-buffer buffer
+              (should (= 1 (length (ebox-selector-query-buffer buffer ":focus"))))
+              (should (equal "#ff0000" (etaf-component-cascade-test-color (buffer-string) "Control")))
+              (should (equal "#111111" (etaf-component-cascade-test-color
+                                        (ebox-render (etaf-render view)) "Control"))))
+            (setf (etaf-value label) "Updated")
+            (etaf-runtime-flush runtime)
+            (should (eq (etaf-focused-host-ref runtime) 'control))
+            (with-current-buffer buffer
+              (should (equal "#ff0000" (etaf-component-cascade-test-color (buffer-string) "Updated"))))
+            (setf (etaf-value hidden) t)
+            (etaf-runtime-flush runtime)
+            (should-not (etaf-focused-host-ref runtime))
+            (should-not (ebox-selector-query-buffer buffer ":focus"))
+            (setf (etaf-value hidden) nil)
+            (etaf-runtime-flush runtime)
+            (ebox-focus-first buffer)
+            (should (eq (etaf-focused-host-ref runtime) 'control))
+            (etaf-unmount runtime)
+            (should-not (ebox-focused-host-ref buffer))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
 (provide 'etaf-component-cascade-tests)
 ;;; etaf-component-cascade-tests.el ends here
