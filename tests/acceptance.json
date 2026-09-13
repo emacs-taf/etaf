@@ -758,6 +758,16 @@
       "name": "etaf-native-activation-retains-automatic-target-after-style-update",
       "file": "tests/etaf-native-activation-tests.el",
       "purpose": "Automatic Host identity continues to activate through RET after retained style changes and disable/re-enable updates."
+    },
+    {
+      "name": "etaf-slot-view-composes-controlled-and-conditional-updates",
+      "file": "tests/etaf-slot-updates-tests.el",
+      "purpose": "View slots keep one interactive child and current conditional content across repeated updates."
+    },
+    {
+      "name": "etaf-slot-code-composes-controlled-and-conditional-updates",
+      "file": "tests/etaf-slot-updates-tests.el",
+      "purpose": "Code slots keep one interactive child and current conditional content across repeated updates."
     }
   ]
 }

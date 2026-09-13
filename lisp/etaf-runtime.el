@@ -2008,6 +2008,13 @@ OLD-SEMANTIC supplies the already-read committed Host, when any."
         (puthash host-ref nil
                  (etaf-runtime-candidate-handlers runtime)))))))
 
+(defun etaf--runtime-begin-child-order (runtime semantic-id)
+  "Begin replacing SEMANTIC-ID's child order in RUNTIME's candidate.
+An ancestor may render a descendant already evaluated earlier in this turn.
+Its new output replaces that earlier order, including the append cursor."
+  (puthash semantic-id nil (etaf-runtime-candidate-graph-children runtime))
+  (remhash semantic-id (etaf-runtime-candidate-graph-child-tails runtime)))
+
 (defun etaf--runtime-candidate-add-child (runtime parent-id child-id)
   "Append CHILD-ID to PARENT-ID's candidate semantic order in RUNTIME."
   (let* ((children (etaf-runtime-candidate-graph-children runtime))
@@ -2135,6 +2142,7 @@ receive an independent Host effect."
                   :props-signature backend-props
                   :path path
                   :style-identity etaf--render-style-owners)))
+    (etaf--runtime-begin-child-order runtime semantic-id)
     (etaf--runtime-register-host-behaviors runtime record)
     (unless etaf--rendering-range-p
       (puthash identity semantic-id
@@ -2669,6 +2677,10 @@ subtrees keep their committed resources without being traversed."
                     ;; must find them without the caller's item index.
                     ;; Transparent output uses its own retained Range index.
                     (etaf--rendering-range-p transparent-p))
+                (etaf--runtime-begin-child-order
+                 runtime etaf--current-component-semantic-id)
+                (when range-id
+                  (etaf--runtime-begin-child-order runtime range-id))
                 (etaf--render-value-list rendered
                                          (append path (list :view))))))
         ;; An unretained/raw slot projection still owns its structure through

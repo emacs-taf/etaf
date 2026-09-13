@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Composed slots can update a controlled child and conditional content together
+  without duplicating retained children. Both declarative and programmatic slot
+  containers preserve the child's interactive identity across repeated updates.
+
 - Buttons without explicit references keep working after theme or reactive style
   updates. Retained layout identity and native activation now address the same
   committed Host, including after disabling and re-enabling a control.
