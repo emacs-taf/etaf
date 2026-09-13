@@ -161,5 +161,37 @@
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(ert-deftest etaf-native-activation-retains-automatic-target-after-style-update ()
+  "A property-only style update keeps automatic Host activation and focus usable."
+  (let ((buffer (generate-new-buffer " *etaf-retained-activation*"))
+        (color (etaf-ref "red")) (disabled (etaf-ref nil)) (presses 0))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (etaf-view
+            (box :role 'button :tab-index 0 :aria-label "Action"
+                 :color (etaf-value color) :disabled (etaf-value disabled)
+                 :on-press (lambda () (cl-incf presses)) "Action")))
+          (with-current-buffer buffer
+            (let* ((runtime (etaf-runtime-for-buffer buffer))
+                   (target (caar (etaf-runtime-host-props-entries runtime)))
+                   (last-input-event ?\r))
+              (etaf-focus runtime target)
+              (call-interactively (key-binding (kbd "RET")))
+              (setf (etaf-value color) "blue")
+              (etaf-runtime-flush runtime)
+              (should (equal target (etaf-focused-host-ref runtime)))
+              (call-interactively (key-binding (kbd "RET")))
+              (should (= presses 2))
+              (setf (etaf-value disabled) t)
+              (should-error (etaf-activate runtime) :type 'user-error)
+              (setf (etaf-value disabled) nil)
+              (etaf-focus runtime target)
+              (ebox-activate)
+              (should (= presses 3)))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
 (provide 'etaf-native-activation-tests)
 ;;; etaf-native-activation-tests.el ends here

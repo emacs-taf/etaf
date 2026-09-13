@@ -30,7 +30,7 @@
 (declare-function etaf--generated-host-ref
                   "etaf-renderer" (props path &optional site-token))
 (declare-function etaf--ebox-properties
-                  "etaf-renderer" (props path &optional site-token runtime))
+                  "etaf-renderer" (props path &optional site-token runtime host-ref))
 (declare-function etaf--lower-resolved-semantic-host
                   "etaf-renderer" (name props content children range-child-p))
 (declare-function etaf--ebox-forest-root
@@ -5139,13 +5139,11 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
            (dolist (source (nth 1 theme-result))
              (cl-pushnew source deps :test #'eq))))))
     (let ((backend-props
-           (etaf--merge-property
             (etaf--host-theme-properties
              (etaf--ebox-properties host-props
                                     (etaf--semantic-host-path base)
-                                    (etaf--semantic-host-site-token base) runtime)
-             theme-scope)
-            :source-identity host-ref)))
+                                    (etaf--semantic-host-site-token base) runtime host-ref)
+             theme-scope)))
       (dolist (field '(:ecss-scopes :ecss-scope-roots))
         (when (plist-get style-props field)
           (setq backend-props (etaf--merge-property

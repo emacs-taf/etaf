@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- Buttons without explicit references keep working after theme or reactive style
+  updates. Retained layout identity and native activation now address the same
+  committed Host, including after disabling and re-enabling a control.
+
 ### Removed
 
 - `etaf-input-mode` and its independent keyboard map. Mounted applications use

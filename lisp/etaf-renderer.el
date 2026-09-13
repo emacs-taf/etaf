@@ -370,9 +370,10 @@ with only a reference or accessibility label remains part of its parent."
                 "radio" "slider" "spinbutton" "switch" "tab" "textbox"
                 "treeitem"))))
 
-(defun etaf--ebox-properties (props path &optional site-token runtime)
+(defun etaf--ebox-properties (props path &optional site-token runtime host-ref)
   "Project ETAF PROPS at PATH to canonical Ebox author facts.
-SITE-TOKEN supplies the stable generated Host identity when non-nil."
+SITE-TOKEN supplies the generated Host identity when non-nil.
+HOST-REF preserves an already allocated identity during retained updates."
   (let* ((source-props (etaf--resolve-property-plist props))
          (_validated (etaf--validate-semantic-properties source-props))
          (props (copy-sequence source-props))
@@ -412,7 +413,7 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
     (setq ebox-props
           (etaf--merge-property
            ebox-props :source-identity
-           (etaf--generated-host-ref source-props path site-token)))
+           (or host-ref (etaf--generated-host-ref source-props path site-token))))
     (when (etaf--interaction-boundary-p source-props)
       (let* ((runtime (or runtime etaf--render-runtime))
              (callback (plist-get source-props :on-press))

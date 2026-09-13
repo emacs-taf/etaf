@@ -753,6 +753,11 @@
       "name": "etaf-component-focus-rules-follow-shared-publication",
       "file": "tests/etaf-component-cascade-tests.el",
       "purpose": "Component focus rules share Ebox focus, reactive publication and pure isolation."
+    },
+    {
+      "name": "etaf-native-activation-retains-automatic-target-after-style-update",
+      "file": "tests/etaf-native-activation-tests.el",
+      "purpose": "Automatic Host identity continues to activate through RET after retained style changes and disable/re-enable updates."
     }
   ]
 }
