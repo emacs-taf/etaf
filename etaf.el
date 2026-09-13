@@ -692,7 +692,8 @@
 ;; Lower normalized VIEW to one atomic canonical Ebox input.
 ;; Host class/id, non-nil role and explicitly supplied aria-* attributes reach
 ;; Ebox selector subjects. ARIA nil remains a present nil attribute; comparison
-;; uses ECSS value formatting. A true :disabled supplies the disabled state.
+;; uses ECSS value formatting. Ebox derives the disabled state from the same
+;; :disabled interaction input used for focus and activation protection.
 ;; Selector relationships follow the rendered Host tree. Use Ebox's public
 ;; selector queries on the result; :selector-attributes and :selector-state
 ;; are adapter facts and cannot be supplied as View properties.

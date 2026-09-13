@@ -743,6 +743,11 @@
       "name": "etaf-native-keyboard-uses-shared-buffer-bindings-and-activation",
       "file": "tests/etaf-native-activation-tests.el",
       "purpose": "ETAF mounts use Ebox TAB and activation, sharing focus and releasing mode bindings on unmount."
+    },
+    {
+      "name": "etaf-disabled-state-shares-provider-cascade",
+      "file": "tests/etaf-component-cascade-tests.el",
+      "purpose": "Reactive disabled input gives pure and mounted component rules the same state."
     }
   ]
 }

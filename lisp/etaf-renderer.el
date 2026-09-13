@@ -409,9 +409,6 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
       (when attributes
         (setq ebox-props
               (etaf--merge-property ebox-props :selector-attributes attributes))))
-    (when (plist-get source-props :disabled)
-      (setq ebox-props
-            (etaf--merge-property ebox-props :selector-state '(disabled))))
     (setq ebox-props
           (etaf--merge-property
            ebox-props :source-identity
@@ -430,7 +427,7 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
     ebox-props))
 
 (defconst etaf--ebox-source-fields
-  '(:source-identity :key :class :id :selector-attributes :selector-state
+  '(:source-identity :key :class :id :selector-attributes
     :ecss-scopes :ecss-scope-roots :interactions)
   "ETAF source facts compiled into one opaque Ebox source handle.")
 
@@ -481,7 +478,6 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
            :id (plist-get props :id)
            :class (plist-get props :class)
            :selector-attributes (plist-get props :selector-attributes)
-           :selector-state (plist-get props :selector-state)
            :ecss-scopes (plist-get props :ecss-scopes)
            :ecss-scope-roots (plist-get props :ecss-scope-roots)
            :declarations declarations
@@ -508,7 +504,6 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
            :id (plist-get props :id)
            :class (plist-get props :class)
            :selector-attributes (plist-get props :selector-attributes)
-           :selector-state (plist-get props :selector-state)
            :ecss-scopes (plist-get props :ecss-scopes)
            :ecss-scope-roots (plist-get props :ecss-scope-roots)
            :declarations declarations

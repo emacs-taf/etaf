@@ -157,5 +157,28 @@
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(etaf-define-component etaf-component-cascade-test-disabled (&key disabled)
+  :styles (("&" :color "#111111")
+           ("&:disabled" :color "#999999"))
+  :view (text :ref 'control :disabled (etaf-value disabled) "Control"))
+
+(ert-deftest etaf-disabled-state-shares-provider-cascade ()
+  "Reactive disabled input gives pure and mounted component rules the same state."
+  (let* ((disabled (etaf-ref nil))
+         (view (etaf-view (etaf-component-cascade-test-disabled :disabled disabled)))
+         (buffer (generate-new-buffer " *etaf-disabled-cascade*")))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer view)
+          (dolist (value '(nil t nil t))
+            (setf (etaf-value disabled) value)
+            (etaf-runtime-flush (etaf-runtime-for-buffer buffer))
+            (with-current-buffer buffer
+              (dolist (text (list (buffer-string) (ebox-render (etaf-render view))))
+                (should (equal (if value "#999999" "#111111")
+                               (etaf-component-cascade-test-color text "Control")))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
 (provide 'etaf-component-cascade-tests)
 ;;; etaf-component-cascade-tests.el ends here

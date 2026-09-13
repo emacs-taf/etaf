@@ -170,8 +170,8 @@ Host metadata also feeds the shared Ebox/ECSS selector subjects. `:class` and
 `:id` use Ebox normalization; a non-nil `:role` and every explicitly supplied
 `:aria-*` property become selector attributes. Values retain their Elisp meaning:
 ARIA nil remains present and compares as `nil`, and t compares as `t`, using ECSS's
-normal attribute formatting. A true `:disabled` adds the `disabled` state; nil
-removes it. These facts follow successful reactive publication and remain unchanged
+normal attribute formatting. Ebox derives the `disabled` state from a true
+`:disabled` interaction input; nil removes it. These facts follow successful reactive publication and remain unchanged
 when a candidate fails. Structural selectors use the rendered Host tree.
 `:selector-attributes` and `:selector-state` are reserved adapter facts, not View
 properties. Use the semantic properties above to declare Host metadata.

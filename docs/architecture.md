@@ -342,6 +342,8 @@ handlers, so callback replacement does not retain candidate closures. Disabled
 and callbackless control boundaries emit explicit nil maps. Ebox resolves visible
 position ownership; ETAF no longer scans Host bounds to select activation targets.
 Tab index and disabled declarations are published as Ebox interaction facts.
+Ebox derives disabled selector state from those facts; ETAF keeps no separate
+selector-state projection.
 Ebox owns the focus identity, navigation order, visibility, point retention and
 rollback. ETAF's focus APIs translate Runtime context and preserve their public
 error conditions; Runtime stores no focus field and no longer scans or sorts

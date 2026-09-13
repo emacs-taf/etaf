@@ -163,7 +163,7 @@ quote 只有普通 Elisp 的含义：
 Host 元数据也会传给共享的 Ebox/ECSS selector subject。`:class` 与 `:id` 使用
 Ebox 归一化；非 nil 的 `:role` 和显式提供的每个 `:aria-*` 属性成为选择器属性。
 值保留 Elisp 语义：ARIA nil 仍是存在的属性，按 ECSS 属性格式化规则与 `nil`
-比较，t 与 `t` 比较。`:disabled` 为真时添加 `disabled` 状态，nil 移除状态。
+比较，t 与 `t` 比较。Ebox 从同一交互输入 `:disabled` 派生 `disabled` 状态，nil 移除状态。
 这些事实随成功的响应式发布更新，失败候选保留旧事实。结构选择器使用渲染的
 Host 树。`:selector-attributes` 与 `:selector-state` 是保留的适配事实，不是
 View 属性；通过上述语义属性声明 Host 元数据。
