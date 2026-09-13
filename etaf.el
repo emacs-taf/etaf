@@ -44,6 +44,9 @@
 ;; Dispatch `press' for the focused Host, or the interaction boundary at point.
 ;;
 ;; RUNTIME is the mounted Runtime to activate, or nil for the current buffer.
+;; Position lookup uses committed Ebox node keymaps. Enabled press handlers are
+;; native activation/navigation targets; disabled or callbackless controls block
+;; ancestor activation. Explicit keyboard focus retains precedence at point.
 ;;
 ;; Function: etaf-behavior-context-info (context)
 ;;;###autoload (autoload 'etaf-behavior-context-info "etaf" nil nil)
@@ -453,7 +456,7 @@
 ;;
 ;; Function: etaf-input-mode (&optional arg)
 ;;;###autoload (autoload 'etaf-input-mode "etaf" nil t)
-;; Enable keyboard and mouse input for a mounted ETAF Runtime.
+;; Enable keyboard focus and activation commands for a mounted ETAF Runtime.
 ;;
 ;; This is a minor mode.  If called interactively, toggle the `ETAF-Input
 ;; mode' mode.  If the prefix argument is positive, enable the mode, and if

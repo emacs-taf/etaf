@@ -30,7 +30,7 @@
 (declare-function etaf--generated-host-ref
                   "etaf-renderer" (props path &optional site-token))
 (declare-function etaf--ebox-properties
-                  "etaf-renderer" (props path &optional site-token))
+                  "etaf-renderer" (props path &optional site-token runtime))
 (declare-function etaf--lower-resolved-semantic-host
                   "etaf-renderer" (name props content children range-child-p))
 (declare-function etaf--ebox-forest-root
@@ -320,6 +320,7 @@ the sequential `etaf--pvec-put' contract."
   handlers
   host-props
   theme-paint-slots
+  (interaction-keymaps (make-hash-table :test #'equal))
   candidate-theme-paint-updates
   focus-ref
   behaviors
@@ -444,6 +445,21 @@ checking them against a fresh generation projection."
             (list 'implicit color)
           (list (list width style) color)))
     (error nil)))
+
+(defun etaf--runtime-interaction-keymap (runtime host-ref)
+  "Return a native keymap dispatching the committed HOST-REF in RUNTIME."
+  (let ((maps (etaf-runtime-interaction-keymaps runtime)))
+    (or (gethash host-ref maps)
+        (let ((map (ebox-keymap-create
+                    :activate
+                    (lambda ()
+                      (etaf--dispatch-activation
+                       runtime (or (and (not (mouse-event-p last-input-event))
+                                        (etaf--focused-activation-ref runtime))
+                                   host-ref))))))
+          (when (>= (hash-table-count maps) 512) (clrhash maps))
+          (puthash host-ref map maps)
+          map))))
 
 (defun etaf--runtime-theme-paint-value
     (runtime property token source resolved)
@@ -5147,7 +5163,7 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
             (etaf--host-theme-properties
              (etaf--ebox-properties host-props
                                     (etaf--semantic-host-path base)
-                                    (etaf--semantic-host-site-token base))
+                                    (etaf--semantic-host-site-token base) runtime)
              theme-scope)
             :source-identity host-ref)))
       (dolist (field '(:ecss-scopes :ecss-scope-roots))

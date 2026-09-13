@@ -708,6 +708,26 @@
       "name": "etaf-component-rules-preserve-importance-and-custom-properties",
       "file": "tests/etaf-component-cascade-tests.el",
       "purpose": "Component author importance overrides normal inline values and inherited custom properties resolve through ECSS."
+    },
+    {
+      "name": "etaf-native-activation-matches-direct-ebox-counter",
+      "file": "tests/etaf-native-activation-tests.el",
+      "purpose": "Direct Ebox and ETAF counters update through the same public native activation command."
+    },
+    {
+      "name": "etaf-native-navigation-and-activation-preserve-hit-barriers",
+      "file": "tests/etaf-native-activation-tests.el",
+      "purpose": "Ebox navigation discovers ETAF handlers and preserves disabled and callbackless descendant hit barriers."
+    },
+    {
+      "name": "etaf-native-activation-reads-only-committed-handlers",
+      "file": "tests/etaf-native-activation-tests.el",
+      "purpose": "Native commands observe only current committed handler snapshots across successful and rejected updates."
+    },
+    {
+      "name": "etaf-native-keyboard-preserves-explicit-focused-parent",
+      "file": "tests/etaf-native-activation-tests.el",
+      "purpose": "Native RET respects explicit parent or child focus when their visible positions coincide."
     }
   ]
 }

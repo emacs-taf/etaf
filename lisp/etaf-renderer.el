@@ -357,7 +357,20 @@ structure must use the ordinary typed lowering path."
     (cl-some #'etaf--inline-text-dynamic-p value))
    (t nil)))
 
-(defun etaf--ebox-properties (props path &optional site-token)
+(defun etaf--interaction-boundary-p (props)
+  "Return non-nil when resolved PROPS describe an interaction boundary.
+Disabled and callbackless controls still own their hit area.  Ordinary text
+with only a reference or accessibility label remains part of its parent."
+  (or (functionp (plist-get props :on-press))
+      (plist-get props :disabled)
+      (numberp (plist-get props :tab-index))
+      (member (let ((role (plist-get props :role)))
+                (if (symbolp role) (symbol-name role) role))
+              '("button" "checkbox" "combobox" "link" "menuitem" "option"
+                "radio" "slider" "spinbutton" "switch" "tab" "textbox"
+                "treeitem"))))
+
+(defun etaf--ebox-properties (props path &optional site-token runtime)
   "Project ETAF PROPS at PATH to canonical Ebox author facts.
 SITE-TOKEN supplies the stable generated Host identity when non-nil."
   (let* ((source-props (etaf--resolve-property-plist props))
@@ -369,7 +382,7 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
             (value (pop props)))
         (cond
          ((memq key '(:face :surface-properties :selector-attributes :selector-state
-                        :ecss-scopes :ecss-scope-roots))
+                        :ecss-scopes :ecss-scope-roots :interactions))
           (signal 'etaf-renderer-error
                   (list (format
                          "%S is not a canonical ETAF property" key))))
@@ -403,11 +416,18 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
           (etaf--merge-property
            ebox-props :source-identity
            (etaf--generated-host-ref source-props path site-token)))
+    (when (etaf--interaction-boundary-p source-props)
+      (let* ((runtime (or runtime etaf--render-runtime))
+             (callback (plist-get source-props :on-press))
+             (map (and runtime callback (not (plist-get source-props :disabled))
+                       (etaf--runtime-interaction-keymap
+                        runtime (plist-get ebox-props :source-identity)))))
+        (setq ebox-props (etaf--merge-property ebox-props :interactions (list :keymap map)))))
     ebox-props))
 
 (defconst etaf--ebox-source-fields
   '(:source-identity :key :class :id :selector-attributes :selector-state
-    :ecss-scopes :ecss-scope-roots)
+    :ecss-scopes :ecss-scope-roots :interactions)
   "ETAF source facts compiled into one opaque Ebox source handle.")
 
 (defvar etaf--ebox-declaration-cache (make-hash-table :test #'equal)
@@ -461,11 +481,12 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
            :ecss-scopes (plist-get props :ecss-scopes)
            :ecss-scope-roots (plist-get props :ecss-scope-roots)
            :declarations declarations
+           :interactions (plist-get props :interactions)
            :provenance '(:adapter etaf-renderer :tag text))))
     (ebox-text-create
      :value value
      :owned-facts
-     (ebox-canonical-facts-from-declarations 'text declarations)
+     (ebox-canonical-facts-from-declarations 'text declarations (plist-get props :interactions))
      :source-handle source-handle)))
 
 (defun etaf--ebox-box-node (tag props children)
@@ -487,12 +508,13 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
            :ecss-scopes (plist-get props :ecss-scopes)
            :ecss-scope-roots (plist-get props :ecss-scope-roots)
            :declarations declarations
+           :interactions (plist-get props :interactions)
            :provenance (list :adapter 'etaf-renderer :tag tag))))
     (ebox-box-create
      :layout (plist-get configuration :layout)
      :outer (plist-get configuration :outer) :children children
      :source-builder etaf--ebox-source-builder
-     :owned-facts (ebox-canonical-facts-from-declarations tag declarations)
+     :owned-facts (ebox-canonical-facts-from-declarations tag declarations (plist-get props :interactions))
      :source-handle source-handle)))
 
 (defun etaf--ebox-forest-root (nodes source-identity)

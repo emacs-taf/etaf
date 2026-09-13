@@ -336,6 +336,13 @@ Use `etaf-action-define` and `etaf-dispatch` when the mutation is named and shar
 
 `etaf-behavior-create` accepts the reserved `:install` attribute for an optional zero-argument installer. The installer may return a cleanup function; `etaf-current-behavior-context` returns an opaque installation context; `etaf-behavior-context-info` exposes its Runtime, effective Host reference and installation-time semantic props. These facts do not authorize candidate input. Installer state is disposed on replacement, candidate rollback or owner unmount; committed state remains authoritative until successful publication.
 
+Host press bindings lower to Ebox native keymaps alongside canonical source
+facts. A bounded per-Runtime cache holds dispatch maps that look up committed
+handlers, so callback replacement does not retain candidate closures. Disabled
+and callbackless control boundaries emit explicit nil maps. Ebox resolves visible
+position ownership; ETAF no longer scans Host bounds to select activation targets.
+ETAF still owns explicit focus and its keyboard precedence at coincident positions.
+
 Interaction composition is deterministic.  An explicit Host `:on-*` callback
 runs first, followed by Behavior callbacks in declaration order; an error
 short-circuits the remaining callbacks.  For non-event attributes the explicit

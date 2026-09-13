@@ -632,7 +632,14 @@ Focus 和 hit testing 是 Runtime 操作：
 
 `etaf-host-ref-bounds` 和 `etaf-host-ref-position` 暴露公共的 Ebox hit-test 边界。`etaf-dispatch-event` 支持可选 payload 标记，用于给 callback 传入一个参数。
 
-挂载后的 buffer 会自动启用 `etaf-input-mode`：`TAB` 聚焦下一个 Host，`Shift-TAB`/backtab 聚焦上一个 Host，`RET` 激活当前焦点 Host，`mouse-1` 在点击位置激活 Host。焦点顺序先按数字 `:tab-index`，相同 index 再按 live buffer position 稳定排序；移动焦点也会移动 point。卸载时会禁用该输入 mode。
+启用的 press handler 以 Ebox 原生节点 keymap 发布，支持 RET、SPC 和主鼠标按键。
+`ebox-activate` 与 Ebox 交互导航可以直接操作这些 Host。禁用或无回调控件发布显式
+命中屏障，避免激活祖先。原生点击保留 point 和窗口选择，除非 handler 主动改变它们。
+原生键盘激活在父子位置重合时仍尊重显式焦点。
+
+挂载 buffer 仍启用 `etaf-input-mode` 提供 ETAF 焦点导航。TAB 与 Shift-TAB/backtab
+按数字 `:tab-index` 和 live position 循环，聚焦会移动 point。`etaf-activate` 激活
+显式焦点，或把位置查询委托给 Ebox。卸载时禁用该 mode；焦点状态目前仍归 ETAF。
 
 ## 9. Context / Provide / Inject
 

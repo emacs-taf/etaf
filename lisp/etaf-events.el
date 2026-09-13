@@ -117,71 +117,18 @@ otherwise call the local callback with no arguments."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (ebox-host-ref-position (etaf-runtime-buffer runtime) host-ref))
 
-(defun etaf--position-number (position)
-  "Return integer POSITION, or nil when POSITION is not buffer-local."
-  (cond
-   ((markerp position) (marker-position position))
-   ((integerp position) position)
-   (t nil)))
+(defun etaf--focused-activation-ref (runtime)
+  "Return RUNTIME's focused target when point still addresses it."
+  (let ((ref (etaf-runtime-focus-ref runtime)))
+    (and ref (equal (with-current-buffer (etaf-runtime-buffer runtime) (point))
+                    (etaf-host-ref-position runtime ref)) ref)))
 
-(defun etaf--activation-candidate-before-p (left right)
-  "Return non-nil when hit candidate LEFT is inside or smaller than RIGHT."
-  (let ((left-length (nth 2 left))
-        (right-length (nth 2 right))
-        (left-start (nth 1 left))
-        (right-start (nth 1 right))
-        (left-lineage (nth 3 left))
-        (right-lineage (nth 3 right)))
-    (cond
-     ((and right-lineage (memq (car right-lineage) left-lineage)) t)
-     ((and left-lineage (memq (car left-lineage) right-lineage)) nil)
-     (t (or (< left-length right-length)
-            (and (= left-length right-length)
-                 (< left-start right-start)))))))
-
-(defun etaf--interaction-boundary-p (props)
-  "Return non-nil when committed PROPS describe an interaction boundary.
-Disabled and callbackless controls still own their hit area.  Ordinary text
-with only a reference or accessibility label remains part of its parent."
-  (or (functionp (plist-get props :on-press))
-      (plist-get props :disabled)
-      (numberp (plist-get props :tab-index))
-      (member (let ((role (plist-get props :role)))
-                (if (symbolp role) (symbol-name role) role))
-              '("button" "checkbox" "combobox" "link" "menuitem" "option"
-                "radio" "slider" "spinbutton" "switch" "tab" "textbox"
-                "treeitem"))))
-
-(defun etaf--activation-at-position (runtime position &optional quiet)
-  "Activate the deepest interaction boundary at POSITION in RUNTIME.
-
-When QUIET is non-nil, return nil instead of signaling when no callback owns
-the position."
-  (let (candidates)
-    (dolist (entry (etaf-runtime-host-props-entries runtime))
-      (let ((host-ref (car entry)) (props (cdr entry)))
-        (when (etaf--interaction-boundary-p props)
-          (let* ((bounds (ebox-host-ref-bounds
-                          (etaf-runtime-buffer runtime) host-ref))
-                 (start (and bounds (car bounds)))
-                 (end (and bounds (cdr bounds))))
-            (when (and start end (<= start position) (< position end))
-              (push (list host-ref start (- end start)) candidates))))))
-    (when (cdr candidates)
-      (let ((ancestries
-             (etaf-runtime-host-ancestries runtime (mapcar #'car candidates))))
-        (dolist (candidate candidates)
-          (setcdr (last candidate) (list (gethash (car candidate) ancestries)))))
-      (setq candidates (cl-stable-sort
-                        candidates #'etaf--activation-candidate-before-p)))
-    (if-let* ((candidate (car candidates))
-              (ref (car candidate))
-              ((not (plist-get (etaf-runtime-host-props-for runtime ref)
-                               :disabled)))
-              ((etaf--event-handler runtime ref 'press)))
-        (etaf-dispatch-event runtime ref 'press)
-      (unless quiet
-        (user-error "No interactive ETAF Host at point")))))
+(defun etaf--dispatch-activation (runtime host-ref)
+  "Dispatch an enabled committed HOST-REF activation in RUNTIME."
+  (if (and (not (plist-get (etaf-runtime-host-props-for runtime host-ref) :disabled))
+           (etaf--event-handler runtime host-ref 'press))
+      (etaf-dispatch-event runtime host-ref 'press)
+    (user-error "No interactive ETAF Host at point")))
 
 ;;;###autoload
 (defun etaf-activate (&optional runtime)
@@ -190,16 +137,10 @@ the position."
 RUNTIME is the mounted Runtime to activate, or nil for the current buffer."
   (interactive)
   (setq runtime (etaf-runtime-require-mounted runtime))
-  (let ((position (with-current-buffer (etaf-runtime-buffer runtime) (point)))
-        (focus-ref (etaf-runtime-focus-ref runtime)))
-    (if (and focus-ref
-             (equal position (etaf-host-ref-position runtime focus-ref)))
-        (if (and (not (plist-get
-                       (etaf-runtime-host-props-for runtime focus-ref) :disabled))
-                 (etaf--event-handler runtime focus-ref 'press))
-            (etaf-dispatch-event runtime focus-ref 'press)
-          (user-error "No interactive ETAF Host at point"))
-      (etaf--activation-at-position runtime position))))
+  (if-let* ((ref (etaf--focused-activation-ref runtime)))
+      (etaf--dispatch-activation runtime ref)
+    (with-current-buffer (etaf-runtime-buffer runtime)
+      (ebox-activate))))
 
 (defun etaf--focus-candidate-before-p (left right)
   "Return non-nil when focus candidate LEFT precedes RIGHT."
@@ -306,20 +247,6 @@ When called interactively without arguments, focus the first visible Host."
   (interactive)
   (etaf--focus-cycle runtime -1))
 
-(defun etaf-activate-mouse (event)
-  "Activate the enabled Host at the real mouse EVENT position."
-  (interactive "e")
-  (let* ((start (event-start event))
-         (window (posn-window start))
-         (position (etaf--position-number (posn-point start))))
-    (when (and (windowp window) position)
-      (let ((buffer (window-buffer window)))
-        (when (buffer-live-p buffer)
-          (with-current-buffer buffer
-            (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
-              (goto-char position)
-              (etaf--activation-at-position runtime position t))))))))
-
 (defvar etaf-input-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "TAB") #'etaf-focus-next)
@@ -329,13 +256,12 @@ When called interactively without arguments, focus the first visible Host."
     (define-key map (kbd "S-TAB") #'etaf-focus-previous)
     (define-key map (kbd "RET") #'etaf-activate)
     (define-key map (kbd "<return>") #'etaf-activate)
-    (define-key map [mouse-1] #'etaf-activate-mouse)
     map)
   "Keymap for mounted ETAF Runtime input.")
 
 ;;;###autoload
 (define-minor-mode etaf-input-mode
-  "Enable keyboard and mouse input for a mounted ETAF Runtime."
+  "Enable keyboard focus and activation commands for a mounted ETAF Runtime."
   :init-value nil
   :lighter " ETAF"
   :keymap etaf-input-mode-map)

@@ -323,6 +323,11 @@ Behavior = 安装多个非视觉能力的可复用 bundle
 
 `etaf-behavior-create` 接受保留的 `:install` 属性，用于可选的零参数 installer。Installer 可以返回 cleanup；`etaf-current-behavior-context` 返回不透明安装上下文，`etaf-behavior-context-info` 查询其 Runtime、实际 Host 引用及安装时语义属性。这些信息不授予候选输入权。替换、候选回滚或 owner 卸载时释放 installer 状态；成功发布之前，已提交状态仍是权威。
 
+Host press 绑定与规范 source 事实一起降为 Ebox 原生 keymap。每个 Runtime 的有界
+缓存保留查找已提交 handler 的分发 map，替换回调不会调用候选闭包。禁用和无回调的
+控件边界发布显式 nil map。Ebox 解析可见位置归属；ETAF 不再扫描 Host bounds
+选择激活目标。显式焦点及父子位置重合时的键盘优先级目前仍由 ETAF 维护。
+
 交互组合是确定的：显式 Host `:on-*` callback 先运行，然后按声明顺序运行 Behavior
 callback；任一错误会 short-circuit 后续 callback。非事件属性由显式 Host 值优先，
 否则第一个声明该属性的 Behavior 获胜（first-wins）。同一 Host 的 Behavior name 必须在任何

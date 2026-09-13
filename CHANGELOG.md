@@ -41,6 +41,11 @@
 
 ### Changed
 
+- Mounted press handlers now use Ebox native keymaps and activation lookup;
+  Ebox navigation can discover ETAF controls. Disabled and callbackless children
+  block ancestor activation. Native clicks preserve point/window selection,
+  and keyboard activation preserves explicit focus at shared positions.
+
 - Component styles now use Ebox/ECSS matching and cascade. Later equal-specificity
   rules win, author-important rules can override normal inline values, and
   structural selectors operate on the canonical tree. Change root class/type

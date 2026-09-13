@@ -681,7 +681,18 @@ remain application-wide addresses and must be unique within the Runtime.
 
 `etaf-host-ref-bounds` and `etaf-host-ref-position` expose the public Ebox hit-test boundary. `etaf-dispatch-event` accepts an optional payload flag when the callback needs one argument.
 
-Mounted buffers enable `etaf-input-mode` automatically. `TAB` focuses the next Host, `Shift-TAB`/backtab focuses the previous Host, `RET` activates the focused Host, and `mouse-1` activates the Host at the click position. Focus ordering sorts numeric `:tab-index` first and uses live buffer position as the stable tie-breaker; moving focus also moves point to that Host. Unmounting disables the input mode.
+Mounted enabled press handlers publish Ebox native node keymaps for RET, SPC
+and primary mouse activation. `ebox-activate` and Ebox interaction navigation
+can operate on these Hosts directly. Disabled or callbackless controls publish
+an explicit hit barrier, so activation never falls through to an ancestor.
+Native clicks preserve point and window selection unless the handler changes
+them. Native keyboard activation retains an explicitly focused Host when its
+position coincides with a nested child.
+
+Mounted buffers still enable `etaf-input-mode` for ETAF focus navigation. `TAB`
+and Shift-TAB/backtab cycle Hosts by numeric `:tab-index` and live position;
+focus moves point. `etaf-activate` activates explicit focus or delegates the
+position lookup to Ebox. Unmount disables the mode. Focus state remains ETAF-owned.
 
 ## 9. Context / Provide / Inject
 
