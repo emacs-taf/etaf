@@ -432,12 +432,6 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
 (defconst etaf--ebox-declaration-cache-limit 512
   "Maximum canonical ETAF declaration entries retained across renders.")
 
-(defvar etaf--ebox-layout-config-cache (make-hash-table :test #'equal)
-  "Bounded typed LayoutConfig cache for normalized ETAF Box forms.")
-
-(defconst etaf--ebox-layout-config-cache-limit 128
-  "Maximum typed LayoutConfig entries retained across renders.")
-
 (defun etaf--ebox-remove-properties (props names)
   "Return PROPS without keys in NAMES."
   (cl-loop for (key value) on props by #'cddr
@@ -461,24 +455,6 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
           (clrhash etaf--ebox-declaration-cache))
         (puthash (copy-tree key) compiled etaf--ebox-declaration-cache)
         compiled))))
-
-(defun etaf--ebox-layout-config (tag declarations)
-  "Return TAG LayoutConfig from normalized DECLARATIONS."
-  (let* ((layout-props
-          (ebox-style-declaration-properties
-           declarations
-           (lambda (property)
-             (memq (plist-get property :name)
-                   (ebox-layout-config-property-names tag)))))
-         (key (cons tag layout-props))
-         (config (gethash key etaf--ebox-layout-config-cache)))
-    (or config
-        (let ((created (ebox-layout-config-for-form tag layout-props)))
-          (when (>= (hash-table-count etaf--ebox-layout-config-cache)
-                    etaf--ebox-layout-config-cache-limit)
-            (clrhash etaf--ebox-layout-config-cache))
-          (puthash (copy-tree key) created etaf--ebox-layout-config-cache)
-          created))))
 
 (defun etaf--ebox-text-node (value props)
   "Return one typed Ebox TextNode for string VALUE and canonical PROPS."
@@ -512,10 +488,7 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
     (signal 'etaf-renderer-error
             (list "ETAF Box lowering requires one source builder")))
   (let* ((declarations (etaf--ebox-declarations tag props))
-         (layout (etaf--ebox-layout-config tag declarations))
-         (outer (if (plist-member props :outer)
-                    (plist-get props :outer)
-                  'block))
+         (configuration (ebox-canonical-box-configuration tag declarations))
          (source-handle
           (ebox-source-builder-bind
            etaf--ebox-source-builder
@@ -528,7 +501,8 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
            :declarations declarations
            :provenance (list :adapter 'etaf-renderer :tag tag))))
     (ebox-box-create
-     :layout layout :outer outer :children children
+     :layout (plist-get configuration :layout)
+     :outer (plist-get configuration :outer) :children children
      :source-builder etaf--ebox-source-builder
      :owned-facts (ebox-canonical-facts-from-declarations tag declarations)
      :source-handle source-handle)))

@@ -426,6 +426,23 @@ named footer slot:
 
 ## 7. Styles and themes
 
+Ordinary property expressions can construct ECSS declaration values. Box layout
+configuration and outer display are projected by Ebox; `ecss-important`,
+`ecss-wide-value` and `ecss-var` values reach layout after cascade computation.
+Reactive property replacements use the same path and invalid candidates preserve
+the committed display. This does not execute constructors in static `.ecss` data.
+Context-dependent shorthand substitution retains Ebox's documented limitations.
+
+```elisp
+(require 'ecss)
+(etaf-mount
+ "*etaf-layout-values*"
+ (etaf-view
+  (flex :flex-direction (ecss-important 'column)
+    (box "One")
+    (box "Two"))))
+```
+
 Static Component styles use one declaration form:
 
 ```elisp

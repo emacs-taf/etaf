@@ -402,6 +402,21 @@ Table/Grid 的 cell callback 同样使用消费它的 Table/Grid 所在位置的
 
 ## 7. 样式与 Theme
 
+普通属性表达式可构造 ECSS 声明值。Box 布局配置与 outer display 由 Ebox 投影；
+`ecss-important`、`ecss-wide-value` 和 `ecss-var` 值经过层叠计算后才进入布局。
+响应式属性替换使用同一路径，无效候选保留已提交显示。静态 `.ecss` 数据不会因此
+执行构造函数；依赖上下文的简写替换仍受 Ebox 已记录的限制约束。
+
+```elisp
+(require 'ecss)
+(etaf-mount
+ "*etaf-layout-values*"
+ (etaf-view
+  (flex :flex-direction (ecss-important 'column)
+    (box "One")
+    (box "Two"))))
+```
+
 静态 Component 样式只有一种声明形式：
 
 ```elisp

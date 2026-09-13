@@ -4,6 +4,9 @@
 
 ### Added
 
+- ECSS-tagged Box layout and outer values now use Ebox's canonical projection,
+  including important, CSS-wide and variable values during reactive updates.
+
 - Preserve Host role, ARIA attributes and disabled state in Ebox selector
   subjects, including successful reactive updates and failed-candidate rollback.
 

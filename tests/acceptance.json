@@ -658,6 +658,16 @@
       "name": "etaf-selector-facts-follow-accepted-reactive-properties",
       "file": "tests/etaf-selector-facts-tests.el",
       "purpose": "Accepted reactive metadata reaches Ebox selectors while failed candidates preserve committed facts."
+    },
+    {
+      "name": "etaf-layout-values-match-shared-ebox-projection",
+      "file": "tests/etaf-cascade-layout-tests.el",
+      "purpose": "Box, Row, Column, Flex and Grid share Ebox projection for tagged layout declarations."
+    },
+    {
+      "name": "etaf-layout-values-publish-reactively-and-reject-invalid-input",
+      "file": "tests/etaf-cascade-layout-tests.el",
+      "purpose": "Reactive tagged layout changes match fresh provider output and invalid candidates preserve committed display."
     }
   ]
 }
