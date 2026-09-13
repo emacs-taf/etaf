@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 CAPTURE = ROOT / "scripts/capture-emacs-window.sh"
 RUNNER = ROOT / "scripts/run-emacs-gui-verification.sh"
 RECORDER_SOURCE = ROOT / "scripts/record-emacs-window.swift"
