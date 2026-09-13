@@ -729,7 +729,19 @@ Use a Resource for a Scope-owned synchronous loader:
   (etaf-resource-dispose resource))
 ```
 
-Loader errors are stored in `etaf-resource-error`; cleanup/type errors remain visible. `etaf-error-boundary-run` handles only errors raised by its function body:
+Read a captured Resource loader failure with `(etaf-resource-error resource)`;
+this returns condition data or nil directly and tracks Resource state. Data's
+reader returns a ref instead: `(etaf-value (etaf-data-error controller))` reads
+the captured Data failure. These readers do not signal the captured failure
+again; treat their results as read-only. Data load operations can still signal
+the original source error while recording it.
+
+The same symbols also name error conditions for invalid Resource or Data
+operations. Use `condition-case` to catch those operation failures; their names
+do not change how the reader functions are called. For example, reloading a
+disposed Resource signals `etaf-resource-error`. Loader failures are stored as
+state, while cleanup/type errors remain visible. `etaf-error-boundary-run`
+handles only errors raised by its function body:
 
 ```elisp
 (etaf-error-boundary-run

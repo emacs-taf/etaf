@@ -695,7 +695,16 @@ Resource 是 Scope 所有的同步 loader：
   (etaf-resource-dispose resource))
 ```
 
-Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可见。`etaf-error-boundary-run` 只处理它的 function body 抛出的错误：
+使用 `(etaf-resource-error resource)` 读取 Resource 捕获的 loader 错误，直接
+返回 condition 数据或 nil，并跟踪 Resource 状态。Data 的读取函数返回 ref，
+用 `(etaf-value (etaf-data-error controller))` 取得其中的错误。这些读取操作
+不会重新抛出捕获的错误；返回值应视为只读。Data 加载操作本身仍可能在记录错误
+后抛出原始数据源错误。
+
+这两个符号同时也是无效 Resource/Data 操作的错误条件名。用 `condition-case`
+捕获操作失败；这不改变同名读取函数的调用方式。例如重新加载已释放的 Resource
+会抛出 `etaf-resource-error`。Loader 错误存入状态，cleanup/type 错误保持可见。
+`etaf-error-boundary-run` 只处理它的 function body 抛出的错误：
 
 ```elisp
 (etaf-error-boundary-run

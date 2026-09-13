@@ -132,9 +132,16 @@
 ;; for QUERY/PAGE/PAGE-SIZE; it seeds a successful Controller without another
 ;; load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive.
 ;;
+;; Function: etaf-data-error (controller)
+;;;###autoload (autoload 'etaf-data-error "etaf" nil nil)
+;; Return CONTROLLER's observable error ref; read its value with `etaf-value`.
+;; The value is nil without a captured failure, otherwise condition data.
+;; The controller owns this ref; consumers observe it and do not write it.
+;;
 ;; Error: etaf-data-error
-;; Return CONTROLLER's observable error ref.
-;; Catch this condition with condition-case; failed calls do not return a value.
+;; Invalid ETAF data operation; parent condition for Data contract failures.
+;; Catch with condition-case. This condition is distinct from calling the
+;; same-named reader function to inspect a controller's captured failure.
 ;;
 ;; Function: etaf-data-item-identity (controller item)
 ;;;###autoload (autoload 'etaf-data-item-identity "etaf" nil nil)
@@ -678,9 +685,16 @@
 ;;;###autoload (autoload 'etaf-resource-dispose "etaf" nil nil)
 ;; Dispose RESOURCE and return cleanup errors collected by its Scope.
 ;;
+;; Function: etaf-resource-error (resource)
+;;;###autoload (autoload 'etaf-resource-error "etaf" nil nil)
+;; Return RESOURCE's captured loader condition, or nil when not in error.
+;; This reader tracks Resource state and returns the condition directly,
+;; without requiring `etaf-value`. Treat the returned condition as read-only.
+;;
 ;; Error: etaf-resource-error
-;; Return RESOURCE's captured loader error, or nil when not in error.
-;; Catch this condition with condition-case; failed calls do not return a value.
+;; Invalid ETAF Resource operation, such as reloading a disposed Resource.
+;; Catch with condition-case. Loader failures are instead captured as Resource
+;; state and inspected with the same-named reader function.
 ;;
 ;; Function: etaf-resource-load (resource)
 ;;;###autoload (autoload 'etaf-resource-load "etaf" nil nil)
