@@ -637,9 +637,22 @@ Focus 和 hit testing 是 Runtime 操作：
 命中屏障，避免激活祖先。原生点击保留 point 和窗口选择，除非 handler 主动改变它们。
 原生键盘激活在父子位置重合时仍尊重显式焦点。
 
-挂载 buffer 仍启用 `etaf-input-mode` 提供 ETAF 焦点导航。TAB 与 Shift-TAB/backtab
-按数字 `:tab-index` 和 live position 循环，聚焦会移动 point。`etaf-activate` 激活
-显式焦点，或把位置查询委托给 Ebox。卸载时禁用该 mode；焦点状态目前仍归 ETAF。
+ETAF 把 `:tab-index` 与 `:disabled` 转为 Ebox 已提交的交互事实。`etaf-focus`、
+`etaf-focused-host-ref` 以及前后导航操作同一个 Ebox buffer 焦点；直接调用
+`ebox-focus` 的结果立即在 ETAF 中可见，反之亦然。Runtime 不保留焦点副本或独立导航表。
+`etaf-focus` 省略 Host 引用时选择第一个有效停靠点，没有停靠点则保持原焦点；显式
+无效或禁用目标仍抛出 `etaf-event-error`。
+
+焦点跟随 source identity 经过重排与已接受的布局变化。发布隐藏、禁用或删除会清空
+焦点，后续导航从首个／末个有效停靠点开始。负值或缺失的 tab index 跳过导航，仍允许
+显式焦点，也不会清空存续目标。point 仍在目标首个可见字符时才跟随布局；手动移开后，
+Ebox 保留其数值位置并限制在可访问范围内。发布被拒绝时恢复焦点和 point。每个 buffer
+有独立焦点，同一 buffer 的窗口共享它；操作不选择窗口。卸载释放共享焦点，详见
+[Ebox 交互契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.zh-CN.md#native-node-interaction)。
+
+挂载 buffer 仍启用 `etaf-input-mode`，把 TAB 与 Shift-TAB/backtab 绑定到共享循环导航。
+`etaf-activate` 仍负责位置重合时的显式键盘焦点优先级，否则使用 Ebox 位置激活。
+这部分键盘路由仍在 ETAF，卸载时禁用该 mode。
 
 ## 9. Context / Provide / Inject
 

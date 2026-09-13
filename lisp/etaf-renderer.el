@@ -422,7 +422,11 @@ SITE-TOKEN supplies the stable generated Host identity when non-nil."
              (map (and runtime callback (not (plist-get source-props :disabled))
                        (etaf--runtime-interaction-keymap
                         runtime (plist-get ebox-props :source-identity)))))
-        (setq ebox-props (etaf--merge-property ebox-props :interactions (list :keymap map)))))
+        (setq ebox-props
+              (etaf--merge-property
+               ebox-props :interactions
+               (list :keymap map :tab-index (plist-get source-props :tab-index)
+                     :disabled (and (plist-get source-props :disabled) t))))))
     ebox-props))
 
 (defconst etaf--ebox-source-fields

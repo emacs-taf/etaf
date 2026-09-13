@@ -689,10 +689,28 @@ Native clicks preserve point and window selection unless the handler changes
 them. Native keyboard activation retains an explicitly focused Host when its
 position coincides with a nested child.
 
-Mounted buffers still enable `etaf-input-mode` for ETAF focus navigation. `TAB`
-and Shift-TAB/backtab cycle Hosts by numeric `:tab-index` and live position;
-focus moves point. `etaf-activate` activates explicit focus or delegates the
-position lookup to Ebox. Unmount disables the mode. Focus state remains ETAF-owned.
+ETAF lowers `:tab-index` and `:disabled` to Ebox's committed interaction facts.
+`etaf-focus`, `etaf-focused-host-ref` and next/previous navigation operate Ebox's
+single buffer focus; direct `ebox-focus` calls are immediately visible through
+ETAF and vice versa. No Runtime focus copy or separate navigation list exists.
+Calling `etaf-focus` without a Host reference selects the first eligible stop,
+leaving existing focus unchanged if none exists. Explicit invalid or disabled
+Host targets still signal `etaf-event-error`.
+
+Focus follows source identity through reorder and accepted layout changes.
+Published hiding, disabling or removal clears focus; subsequent navigation
+restarts at the first/last eligible stop. A negative or absent tab index skips
+navigation but permits explicit focus and does not clear a surviving target.
+Point follows layout only while it remains at the target's first visible
+character. After manual movement, Ebox retains the numeric position clamped to
+the accessible buffer. Publication rejection restores focus and point. Each
+buffer has its own focus, shared by its windows; operations do not select one.
+Unmount releases the shared focus. See the [Ebox interaction contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction).
+
+Mounted buffers still enable `etaf-input-mode` to bind TAB and Shift-TAB/backtab
+to cyclic shared navigation. `etaf-activate` retains explicit keyboard focus
+precedence at overlapping positions and otherwise uses Ebox position activation.
+This keyboard routing remains in ETAF; unmount disables the mode.
 
 ## 9. Context / Provide / Inject
 

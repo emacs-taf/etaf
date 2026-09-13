@@ -326,7 +326,10 @@ Behavior = 安装多个非视觉能力的可复用 bundle
 Host press 绑定与规范 source 事实一起降为 Ebox 原生 keymap。每个 Runtime 的有界
 缓存保留查找已提交 handler 的分发 map，替换回调不会调用候选闭包。禁用和无回调的
 控件边界发布显式 nil map。Ebox 解析可见位置归属；ETAF 不再扫描 Host bounds
-选择激活目标。显式焦点及父子位置重合时的键盘优先级目前仍由 ETAF 维护。
+选择激活目标。Tab index 和禁用声明发布为 Ebox 交互事实；焦点身份、导航顺序、可见性、
+point 保持与回滚均由 Ebox 管理。ETAF 的焦点 API 转换 Runtime 上下文并保持公开错误条件，
+Runtime 不再保存焦点字段、扫描排序 Host 候选或包装 flush 来修正 point。ETAF input mode
+及父子位置重合时的键盘激活优先级仍是消费者路由。
 
 交互组合是确定的：显式 Host `:on-*` callback 先运行，然后按声明顺序运行 Behavior
 callback；任一错误会 short-circuit 后续 callback。非事件属性由显式 Host 值优先，

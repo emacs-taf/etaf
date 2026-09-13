@@ -110,7 +110,7 @@ definition convenience, not a second runtime or visual node model."
   "Return a focusable Behavior from ATTRIBUTES.
 
 When ATTRIBUTES does not specify `:tab-index', the Behavior supplies the
-standard first tab stop, zero.  An explicit nil keeps the Host unfocusable."
+standard first tab stop, zero.  An explicit nil excludes it from tab navigation."
   (unless (plist-member attributes :tab-index)
     (setq attributes (append attributes (list :tab-index 0))))
   (apply #'etaf-behavior-create 'focusable attributes))

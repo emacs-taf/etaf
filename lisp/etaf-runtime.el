@@ -39,8 +39,6 @@
 (declare-function etaf--ebox-input-for-nodes "etaf-renderer" (nodes))
 (declare-function etaf-events-enable-input "etaf-events" (buffer))
 (declare-function etaf-events-disable-input "etaf-events" (buffer))
-(declare-function etaf-events-call-with-preserved-focus
-                  "etaf-events" (runtime function))
 (declare-function ebox-range-ref-present-p "ebox" (buffer-or-name range-ref))
 (declare-function ebox-call-with-render-burst
                   "ebox-buffer-backend" (function &rest arguments))
@@ -322,7 +320,6 @@ the sequential `etaf--pvec-put' contract."
   theme-paint-slots
   (interaction-keymaps (make-hash-table :test #'equal))
   candidate-theme-paint-updates
-  focus-ref
   behaviors
   candidate-live
   candidate-semantic-nodes
@@ -1548,11 +1545,6 @@ error or quit."
            (progn ,@body)
          (etaf-runtime-call-operation
           ,runtime-value ,kind ,label (lambda () ,@body))))))
-
-(defun etaf-runtime-set-focus-ref (runtime host-ref)
-  "Set RUNTIME's focused Host reference to HOST-REF and return it."
-  (setf (etaf-runtime-focus-ref runtime) host-ref)
-  host-ref)
 
 (defun etaf-runtime-event-begin (runtime)
   "Enter one logical event batch for mounted RUNTIME."
@@ -4639,15 +4631,8 @@ Generation, including its effects and Host contributions."
              (etaf--source-subscribers source))
     (remhash source (etaf-runtime-route-sources runtime))))
 
-(defun etaf--runtime-complete-generation (runtime generation)
-  "Complete RUNTIME through GENERATION and prune obsolete routes."
-  (when-let* ((focus-ref (etaf-runtime-focus-ref runtime)))
-    (let ((props (etaf--generation-index-lookup
-                  generation 'host-props focus-ref)))
-      (unless (and (numberp (plist-get props :tab-index))
-                   (>= (plist-get props :tab-index) 0)
-                   (not (plist-get props :disabled)))
-        (setf (etaf-runtime-focus-ref runtime) nil))))
+(defun etaf--runtime-complete-generation (runtime)
+  "Complete RUNTIME publication and prune obsolete routes."
   (dolist (delta (etaf-runtime-candidate-source-deltas runtime))
     (let ((source (car delta)) (effects (nth 2 delta)))
       (when (null effects)
@@ -6356,7 +6341,7 @@ RENDERED-IDENTITIES names the Component render participants."
         (run-step
          'generation-completion
          (lambda ()
-           (etaf--runtime-complete-generation runtime candidate-generation)))
+           (etaf--runtime-complete-generation runtime)))
         (run-step
          'generation-mirror-projection
          (lambda ()
@@ -6497,7 +6482,7 @@ RENDERED-IDENTITIES names the Component render participants."
         (run-step
          'generation-completion
          (lambda ()
-           (etaf--runtime-complete-generation runtime candidate-generation)))
+           (etaf--runtime-complete-generation runtime)))
         (run-step
          'generation-mirror-projection
          (lambda ()
@@ -6574,10 +6559,7 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
 (defun etaf--runtime-request-flush (runtime)
   "Flush RUNTIME within one optional Runtime operation boundary."
   (etaf--runtime-with-operation (runtime 'flush "reactive flush")
-    (if (fboundp 'etaf-events-call-with-preserved-focus)
-        (etaf-events-call-with-preserved-focus
-         runtime (lambda () (etaf--runtime-request-flush-now runtime)))
-      (etaf--runtime-request-flush-now runtime))))
+    (etaf--runtime-request-flush-now runtime)))
 
 ;;;###autoload
 (defun etaf-runtime-flush (&optional runtime)

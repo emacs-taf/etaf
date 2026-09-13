@@ -28,8 +28,6 @@
 (declare-function etaf-runtime-host-props-for "etaf-runtime" (runtime host-ref))
 (declare-function etaf-runtime-host-props-entries "etaf-runtime" (runtime))
 (declare-function etaf-runtime-host-ancestries "etaf-runtime" (runtime host-refs))
-(declare-function etaf-runtime-focus-ref "etaf-runtime" (runtime))
-(declare-function etaf-runtime-set-focus-ref "etaf-runtime" (runtime host-ref))
 (declare-function etaf-runtime-event-begin "etaf-runtime" (runtime))
 (declare-function etaf-runtime-event-end "etaf-runtime" (runtime))
 (declare-function etaf-runtime-observer "etaf-runtime" (runtime))
@@ -119,7 +117,7 @@ otherwise call the local callback with no arguments."
 
 (defun etaf--focused-activation-ref (runtime)
   "Return RUNTIME's focused target when point still addresses it."
-  (let ((ref (etaf-runtime-focus-ref runtime)))
+  (let ((ref (ebox-focused-host-ref (etaf-runtime-buffer runtime))))
     (and ref (equal (with-current-buffer (etaf-runtime-buffer runtime) (point))
                     (etaf-host-ref-position runtime ref)) ref)))
 
@@ -142,110 +140,41 @@ RUNTIME is the mounted Runtime to activate, or nil for the current buffer."
     (with-current-buffer (etaf-runtime-buffer runtime)
       (ebox-activate))))
 
-(defun etaf--focus-candidate-before-p (left right)
-  "Return non-nil when focus candidate LEFT precedes RIGHT."
-  (or (< (nth 0 left) (nth 0 right))
-      (and (= (nth 0 left) (nth 0 right))
-           (or (< (nth 1 left) (nth 1 right))
-               (and (= (nth 1 left) (nth 1 right))
-                    (or (< (nth 2 left) (nth 2 right))
-                        (and (= (nth 2 left) (nth 2 right))
-                             (string< (prin1-to-string (nth 3 left))
-                                      (prin1-to-string (nth 3 right))))))))))
-
-(defun etaf--focus-candidates (runtime)
-  "Return RUNTIME's visible focus candidates in stable buffer order."
-  (let (candidates)
-    (dolist (entry (etaf-runtime-host-props-entries runtime))
-      (let ((host-ref (car entry)) (props (cdr entry)))
-        (let ((tab-index (plist-get props :tab-index)))
-          (when (and (numberp tab-index) (>= tab-index 0)
-                     (not (plist-get props :disabled)))
-            (when-let* ((bounds
-                         (ebox-host-ref-bounds
-                          (etaf-runtime-buffer runtime) host-ref)))
-              (push (list tab-index (car bounds) (cdr bounds) host-ref)
-                    candidates))))))
-    (sort candidates #'etaf--focus-candidate-before-p)))
-
-(defun etaf-events-call-with-preserved-focus (runtime function)
-  "Call FUNCTION while retaining RUNTIME's active focus through publication.
-Follow a Host's new position only when point started at that focused Host,
-the same focus survives, and a new generation actually committed.  Manual
-point movement and failed candidate publication keep their existing behavior."
-  (let* ((buffer (etaf-runtime-buffer runtime))
-         (focus-ref (etaf-runtime-focus-ref runtime))
-         (follow-p
-          (and focus-ref (buffer-live-p buffer)
-               (equal (with-current-buffer buffer (point))
-                      (ebox-host-ref-position buffer focus-ref)))))
-    (if (not follow-p)
-        (funcall function)
-      (let ((generation (etaf-runtime-current-generation runtime)))
-        (unwind-protect
-            (funcall function)
-          (when (and (etaf-runtime-mounted-p runtime)
-                     (buffer-live-p buffer)
-                     (equal focus-ref (etaf-runtime-focus-ref runtime))
-                     (not (eq generation
-                              (etaf-runtime-current-generation runtime))))
-            (when-let* ((position (ebox-host-ref-position buffer focus-ref)))
-              (with-current-buffer buffer (goto-char position)))))))))
-
 ;;;###autoload
 (defun etaf-focus (&optional runtime host-ref)
   "Move focus to HOST-REF in mounted RUNTIME and move point to its position.
 
-When called interactively without arguments, focus the first visible Host."
+Ebox owns focus and its publication lifecycle.  Without HOST-REF, select the
+first eligible tab stop without changing existing focus if no stop exists.
+Invalid explicit targets signal `etaf-event-error'.  Tab index affects only
+navigation; a negative or absent index permits explicit focus."
   (interactive)
   (setq runtime (etaf-runtime-require-mounted runtime))
-  (unless host-ref
-    (setq host-ref (nth 3 (car (etaf--focus-candidates runtime))))
-    (unless host-ref
-      (user-error "No focusable ETAF Host")))
-  (when (plist-get (etaf-runtime-host-props-for runtime host-ref) :disabled)
-    (signal 'etaf-event-error
-            (list (format "Cannot focus disabled Host reference: %S" host-ref))))
-  (let ((position (etaf-host-ref-position runtime host-ref)))
-    (unless position
-      (signal 'etaf-event-error
-              (list (format "Cannot focus an invisible Host reference: %S"
-                            host-ref))))
-    (etaf-runtime-set-focus-ref runtime host-ref)
-    (with-current-buffer (etaf-runtime-buffer runtime)
-      (goto-char position))
-    host-ref))
+  (let ((buffer (etaf-runtime-buffer runtime)))
+    (condition-case condition
+        (if host-ref (ebox-focus host-ref buffer) (ebox-focus-first buffer))
+      (user-error
+       (if host-ref
+           (signal 'etaf-event-error (cdr condition))
+         (signal (car condition) (cdr condition)))))))
 
 ;;;###autoload
 (defun etaf-focused-host-ref (&optional runtime)
   "Return the currently focused Host reference in mounted RUNTIME."
-  (etaf-runtime-focus-ref (etaf-runtime-require-mounted runtime)))
-
-(defun etaf--focus-cycle (runtime step)
-  "Move focus by STEP positions through RUNTIME's ordered candidates."
-  (setq runtime (etaf-runtime-require-mounted runtime))
-  (let* ((candidates (etaf--focus-candidates runtime))
-         (ordered (mapcar (lambda (entry) (nth 3 entry)) candidates))
-         (current (etaf-runtime-focus-ref runtime))
-         (position (cl-position current ordered :test #'equal)))
-    (unless ordered
-      (user-error "No focusable ETAF Host"))
-    (etaf-focus runtime
-                (if position
-                    (nth (mod (+ position step) (length ordered)) ordered)
-                  (if (> step 0) (car ordered) (car (last ordered)))))))
+  (ebox-focused-host-ref
+   (etaf-runtime-buffer (etaf-runtime-require-mounted runtime))))
 
 ;;;###autoload
 (defun etaf-focus-next (&optional runtime)
   "Focus the next visible Host in mounted RUNTIME."
   (interactive)
-  (etaf--focus-cycle runtime 1))
+  (ebox-focus-next 1 t (etaf-runtime-buffer (etaf-runtime-require-mounted runtime))))
 
 ;;;###autoload
 (defun etaf-focus-previous (&optional runtime)
   "Focus the previous visible Host in mounted RUNTIME."
   (interactive)
-  (etaf--focus-cycle runtime -1))
+  (ebox-focus-previous 1 t (etaf-runtime-buffer (etaf-runtime-require-mounted runtime))))
 
 (defvar etaf-input-mode-map
   (let ((map (make-sparse-keymap)))

@@ -341,7 +341,12 @@ facts. A bounded per-Runtime cache holds dispatch maps that look up committed
 handlers, so callback replacement does not retain candidate closures. Disabled
 and callbackless control boundaries emit explicit nil maps. Ebox resolves visible
 position ownership; ETAF no longer scans Host bounds to select activation targets.
-ETAF still owns explicit focus and its keyboard precedence at coincident positions.
+Tab index and disabled declarations are published as Ebox interaction facts.
+Ebox owns the focus identity, navigation order, visibility, point retention and
+rollback. ETAF's focus APIs translate Runtime context and preserve their public
+error conditions; Runtime stores no focus field and no longer scans or sorts
+Host candidates or wraps flushes to repair point. The ETAF input mode and explicit
+keyboard activation precedence at coincident positions remain consumer routing.
 
 Interaction composition is deterministic.  An explicit Host `:on-*` callback
 runs first, followed by Behavior callbacks in declaration order; an error

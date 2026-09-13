@@ -396,7 +396,14 @@
 ;;;###autoload (autoload 'etaf-focus "etaf" nil t)
 ;; Move focus to HOST-REF in mounted RUNTIME and move point to its position.
 ;;
-;; When called interactively without arguments, focus the first visible Host.
+;; Ebox owns the mounted focus, navigation and publication lifecycle. Without
+;; HOST-REF, select its first eligible tab stop; an empty list leaves focus and
+;; point unchanged and signals user-error. Explicit invalid targets signal
+;; etaf-event-error. Negative or absent tab indexes still allow explicit focus.
+;; Removal, hiding and disabling clear focus; a tab-index change alone does not.
+;; Layout follows point only when it stayed at the target; manual point stays
+;; at its numeric position clamped to the accessible buffer. Rejection restores
+;; focus and point. No window is selected.
 ;;
 ;; Function: etaf-focus-next (&optional runtime)
 ;;;###autoload (autoload 'etaf-focus-next "etaf" nil t)
@@ -411,11 +418,12 @@
 ;; Return a focusable Behavior from ATTRIBUTES.
 ;;
 ;; When ATTRIBUTES does not specify `:tab-index', the Behavior supplies the
-;; standard first tab stop, zero.  An explicit nil keeps the Host unfocusable.
+;; standard first tab stop, zero.  An explicit nil excludes it from tab navigation.
 ;;
 ;; Function: etaf-focused-host-ref (&optional runtime)
 ;;;###autoload (autoload 'etaf-focused-host-ref "etaf" nil nil)
-;; Return the currently focused Host reference in mounted RUNTIME.
+;; Return Ebox's current focus Host reference in mounted RUNTIME.
+;; Direct Ebox focus operations and these APIs observe the same buffer owner.
 ;;
 ;; Error: etaf-generation-conflict
 ;; Stale ETAF semantic generation candidate

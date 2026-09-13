@@ -728,6 +728,16 @@
       "name": "etaf-native-keyboard-preserves-explicit-focused-parent",
       "file": "tests/etaf-native-activation-tests.el",
       "purpose": "Native RET respects explicit parent or child focus when their visible positions coincide."
+    },
+    {
+      "name": "etaf-focus-shares-ebox-ownership-and-reactive-navigation",
+      "file": "tests/etaf-focus-tests.el",
+      "purpose": "Both APIs observe one focus while tab order, disabled and visibility change."
+    },
+    {
+      "name": "etaf-focus-follows-identity-across-removal-rejection-and-apps",
+      "file": "tests/etaf-focus-tests.el",
+      "purpose": "Shared focus follows references through reorder, isolates mounts and rejects candidates."
     }
   ]
 }
