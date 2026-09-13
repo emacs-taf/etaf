@@ -274,7 +274,31 @@ callback。Scope 释放时会自动停止响应式 effect 并运行 cleanup。
    (lambda () (message "Stop observing count"))))
 ```
 
-在 Component setup 中，effect 和 watch 属于 Component Scope。在 Component 外部，需要用 `etaf-effect-scope` 和 `etaf-scope-run` 明确创建 Scope。
+Component setup 中的 effect 和 watch 由 Component Scope 持有，卸载时自动停止。
+独立集成使用 `etaf-effect-scope` 创建、`etaf-scope-run` 进入 scope，并在
+`unwind-protect` 中调用 `etaf-scope-stop` 释放。子 scope 默认由父 scope 持有；
+`:detached t` 创建的独立 scope 必须由调用方停止。在活动 scope 内通过
+`etaf-on-scope-dispose` 注册外部资源的清理函数。
+停止时先使 scope 失效，再停止子 scope 和 effect，最后按注册的逆序运行清理。
+清理中的 error 和 quit 会被收集并返回，不会中断其他清理；需要报告失败时检查
+返回值。重复停止无副作用；停止后的 scope 不能再次进入或注册清理。这些操作
+应在 View 渲染之外执行。
+
+```elisp
+(let ((scope (etaf-effect-scope :detached t))
+      (count (etaf-ref 0)))
+  (unwind-protect
+      (etaf-scope-run
+       scope
+       (lambda ()
+         (etaf-watch-effect
+          (lambda () (message "Count: %s" (etaf-value count))))
+         (etaf-on-scope-dispose (lambda () (message "Released")))
+         (etaf-set-value count 1)))
+    (when-let* ((errors (etaf-scope-stop scope)))
+      (message "Scope cleanup conditions: %S" errors))))
+```
+
 
 ## 6. children 与 slot
 

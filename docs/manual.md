@@ -288,7 +288,33 @@ Use `etaf-set-value` when a function form is clearer than `setf`. `etaf-watch-ef
    (lambda () (message "Stop observing count"))))
 ```
 
-Inside Component setup, effects and watches belong to the Component Scope. Outside a Component, create a Scope explicitly with `etaf-effect-scope` and `etaf-scope-run`.
+Inside Component setup, effects and watches belong to the Component Scope and
+stop automatically on unmount. Standalone integrations create a Scope with
+`etaf-effect-scope`, enter it with `etaf-scope-run`, and release it in
+`unwind-protect` with `etaf-scope-stop`. A parent owns its child scopes unless
+`:detached t` is supplied. Detached scopes must be stopped by their caller.
+Register external cleanup with `etaf-on-scope-dispose` inside an active scope.
+Stopping first disables the scope, then stops children and effects and runs
+cleanup in reverse registration order. Cleanup errors and quits are collected
+and returned, so inspect that result if cleanup failures need reporting.
+Repeated stop is harmless; entering or registering cleanup in a stopped scope
+fails. These operations run outside View rendering.
+
+```elisp
+(let ((scope (etaf-effect-scope :detached t))
+      (count (etaf-ref 0)))
+  (unwind-protect
+      (etaf-scope-run
+       scope
+       (lambda ()
+         (etaf-watch-effect
+          (lambda () (message "Count: %s" (etaf-value count))))
+         (etaf-on-scope-dispose (lambda () (message "Released")))
+         (etaf-set-value count 1)))
+    (when-let* ((errors (etaf-scope-stop scope)))
+      (message "Scope cleanup conditions: %S" errors))))
+```
+
 
 ## 6. Children and slots
 

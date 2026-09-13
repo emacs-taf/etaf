@@ -549,18 +549,27 @@ SCHEDULER-CONTEXT defaults to the parent or dynamically active context."
 
 ;;;###autoload
 (defun etaf-on-scope-dispose (function)
-  "Register FUNCTION to run when the current Scope is disposed."
+  "Register zero-argument FUNCTION for the current active Scope's disposal.
+Return FUNCTION.  Cleanup runs once, in reverse registration order, after
+child Scopes and effects stop.  A missing or stopped Scope signals an error.
+Cleanup errors are collected by `etaf-scope-stop' without aborting teardown."
   (etaf--assert-not-rendering 'register-scope-cleanup)
   (unless (functionp function)
     (signal 'wrong-type-argument (list 'functionp function)))
-  (unless etaf--active-scope
+  (unless (and etaf--active-scope
+               (etaf-effect-scope-active-p etaf--active-scope))
     (error "ETAF cleanup registration requires an active Scope"))
   (push function (etaf-effect-scope-cleanups etaf--active-scope))
   function)
 
 ;;;###autoload
 (defun etaf-scope-stop (scope)
-  "Dispose SCOPE and return cleanup errors collected during teardown."
+  "Dispose SCOPE and return cleanup conditions collected during teardown.
+Stop child Scopes and owned effects, then run registered cleanup functions.
+Errors and quits from cleanup are returned as condition data, not re-signaled;
+remaining cleanup still runs.  Stopping an already stopped Scope returns nil.
+After stopping, SCOPE cannot be entered or accept effects or cleanup.
+Call outside rendering; Component-owned Scopes are stopped automatically."
   (etaf--assert-not-rendering 'stop-scope)
   (when (and (etaf-effect-scope-p scope)
              (etaf-effect-scope-active-p scope))

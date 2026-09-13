@@ -573,6 +573,21 @@
       "name": "etaf-component-defaults-preserve-list-identity-on-local-updates",
       "file": "tests/etaf-component-defaults-tests.el",
       "purpose": "Component-local updates preserve default list object identity in published callbacks."
+    },
+    {
+      "name": "etaf-scope-stop-releases-effects-and-owned-children",
+      "file": "tests/etaf-scope-tests.el",
+      "purpose": "Standalone scopes release effects and children, reject reentry and dispose exactly once."
+    },
+    {
+      "name": "etaf-scope-stop-contains-cleanup-errors-and-quits",
+      "file": "tests/etaf-scope-tests.el",
+      "purpose": "Cleanup failures and quits are returned without preventing remaining teardown."
+    },
+    {
+      "name": "etaf-scope-rejects-cleanup-registration-after-stop",
+      "file": "tests/etaf-scope-tests.el",
+      "purpose": "Disposed scopes cannot acquire unreachable cleanup during a still-active call."
     }
   ]
 }

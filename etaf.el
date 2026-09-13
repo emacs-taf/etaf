@@ -344,6 +344,8 @@
 ;;;###autoload (autoload 'etaf-effect-scope "etaf" nil nil)
 ;; Create a Scope named NAME, owned by the current Scope unless DETACHED.
 ;; SCHEDULER-CONTEXT defaults to the parent or dynamically active context.
+;; The parent disposes child scopes automatically. Without a parent, or when
+;; DETACHED is non-nil, the caller must use `etaf-scope-stop` for cleanup.
 ;;
 ;; Function: etaf-error-boundary-run (function handler &key name)
 ;;;###autoload (autoload 'etaf-error-boundary-run "etaf" nil nil)
@@ -788,6 +790,22 @@
 ;; Function: etaf-scope-run (scope function &key (watch-scheduler nil watch-scheduler-p))
 ;;;###autoload (autoload 'etaf-scope-run "etaf" nil nil)
 ;; Run FUNCTION with active SCOPE and optional WATCH-SCHEDULER.
+;;
+;; Function: etaf-scope-stop (scope)
+;;;###autoload (autoload 'etaf-scope-stop "etaf" nil nil)
+;; Dispose SCOPE and return cleanup conditions collected during teardown.
+;; Stop child Scopes and owned effects, then run registered cleanup functions.
+;; Errors and quits from cleanup are returned as condition data, not re-signaled;
+;; remaining cleanup still runs. Stopping an already stopped Scope returns nil.
+;; After stopping, SCOPE cannot be entered or accept effects or cleanup.
+;; Call outside rendering; Component-owned Scopes are stopped automatically.
+;;
+;; Function: etaf-on-scope-dispose (function)
+;;;###autoload (autoload 'etaf-on-scope-dispose "etaf" nil nil)
+;; Register zero-argument FUNCTION for the current active Scope's disposal.
+;; Return FUNCTION. Cleanup runs once, in reverse registration order, after
+;; child Scopes and effects stop. A missing or stopped Scope signals an error.
+;; Cleanup errors are collected by `etaf-scope-stop` without aborting teardown.
 ;;
 ;; Function: etaf-set-value (source new-value)
 ;;;###autoload (autoload 'etaf-set-value "etaf" nil nil)
