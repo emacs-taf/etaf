@@ -176,6 +176,12 @@ Re-render reads current props and state without rerunning setup. Setup is the
 owner for local refs, computed values, watches, Effects, and cleanup
 registration; it never returns a render function.
 
+Instance-local Host names map to opaque symbols in the Component instance.
+`etaf-local-ref` allocates them during setup; retained instances keep the mapping,
+while replacement creates a fresh mapping. The handle uses the same Host identity
+path as an explicit `:ref`. Ebox owns committed geometry lookup and disappearance;
+ETAF adds no parallel target index. Literal application addresses remain explicit.
+
 `etaf-prop` gives setup a stable computed source backed by the Component semantic
 inputs, without duplicating authoritative mutable state. Candidate prop changes
 invalidate dependent computations and retained descendant render effects. A

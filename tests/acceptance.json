@@ -623,6 +623,21 @@
       "name": "etaf-tracked-props-defaults-and-applications-are-independent",
       "file": "tests/etaf-tracked-props-tests.el",
       "purpose": "Tracked sources include defaults, retain per-instance identity and reject reads from disposed owners."
+    },
+    {
+      "name": "etaf-local-ref-retains-target-across-reorder-and-failure",
+      "file": "tests/etaf-local-ref-tests.el",
+      "purpose": "Distinct instance handles retain committed event targets across reorder and failed publication; removal and replacement end old targets."
+    },
+    {
+      "name": "etaf-local-ref-isolates-applications-and-rejected-creation",
+      "file": "tests/etaf-local-ref-tests.el",
+      "purpose": "Rejected creations and independent applications cannot acquire another instance target."
+    },
+    {
+      "name": "etaf-local-ref-validates-context-and-copies-name",
+      "file": "tests/etaf-local-ref-tests.el",
+      "purpose": "Local reference creation validates setup context and input names while preserving ownership after caller string mutation."
     }
   ]
 }

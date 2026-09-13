@@ -68,6 +68,7 @@
   state
   (setup-complete-p nil)
   prop-sources
+  local-refs
   context
   mounted-hooks
   updated-hooks
@@ -1735,6 +1736,32 @@ reading Runtime storage fields."
                       (etaf-effect-active-p (etaf-computed-effect source)))
              (etaf--dispatch-source source))))
        sources))))
+
+;;;###autoload
+(defun etaf-local-ref (name)
+  "Return an instance-local Host reference named NAME during Component setup.
+NAME must be a non-nil symbol or a string.  Equal names in one retained
+instance return the same opaque reference; different instances never share
+it.  Pass the result to a Host's :ref property and existing Host query,
+focus or event APIs.  Expose it to callers explicitly through props or a
+callback when needed.  It does not store state or replace a list key.
+The reference resolves only while its Host is successfully mounted.  Failed
+candidates do not change its committed target; removing the Host makes
+position and bounds queries return nil.  Remounting a disposed Component
+creates a new reference even when its list key is reused."
+  (unless (and (eq etaf--component-phase 'setup)
+               etaf--current-component-instance etaf--current-runtime)
+    (etaf--component-definition-error "etaf-local-ref requires Component setup"))
+  (unless (and name (or (symbolp name) (stringp name)))
+    (etaf--component-definition-error
+     "Local reference name must be a non-nil symbol or string: %S" name))
+  (let* ((instance etaf--current-component-instance)
+         (existing (assoc name (etaf--component-instance-local-refs instance))))
+    (or (cdr existing)
+        (let ((ref (make-symbol (format "etaf-local-%s" name))))
+          (push (cons (if (stringp name) (copy-sequence name) name) ref)
+                (etaf--component-instance-local-refs instance))
+          ref))))
 
 ;;;###autoload
 (defun etaf-prop (name)

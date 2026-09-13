@@ -4,6 +4,10 @@
 
 ### Added
 
+- `etaf-local-ref` allocates stable instance-local Host handles during setup.
+  Reusable components can address same-named internal controls independently,
+  retaining targets across keyed reorder and failed publication.
+
 - `etaf-prop` supplies stable read-only Component inputs for setup computed values
   and watches. Updates notify after publication; rejected candidates preserve
   committed inputs and dependency tracking. Sources expire with their instance.

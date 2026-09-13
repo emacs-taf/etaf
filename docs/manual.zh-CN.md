@@ -561,6 +561,37 @@ Focus 和 hit testing 是 Runtime 操作：
   (etaf-activate runtime))
 ```
 
+大多数 Host 无需显式 `:ref`，ETAF 会生成身份。可复用组件需要定位内部 Host
+时，在 setup 调用 `etaf-local-ref`，把句柄传给 `:ref`。同一实例内同名调用
+返回相同句柄；不同实例都可把内部按钮命名为 `button`，互不冲突。通过回调
+或 prop 有意对外暴露句柄：
+
+```elisp
+(etaf-define-component local-button (&key label on-ready on-press)
+  :setup
+  (let ((target (etaf-local-ref 'button)))
+    (etaf-on-mounted (lambda () (funcall on-ready target)))
+    target)
+  :view
+  (box :ref (etaf-state) :role 'button :tab-index 0 :on-press on-press
+    (text (expr label))))
+
+(let (target)
+  (let ((buffer
+         (etaf-mount
+          (get-buffer-create "*Local button*")
+          (etaf-view
+           (local-button :label "Run"
+                         :on-ready (lambda (ref) (setq target ref))
+                         :on-press (lambda () (message "Running")))))))
+    (etaf-focus (etaf-runtime-for-buffer buffer) target)))
+```
+
+列表 `:key` 在重排时保留组件实例及其局部句柄；句柄不保存业务状态。候选
+失败保留已提交 Host 目标，移除后 bounds/position 查询返回 nil。已释放的
+组件重新创建时，即使 key 相同，也会得到新句柄。一个句柄只能指向一个已
+挂载 Host。显式字面量 `:ref` 符号仍是应用地址，在同一 Runtime 内必须唯一。
+
 `etaf-host-ref-bounds` 和 `etaf-host-ref-position` 暴露公共的 Ebox hit-test 边界。`etaf-dispatch-event` 支持可选 payload 标记，用于给 callback 传入一个参数。
 
 挂载后的 buffer 会自动启用 `etaf-input-mode`：`TAB` 聚焦下一个 Host，`Shift-TAB`/backtab 聚焦上一个 Host，`RET` 激活当前焦点 Host，`mouse-1` 在点击位置激活 Host。焦点顺序先按数字 `:tab-index`，相同 index 再按 live buffer position 稳定排序；移动焦点也会移动 point。卸载时会禁用该输入 mode。

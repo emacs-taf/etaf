@@ -170,6 +170,11 @@ Component definition 是当前结构/样式/行为边界：动态状态、Action
 state，不重新运行 setup。setup 负责局部 ref、computed、watch、Effect 和 cleanup，
 不返回 render 函数。
 
+Component 实例保存内部 Host 名称到不透明符号的映射。`etaf-local-ref` 在
+setup 分配句柄，保留实例保持映射，替换实例重新分配。句柄与显式 `:ref`
+使用同一条宿主身份路径。Ebox 负责已提交几何查询及节点消失，ETAF 不新增
+另一份目标索引；字面量应用地址仍需明确提供。
+
 `etaf-prop` 向 setup 提供由 Component semantic 输入支持的稳定 computed 来源，
 不复制一份可变权威状态。候选属性变化使派生计算及保留的后代渲染 effect
 失效。候选日志保存受影响的缓存和依赖边；拒绝发布时恢复依赖边，缓存重新

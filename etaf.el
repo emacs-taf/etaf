@@ -649,6 +649,17 @@
 ;;;###autoload (autoload 'etaf-performance-with-operation "etaf" nil nil 'macro)
 ;; Evaluate BODY through RUNTIME's canonical operation boundary.
 ;;
+;; Function: etaf-local-ref (name)
+;;;###autoload (autoload 'etaf-local-ref "etaf" nil nil)
+;; During Component setup, obtain a stable opaque Host reference for NAME,
+;; a non-nil symbol or string. Equal names share a handle only within one
+;; retained instance. Pass it to :ref and Host query, focus or event APIs;
+;; expose it to callers explicitly when needed. It is neither state nor a key.
+;; Only a committed Host resolves: failure preserves its previous target,
+;; removal makes bounds/position queries return nil, and a new instance gets
+;; a new handle. Calls outside setup or with invalid names signal
+;; `etaf-component-definition-error`.
+;;
 ;; Function: etaf-prop (name)
 ;;;###autoload (autoload 'etaf-prop "etaf" nil nil)
 ;; Return the current Component's stable read-only reactive input NAME.

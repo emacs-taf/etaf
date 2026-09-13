@@ -600,6 +600,40 @@ Focus and hit testing are Runtime operations:
   (etaf-activate runtime))
 ```
 
+Most Hosts need no explicit `:ref`: ETAF generates their identities. When a
+reusable Component needs to address an internal Host, allocate an `etaf-local-ref`
+in setup and pass the handle to `:ref`. Equal names reuse a handle within that
+instance; separate instances may all name their internal button `button` safely.
+Use a callback or prop to expose the handle deliberately:
+
+```elisp
+(etaf-define-component local-button (&key label on-ready on-press)
+  :setup
+  (let ((target (etaf-local-ref 'button)))
+    (etaf-on-mounted (lambda () (funcall on-ready target)))
+    target)
+  :view
+  (box :ref (etaf-state) :role 'button :tab-index 0 :on-press on-press
+    (text (expr label))))
+
+(let (target)
+  (let ((buffer
+         (etaf-mount
+          (get-buffer-create "*Local button*")
+          (etaf-view
+           (local-button :label "Run"
+                         :on-ready (lambda (ref) (setq target ref))
+                         :on-press (lambda () (message "Running")))))))
+    (etaf-focus (etaf-runtime-for-buffer buffer) target)))
+```
+
+A list `:key` preserves the Component instance, including its local handles,
+across reorder. The handle does not contain a business value. A failed candidate
+keeps its committed Host target; removal makes bounds and position queries return
+nil. Recreating a disposed Component allocates new handles even with the same key.
+A handle must identify only one mounted Host. Explicit literal `:ref` symbols
+remain application-wide addresses and must be unique within the Runtime.
+
 `etaf-host-ref-bounds` and `etaf-host-ref-position` expose the public Ebox hit-test boundary. `etaf-dispatch-event` accepts an optional payload flag when the callback needs one argument.
 
 Mounted buffers enable `etaf-input-mode` automatically. `TAB` focuses the next Host, `Shift-TAB`/backtab focuses the previous Host, `RET` activates the focused Host, and `mouse-1` activates the Host at the click position. Focus ordering sorts numeric `:tab-index` first and uses live buffer position as the stable tie-breaker; moving focus also moves point to that Host. Unmounting disables the input mode.
