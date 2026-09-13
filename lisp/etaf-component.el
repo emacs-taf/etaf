@@ -219,8 +219,25 @@ does not depend on ETAF's private registry flag."
 
 (defun etaf--validate-styles-form (form name)
   "Validate static rule list FORM against the Ebox schema for Component NAME."
+  (unless (proper-list-p form)
+    (etaf--component-definition-error "Component %S requires a style rule list" name))
   (condition-case err
-      (ebox-style-compile-rules form)
+      (ebox-style-compile-rules
+       ;; Theme sources belong to ETAF and resolve at Host lowering.  Check
+       ;; their property identity here, and let that boundary validate the
+       ;; actual declaration value against Ebox together with Host inputs.
+       (mapcar
+        (lambda (rule)
+          (if (not (and (consp rule) (proper-list-p rule)
+                        (zerop (% (length (cdr rule)) 2)))) rule
+            (let (static)
+              (cl-loop for (property value) on (cdr rule) by #'cddr
+                       do (if (etaf-theme-token-p value)
+                              (unless (ebox-style-schema-id property)
+                                (error "Unknown Theme target property: %S" property))
+                            (setq static (append static (list property value)))))
+              (cons (car rule) static))))
+        form))
     (error (etaf--component-definition-error
             "Component %S rejected :styles: %s" name (error-message-string err))))
   form)

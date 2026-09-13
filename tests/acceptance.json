@@ -643,6 +643,11 @@
       "name": "etaf-component-rule-replacement-validates-before-mutation",
       "file": "tests/etaf-rules-tests.el",
       "purpose": "Component style replacements share ECSS selector and Ebox schema validation and preserve prior rules after invalid input."
+    },
+    {
+      "name": "etaf-component-rules-defer-theme-value-validation",
+      "file": "tests/etaf-rules-tests.el",
+      "purpose": "Theme token rules validate property facts statically and actual values after contextual resolution."
     }
   ]
 }

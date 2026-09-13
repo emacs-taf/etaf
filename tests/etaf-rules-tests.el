@@ -34,5 +34,25 @@
                                      :foreground) "#00ff00")))
     (etaf-component-set-styles 'etaf-test-rules '(("&" :color "#ff0000")))))
 
+(ert-deftest etaf-component-rules-defer-theme-value-validation ()
+  "Theme token values validate on resolution rather than as unevaluated lists."
+  (unwind-protect
+      (progn
+        (etaf-component-set-styles
+         'etaf-test-rules (list (list "&" :color (etaf-theme-token :fg "#0000ff"))))
+        (should (equal (plist-get (get-text-property
+                                  0 'face (ebox-render
+                                           (etaf-render (etaf-view (etaf-test-rules)))))
+                                 :foreground) "#0000ff"))
+        (etaf-component-set-styles
+         'etaf-test-rules (list (list "&" :color (etaf-theme-token :fg 42))))
+        (should-error (ebox-render (etaf-render (etaf-view (etaf-test-rules)))))
+        (should-error
+         (etaf-component-set-styles
+          'etaf-test-rules
+          (list (list "&" :unknown-property (etaf-theme-token :fg "#0000ff"))))
+         :type 'etaf-component-definition-error))
+    (etaf-component-set-styles 'etaf-test-rules '(("&" :color "#ff0000")))))
+
 (provide 'etaf-rules-tests)
 ;;; etaf-rules-tests.el ends here

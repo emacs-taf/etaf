@@ -25,6 +25,9 @@
 
 ### Fixed
 
+- Deferred Theme tokens remain valid in Component rules. Their actual values
+  pass Ebox validation after contextual resolution.
+
 - Component callbacks can directly capture declared props in both `:view` and
   `:render`. Successful updates replace their snapshots; rejected renders keep
   the committed callbacks. Setup closures retain initial inputs, and props

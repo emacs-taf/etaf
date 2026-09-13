@@ -426,6 +426,10 @@ Static Component styles use one declaration form:
 
 The `:styles` field is a static ordered rule list without a wrapper. Its rules have the shape `("SELECTOR" :PROPERTY VALUE...)`; values such as `(1 2)` and `bold` are style data and do not need quote. In an ordinary View attribute, values still follow Elisp rules, so a literal list would normally be quoted.
 
+Theme token declarations validate property facts when defined and actual values
+after contextual resolution. Unknown properties fail before installation; an
+invalid resolved value fails publication through the Ebox schema.
+
 Precedence is fixed:
 
 ```text

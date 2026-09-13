@@ -404,6 +404,9 @@ Table/Grid 的 cell callback 同样使用消费它的 Table/Grid 所在位置的
 
 `:styles` 字段直接接收静态有序规则列表，不加包装。每条规则是 `("SELECTOR" :PROPERTY VALUE...)`；`(1 2)` 和 `bold` 在样式中是数据，不需要 quote。普通 View 属性仍遵循 Elisp 规则，字面量列表通常需要 quote。
 
+Theme token 声明在定义时校验属性事实，在上下文解析后校验实际值。未知属性
+在安装前报错；解析出非法值时，Ebox schema 阻止发布。
+
 优先级固定为：
 
 ```text
