@@ -85,7 +85,7 @@
          :on-press on-press)
    (list (format "%s %d" (etaf-inject 'g6b-message "missing") count)))
   :styles
-  ((".g6b-context-action" :background-color "#1F2937")))
+  (("&.g6b-context-action" :background-color "#1F2937")))
 
 (etaf-define-component etaf-test-g6b-attr-leaf (&key label)
   :view

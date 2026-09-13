@@ -133,9 +133,9 @@ Hosts in the inherited subtree."
   "Provide THEME property defaults to the current Component subtree.
 
 THEME is a property plist such as `(:color \"#F4F6FB\" :bgcolor \"#202634\")'.
-Explicit Host properties and matching Component `:styles' declarations take
-precedence over these defaults.  A reactive ref containing such a plist is
-also accepted and remains tracked by the current render effect."
+Defaults use ECSS UA origin, including UA-important precedence over author
+importance.  Reactive ref/computed plists remain tracked; invalid resolved
+values reject candidate publication."
   (etaf-provide
    'theme
    (if (or (etaf-ref-p theme) (etaf-computed-p theme))

@@ -416,8 +416,16 @@ the rule remains static for retained Hosts.
 Theme defaults lower to immutable Ebox scopes at UA origin, rooted on their Host.
 ECSS owns their precedence, including importance and inheritance. Host updates
 resolve author props and defaults separately before candidate publication; deferred
-ECSS values bypass concrete TP paint slots. Component rules still use the existing
-simplified matching and inline projection; their shared cascade migration is pending.
+ECSS values bypass concrete TP paint slots after Ebox schema validation.
+
+Each Component instance owns an immutable Ebox scope identity. Hosts mark
+membership; topmost owned Hosts independently mount rule revisions at author
+origin. Physical ancestor ownership identifies roots through transparent ranges
+and forests. Retained slices keep membership when roots revise Theme-dependent
+rules. ECSS performs matching and cascade on canonical tree relations. Slot
+projections and public code-slot accessors preserve the caller's ownership and
+Context; fallback retains the consumer's ownership. These facts never require
+an additional visual container.
 
 Style ownership follows the Component that authored each View node. A nested Component is a style boundary: parent rules do not penetrate its internals. Caller-provided slot content is rendered with the caller scope, while a child's own fallback content remains in the child scope.
 

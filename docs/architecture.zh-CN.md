@@ -395,8 +395,13 @@ ETAF 会在样式边界解析这个延迟 token，使 retained Host 仍然走静
 
 Theme 默认值降为根位于当前 Host 的不可变 Ebox UA 作用域；ECSS 负责其优先级、
 importance 和继承。Host 更新分别解析 author 属性与默认值，再进入候选发布。
-延迟 ECSS 值不进入只接受具体绘制值的 TP paint slot。Component 规则目前仍采用
-简化匹配与行内投影，接入共享层叠的迁移尚未完成。
+延迟 ECSS 值通过 Ebox schema 校验后，保留到层叠计算，不进入具体 TP paint slot。
+
+每个 Component instance 拥有不可变 Ebox 作用域身份。Host 标记成员归属，最上层的
+自有 Host 分别以 author 来源挂载规则版本；物理祖先归属使透明 Range 和 forest
+仍能识别各根。根上的 Theme 规则更新时，保留片段无需改写成员身份。ECSS 在规范
+节点关系上执行匹配与层叠。slot projection 与公开代码 slot accessor 保留 caller
+的归属及 Context，fallback 保留消费组件归属；这些事实不增加可见容器。
 
 样式所有权跟随创建每个 View node 的 Component。嵌套 Component 是样式边界：父规则不会穿透其内部。调用者提供的 slot 内容使用 caller scope，子组件自有的 fallback 内容保留在 child scope。
 

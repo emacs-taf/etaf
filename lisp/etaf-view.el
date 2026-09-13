@@ -67,7 +67,8 @@
   "A Component View request for one slot and its fallback children."
   name
   token
-  fallback)
+  fallback
+  captured-p content style-owners)
 
 (defconst etaf--host-names
   '(text box fragment row column flex grid)

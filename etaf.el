@@ -124,11 +124,15 @@
 ;;
 ;; Function: etaf-current-slot (name &optional fallback)
 ;;;###autoload (autoload 'etaf-current-slot "etaf" nil nil)
-;; Return the child list for slot NAME, or FALLBACK when it is absent.
+;; Return composable children for slot NAME, or FALLBACK when absent.
+;; Supplied children retain caller Context and style ownership when passed,
+;; appended or wrapped as View children. Treat each child value as opaque;
+;; use only during Component render and do not retain beyond its Runtime.
 ;;
 ;; Function: etaf-current-slots ()
 ;;;###autoload (autoload 'etaf-current-slots "etaf" nil nil)
-;; Return the current Component's normalized slot alist.
+;; Return the current Component's slot alist of opaque composable children.
+;; Values follow etaf-current-slot ownership and lifecycle constraints.
 ;;
 ;; Function: etaf-data-controller (source &key query (page 1) (page-size 20) selection auto-load name item-key owner-scope initial-result)
 ;;;###autoload (autoload 'etaf-data-controller "etaf" nil nil)
@@ -330,6 +334,11 @@
 ;;     [:setup SETUP]
 ;;     :render ORDINARY-ELISP
 ;;     :styles ((SELECTOR ATTR ...)))
+;;
+;; Component rules use ECSS author origin, specificity, source order and
+;; importance through Ebox. &/:scope match each topmost owned Host; ordinary
+;; selectors match owned descendants. Slots retain caller ownership and fallback
+;; retains the consumer's scope. Inline declarations remain separate cascade input.
 ;;
 ;; `:setup' runs once per retained identity and returns opaque state.  `:view'
 ;; is unquoted DSL; `:render' is ordinary Elisp returning the same typed View,

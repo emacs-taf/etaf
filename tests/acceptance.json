@@ -683,6 +683,31 @@
       "name": "etaf-theme-defaults-update-empty-layout-and-isolate-apps",
       "file": "tests/etaf-theme-cascade-tests.el",
       "purpose": "Empty Theme defaults acquire and remove geometry through retained updates matching fresh mounts without changing another application."
+    },
+    {
+      "name": "etaf-component-rules-share-specificity-structure-and-reactivity",
+      "file": "tests/etaf-component-cascade-tests.el",
+      "purpose": "Specificity, source order and physical sibling selectors match pure output after retained class updates."
+    },
+    {
+      "name": "etaf-component-rules-mark-every-transparent-root",
+      "file": "tests/etaf-component-cascade-tests.el",
+      "purpose": "Every transparent forest root accepts root rules while excluding ordinary descendant rules."
+    },
+    {
+      "name": "etaf-component-rules-retain-slot-ownership-across-theme-updates",
+      "file": "tests/etaf-component-cascade-tests.el",
+      "purpose": "Reactive component rule revisions reach retained caller-owned slots, isolate child fallback and preserve failed publications."
+    },
+    {
+      "name": "etaf-component-rules-preserve-code-slot-author",
+      "file": "tests/etaf-component-cascade-tests.el",
+      "purpose": "Code slot accessors preserve caller style ownership through recomposition in pure and retained Components."
+    },
+    {
+      "name": "etaf-component-rules-preserve-importance-and-custom-properties",
+      "file": "tests/etaf-component-cascade-tests.el",
+      "purpose": "Component author importance overrides normal inline values and inherited custom properties resolve through ECSS."
     }
   ]
 }

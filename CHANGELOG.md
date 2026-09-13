@@ -41,6 +41,12 @@
 
 ### Changed
 
+- Component styles now use Ebox/ECSS matching and cascade. Later equal-specificity
+  rules win, author-important rules can override normal inline values, and
+  structural selectors operate on the canonical tree. Change root class/type
+  rules to `&.class` or `:scope`; plain selectors address descendants.
+  Fragment roots, reactive Theme rules and code slot recomposition retain ownership.
+
 - Theme defaults now use ECSS UA origin through Ebox scopes. Normal defaults
   remain below author properties; UA-important defaults take precedence over
   author-important declarations. Remove importance from Theme defaults that

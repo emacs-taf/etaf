@@ -13,6 +13,7 @@
 (require 'cl-lib)
 (require 'macroexp)
 (require 'etaf-view)
+(require 'ecss)
 (require 'etaf-compiler)
 
 (define-error 'etaf-component-definition-error
@@ -149,30 +150,42 @@ does not depend on ETAF's private registry flag."
   (let ((etaf--allow-component-redefinition t))
     (funcall function)))
 
+(defvar etaf--render-parent-style-owners)
+
+(defun etaf--slot-composable-children (name content)
+  "Return NAME's CONTENT as caller-owned composable children."
+  (let ((children (if (etaf--slot-content-p content)
+                      (etaf--slot-content-children content) content))
+        (owner-id (and (etaf--slot-content-p content)
+                       (etaf--slot-content-owner-component-id content))))
+    (mapcar (lambda (child)
+              (etaf--slot-projection-create
+               :name name :captured-p t
+               :content (etaf--slot-content-create :owner-component-id owner-id
+                                                   :children (list child))
+               :style-owners etaf--render-parent-style-owners))
+            children)))
+
 (defun etaf-current-slots ()
-  "Return the current Component's normalized slot alist."
+  "Return the current Component's slot alist of opaque composable children."
   (unless (eq etaf--component-phase 'render)
     (etaf--component-definition-error
      "Slots are available only during Component view/render"))
   (setq etaf--raw-slot-read-p t)
   (mapcar (lambda (entry)
             (cons (car entry)
-                  (if (etaf--slot-content-p (cdr entry))
-                      (etaf--slot-content-children (cdr entry))
-                    (cdr entry))))
+                  (etaf--slot-composable-children (car entry) (cdr entry))))
           etaf--current-component-slots))
 
 (defun etaf-current-slot (name &optional fallback)
-  "Return the child list for slot NAME, or FALLBACK when it is absent."
+  "Return caller-owned composable children for NAME, or FALLBACK when absent."
   (unless (eq etaf--component-phase 'render)
     (etaf--component-definition-error
      "Slots are available only during Component view/render"))
   (setq etaf--raw-slot-read-p t)
   (let ((entry (assq name etaf--current-component-slots)))
     (if entry
-        (if (etaf--slot-content-p (cdr entry))
-            (etaf--slot-content-children (cdr entry))
-          (cdr entry))
+        (etaf--slot-composable-children name (cdr entry))
       fallback)))
 
 (defun etaf--component-prop-bindings (props)
@@ -232,10 +245,12 @@ does not depend on ETAF's private registry flag."
                         (zerop (% (length (cdr rule)) 2)))) rule
             (let (static)
               (cl-loop for (property value) on (cdr rule) by #'cddr
-                       do (if (etaf-theme-token-p value)
-                              (unless (ebox-style-schema-id property)
-                                (error "Unknown Theme target property: %S" property))
-                            (setq static (append static (list property value)))))
+                       do (setq static
+                                (append static
+                                        (list property
+                                              (if (etaf-theme-token-p value)
+                                                  (ecss-wide-value 'initial)
+                                                value)))))
               (cons (car rule) static))))
         form))
     (error (etaf--component-definition-error

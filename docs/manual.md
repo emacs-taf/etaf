@@ -473,13 +473,18 @@ including UA-important declarations winning over author-important declarations.
 Changing a reactive Theme republishes these defaults without converting them to
 inline properties. Unknown Theme keys remain Context tokens.
 
-Within one Component style scope, the first matching declaration fills an
-unspecified Host property; later rules do not overwrite that resolved default.
-Component rules currently retain this simplified matching behavior. A nil Host
-property is treated as omitted and may receive the Component or Theme default. Use explicit Host
-props or distinct properties when a variant needs a deliberate override.
+Component rules enter Ebox at author origin. ECSS computes specificity, rule
+order, importance, structural selectors, custom properties and inheritance.
+Later rules win ties. Normal inline declarations outrank normal component rules;
+important rules can override normal inline values. A nil Host property is omitted.
+Use `&` or `:scope` for each component root, including every root of a fragment
+or forest; ordinary selectors match strict descendants. For example, a root
+class rule is `&.selected`, while `.selected` targets owned descendants.
 
 Styles are scoped to the Component that authored a View node. A parent rule does not enter a nested Component's internals; content supplied through a caller slot keeps the caller scope, while a Component's own slot fallback keeps the child scope.
+`etaf-current-slot` and `etaf-current-slots` return composable child values that
+retain this caller ownership. Pass, append or wrap them as View children; treat
+the values as opaque rather than inspecting their internal representation.
 
 Theme is a Context convenience, not another runtime object:
 

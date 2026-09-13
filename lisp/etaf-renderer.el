@@ -34,7 +34,7 @@
                   (runtime name props backend-props path
                            &optional theme-deps
                            property-bindings property-deps
-                           property-context-deps base-props site-token))
+                           property-context-deps base-props site-token style-root-p))
 (declare-function etaf--runtime-resolve-host-properties
                   "etaf-runtime" (props))
 (declare-function etaf--runtime-theme-paint-value
@@ -105,10 +105,10 @@
 (defvar etaf--render-runtime nil
   "Runtime currently lowering a View tree, or nil for a pure render.")
 
-(defvar etaf--render-style-stack nil
+(defvar etaf--render-style-owners nil
   "Component style scopes active during View lowering.")
 
-(defvar etaf--render-parent-style-stack nil
+(defvar etaf--render-parent-style-owners nil
   "Style scopes belonging to the caller of the current Component.")
 
 (defvar etaf--current-semantic-parent-id 0
@@ -174,71 +174,53 @@ SITE-TOKEN replaces PATH as the generated call-site identity when non-nil."
         copy)
     (append props (list key value))))
 
-(defun etaf--style-selector-match-p (selector node &optional root-p)
-  "Return whether string SELECTOR matches normalized Host NODE.
+(cl-defstruct (etaf--style-owner (:constructor etaf--style-owner-create))
+  "Immutable Component rule input and shared membership identity."
+  scope rules)
 
-This small matcher covers the stable core selector vocabulary.  The complete
-ECSS compiler is layered on top later without changing the View or Ebox
-boundaries: `&', `.class', `&.class', and `[role=value]' are enough for core
-Component styles and remain deterministic for all text applications.
-ROOT-P marks the Component style root."
-  (let* ((name (symbol-name (etaf--view-node-name node)))
-         (props (etaf--view-node-props node))
-         (class (plist-get props :class))
-         (classes (cond
-                   ((stringp class) (split-string class "[[:space:]]+" t))
-                   ((symbolp class) (list (symbol-name class)))
-                   ((listp class)
-                    (mapcar (lambda (item)
-                              (if (symbolp item)
-                                  (symbol-name item)
-                                (format "%s" item)))
-                            class))
-                   (t nil))))
-    (cond
-     ((string= selector "&") root-p)
-     ((string-prefix-p "." selector)
-      (member (substring selector 1) classes))
-     ((string-prefix-p "&." selector)
-      (and root-p (member (substring selector 2) classes)))
-     ((string-match "\\`\\[role=\\([^]]+\\)\\]\\'" selector)
-      (equal (format "%s" (plist-get props :role))
-             (match-string 1 selector)))
-     ((string= selector name) t)
-     (t nil))))
+(defvar etaf--render-enclosing-style-scopes nil
+  "Component scopes of physical ancestors during recursive lowering.")
 
-(defun etaf--apply-inline-style-rules (node styles &optional root-p)
-  "Apply static STYLES to NODE and return a copied normalized node.
+(defvar etaf--component-style-scope-cache (make-hash-table :test #'equal)
+  "Bounded cache of immutable Component rule revisions.")
 
-Inline View properties win over Component style declarations.  Styles are
-represented as ordinary static data until this final lowering step; they do
-not create another visual node category."
-  (if (null styles)
-      node
-    (let ((props (copy-sequence
-                  (etaf--resolve-property-plist
-                   (etaf--view-node-props node)))))
-      (dolist (rule styles)
-        (when (and (consp rule) (stringp (car rule))
-                   (etaf--style-selector-match-p (car rule) node root-p))
-          (let ((rule-props (cdr rule)))
-            (while rule-props
-              (let ((key (pop rule-props))
-                    (value (pop rule-props)))
-                (unless (keywordp key)
-                  (signal 'etaf-renderer-error
-                          (list (format "Style property must be a keyword: %S"
-                                        key))))
-                (setq value (if (and (consp value) (eq (car value) 'quote))
-                                (cadr value)
-                              value))
-                (unless (plist-get props key)
-                  (setq props (etaf--merge-property props key value))))))))
-      (etaf--view-node-create
-       :name (etaf--view-node-name node)
-       :token (etaf--view-node-token node)
-       :props props
-       :children (etaf--view-node-children node)))))
+(defun etaf--component-style-root-p ()
+  "Return whether this Host is a topmost member of its Component scope."
+  (when-let* ((owner (car etaf--render-style-owners)))
+    (let ((scope (etaf--style-owner-scope owner)))
+      (not (or (memq scope etaf--render-enclosing-style-scopes)
+               (and etaf--render-runtime
+                    (etaf--runtime-style-ancestor-p
+                     etaf--render-runtime etaf--current-semantic-parent-id scope)))))))
+
+(defun etaf--host-component-style-properties (props root-p)
+  "Return canonical PROPS and rule dependencies, marking ROOT-P ownership."
+  (let ((owner (car etaf--render-style-owners)) deps)
+    (when owner
+      (let ((scope (etaf--style-owner-scope owner)) revision)
+        (when root-p
+          (let* ((rules
+                  (mapcar
+                   (lambda (rule)
+                     (let ((resolved (etaf--resolve-theme-property-plist (cdr rule))))
+                       (setq deps (append deps (cadr resolved)))
+                       (cons (car rule) (car resolved))))
+                   (etaf--style-owner-rules owner)))
+                 (key (list scope rules)))
+            (setq revision
+                  (or (gethash key etaf--component-style-scope-cache)
+                      (let ((next (ebox-style-scope-with-rules scope rules)))
+                        (when (>= (hash-table-count etaf--component-style-scope-cache) 512)
+                          (clrhash etaf--component-style-scope-cache))
+                        (puthash (copy-tree key) next etaf--component-style-scope-cache)
+                        next)))))
+        (setq props (etaf--merge-property props :ecss-scopes
+                                          (append (plist-get props :ecss-scopes) (list scope))))
+        (when revision
+          (setq props (etaf--merge-property props :ecss-scope-roots
+                                            (append (plist-get props :ecss-scope-roots)
+                                                    (list revision)))))))
+    (list props (delete-dups deps))))
 
 (defvar etaf--theme-host-default-cache
   (make-hash-table :test #'eq :weakness 'key)
@@ -308,6 +290,8 @@ not create another visual node category."
         (if (etaf-theme-token-p value)
             (let ((resolved-value
                    (etaf--theme-token-resolve-from-source value source)))
+              (when resolved-value
+                (ebox-style-compile-declarations (list property resolved-value) t))
               (push property resolved)
               (push (if etaf--render-runtime
                         (etaf--runtime-theme-paint-value
@@ -562,7 +546,9 @@ multi-root forest; a single material root is returned unchanged."
   (setq etaf--raw-slot-read-p t)
   (let* ((name (etaf--slot-projection-name projection))
          (slots etaf--current-component-slots)
-         (entry (assq name slots))
+         (captured-p (etaf--slot-projection-captured-p projection))
+         (entry (if captured-p (cons name (etaf--slot-projection-content projection))
+                  (assq name slots)))
          (content (and entry (cdr entry)))
          (children (if (etaf--slot-content-p content)
                        (etaf--slot-content-children content)
@@ -570,10 +556,10 @@ multi-root forest; a single material root is returned unchanged."
          (owner-id (and (etaf--slot-content-p content)
                         (etaf--slot-content-owner-component-id content)))
          (fallback (etaf--slot-projection-fallback projection)))
-    (let ((etaf--render-style-stack
-           (if entry
-               etaf--render-parent-style-stack
-             etaf--render-style-stack)))
+    (let ((etaf--render-style-owners
+           (cond (captured-p (etaf--slot-projection-style-owners projection))
+                 (entry etaf--render-parent-style-owners)
+                 (t etaf--render-style-owners))))
       (let ((render (lambda ()
                       (etaf--render-value-list
                        (if entry children fallback)
@@ -593,7 +579,8 @@ multi-root forest; a single material root is returned unchanged."
                          (etaf--slot-content-children content)
                        content)
                    (etaf--slot-projection-fallback projection))))
-    (cl-labels
+    (and (not (etaf--slot-projection-captured-p projection))
+     (cl-labels
         ((valid
           (value)
           (cond ((or (null value) (stringp value) (etaf--expr-p value)) t)
@@ -602,7 +589,7 @@ multi-root forest; a single material root is returned unchanged."
                       (cl-every #'valid (etaf--view-node-children value))))
                 ((proper-list-p value) (cl-every #'valid value))
                 (t nil))))
-      (valid values))))
+      (valid values)))))
 
 (defun etaf--render-component-call-pure (call path)
   "Render stateless CALL at PATH without a retained Runtime."
@@ -620,11 +607,11 @@ multi-root forest; a single material root is returned unchanged."
           (etaf--current-component-slots
            (etaf--component-call-slots call))
           (etaf--component-phase 'render))
-      (let ((etaf--render-parent-style-stack etaf--render-style-stack)
-            (etaf--render-style-stack
-             (list (cons (etaf--component-spec-styles spec)
-                         (append path (list :component
-                                            (etaf--component-spec-name spec)))))))
+      (let ((etaf--render-parent-style-owners etaf--render-style-owners)
+            (etaf--render-style-owners
+             (list (etaf--style-owner-create
+                    :scope (ebox-style-scope-create nil)
+                    :rules (etaf--component-spec-styles spec)))))
         (etaf--render-value-list
          (etaf--apply-component-attrs
           (etaf--validate-component-render-result
@@ -720,9 +707,6 @@ multi-root forest; a single material root is returned unchanged."
          (node (let ((copy (copy-sequence node)))
                  (setf (etaf--view-node-props copy) base-props)
                  copy))
-         (node (if (fboundp 'etaf--runtime-style-node)
-                   (etaf--runtime-style-node node path)
-                 node))
          (name (etaf--view-node-name node))
          (theme-result
           (etaf--resolve-host-theme
@@ -733,6 +717,11 @@ multi-root forest; a single material root is returned unchanged."
          (props (etaf--host-theme-properties
                  (etaf--ebox-properties raw-props path (etaf--view-node-token node))
                  (nth 2 theme-result)))
+         (style-root-p (and (not (eq name 'fragment)) (etaf--component-style-root-p)))
+         (style-result (if (eq name 'fragment) (list props nil)
+                         (etaf--host-component-style-properties props style-root-p)))
+         (props (car style-result))
+         (theme-deps (delete-dups (append theme-deps (cadr style-result))))
          (children (etaf--view-node-children node)))
     (pcase name
       ('text
@@ -742,7 +731,7 @@ multi-root forest; a single material root is returned unchanged."
                      etaf--render-runtime name raw-props props path
                      theme-deps property-bindings
                      property-deps property-context-deps base-props
-                     (etaf--view-node-token node))))
+                     (etaf--view-node-token node) style-root-p)))
               (child-path (append path (list :text)))
               (runtime-inline
                (and semantic-id
@@ -776,13 +765,15 @@ multi-root forest; a single material root is returned unchanged."
                     etaf--render-runtime name raw-props props path
                     theme-deps property-bindings
                     property-deps property-context-deps base-props
-                    (etaf--view-node-token node)))))
+                    (etaf--view-node-token node) style-root-p))))
          (dolist (child children)
            (setq nodes
                  (nconc nodes
                         (let ((etaf--current-semantic-parent-id
-                               (or semantic-id
-                                   etaf--current-semantic-parent-id)))
+                               (or semantic-id etaf--current-semantic-parent-id))
+                              (etaf--render-enclosing-style-scopes
+                               (append (mapcar #'etaf--style-owner-scope etaf--render-style-owners)
+                                       etaf--render-enclosing-style-scopes)))
                           (if (and semantic-id
                                    ;; Code-mode may carry a retained
                                    ;; structural Expr through `etaf-node'.

@@ -445,12 +445,16 @@ Theme 默认值作为 ECSS UA 来源的作用域声明进入 Ebox。普通 autho
 响应式主题变化会重新发布默认声明，不会将其转换为行内属性。未知 Theme 键仍是
 Context token。
 
-在同一个 Component 样式作用域内，第一条匹配声明会填充尚未指定的 Host
-属性；后续规则不会覆盖已经解析出的默认值。Component 规则目前仍使用这套简化
-匹配行为。nil Host 属性按省略处理，可以接收 Component 或 Theme 默认值。若
-variant 需要明确覆盖，应使用显式 Host 属性或不同的属性键。
+Component 规则以 author 来源进入 Ebox，由 ECSS 处理 specificity、规则顺序、
+importance、结构选择器、custom property 与继承。同等条件下后面的规则获胜。
+普通行内声明高于普通组件规则；important 规则可以覆盖普通行内值。nil Host 属性
+按省略处理。使用 `&` 或 `:scope` 匹配组件根，包括 fragment/forest 的每个根；
+普通选择器只匹配严格后代。例如根 class 规则写作 `&.selected`，`.selected` 匹配
+属于该组件的后代。
 
 样式作用域归属于创建 View node 的 Component。父组件规则不会进入嵌套 Component 的内部；调用者通过 slot 提供的内容保留 caller scope，Component 自己定义的 slot fallback 保留 child scope。
+`etaf-current-slot` 和 `etaf-current-slots` 返回保留 caller 归属的可组合 child 值。
+可以传递、append 或包入 View children；将这些值视为 opaque，不检查内部表示。
 
 Theme 是 Context 的便捷形式，不是另一个 Runtime 对象：
 

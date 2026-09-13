@@ -27,7 +27,6 @@
 (require 'etaf-observer)
 
 (declare-function etaf--render-value-list "etaf-renderer" (value path))
-(declare-function etaf--apply-inline-style-rules "etaf-renderer" (node styles &optional root-p))
 (declare-function etaf--generated-host-ref
                   "etaf-renderer" (props path &optional site-token))
 (declare-function etaf--ebox-properties
@@ -52,8 +51,8 @@
 (declare-function tp-paint-slot-rollback-updates "tp-style" (journal))
 (declare-function tp-transaction-active-p "tp-reactive" ())
 (defvar etaf--render-runtime)
-(defvar etaf--render-style-stack)
-(defvar etaf--render-parent-style-stack)
+(defvar etaf--render-style-owners)
+(defvar etaf--render-parent-style-owners)
 (defvar etaf--current-context)
 (defvar gcs-done)
 (defvar gc-elapsed)
@@ -69,6 +68,7 @@
   state
   (setup-complete-p nil)
   prop-sources
+  style-scope
   local-refs
   context
   mounted-hooks
@@ -82,7 +82,7 @@
   semantic-id identity input-effect-id effect-id resource-key props attrs slots
   defaults
   input-props input-attrs input-slots output-signature artifact-key
-  path caller-style-stack input-deps deps
+  path caller-style-owners input-deps deps
   parent-id caller-component-id child-ids raw-slot-reader-p
   publication-kind output-range-id
   context-frame context-deps
@@ -95,7 +95,7 @@
 
 (cl-defstruct (etaf--semantic-host (:constructor etaf--semantic-host-create))
   semantic-id identity parent-id component-id child-ids host-ref key name effect-id
-  property-bindings deps context-deps
+  property-bindings deps context-deps style-root-p
   ;; Host inputs after Behavior composition and expression resolution, before
   ;; scoped style and Theme resolution.
   ;; Reactive expressions are retained separately in property-bindings.
@@ -110,7 +110,7 @@
 
 (cl-defstruct (etaf--semantic-range (:constructor etaf--semantic-range-create))
   semantic-id identity effect-id kind parent-id component-id token range-ref
-  path caller-style-stack output-signature deps artifact-key item-root-ids
+  path caller-style-owners output-signature deps artifact-key item-root-ids
   item-identity-index context-deps
   keyed-context-signature keyed-item-signatures keyed-item-root-id-index
   keyed-item-node-span-index keyed-key-order
@@ -124,7 +124,7 @@
 (cl-defstruct (etaf--semantic-slot-range
                (:constructor etaf--semantic-slot-range-create))
   semantic-id identity effect-id parent-id owner-component-id
-  consumer-component-id token name range-ref path style-stack
+  consumer-component-id token name range-ref path style-owners
   output-signature deps artifact-key item-root-ids item-identity-index
   context-deps
   (composition-version 0))
@@ -2090,7 +2090,7 @@ receive an independent Host effect."
     (runtime name props backend-props path
              &optional theme-deps
              property-bindings property-deps property-context-deps base-props
-             site-token)
+             site-token style-root-p)
   "Register visual Host NAME at PATH in RUNTIME and return its semantic id."
   (let* ((key (plist-get props :key))
          (identity (if key
@@ -2122,6 +2122,7 @@ receive an independent Host effect."
                   :host-ref (etaf--generated-host-ref props path site-token)
                   :key key :name name :effect-id effect-id
                   :property-bindings property-bindings
+                  :style-root-p style-root-p
                   :deps (delete-dups
                          (append property-deps theme-deps))
                   :context-deps property-context-deps
@@ -2130,7 +2131,7 @@ receive an independent Host effect."
                   :site-token site-token
                   :props-signature backend-props
                   :path path
-                  :style-identity etaf--render-style-stack)))
+                  :style-identity etaf--render-style-owners)))
     (etaf--runtime-register-host-behaviors runtime record)
     (unless etaf--rendering-range-p
       (puthash identity semantic-id
@@ -2599,11 +2600,14 @@ subtrees keep their committed resources without being traversed."
           (etaf--raw-slot-read-p nil)
           (etaf--current-context candidate-context)
           (etaf--render-runtime runtime)
-          (etaf--render-parent-style-stack etaf--render-style-stack)
-          (etaf--render-style-stack
+          (etaf--render-parent-style-owners etaf--render-style-owners)
+          (etaf--render-style-owners
            (list
-            (cons (etaf--component-spec-styles spec)
-                  (append path (list :view))))))
+            (etaf--style-owner-create
+             :scope (or (etaf--component-instance-style-scope instance)
+                        (setf (etaf--component-instance-style-scope instance)
+                              (ebox-style-scope-create nil)))
+             :rules (etaf--component-spec-styles spec)))))
       (when (and setup
                  (not (etaf--component-instance-setup-complete-p instance)))
         (let ((state
@@ -2722,7 +2726,7 @@ subtrees keep their committed resources without being traversed."
            :kind 'component-output :parent-id component-id
            :component-id component-id :token 'component-output
            :range-ref range-ref :path (copy-tree path)
-           :caller-style-stack (copy-tree etaf--render-style-stack)
+           :caller-style-owners (copy-tree etaf--render-style-owners)
            :output-signature (copy-tree rendered) :deps nil
            :artifact-key (list (1+ (etaf-runtime-generation runtime))
                                'component-output effect-id)
@@ -2978,7 +2982,7 @@ subtrees keep their committed resources without being traversed."
                    :output-signature (copy-tree output-signature)
                    :artifact-key (and (not transparent-p) effect-id)
                    :path (copy-tree path)
-                   :caller-style-stack (copy-tree etaf--render-style-stack)
+                   :caller-style-owners (copy-tree etaf--render-style-owners)
                    :input-deps (nreverse input-deps)
                    :deps (nreverse render-deps)
                    :parent-id etaf--current-semantic-parent-id
@@ -3399,7 +3403,7 @@ subtrees keep their committed resources without being traversed."
                 :parent-id etaf--current-semantic-parent-id
                 :component-id etaf--current-component-semantic-id
                 :token token :range-ref range-ref :path (copy-tree path)
-                :caller-style-stack (copy-tree etaf--render-style-stack)
+                :caller-style-owners (copy-tree etaf--render-style-owners)
                 :output-signature (copy-tree value) :deps (nreverse deps)
                 :context-deps (nreverse context-deps)
                 :artifact-key (cons (1+ (etaf-runtime-generation runtime))
@@ -3468,9 +3472,9 @@ subtrees keep their committed resources without being traversed."
                             (etaf--slot-content-owner-component-id content))
                      etaf--current-component-semantic-id))
          (consumer-id etaf--current-component-semantic-id)
-         (style-stack (copy-tree (if provided-p
-                                     etaf--render-parent-style-stack
-                                   etaf--render-style-stack)))
+         (style-owners (copy-tree (if provided-p
+                                     etaf--render-parent-style-owners
+                                   etaf--render-style-owners)))
          (token (etaf--slot-projection-token projection))
          (identity (list 'slot-range etaf--current-semantic-parent-id
                          (or token (copy-tree path)) name))
@@ -3496,7 +3500,7 @@ subtrees keep their committed resources without being traversed."
          (target (list :children children :owner-id owner-id
                        :owner-input
                        (etaf--runtime-component-env-signature runtime owner-id)
-                       :consumer-id consumer-id :style-stack style-stack)))
+                       :consumer-id consumer-id :style-owners style-owners)))
     (puthash identity semantic-id
              (etaf-runtime-candidate-identity-entries runtime))
     (etaf--runtime-candidate-add-child
@@ -3525,7 +3529,7 @@ subtrees keep their committed resources without being traversed."
         (let ((result
                (etaf--runtime-finish-slot-range-candidate
                 runtime generation old identity semantic-id effect-id range-ref
-                name token owner-id consumer-id style-stack path target
+                name token owner-id consumer-id style-owners path target
                 value deps nodes context-deps)))
           (when old
             (let ((candidate-range
@@ -3547,7 +3551,7 @@ subtrees keep their committed resources without being traversed."
 
 (defun etaf--runtime-finish-slot-range-candidate
     (runtime generation old identity semantic-id effect-id range-ref
-             name token owner-id consumer-id style-stack path target
+             name token owner-id consumer-id style-owners path target
              value deps nodes context-deps)
   "Finish GENERATION slot Range candidate in RUNTIME.
 The candidate uses resolved VALUE, DEPS, and NODES."
@@ -3564,7 +3568,7 @@ The candidate uses resolved VALUE, DEPS, and NODES."
            :parent-id etaf--current-semantic-parent-id
            :owner-component-id owner-id :consumer-component-id consumer-id
            :token token :name name :range-ref range-ref :path (copy-tree path)
-           :style-stack (copy-tree style-stack)
+           :style-owners (copy-tree style-owners)
            :output-signature (copy-tree value) :deps deps
            :context-deps context-deps
            :artifact-key (cons (1+ (etaf-runtime-generation runtime)) effect-id)
@@ -3608,10 +3612,7 @@ The candidate uses resolved VALUE, DEPS, and NODES."
                (etaf--render-phase-p t))
            (setq value
                  (etaf--runtime-normalize-range-value
-                  (plist-get target :children)))
-           (let ((etaf--render-style-stack
-                  (copy-tree (plist-get target :style-stack))))
-             (setq value (etaf--runtime-style-range-value value path))))
+                  (plist-get target :children))))
          (let ((etaf--runtime-dependency-collector collector)
                (etaf--context-inject-recorder
                 (lambda (frame key)
@@ -3622,26 +3623,12 @@ The candidate uses resolved VALUE, DEPS, and NODES."
                (etaf--render-parent-path path)
                (etaf--current-range-item-index old-item-index)
                (etaf--rendering-range-p t)
-               (etaf--render-style-stack
-                (copy-tree (plist-get target :style-stack)))
+               (etaf--render-style-owners
+                (copy-tree (plist-get target :style-owners)))
                (etaf--active-effect nil)
                (etaf--render-phase-p t))
            (setq nodes (etaf--render-value-list value path))))))
     (cl-values value (nreverse deps) nodes (nreverse context-deps))))
-
-(defun etaf--runtime-style-range-value (value path)
-  "Apply active Component style scopes to normalized Range VALUE at PATH."
-  (cl-loop for item in value for index from 0 collect
-           (if (etaf--view-node-p item)
-               (let ((styled
-                      (etaf--runtime-style-node
-                       item (append path (list index)))))
-                 (setf (etaf--view-node-children styled)
-                       (etaf--runtime-style-range-value
-                        (etaf--view-node-children styled)
-                        (append path (list index))))
-                 styled)
-             item)))
 
 (defun etaf--runtime-normalize-range-value (value &optional path)
   "Normalize structural View VALUE at the current Range boundary PATH.
@@ -3977,16 +3964,19 @@ raw Emacs properties; Text presentation is projected by Ebox."
       (walk values path surface))
     (list (apply #'concat (nreverse strings)) (nreverse parts))))
 
-(defun etaf--runtime-style-node (node path)
-  "Apply active Component style scopes to NODE at structural PATH."
-  (let ((result node))
-    (dolist (scope etaf--render-style-stack result)
-      (let ((styles (car scope))
-            (root-path (cdr scope)))
-        (when (and styles (equal path root-path))
-          (setq result (etaf--apply-inline-style-rules result styles t)))
-        (when (and styles (not (equal path root-path)))
-          (setq result (etaf--apply-inline-style-rules result styles nil)))))))
+(defun etaf--runtime-style-ancestor-p (runtime parent-id scope)
+  "Return whether a Host above PARENT-ID belongs to SCOPE in RUNTIME."
+  (let ((generation (etaf-runtime-current-generation runtime)) found)
+    (while (and parent-id (not found))
+      (let ((node (or (gethash parent-id (etaf-runtime-candidate-graph-nodes runtime))
+                      (and generation
+                           (etaf--pvec-get (etaf-generation-semantic-nodes generation) parent-id)))))
+        (when (etaf--semantic-host-p node)
+          (setq found
+                (cl-some (lambda (owner) (eq scope (etaf--style-owner-scope owner)))
+                         (etaf--semantic-host-style-identity node))))
+        (setq parent-id (etaf--semantic-parent-id node))))
+    found))
 
 (defun etaf--runtime-enqueue-instance-hooks
     (journal instance kind hooks ordering-prefix)
@@ -4245,7 +4235,7 @@ RETIREMENT-JOURNAL owns hooks and Scope disposal after successful publication."
            :semantic-id semantic-id :identity identity
            :effect-id (etaf-runtime-root-effect-id runtime) :kind 'root
            :parent-id 0 :component-id nil :token 'root :range-ref nil
-           :path '(root) :caller-style-stack nil
+           :path '(root) :caller-style-owners nil
            :output-signature (copy-tree (etaf-runtime-root-view-cache runtime))
            :deps (copy-sequence deps) :artifact-key nil
            :item-root-ids children
@@ -5092,7 +5082,7 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
                       (etaf--runtime-component-env-signature runtime owner-id)
                       :consumer-id
                       (etaf--semantic-slot-range-consumer-component-id slot-range)
-                      :style-stack (plist-get old-target :style-stack))))
+                      :style-owners (plist-get old-target :style-owners))))
           (unless (etaf--runtime-target-value-equal-p target old-target)
             (let ((effect (copy-sequence old-effect)))
               (setf (etaf--generation-effect-target effect) target)
@@ -5118,7 +5108,7 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
          (property-bindings
           (copy-sequence (etaf--semantic-host-property-bindings base)))
          (host-props (copy-tree (etaf--semantic-host-base-props base)))
-         theme-scope deps context-deps next-base-props)
+         theme-scope style-props deps context-deps next-base-props)
     ;; Property expressions and style/Theme transforms are one Host render
     ;; evaluation.  Share its owner, write guard, paint slots and dependency
     ;; collectors; no user transform may escape into publication scope.
@@ -5141,16 +5131,13 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
                             (etaf--resolve-property-value
                              (etaf--host-property-binding-expression binding)))))
          (setq next-base-props (copy-tree host-props))
-         (let* ((node (etaf--view-node-create
-                       :name (etaf--semantic-host-name base)
-                       :token (etaf--semantic-host-site-token base)
-                       :props host-props :children nil))
-                (etaf--render-style-stack
-                 (copy-tree (etaf--semantic-host-style-identity base)))
-                (styled (etaf--runtime-style-node node (etaf--semantic-host-path base)))
+         (let* ((etaf--render-style-owners (etaf--semantic-host-style-identity base))
+                (style-result (etaf--host-component-style-properties
+                               nil (etaf--semantic-host-style-root-p base)))
                 (theme-result (etaf--resolve-host-theme
-                               (etaf--semantic-host-name base)
-                               (etaf--view-node-props styled) host-ref)))
+                               (etaf--semantic-host-name base) host-props host-ref)))
+           (setq style-props (car style-result))
+           (dolist (source (cadr style-result)) (cl-pushnew source deps :test #'eq))
            (setq host-props (nth 0 theme-result)
                  theme-scope (nth 2 theme-result))
            (dolist (source (nth 1 theme-result))
@@ -5163,6 +5150,12 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
                                     (etaf--semantic-host-site-token base))
              theme-scope)
             :source-identity host-ref)))
+      (dolist (field '(:ecss-scopes :ecss-scope-roots))
+        (when (plist-get style-props field)
+          (setq backend-props (etaf--merge-property
+                               backend-props field
+                               (append (plist-get backend-props field)
+                                       (plist-get style-props field))))))
     (setf (etaf--semantic-host-property-bindings candidate) property-bindings
           (etaf--semantic-host-base-props candidate) next-base-props
           (etaf--semantic-host-resolved-props candidate) host-props
@@ -5218,9 +5211,9 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
            (etaf--semantic-component-semantic-id semantic))
           (etaf--current-semantic-parent-id
            (etaf--semantic-component-semantic-id semantic))
-          (etaf--render-style-stack
-           (copy-tree (etaf--semantic-component-caller-style-stack semantic)))
-          (etaf--render-parent-style-stack nil)
+          (etaf--render-style-owners
+           (copy-tree (etaf--semantic-component-caller-style-owners semantic)))
+          (etaf--render-parent-style-owners nil)
           (etaf--ebox-source-builder builder)
           (etaf--rendering-component-effect-p t)
           (etaf--runtime-dependency-collector
@@ -5426,9 +5419,9 @@ range is not eligible for keyed incremental rendering."
                   (etaf--rendering-range-p t)
                   (etaf--active-effect nil)
                   (etaf--render-phase-p t)
-                  (etaf--render-style-stack
+                  (etaf--render-style-owners
                    (copy-tree
-                    (etaf--semantic-range-caller-style-stack range))))
+                    (etaf--semantic-range-caller-style-owners range))))
               (cl-loop
                for item in items
                for key in snapshot-keys
@@ -5569,8 +5562,8 @@ range is not eligible for keyed incremental rendering."
                    (etaf--rendering-range-p t)
                    (etaf--active-effect nil)
                    (etaf--render-phase-p t)
-                   (etaf--render-style-stack
-                    (copy-tree (etaf--semantic-range-caller-style-stack range))))
+                   (etaf--render-style-owners
+                    (copy-tree (etaf--semantic-range-caller-style-owners range))))
                (setq value
                      (etaf--runtime-normalize-range-value
                       (funcall (etaf--expr-thunk
@@ -5737,7 +5730,7 @@ range is not eligible for keyed incremental rendering."
          (etaf--semantic-slot-range-name slot-range)
          (etaf--semantic-slot-range-token slot-range)
          (plist-get target :owner-id) (plist-get target :consumer-id)
-         (plist-get target :style-stack)
+         (plist-get target :style-owners)
          (etaf--semantic-slot-range-path slot-range)
          target value deps nodes context-deps)
         (let ((candidate
