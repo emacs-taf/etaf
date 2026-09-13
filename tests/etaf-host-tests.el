@@ -5,7 +5,7 @@
 (require 'cl-lib)
 (require 'ert)
 (require 'etaf)
-(require 'tp-transaction)
+(require 'tp)
 
 (defvar etaf-host-test-unmount-error-p nil)
 

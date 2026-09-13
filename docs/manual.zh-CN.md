@@ -7,10 +7,10 @@ ETAF 使用一套很小的词汇构建文本应用：`View`、`Component`、prop
 ETAF 依赖独立的 Ebox 包。开发时把核心检出目录放入 `load-path`，然后只加载 ETAF 的公共入口：
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/ecss/lisp")
-(add-to-list 'load-path "/path/to/github/tp/lisp")
-(add-to-list 'load-path "/path/to/github/ebox/lisp")
-(add-to-list 'load-path "/path/to/github/etaf/lisp")
+(add-to-list 'load-path "/path/to/github/ecss")
+(add-to-list 'load-path "/path/to/github/tp")
+(add-to-list 'load-path "/path/to/github/ebox")
+(add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
 ```
 
@@ -676,7 +676,7 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/etaf/examples")
-(require 'etaf-counter-example)
+(require 'etaf)
 (etaf-counter-example-open)
 ```
 
@@ -711,7 +711,7 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
 对任意应用负载启用通用记录器，然后打开普通的 `tabulated-list-mode` 面板：
 
 ```elisp
-(require 'etaf-performance)
+(require 'etaf)
 ;; 在已挂载 ETAF Runtime 的 buffer 中：
 (etaf-performance-mode 1)
 (etaf-performance-show)
@@ -794,11 +794,11 @@ Playground 使用 inert `.etaf` 结构与显式注册的 `.el` companion；core 
 在检出目录中开发时，把 Ebox、ETAF 和本目录加入 `load-path`：
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/ebox/lisp")
-(add-to-list 'load-path "/path/to/github/etaf/lisp")
+(add-to-list 'load-path "/path/to/github/ebox")
+(add-to-list 'load-path "/path/to/github/etaf")
 (add-to-list 'load-path "/path/to/github/etaf/examples")
 
-(require 'etaf-counter-example)
+(require 'etaf)
 (etaf-counter-example-open)
 ```
 

@@ -12,7 +12,7 @@
 ;;; Code:
 
 (require 'etaf-context)
-(require 'tp-palette)
+(require 'tp)
 
 ;;;###autoload
 (defmacro etaf-theme-define-palette (name &rest plist)

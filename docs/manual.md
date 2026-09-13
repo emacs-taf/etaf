@@ -7,10 +7,10 @@ ETAF builds text applications from one small vocabulary: `View`, `Component`, pr
 ETAF depends on the independent Ebox package. During development, put the core checkouts on `load-path` and load the one public ETAF entry:
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/ecss/lisp")
-(add-to-list 'load-path "/path/to/github/tp/lisp")
-(add-to-list 'load-path "/path/to/github/ebox/lisp")
-(add-to-list 'load-path "/path/to/github/etaf/lisp")
+(add-to-list 'load-path "/path/to/github/ecss")
+(add-to-list 'load-path "/path/to/github/tp")
+(add-to-list 'load-path "/path/to/github/ebox")
+(add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
 ```
 
@@ -703,7 +703,7 @@ For small copyable core patterns, load one of the executable applications in `ex
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/etaf/examples")
-(require 'etaf-counter-example)
+(require 'etaf)
 (etaf-counter-example-open)
 ```
 
@@ -739,7 +739,7 @@ Enable the generic recorder around any application workload, then open its
 ordinary `tabulated-list-mode` panel:
 
 ```elisp
-(require 'etaf-performance)
+(require 'etaf)
 ;; In a buffer with a mounted ETAF Runtime:
 (etaf-performance-mode 1)
 (etaf-performance-show)
@@ -831,11 +831,11 @@ These examples are executable applications, not documentation fragments. They us
 During checkout development, add Ebox, ETAF, and this directory to `load-path`:
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/ebox/lisp")
-(add-to-list 'load-path "/path/to/github/etaf/lisp")
+(add-to-list 'load-path "/path/to/github/ebox")
+(add-to-list 'load-path "/path/to/github/etaf")
 (add-to-list 'load-path "/path/to/github/etaf/examples")
 
-(require 'etaf-counter-example)
+(require 'etaf)
 (etaf-counter-example-open)
 ```
 
@@ -1012,7 +1012,7 @@ Compare payload counts at matching widths before making speedup claims. A
 different page size/content or loaded version is a different baseline.
 
 Code origins and disk hashes alone cannot establish when a running function was
-loaded. After recompilation, `:reload-files '("/checkout/ebox/lisp/ebox-viewport.elc" …)`
+loaded. After recompilation, `:reload-files '("/checkout/ebox/ebox-viewport.elc" …)`
 explicitly loads the chosen fresh bytecode before instrumentation. `:code`
 contains every explicitly loaded file's canonical path, source/bytecode hashes
 and load result, plus observed core function and benchmark driver origins;

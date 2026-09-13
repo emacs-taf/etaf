@@ -1,4 +1,15 @@
-# Migrating to ETAF 0.2
+# Changelog
+
+## Unreleased
+
+### Changed
+
+- Expose the package entry at the repository root, document supported APIs in
+  its Commentary and retain implementations under `lisp/`. Source consumers add
+  the repository root to `load-path` and require the package entry; internal
+  feature imports are unsupported. Archives retain this same directory layout.
+
+## ETAF 0.2 migration
 
 ETAF 0.2.1 requires Ebox 3.0.0 and TP 2.0.0. Install TP, then Ebox, then ETAF.
 The renderer bootstrap now requires Ebox framework SPI v2 and fails closed when

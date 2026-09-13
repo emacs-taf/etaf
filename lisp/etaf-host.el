@@ -12,8 +12,8 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'tp-transaction)
-(require 'tp-reactive)
+(require 'tp)
+(require 'tp)
 
 (define-error 'etaf-host-authority-error "Invalid ETAF Host authority state")
 

@@ -1,8 +1,8 @@
 # ETAF
 
-Source layout: runtime code lives in `lisp/`; add that directory to `load-path`
-when using a checkout. Update older checkout configurations from the repository
-root to its `lisp/` subdirectory.
+Source layout: add the repository root to `load-path` and use
+`(require 'etaf)`. The supported API and usage notes are in
+[`etaf.el`](etaf.el); implementation modules live in `lisp/`.
 
 ETAF builds text applications from reusable Components above the independent
 [Ebox](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/) layout and rendering engine.
@@ -94,7 +94,7 @@ recorded automatically; Ebox, TP, Data, Resource, and SQLite provider stages
 inside the same operation are correlated by sequence.
 
 ```elisp
-(require 'etaf-performance)
+(require 'etaf)
 ;; In a buffer with a mounted ETAF Runtime:
 (etaf-performance-mode 1)
 ;; Use any mounted ETAF application normally.
@@ -139,7 +139,7 @@ The [`examples/`](README.md) directory contains three core-only best-practice ap
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/etaf/examples")
-(require 'etaf-counter-example)
+(require 'etaf)
 (etaf-counter-example-open)
 ```
 
@@ -177,10 +177,10 @@ through the retired v1 capability.
 During development, load the sibling Ebox checkout before ETAF:
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/ecss/lisp")
-(add-to-list 'load-path "/path/to/github/tp/lisp")
-(add-to-list 'load-path "/path/to/github/ebox/lisp")
-(add-to-list 'load-path "/path/to/github/etaf/lisp")
+(add-to-list 'load-path "/path/to/github/ecss")
+(add-to-list 'load-path "/path/to/github/tp")
+(add-to-list 'load-path "/path/to/github/ebox")
+(add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
 ```
 
@@ -201,3 +201,10 @@ After cloning, run `make setup-hooks`. Before submitting a change, run `make che
 [docs/manual.md](docs/manual.md) · [docs/architecture.md](docs/architecture.md) · [CHANGELOG.md](CHANGELOG.md)
 
 `make check` runs structure checks, compilation and the public acceptance scenarios listed in [tests/acceptance.json](tests/acceptance.json). `make test` runs the broader regression suite; GUI and performance checks remain explicit targets. The acceptance inventory is selected by user-visible contracts, not by current pass/fail status.
+
+## Source layout migration
+
+Replace checkout paths ending in `/etaf/lisp` with `/etaf` and require
+`etaf`. Package archives must preserve the root entry and `lisp/` directory.
+Use only the public interfaces documented in the entry Commentary; internal
+feature imports and the former entry locations are removed.

@@ -15,7 +15,7 @@
 
 (require 'cl-lib)
 (require 'ebox)
-(require 'ebox-viewport)
+(require 'ebox)
 
 (declare-function profiler-running-p "profiler" ())
 (declare-function ebox-native-reflow-runtime-report "ebox-native-reflow" ())

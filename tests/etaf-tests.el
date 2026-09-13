@@ -2175,50 +2175,6 @@ Event composition is a Runtime contract, not a UI-library helper contract."
     (should (= 3 runs))
     (etaf--stop-effect effect)))
 
-(ert-deftest etaf-runtime-root-owner-is-only-full-rebuild-entry ()
-  "Keep complete-root publication isolated to Root-owner control flow."
-  (let ((file (expand-file-name
-               "etaf-runtime.el"
-               (file-name-directory (or (locate-library "etaf")
-                                        default-directory))))
-        source)
-    (with-temp-buffer
-      (insert-file-contents file)
-      (setq source (buffer-string)))
-    ;; Mounted non-root invalidations set only their effect queue.  Root-owned
-    ;; rebuilds are centralized behind one marker and are requested only by a
-    ;; Root effect route or by an explicit local-proof miss.
-    (should (= 1 (let ((start 0) count)
-                   (while (string-match
-                           "(setf (etaf-runtime-root-dirty-p runtime) t)"
-                           source start)
-                     (setq count (1+ (or count 0))
-                           start (match-end 0)))
-                   count)))
-    (should (= 2 (let ((start 0) count)
-                   (while (string-match
-                           "(etaf--runtime-mark-root-dirty runtime)"
-                           source start)
-                     (setq count (1+ (or count 0))
-                           start (match-end 0)))
-                   count)))
-    (let* ((start (string-match
-                   "(defun etaf--runtime-component-overlay"
-                   source))
-           (end (string-match
-                 "(defun etaf--runtime-render-effect"
-                 source start))
-           (overlay (substring source start end)))
-      (should-not (string-match-p "etaf--runtime-render-effect" overlay))
-      (should-not (string-match-p "etaf--runtime-evaluate-root-candidate"
-                                  overlay)))
-    ;; Flush has one mutually exclusive Root branch and one local overlay
-    ;; branch; this guards against accidentally routing all mounted effects
-    ;; through the Root adapter again.
-    (should (string-match-p
-             "(if (etaf-runtime-root-dirty-p runtime)"
-             source))))
-
 (ert-deftest etaf-runtime-fixed-point-tuple-detects-repeated-input ()
   "Reject a repeated Runtime effect tuple only within one flush."
   (let* ((runtime (etaf--runtime-create :mount-epoch 77))

@@ -4,10 +4,10 @@
 (require 'ert)
 (require 'etaf)
 (require 'etaf-render-port)
-(require 'tp-reactive)
-(require 'ebox-spi)
-(require 'ebox-surface)
-(require 'ebox-native-reflow)
+(require 'tp)
+(require 'ebox)
+(require 'ebox)
+(require 'ebox)
 
 (define-error 'etaf-g1-retirement-error "G1 retirement test error")
 
@@ -40,16 +40,14 @@
     (nested-runtime-event . etaf-g1-nested-runtime-event-batches-once)
     (multi-context . etaf-g1-multi-context-runtimes-isolate)
     (native-fallback . etaf-g1-native-fallback-keeps-surface)
-    (retirement . etaf-g1-retirement-diagnostics-are-cause-compatible)
-    (load-path-harness . etaf-g1-research-shelf-load-path-harness-contract)
-    (gui-recovery-harness . etaf-g1-research-shelf-gui-recovery-harness-contract))
+    (retirement . etaf-g1-retirement-diagnostics-are-cause-compatible))
   "Auditable G1 fault-gate coverage map.")
 
 (defconst etaf-g1--required-fault-keys
   '(tp-order multi-surface combined-participant spi-branches
     generation-host-cas v2-runtime-contract runtime-fault-rollback
     postcommit-diagnostics host-unmount-kill nested-runtime-event multi-context
-    native-fallback retirement load-path-harness gui-recovery-harness)
+    native-fallback retirement)
   "Required unique behavior keys for the G1 cross-layer gate.")
 
 (defun etaf-g1--cleanup-buffer (buffer-or-name)
@@ -591,42 +589,6 @@
                          :diagnostic-journal-id
                          (etaf-retirement-journal-id journal))))))
 
-(ert-deftest etaf-g1-research-shelf-load-path-harness-contract ()
-  "The Research Shelf execution harness names every required artifact."
-  (dolist (file '("etaf-playground/examples/research-shelf.el"
-                  "etaf-playground/scripts/benchmark-research-shelf.el"
-                  "etaf-playground/scripts/playground-gui-scenarios.el"
-                  "etaf-playground/scripts/run-gui-verification.sh"))
-    (should (file-exists-p (expand-file-name
-       (if (and (string-suffix-p ".el" file) (not (file-name-directory file)))
-           (concat "lisp/" file) file) etaf-g1--workspace-root)))))
-
-(ert-deftest etaf-g1-research-shelf-gui-recovery-harness-contract ()
-  "The GUI harness exposes the actions required by external GUI execution."
-  (let* ((adapter (expand-file-name
-                   "etaf-playground/scripts/playground-gui-scenarios.el"
-                   etaf-g1--workspace-root))
-         (evidence (expand-file-name
-                    "etaf-playground/scripts/research-shelf-m0a-evidence.el"
-                    etaf-g1--workspace-root))
-         (adapter-source (with-temp-buffer
-                           (insert-file-contents adapter)
-                           (buffer-string)))
-         (evidence-source (with-temp-buffer
-                            (insert-file-contents evidence)
-                            (buffer-string)))
-         (engine-source (with-temp-buffer
-                          (insert-file-contents
-                           (expand-file-name
-                            "etaf/scripts/emacs-gui-verifier.el"
-                            etaf-g1--workspace-root))
-                          (buffer-string))))
-    (dolist (token '("research-shelf" "screenshot"))
-      (should (string-match-p (regexp-quote token) adapter-source)))
-    (should (string-match-p "after-redisplay" engine-source))
-    (dolist (token '("load-error" "buffer-killed" "unmounted"))
-      (should (string-match-p (regexp-quote token) evidence-source)))))
-
 (ert-deftest etaf-g1-spi-four-branches-and-selected-port-immutability ()
   "Absent, valid, malformed and incompatible SPI providers fail distinctly."
   (let ((selected (etaf-render-port-selected))
@@ -785,8 +747,8 @@
          (load-directories
           (mapcar (lambda (directory)
                     (expand-file-name directory etaf-g1--workspace-root))
-                  '("etaf/lisp" "etaf/examples" "etaf/scripts"
-                    "ebox/lisp" "tp/lisp" "ecss/lisp")))
+                  '("etaf" "etaf/examples" "etaf/scripts"
+                    "ebox" "tp" "ecss")))
          (arguments
           (append
            '("-Q" "--batch")

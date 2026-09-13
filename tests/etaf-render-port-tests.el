@@ -17,7 +17,7 @@
   (require 'package)
   (with-temp-buffer
     (insert-file-contents
-     (expand-file-name "lisp/etaf.el" etaf-render-port-test--root))
+     (expand-file-name "etaf.el" etaf-render-port-test--root))
     (let ((description (package-buffer-info)))
       (should (equal (package-desc-version description) '(0 2 1)))
       (should

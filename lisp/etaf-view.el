@@ -12,7 +12,7 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'ebox-style)
+(require 'ebox)
 
 (define-error 'etaf-view-error "Invalid ETAF View")
 (define-error 'etaf-view-syntax-error "Invalid ETAF View syntax"

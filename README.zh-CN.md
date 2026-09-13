@@ -1,7 +1,7 @@
 # ETAF
 
-源码布局：运行时代码位于 `lisp/`；从源码使用时，将该目录加入 `load-path`。
-升级旧 checkout 配置时，将原来的仓库加载路径改为其 `lisp/` 子目录。
+源码布局：将仓库根目录加入 `load-path`，然后 require 与包同名的入口。
+入口 Commentary 列出公共 API 及用法；内部实现位于 `lisp/`。
 
 ETAF 在独立的 [Ebox](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/) 布局与渲染引擎上，使用可复用的 Component 构建文本应用。
 
@@ -89,7 +89,7 @@ ETAF 提供一个独立、按需加载、与具体应用无关的性能记录器
 Resource 和 SQLite 等 provider 阶段按 sequence 关联到同一条记录。
 
 ```elisp
-(require 'etaf-performance)
+(require 'etaf)
 ;; 在已挂载 ETAF Runtime 的 buffer 中：
 (etaf-performance-mode 1)
 ;; 正常操作任意已挂载的 ETAF 应用。
@@ -127,7 +127,7 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/etaf/examples")
-(require 'etaf-counter-example)
+(require 'etaf)
 (etaf-counter-example-open)
 ```
 
@@ -164,10 +164,10 @@ ETAF 为当前 Emacs 进程 snapshot 一个不可变的 v2 render port。按依�
 开发时先把同级 Ebox 检出目录加入 `load-path`：
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/ecss/lisp")
-(add-to-list 'load-path "/path/to/github/tp/lisp")
-(add-to-list 'load-path "/path/to/github/ebox/lisp")
-(add-to-list 'load-path "/path/to/github/etaf/lisp")
+(add-to-list 'load-path "/path/to/github/ecss")
+(add-to-list 'load-path "/path/to/github/tp")
+(add-to-list 'load-path "/path/to/github/ebox")
+(add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
 ```
 

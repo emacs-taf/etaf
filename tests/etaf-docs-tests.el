@@ -94,8 +94,8 @@
                           (expand-file-name invocation-name invocation-directory)
                           nil (current-buffer) nil "-Q" "--batch"
                           (append
-                           (cl-loop for directory in '("lisp" "../ebox/lisp" "../tp/lisp"
-                                                       "../ecss/lisp")
+                           (cl-loop for directory in '("." "../ebox" "../tp"
+                                                       "../ecss")
                                     append (list "-L" (expand-file-name
                                                        directory
                                                        etaf-docs-test--root)))

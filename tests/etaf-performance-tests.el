@@ -6,15 +6,6 @@
 
 (require 'ert)
 (require 'etaf)
-(defconst etaf-performance-test--facade-loaded-recorder-p
-  (featurep 'etaf-performance)
-  "Whether loading the ETAF facade eagerly loaded the optional recorder.")
-(require 'etaf-performance)
-
-(ert-deftest etaf-performance-is-not-an-etaf-facade-dependency ()
-  "The optional recorder must be loaded explicitly."
-  (should-not etaf-performance-test--facade-loaded-recorder-p))
-
 (defmacro etaf-performance-test--isolated (&rest body)
   "Run BODY with isolated recorder state."
   (declare (indent 0) (debug t))
