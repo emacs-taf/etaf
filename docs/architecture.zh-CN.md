@@ -1,6 +1,6 @@
 # ETAF 架构
 
-本文是 ETAF 的规范性架构契约，定义概念、职责、公共语法和 lowering 路径。实现状态与后续工作写在 [`implementation-plan.zh.md`](implementation-plan.zh.md)，面向用户的使用方式写在 [`user-guide.zh.md`](user-guide.zh.md)。
+本文是 ETAF 的规范性架构契约，定义概念、职责、公共语法和 lowering 路径。实现状态与后续工作写在 [`implementation-plan.zh.md`](architecture.zh-CN.md)，面向用户的使用方式写在 [`user-guide.zh.md`](manual.zh-CN.md)。
 
 ## 1. 设计结果
 

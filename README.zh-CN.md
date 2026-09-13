@@ -1,6 +1,6 @@
 # ETAF
 
-ETAF 在独立的 [Ebox](../ebox) 布局与渲染引擎上，使用可复用的 Component 构建文本应用。
+ETAF 在独立的 [Ebox](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/) 布局与渲染引擎上，使用可复用的 Component 构建文本应用。
 
 从 `etaf-view` 和 `etaf-mount` 开始。`(name :property value ... child ...)`
 中属性在前、子节点在后，属性值是普通 Elisp。求值下面完整例子，切换到
@@ -112,7 +112,7 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 同名 buffer 重建前后的记录。summary/report 函数省略参数时读取全部历史，
 显式传入 `nil` 时保持空结果。导出的环境是生成报告时的状态，不是每次历史操作
 的状态；同步 operation 耗时也不等于物理输入到画面呈现的延迟。逐次 GUI 条件
-检查使用 [scripts/README.md](scripts/README.md) 中的测量入口。
+检查使用 [README.md](README.md) 中的测量入口。
 
 没有内置公共边界的任意操作，可以使用
 `etaf-performance-call-operation` 或 `etaf-performance-with-operation`
@@ -120,7 +120,7 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 
 ## 可执行示例
 
-[`examples/`](examples/README.zh-CN.md) 目录包含三个只依赖 core 的最佳实践应用：保留式状态与 Action、Data Controller 所有权，以及 Resource 错误/清理 lifecycle。`make check` 会编译它们，并通过已挂载的公开事件路径驱动交互。
+[`examples/`](README.zh-CN.md) 目录包含三个只依赖 core 的最佳实践应用：保留式状态与 Action、Data Controller 所有权，以及 Resource 错误/清理 lifecycle。`make check` 会编译它们，并通过已挂载的公开事件路径驱动交互。
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/etaf/examples")
@@ -130,20 +130,20 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 
 ## 文档
 
-- [English Architecture](docs/architecture.en.md) · [中文架构](docs/architecture.zh.md)
-- [English User Guide](docs/user-guide.en.md) · [中文用户指南](docs/user-guide.zh.md)
-- [English Implementation Plan](docs/implementation-plan.en.md) · [中文实施计划](docs/implementation-plan.zh.md)
-- [Module-boundary proposal (unimplemented)](docs/proposals/module-boundaries.en.md) · [模块边界提案（未实现）](docs/proposals/module-boundaries.zh.md)
-- [English Best-practice Examples](examples/README.md) · [中文示例](examples/README.zh-CN.md)
+- [English Architecture](docs/architecture.md) · [中文架构](docs/architecture.zh-CN.md)
+- [English User Guide](docs/manual.md) · [中文用户指南](docs/manual.zh-CN.md)
+- [English Implementation Plan](docs/architecture.md) · [中文实施计划](docs/architecture.zh-CN.md)
+- [Module-boundary proposal (unimplemented)](docs/architecture.md) · [模块边界提案（未实现）](docs/architecture.zh-CN.md)
+- [English Best-practice Examples](README.md) · [中文示例](README.zh-CN.md)
 
 ## 独立包
 
 | 包 | 职责 |
 | --- | --- |
-| [`etaf-ui`](../etaf-ui/README.md) | 官方 Component 目录：Button、Checkbox、Label、Panel 和 DataGrid。 |
-| [`etaf-sqlite`](../etaf-sqlite/README.md) | 具体 SQLite Data Source；Data Controller 仍属于 ETAF core。 |
-| [`etaf-playground`](../etaf-playground/README.md) | ETAF 示例；只有请求官方目录示例时才加载 UI 包。 |
-| [`ebox-playground`](../ebox-playground/README.md) | 只使用 Ebox 的布局示例，与 ETAF 独立。 |
+| [`etaf-ui`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-ui/src/branch/main/README.md) | 官方 Component 目录：Button、Checkbox、Label、Panel 和 DataGrid。 |
+| [`etaf-sqlite`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-db/src/branch/main/README.md) | 具体 SQLite Data Source；Data Controller 仍属于 ETAF core。 |
+| [`etaf-playground`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-playground/src/branch/main/README.md) | ETAF 示例；只有请求官方目录示例时才加载 UI 包。 |
+| [`ebox-playground`](https://gitea.gklazycat.heiyu.space/geekinney/ebox-playground/src/branch/main/README.md) | 只使用 Ebox 的布局示例，与 ETAF 独立。 |
 
 没有单独需要安装的 `etaf-data`：Data 是 ETAF 核心能力。也没有笼统的 `etaf-adapters` 包：其他数据库、服务、文件或 ORM 应使用明确名称的具体 Data Source 包实现同一契约。
 
@@ -175,3 +175,13 @@ make check EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs
 ```
 
 核心门禁会编译实现、运行 core/Data/Resource 测试，并检查文档和 API 边界。还应在同级 `etaf-ui`、`etaf-sqlite`、`etaf-playground` 和 `ebox-playground` 仓库分别运行 `make check`；它们都不会被 core facade 自动加载。
+
+
+
+## 开发
+
+克隆后运行 `make setup-hooks`。提交变更前运行 `make check`；`make structure-check` 用于快速检查目录、命名和引用。统一开发规则见 [AGENTS.md](AGENTS.md)。
+
+[docs/manual.zh-CN.md](docs/manual.zh-CN.md) · [docs/architecture.zh-CN.md](docs/architecture.zh-CN.md) · [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
+
+`make check` 运行规范检查、编译及 [tests/acceptance.json](tests/acceptance.json) 中的公共验收场景。`make test` 运行更全面的回归测试；GUI 与性能验收使用独立入口。验收清单依据对外契约选择，不按当前能否通过筛选。

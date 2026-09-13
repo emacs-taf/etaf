@@ -1,7 +1,7 @@
 # ETAF
 
 ETAF builds text applications from reusable Components above the independent
-[Ebox](../ebox) layout and rendering engine.
+[Ebox](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/) layout and rendering engine.
 
 Start with `etaf-view` and `etaf-mount`. Properties precede children in
 `(name :property value ... child ...)`; property values are ordinary Elisp.
@@ -122,7 +122,7 @@ use all retained records when called without an argument; an explicit `nil`
 means an empty selection. The exported environment describes report generation,
 not each historical operation. These synchronous operation durations do not
 measure physical input-to-presentation latency; use the GUI measurement entry
-in [scripts/README.md](scripts/README.md) for per-action condition checks.
+in [README.md](README.md) for per-action condition checks.
 
 Use `etaf-performance-call-operation` or
 `etaf-performance-with-operation` to trace an arbitrary operation that has no
@@ -131,7 +131,7 @@ they do not create a second timer.
 
 ## Executable examples
 
-The [`examples/`](examples/README.md) directory contains three core-only best-practice applications: retained state and Actions, Data Controller ownership, and Resource error/cleanup lifecycle. They are byte-compiled and driven through mounted public event paths by `make check`.
+The [`examples/`](README.md) directory contains three core-only best-practice applications: retained state and Actions, Data Controller ownership, and Resource error/cleanup lifecycle. They are byte-compiled and driven through mounted public event paths by `make check`.
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/etaf/examples")
@@ -141,20 +141,20 @@ The [`examples/`](examples/README.md) directory contains three core-only best-pr
 
 ## Documentation
 
-- [Architecture](docs/architecture.en.md) · [中文架构](docs/architecture.zh.md)
-- [User guide](docs/user-guide.en.md) · [中文用户指南](docs/user-guide.zh.md)
-- [Implementation plan](docs/implementation-plan.en.md) · [中文实施计划](docs/implementation-plan.zh.md)
-- [Module-boundary proposal (unimplemented)](docs/proposals/module-boundaries.en.md) · [模块边界提案（未实现）](docs/proposals/module-boundaries.zh.md)
-- [Best-practice examples](examples/README.md) · [中文示例](examples/README.zh-CN.md)
+- [Architecture](docs/architecture.md) · [中文架构](docs/architecture.zh-CN.md)
+- [User guide](docs/manual.md) · [中文用户指南](docs/manual.zh-CN.md)
+- [Implementation plan](docs/architecture.md) · [中文实施计划](docs/architecture.zh-CN.md)
+- [Module-boundary proposal (unimplemented)](docs/architecture.md) · [模块边界提案（未实现）](docs/architecture.zh-CN.md)
+- [Best-practice examples](README.md) · [中文示例](README.zh-CN.md)
 
 ## Independent packages
 
 | Package | Role |
 | --- | --- |
-| [`etaf-ui`](../etaf-ui/README.md) | Official Component catalog: Button, Checkbox, Label, Panel, and DataGrid. |
-| [`etaf-sqlite`](../etaf-sqlite/README.md) | Concrete SQLite Data Source; the Data Controller remains in ETAF core. |
-| [`etaf-playground`](../etaf-playground/README.md) | ETAF examples, with the UI catalog loaded only when requested. |
-| [`ebox-playground`](../ebox-playground/README.md) | Ebox-only layout examples, independent from ETAF. |
+| [`etaf-ui`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-ui/src/branch/main/README.md) | Official Component catalog: Button, Checkbox, Label, Panel, and DataGrid. |
+| [`etaf-sqlite`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-db/src/branch/main/README.md) | Concrete SQLite Data Source; the Data Controller remains in ETAF core. |
+| [`etaf-playground`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-playground/src/branch/main/README.md) | ETAF examples, with the UI catalog loaded only when requested. |
+| [`ebox-playground`](https://gitea.gklazycat.heiyu.space/geekinney/ebox-playground/src/branch/main/README.md) | Ebox-only layout examples, independent from ETAF. |
 
 There is no separate `etaf-data` install: Data is a core ETAF capability. There is no generic `etaf-adapters` package: other databases, services, files, or ORMs should provide concrete Data Source packages with explicit names.
 
@@ -187,3 +187,13 @@ make check EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs
 ```
 
 The core gate byte-compiles the implementation, runs the core/Data/Resource tests, and checks documentation/API boundaries. Run `make check` in the sibling `etaf-ui`, `etaf-sqlite`, `etaf-playground`, and `ebox-playground` repositories for their independent gates; none is loaded by the core facade.
+
+
+
+## Development
+
+After cloning, run `make setup-hooks`. Before submitting a change, run `make check`; `make structure-check` is the fast organization gate. The shared rules are in [AGENTS.md](AGENTS.md).
+
+[docs/manual.md](docs/manual.md) · [docs/architecture.md](docs/architecture.md) · [CHANGELOG.md](CHANGELOG.md)
+
+`make check` runs structure checks, compilation and the public acceptance scenarios listed in [tests/acceptance.json](tests/acceptance.json). `make test` runs the broader regression suite; GUI and performance checks remain explicit targets. The acceptance inventory is selected by user-visible contracts, not by current pass/fail status.

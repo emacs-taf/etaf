@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "load_path": [
+    ".",
+    "tests",
+    "examples",
+    "../ebox",
+    "../ecss",
+    "../tp"
+  ],
+  "support": [],
+  "cases": [
+    {
+      "name": "etaf-examples-load-without-opening-buffers",
+      "file": "tests/etaf-examples-tests.el",
+      "purpose": "examples load without opening buffers"
+    },
+    {
+      "name": "etaf-counter-example-drives-event-action-and-state",
+      "file": "tests/etaf-examples-tests.el",
+      "purpose": "counter example drives event action and state"
+    },
+    {
+      "name": "etaf-data-example-owns-query-selection-and-mutation",
+      "file": "tests/etaf-examples-tests.el",
+      "purpose": "data example owns query selection and mutation"
+    },
+    {
+      "name": "etaf-resource-example-shows-errors-recovery-and-cleanup",
+      "file": "tests/etaf-examples-tests.el",
+      "purpose": "resource example shows errors recovery and cleanup"
+    },
+    {
+      "name": "etaf-docs-readme-examples-mount-and-dispatch-in-fresh-emacs",
+      "file": "tests/etaf-docs-tests.el",
+      "purpose": "docs readme examples mount and dispatch in fresh emacs"
+    }
+  ]
+}

@@ -1,8 +1,10 @@
+.DEFAULT_GOAL := check
+.NOTPARALLEL:
 EMACS ?= emacs
-LOAD_PATH = -L . -L examples -L scripts -L ../ebox -L ../tp -L ../ecss
-SOURCES = etaf-view.el etaf-compiler.el etaf-component.el etaf-scheduler.el etaf-reactive.el etaf-observer.el etaf-context.el etaf-theme-tp.el etaf-resource.el etaf-data.el etaf-generation.el etaf-host.el etaf-retirement.el etaf-render-port.el etaf-renderer.el etaf-runtime.el etaf-behavior.el etaf-actions.el etaf-events.el etaf-performance.el etaf.el scripts/emacs-gui-verifier.el scripts/benchmark-scheduler-context.el scripts/benchmark-ebox-resize.el
+LOAD_PATH = -L . -L examples -L scripts -L benchmarks -L ../ebox -L ../tp -L ../ecss
+SOURCES = etaf-view.el etaf-compiler.el etaf-component.el etaf-scheduler.el etaf-reactive.el etaf-observer.el etaf-context.el etaf-theme-tp.el etaf-resource.el etaf-data.el etaf-generation.el etaf-host.el etaf-retirement.el etaf-render-port.el etaf-renderer.el etaf-runtime.el etaf-behavior.el etaf-actions.el etaf-events.el etaf-performance.el etaf.el scripts/emacs-gui-verifier.el benchmarks/benchmark-scheduler-context.el benchmarks/benchmark-ebox-resize.el
 EXAMPLES = examples/etaf-counter-example.el examples/etaf-data-example.el examples/etaf-resource-example.el
-TESTS = tests/etaf-tests.el tests/etaf-compiler-tests.el tests/etaf-component-frontends-tests.el tests/etaf-render-view-tests.el tests/etaf-dynamic-components-tests.el tests/etaf-event-forwarding-tests.el tests/etaf-resource-tests.el tests/etaf-data-tests.el tests/etaf-theme-tp-tests.el tests/etaf-examples-tests.el tests/etaf-observer-tests.el tests/etaf-performance-tests.el tests/etaf-gui-verifier-tests.el tests/etaf-m0a-current-characterization-tests.el tests/etaf-interaction-contract-tests.el tests/etaf-m0b-component-manifest-tests.el tests/etaf-render-port-tests.el tests/etaf-generation-tests.el tests/etaf-host-tests.el tests/etaf-retirement-tests.el tests/etaf-scheduler-tests.el tests/etaf-g1-cross-layer-tests.el tests/etaf-resize-benchmark-tests.el
+TESTS = $(filter-out tests/etaf-docs-tests.el,$(wildcard tests/*-tests.el))
 
 .PHONY: test compile load checkdoc docs-check metadata-check scheduler-benchmark resize-benchmark-tests check clean
 
@@ -29,7 +31,7 @@ metadata-check:
 
 scheduler-benchmark:
 	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" \
-		-l scripts/benchmark-scheduler-context.el \
+		-l benchmarks/benchmark-scheduler-context.el \
 		-f etaf-scheduler-benchmark-run
 
 resize-benchmark-tests:
@@ -39,7 +41,17 @@ resize-benchmark-tests:
 checkdoc:
 	$(EMACS) -Q --batch --eval '(progn (require (quote checkdoc)) (dolist (directory (list "." "examples" "scripts")) (dolist (file (directory-files directory t)) (when (string-suffix-p ".el" file) (checkdoc-file file)))))'
 
-check: checkdoc metadata-check compile test docs-check scheduler-benchmark
+check: structure-check compile acceptance
 
 clean:
-	rm -f *.elc examples/*.elc scripts/*.elc tests/*.elc
+	rm -f *.elc examples/*.elc scripts/*.elc benchmarks/*.elc tests/*.elc
+
+.PHONY: structure-check setup-hooks
+structure-check:
+	python3 scripts/check-repository.py
+setup-hooks:
+	git config --local core.hooksPath .githooks
+
+.PHONY: acceptance
+acceptance:
+	python3 scripts/run-acceptance.py --emacs "$(EMACS)"

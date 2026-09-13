@@ -1,6 +1,6 @@
 # ETAF Architecture
 
-This document is the normative architecture contract for ETAF. It defines the concepts, ownership, public grammar, and lowering path. Implementation status and follow-up work belong in [`implementation-plan.en.md`](implementation-plan.en.md); user-facing recipes belong in [`user-guide.en.md`](user-guide.en.md).
+This document is the normative architecture contract for ETAF. It defines the concepts, ownership, public grammar, and lowering path. Implementation status and follow-up work belong in [`implementation-plan.en.md`](architecture.md); user-facing recipes belong in [`user-guide.en.md`](manual.md).
 
 ## 1. Design result
 

@@ -38,8 +38,8 @@
     (text (expr label)))
   :styles
   (styles
-   ("&" :flex-grow 1 :flex-shrink 1 :flex-basis (160)
-    :min-width (140) :padding (1 (12)) :border "#4E7890"
+   ("&" :flex-grow 1 :flex-shrink 1 :flex-basis (px 160)
+    :min-width (px 140) :padding ((lh 1) (px 12)) :border "#4E7890"
     :bgcolor "#D9EAF2" :text-align center :font-weight bold)))
 
 (etaf-define-component etaf-counter-example-card (&key title initial-value)
@@ -62,8 +62,8 @@
      (text :font-weight 'bold (expr title))
      (text :color "#66706A"
            "State belongs to setup; rendering only reads it.")))
-   (box :height 1)
-   (flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
+   (box :height '(lh 1))
+   (flex :width '(px 680) :flex-flow '(row wrap) :gap '((lh 1) (px 12))
     (box :class "metric"
      (text (expr
             (format "COUNT  %d"
@@ -76,8 +76,8 @@
      (text (expr
             (format "STATE  %s"
                     (etaf-value (plist-get (etaf-state) :status)))))))
-   (box :height 1)
-   (flex :width '(680) :flex-flow '(row wrap) :gap '(1 (12))
+   (box :height '(lh 1))
+   (flex :width '(px 680) :flex-flow '(row wrap) :gap '((lh 1) (px 12))
     (etaf-counter-example-action
      :ref 'counter-decrement
      :count (plist-get (etaf-state) :count)
@@ -90,19 +90,19 @@
      :ref 'counter-increment
      :count (plist-get (etaf-state) :count)
      :label "+  INCREMENT" :operation 'increment))
-   (box :height 1)
+   (box :height '(lh 1))
    (box :class "note"
     (text "Public path: Event → Action → Ref → Computed → Runtime commit")))
   :styles
   (styles
-   ("&" :width (680) :color "#252A2E" :bgcolor "#F8F5EE")
-   (".hero" :width (680) :padding (1 (18)) :border "#8F432F"
+   ("&" :width (px 680) :color "#252A2E" :bgcolor "#F8F5EE")
+   (".hero" :width (px 680) :padding ((lh 1) (px 18)) :border "#8F432F"
     :bgcolor "#FFFDF8" :text-align center)
    (".eyebrow" :color "#8F432F" :font-weight bold)
-   (".metric" :flex-grow 1 :flex-shrink 1 :flex-basis (200)
-    :min-width (180) :padding (1 (14)) :border "#6D8A73"
+   (".metric" :flex-grow 1 :flex-shrink 1 :flex-basis (px 200)
+    :min-width (px 180) :padding ((lh 1) (px 14)) :border "#6D8A73"
     :bgcolor "#DCEBDD" :text-align center)
-   (".note" :width (680) :padding (1 (16)) :border "#8D887F"
+   (".note" :width (px 680) :padding ((lh 1) (px 16)) :border "#8D887F"
     :color "#4D5651" :bgcolor "#EEEAE2")))
 
 ;;;###autoload

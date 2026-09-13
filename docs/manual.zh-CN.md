@@ -1,4 +1,4 @@
-# ETAF 用户使用指南
+# etaf 使用手册
 
 ETAF 使用一套很小的词汇构建文本应用：`View`、`Component`、props、children、响应式状态和 Ebox 渲染。先学习 `etaf-view` 与 `etaf-mount`；只有 Component 需要局部状态或生命周期时才增加 `:setup`。
 
@@ -680,7 +680,7 @@ Loader 错误会保存在 `etaf-resource-error`；cleanup/type 错误保持可�
 (etaf-counter-example-open)
 ```
 
-计数器示例演示保留式状态、computed 值、Event、Action 和可聚焦 Host。`etaf-data-example-open` 演示 mounted 后的 Data 加载、查询、选择、变更和显式 controller 释放。`etaf-resource-example-open` 演示延迟 Resource 加载、可见错误状态、reload cleanup 与 Scope 释放。每个示例要教授的所有权规则见 [`examples/README.zh-CN.md`](../examples/README.zh-CN.md)。
+计数器示例演示保留式状态、computed 值、Event、Action 和可聚焦 Host。`etaf-data-example-open` 演示 mounted 后的 Data 加载、查询、选择、变更和显式 controller 释放。`etaf-resource-example-open` 演示延迟 Resource 加载、可见错误状态、reload cleanup 与 Scope 释放。每个示例要教授的所有权规则见 [`README.zh-CN.md`](../README.zh-CN.md)。
 
 独立的 ETAF Playground 是一个完整的 ETAF 应用示例：
 
@@ -737,7 +737,7 @@ Ebox、TP、Data、Resource 与 SQLite 可以贡献按 sequence 排列的 flat p
 记录。summary/report 函数省略参数时读取全部历史，显式传入 `nil` 时保持空结果。
 报告中的环境是导出时观测的状态，不是每次历史操作的状态。Runtime 耗时截至
 同步调用返回，不能证明输入到画面呈现的延迟；逐次前后台、目标与回调 wall/CPU/GC
-检查使用[GUI action 测量入口](../scripts/README.md#measuring-an-existing-gui-action)。
+检查使用[GUI action 测量入口](../README.md)。
 
 没有经过内置公共边界的应用操作可以使用
 `etaf-performance-call-operation`/`etaf-performance-with-operation`；它们直接委托
@@ -780,3 +780,40 @@ observer，不修改任何函数。
 Playground 使用 inert `.etaf` 结构与显式注册的 `.el` companion；core 不会自动
 发现或执行这组文件。同一 batch 内的响应式写入合并为一次 generation publication；
 发布失败可以重试，non-converging effect 会报告错误，不会持续占用事件循环。
+
+## 示例组织
+
+这些示例是可执行应用，而不是文档片段。它们只使用公开的 `etaf` facade，并刻意不依赖 `etaf-ui`，从而保证核心框架边界可以独立运行。
+
+| 示例 | 公开命令 | 演示的实践 |
+| --- | --- | --- |
+| 保留式计数器 | `M-x etaf-counter-example-open` | Component 自有 ref、computed 状态、可聚焦 Host、Event → Action → Runtime 更新 |
+| 任务控制器 | `M-x etaf-data-example-open` | Data Controller 所有权、mounted 后加载、查询、选择、变更与 unmount 清理 |
+| Resource 健康状态 | `M-x etaf-resource-example-open` | 延迟 Resource 加载、可见错误状态、reload 清理与 Scope 释放 |
+
+在检出目录中开发时，把 Ebox、ETAF 和本目录加入 `load-path`：
+
+```elisp
+(add-to-list 'load-path "/path/to/github/ebox")
+(add-to-list 'load-path "/path/to/github/etaf")
+(add-to-list 'load-path "/path/to/github/etaf/examples")
+
+(require 'etaf-counter-example)
+(etaf-counter-example-open)
+```
+
+另外两个应用分别替换为 `etaf-data-example` / `etaf-data-example-open` 和 `etaf-resource-example` / `etaf-resource-example-open`。每个示例都有对应的 `-close` 命令，会先卸载 Runtime，再销毁 buffer。
+
+## 为什么推荐这些模式
+
+- render 函数中不写状态。Event 与 Action 负责修改 ref 或 Data Controller；render 只读取状态。
+- 在 Component setup 中创建自有服务，从 `etaf-on-mounted` 启动会修改状态的工作，并用 `etaf-on-unmounted` 释放 detached controller。
+- 让 Resource Scope cleanup 管理已加载值。不要捕获加载错误后伪造一个看似合理的默认值；应明确渲染 Resource error 状态。
+- 使用稳定的 Host ref、语义 role 和 `etaf-focusable`，让键盘集成与测试驱动同一条已安装事件路径。
+- 示例应紧凑且有清晰视觉结构，但不能引入示例专用渲染 API，也不能调用私有 `etaf--*` / `ebox--*` 符号。
+
+在仓库根目录运行 `make check EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs`。门禁会编译这些文件、检查 docstring 与公开边界，并驱动真实挂载后的交互路径。
+
+## 提供方契约
+
+ETAF 通过公共 [Ebox framework SPI](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.zh-CN.md#框架集成契约) 选择渲染能力，该契约由 Ebox 维护。应用 Component 使用本手册中的 ETAF View 和生命周期 API。
