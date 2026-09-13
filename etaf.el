@@ -89,7 +89,7 @@
 ;;;###autoload (autoload 'etaf-component-set-styles "etaf" nil nil)
 ;; Replace the static style form for Component NAME with STYLES.
 ;;
-;; STYLES must use the same `(styles (SELECTOR PROPERTY VALUE ...) ...)'
+;; STYLES must use the same `((SELECTOR PROPERTY VALUE ...) ...)'
 ;; contract accepted by `etaf-define-component'.  This small runtime authoring
 ;; hook is useful to tools which reload a stylesheet without redefining the
 ;; Component itself, such as a source/preview playground.  The next mount or
@@ -322,14 +322,14 @@
 ;;   (etaf-define-component NAME (&key PROPS)
 ;;     [:setup SETUP]
 ;;     :view VIEW
-;;     :styles (styles (SELECTOR ATTR ...)))
+;;     :styles ((SELECTOR ATTR ...)))
 ;;
 ;; or:
 ;;
 ;;   (etaf-define-component NAME (&key PROPS)
 ;;     [:setup SETUP]
 ;;     :render ORDINARY-ELISP
-;;     :styles (styles (SELECTOR ATTR ...)))
+;;     :styles ((SELECTOR ATTR ...)))
 ;;
 ;; `:setup' runs once per retained identity and returns opaque state.  `:view'
 ;; is unquoted DSL; `:render' is ordinary Elisp returning the same typed View,
@@ -928,7 +928,7 @@
 ;; resolved; it lets a semantic color token lower to a backend value such as a
 ;; border specification without reading Theme during Component render.
 ;; The returned list is intentionally data, which also makes it safe to place
-;; directly in a quoted `(styles ...)' form.
+;; directly in a quoted `((SELECTOR PROPERTY VALUE ...) ...)' form.
 ;;
 ;; Function: etaf-theme-token-p (value)
 ;;;###autoload (autoload 'etaf-theme-token-p "etaf" nil nil)

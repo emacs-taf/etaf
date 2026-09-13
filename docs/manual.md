@@ -412,8 +412,7 @@ Static Component styles use one declaration form:
 (etaf-define-component styled-card ()
   "Render a small styled card."
   :styles
-  (styles
-   ("&"
+  (("&"
     :padding (1 2)
     :border (1 solid "#687386"))
    (".title" :font-weight bold)
@@ -425,7 +424,7 @@ Static Component styles use one declaration form:
    (slot)))
 ```
 
-The outer `styles` form is static Component metadata. Its rules have the shape `("SELECTOR" :PROPERTY VALUE...)`; values such as `(1 2)` and `bold` are style data and do not need quote. In an ordinary View attribute, values still follow Elisp rules, so a literal list would normally be quoted.
+The `:styles` field is a static ordered rule list without a wrapper. Its rules have the shape `("SELECTOR" :PROPERTY VALUE...)`; values such as `(1 2)` and `bold` are style data and do not need quote. In an ordinary View attribute, values still follow Elisp rules, so a literal list would normally be quoted.
 
 Precedence is fixed:
 

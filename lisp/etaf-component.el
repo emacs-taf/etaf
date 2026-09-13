@@ -113,7 +113,7 @@ A defined setup may return nil; setup presence is tracked independently."
 (defun etaf-component-set-styles (name styles)
   "Replace the static style form for Component NAME with STYLES.
 
-STYLES must use the same `(styles (SELECTOR PROPERTY VALUE ...) ...)'
+STYLES must use the same `((SELECTOR PROPERTY VALUE ...) ...)'
 contract accepted by `etaf-define-component'.  This small runtime authoring
 hook is useful to tools which reload a stylesheet without redefining the
 Component itself, such as a source/preview playground.  The next mount or
@@ -218,27 +218,11 @@ does not depend on ETAF's private registry flag."
     (cons props defaults)))
 
 (defun etaf--validate-styles-form (form name)
-  "Validate static Component styles FORM for Component NAME."
-  (when form
-    (unless (and (consp form) (eq (car form) 'styles))
-      (etaf--component-definition-error
-       "Component %S :styles must be a (styles RULE ...) form" name))
-    (dolist (rule (cdr form))
-      (unless (and (consp rule) (stringp (car rule)))
-        (etaf--component-definition-error
-         "Component %S style rules need string selectors: %S" name rule))
-      (let ((attributes (cdr rule)))
-        (unless (zerop (% (length attributes) 2))
-          (etaf--component-definition-error
-           "Component %S style rule has an incomplete property pair: %S"
-           name rule))
-        (while attributes
-          (let ((key (pop attributes)))
-            (pop attributes)
-            (unless (keywordp key)
-              (etaf--component-definition-error
-               "Component %S style properties must be keywords: %S"
-               name key)))))))
+  "Validate static rule list FORM against the Ebox schema for Component NAME."
+  (condition-case err
+      (ebox-style-compile-rules form)
+    (error (etaf--component-definition-error
+            "Component %S rejected :styles: %s" name (error-message-string err))))
   form)
 
 (defun etaf--component-form-contains-head-p (form heads)
@@ -260,14 +244,14 @@ Choose exactly one authoring frontend:
   (etaf-define-component NAME (&key PROPS)
     [:setup SETUP]
     :view VIEW
-    :styles (styles (SELECTOR ATTR ...)))
+    :styles ((SELECTOR ATTR ...)))
 
 or:
 
   (etaf-define-component NAME (&key PROPS)
     [:setup SETUP]
     :render ORDINARY-ELISP
-    :styles (styles (SELECTOR ATTR ...)))
+    :styles ((SELECTOR ATTR ...)))
 
 `:setup' runs once per retained identity and returns opaque state.  `:view'
 is unquoted DSL; `:render' is ordinary Elisp returning the same typed View,

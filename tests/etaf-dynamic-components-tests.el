@@ -248,7 +248,7 @@
 (etaf-define-component etaf-dynamic-test-theme-layout
     (&key palette behavior on-press)
   :setup (etaf-theme-provide palette)
-  :styles (styles ("&" :padding ((lh 1) (ch 2)))
+  :styles (("&" :padding ((lh 1) (ch 2)))
                   (".content" :item-gap (px 3)))
   :view
   (column :width '(px 100) :height '(lh 8) :overflow 'scroll

@@ -37,8 +37,7 @@
                           cell next-operation)))
     (text (expr label)))
   :styles
-  (styles
-   ("&" :flex-grow 1 :flex-shrink 1 :flex-basis (px 160)
+  (("&" :flex-grow 1 :flex-shrink 1 :flex-basis (px 160)
     :min-width (px 140) :padding ((lh 1) (px 12)) :border "#4E7890"
     :bgcolor "#D9EAF2" :text-align center :font-weight bold)))
 
@@ -94,8 +93,7 @@
    (box :class "note"
     (text "Public path: Event → Action → Ref → Computed → Runtime commit")))
   :styles
-  (styles
-   ("&" :width (px 680) :color "#252A2E" :bgcolor "#F8F5EE")
+  (("&" :width (px 680) :color "#252A2E" :bgcolor "#F8F5EE")
    (".hero" :width (px 680) :padding ((lh 1) (px 18)) :border "#8F432F"
     :bgcolor "#FFFDF8" :text-align center)
    (".eyebrow" :color "#8F432F" :font-weight bold)

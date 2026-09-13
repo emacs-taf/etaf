@@ -638,6 +638,11 @@
       "name": "etaf-local-ref-validates-context-and-copies-name",
       "file": "tests/etaf-local-ref-tests.el",
       "purpose": "Local reference creation validates setup context and input names while preserving ownership after caller string mutation."
+    },
+    {
+      "name": "etaf-component-rule-replacement-validates-before-mutation",
+      "file": "tests/etaf-rules-tests.el",
+      "purpose": "Component style replacements share ECSS selector and Ebox schema validation and preserve prior rules after invalid input."
     }
   ]
 }

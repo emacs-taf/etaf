@@ -218,7 +218,7 @@ not create another visual node category."
     (let ((props (copy-sequence
                   (etaf--resolve-property-plist
                    (etaf--view-node-props node)))))
-      (dolist (rule (cdr styles))
+      (dolist (rule styles)
         (when (and (consp rule) (stringp (car rule))
                    (etaf--style-selector-match-p (car rule) node root-p))
           (let ((rule-props (cdr rule)))

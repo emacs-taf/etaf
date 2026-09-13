@@ -32,6 +32,10 @@
 
 ### Changed
 
+- Component `:styles` and `etaf-component-set-styles` now accept a plain
+  ordered rule list. Remove the `styles` wrapper; normal Elisp arguments still
+  quote literal lists. Rules validate through the shared Ebox/ECSS contract.
+
 - Expose the package entry at the repository root, document supported APIs in
   its Commentary and retain implementations under `lisp/`. Source consumers add
   the repository root to `load-path` and require the package entry; internal

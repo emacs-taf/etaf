@@ -119,13 +119,13 @@ ATTRIBUTE = :KEY VALUE
   DOCSTRING?
   :setup OPAQUE-STATE-FORM
   :view VIEW
-  :styles (styles RULE...))
+  :styles (RULE...))
 
 (etaf-define-component NAME (&key PROPS)
   DOCSTRING?
   :setup OPAQUE-STATE-FORM
   :render ORDINARY-ELISP
-  :styles (styles RULE...))
+  :styles (RULE...))
 ```
 
 `:view` 和 `:render` 互斥且必须恰好出现一个。`:render` 是普通 Elisp，可以返回

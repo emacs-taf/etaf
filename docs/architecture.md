@@ -122,13 +122,13 @@ the other two clauses are optional:
   DOCSTRING?
   :setup OPAQUE-STATE-FORM
   :view VIEW
-  :styles (styles RULE...))
+  :styles (RULE...))
 
 (etaf-define-component NAME (&key PROPS)
   DOCSTRING?
   :setup OPAQUE-STATE-FORM
   :render ORDINARY-ELISP
-  :styles (styles RULE...))
+  :styles (RULE...))
 ```
 
 `:view` and `:render` are mutually exclusive and exactly one is required.

@@ -220,7 +220,7 @@ TRANSFORM, when non-nil, is a pure function applied after nested defaults have
 resolved; it lets a semantic color token lower to a backend value such as a
 border specification without reading Theme during Component render.
 The returned list is intentionally data, which also makes it safe to place
-directly in a quoted `(styles ...)' form."
+directly in a quoted `((SELECTOR PROPERTY VALUE ...) ...)' form."
   (unless (keywordp key)
     (signal 'etaf-context-error
             (list (format "Theme token keys must be keywords: %S" key))))

@@ -390,8 +390,7 @@ Table/Grid 的 cell callback 同样使用消费它的 Table/Grid 所在位置的
 (etaf-define-component styled-card ()
   "Render a small styled card."
   :styles
-  (styles
-   ("&"
+  (("&"
     :padding (1 2)
     :border (1 solid "#687386"))
    (".title" :font-weight bold)
@@ -403,7 +402,7 @@ Table/Grid 的 cell callback 同样使用消费它的 Table/Grid 所在位置的
    (slot)))
 ```
 
-外层 `styles` 是静态 Component metadata。每条规则是 `("SELECTOR" :PROPERTY VALUE...)`；`(1 2)` 和 `bold` 在样式中是数据，不需要 quote。普通 View 属性仍遵循 Elisp 规则，字面量列表通常需要 quote。
+`:styles` 字段直接接收静态有序规则列表，不加包装。每条规则是 `("SELECTOR" :PROPERTY VALUE...)`；`(1 2)` 和 `bold` 在样式中是数据，不需要 quote。普通 View 属性仍遵循 Elisp 规则，字面量列表通常需要 quote。
 
 优先级固定为：
 

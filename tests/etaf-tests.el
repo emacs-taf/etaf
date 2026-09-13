@@ -516,7 +516,7 @@
   (should
    (macroexpand
     '(etaf-define-component styled-component ()
-       :styles (styles ("&" :color "red"))
+       :styles (("&" :color "red"))
        :view (text "x"))))
   (should-error
    (macroexpand
