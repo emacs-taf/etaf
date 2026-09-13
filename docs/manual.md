@@ -7,10 +7,10 @@ ETAF builds text applications from one small vocabulary: `View`, `Component`, pr
 ETAF depends on the independent Ebox package. During development, put the core checkouts on `load-path` and load the one public ETAF entry:
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/ecss")
-(add-to-list 'load-path "/path/to/github/tp")
-(add-to-list 'load-path "/path/to/github/ebox")
-(add-to-list 'load-path "/path/to/github/etaf")
+(add-to-list 'load-path "/path/to/github/ecss/lisp")
+(add-to-list 'load-path "/path/to/github/tp/lisp")
+(add-to-list 'load-path "/path/to/github/ebox/lisp")
+(add-to-list 'load-path "/path/to/github/etaf/lisp")
 (require 'etaf)
 ```
 
@@ -831,8 +831,8 @@ These examples are executable applications, not documentation fragments. They us
 During checkout development, add Ebox, ETAF, and this directory to `load-path`:
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/ebox")
-(add-to-list 'load-path "/path/to/github/etaf")
+(add-to-list 'load-path "/path/to/github/ebox/lisp")
+(add-to-list 'load-path "/path/to/github/etaf/lisp")
 (add-to-list 'load-path "/path/to/github/etaf/examples")
 
 (require 'etaf-counter-example)
@@ -1012,7 +1012,7 @@ Compare payload counts at matching widths before making speedup claims. A
 different page size/content or loaded version is a different baseline.
 
 Code origins and disk hashes alone cannot establish when a running function was
-loaded. After recompilation, `:reload-files '("/checkout/ebox/ebox-viewport.elc" …)`
+loaded. After recompilation, `:reload-files '("/checkout/ebox/lisp/ebox-viewport.elc" …)`
 explicitly loads the chosen fresh bytecode before instrumentation. `:code`
 contains every explicitly loaded file's canonical path, source/bytecode hashes
 and load result, plus observed core function and benchmark driver origins;

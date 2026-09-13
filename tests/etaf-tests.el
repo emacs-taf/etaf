@@ -3507,7 +3507,7 @@ Event composition is a Runtime contract, not a UI-library helper contract."
 (ert-deftest etaf-runtime-does-not-encode-ebox-layout-shapes ()
   "Keep resolved backend layout construction in the Renderer port."
   (let ((source (with-temp-buffer
-                  (insert-file-contents "etaf-runtime.el")
+                  (insert-file-contents "lisp/etaf-runtime.el")
                   (buffer-string))))
     (should-not (string-match-p ":ebox-type" source))))
 

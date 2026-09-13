@@ -1,8 +1,8 @@
 .DEFAULT_GOAL := check
 .NOTPARALLEL:
 EMACS ?= emacs
-LOAD_PATH = -L . -L examples -L scripts -L benchmarks -L ../ebox -L ../tp -L ../ecss
-SOURCES = etaf-view.el etaf-compiler.el etaf-component.el etaf-scheduler.el etaf-reactive.el etaf-observer.el etaf-context.el etaf-theme-tp.el etaf-resource.el etaf-data.el etaf-generation.el etaf-host.el etaf-retirement.el etaf-render-port.el etaf-renderer.el etaf-runtime.el etaf-behavior.el etaf-actions.el etaf-events.el etaf-performance.el etaf.el scripts/emacs-gui-verifier.el benchmarks/benchmark-scheduler-context.el benchmarks/benchmark-ebox-resize.el
+LOAD_PATH = -L lisp -L examples -L scripts -L benchmarks -L ../ebox/lisp -L ../tp/lisp -L ../ecss/lisp
+SOURCES = lisp/etaf-view.el lisp/etaf-compiler.el lisp/etaf-component.el lisp/etaf-scheduler.el lisp/etaf-reactive.el lisp/etaf-observer.el lisp/etaf-context.el lisp/etaf-theme-tp.el lisp/etaf-resource.el lisp/etaf-data.el lisp/etaf-generation.el lisp/etaf-host.el lisp/etaf-retirement.el lisp/etaf-render-port.el lisp/etaf-renderer.el lisp/etaf-runtime.el lisp/etaf-behavior.el lisp/etaf-actions.el lisp/etaf-events.el lisp/etaf-performance.el lisp/etaf.el scripts/emacs-gui-verifier.el benchmarks/benchmark-scheduler-context.el benchmarks/benchmark-ebox-resize.el
 EXAMPLES = examples/etaf-counter-example.el examples/etaf-data-example.el examples/etaf-resource-example.el
 TESTS = $(filter-out tests/etaf-docs-tests.el,$(wildcard tests/*-tests.el))
 
@@ -16,7 +16,7 @@ test: compile
 compile: clean
 	$(EMACS) -Q --batch $(LOAD_PATH) \
 		--eval "(setq load-prefer-newer t byte-compile-error-on-warn t byte-compile-warnings '(not obsolete))" \
-		--eval "(load-file \"etaf.el\")" \
+		--eval "(load-file \"lisp/etaf.el\")" \
 		--eval "(dolist (file '($(foreach file,$(SOURCES) $(EXAMPLES),\"$(file)\"))) (unless (byte-compile-file file) (error \"Compilation failed: %s\" file)))"
 
 load: compile
@@ -27,7 +27,7 @@ docs-check:
 		-f ert-run-tests-batch-and-exit
 
 metadata-check:
-	$(EMACS) -Q --batch --eval "(progn (require 'package) (with-temp-buffer (insert-file-contents \"etaf.el\") (let ((desc (package-buffer-info))) (unless (and (equal (package-desc-version desc) '(0 2 1)) (equal (package-desc-reqs desc) '((emacs (29 1)) (ebox (3 0 0)) (tp (2 0 0))))) (error \"Unexpected ETAF package metadata: %S\" desc)))))"
+	$(EMACS) -Q --batch --eval "(progn (require 'package) (with-temp-buffer (insert-file-contents \"lisp/etaf.el\") (let ((desc (package-buffer-info))) (unless (and (equal (package-desc-version desc) '(0 2 1)) (equal (package-desc-reqs desc) '((emacs (29 1)) (ebox (3 0 0)) (tp (2 0 0))))) (error \"Unexpected ETAF package metadata: %S\" desc)))))"
 
 scheduler-benchmark:
 	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" \
@@ -39,12 +39,12 @@ resize-benchmark-tests:
 		-l tests/etaf-resize-benchmark-tests.el -f ert-run-tests-batch-and-exit
 
 checkdoc:
-	$(EMACS) -Q --batch --eval '(progn (require (quote checkdoc)) (dolist (directory (list "." "examples" "scripts")) (dolist (file (directory-files directory t)) (when (string-suffix-p ".el" file) (checkdoc-file file)))))'
+	$(EMACS) -Q --batch --eval '(progn (require (quote checkdoc)) (dolist (directory (list "lisp" "examples" "scripts")) (dolist (file (directory-files directory t)) (when (string-suffix-p ".el" file) (checkdoc-file file)))))'
 
 check: structure-check compile acceptance
 
 clean:
-	rm -f *.elc examples/*.elc scripts/*.elc benchmarks/*.elc tests/*.elc
+	rm -f lisp/*.elc examples/*.elc scripts/*.elc benchmarks/*.elc tests/*.elc
 
 .PHONY: structure-check setup-hooks
 structure-check:

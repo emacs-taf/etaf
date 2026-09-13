@@ -7,10 +7,10 @@ ETAF 使用一套很小的词汇构建文本应用：`View`、`Component`、prop
 ETAF 依赖独立的 Ebox 包。开发时把核心检出目录放入 `load-path`，然后只加载 ETAF 的公共入口：
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/ecss")
-(add-to-list 'load-path "/path/to/github/tp")
-(add-to-list 'load-path "/path/to/github/ebox")
-(add-to-list 'load-path "/path/to/github/etaf")
+(add-to-list 'load-path "/path/to/github/ecss/lisp")
+(add-to-list 'load-path "/path/to/github/tp/lisp")
+(add-to-list 'load-path "/path/to/github/ebox/lisp")
+(add-to-list 'load-path "/path/to/github/etaf/lisp")
 (require 'etaf)
 ```
 
@@ -794,8 +794,8 @@ Playground 使用 inert `.etaf` 结构与显式注册的 `.el` companion；core 
 在检出目录中开发时，把 Ebox、ETAF 和本目录加入 `load-path`：
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/ebox")
-(add-to-list 'load-path "/path/to/github/etaf")
+(add-to-list 'load-path "/path/to/github/ebox/lisp")
+(add-to-list 'load-path "/path/to/github/etaf/lisp")
 (add-to-list 'load-path "/path/to/github/etaf/examples")
 
 (require 'etaf-counter-example)

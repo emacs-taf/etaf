@@ -1,5 +1,8 @@
 # ETAF
 
+源码布局：运行时代码位于 `lisp/`；从源码使用时，将该目录加入 `load-path`。
+升级旧 checkout 配置时，将原来的仓库加载路径改为其 `lisp/` 子目录。
+
 ETAF 在独立的 [Ebox](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/) 布局与渲染引擎上，使用可复用的 Component 构建文本应用。
 
 从 `etaf-view` 和 `etaf-mount` 开始。`(name :property value ... child ...)`
@@ -161,10 +164,10 @@ ETAF 为当前 Emacs 进程 snapshot 一个不可变的 v2 render port。按依�
 开发时先把同级 Ebox 检出目录加入 `load-path`：
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/ecss")
-(add-to-list 'load-path "/path/to/github/tp")
-(add-to-list 'load-path "/path/to/github/ebox")
-(add-to-list 'load-path "/path/to/github/etaf")
+(add-to-list 'load-path "/path/to/github/ecss/lisp")
+(add-to-list 'load-path "/path/to/github/tp/lisp")
+(add-to-list 'load-path "/path/to/github/ebox/lisp")
+(add-to-list 'load-path "/path/to/github/etaf/lisp")
 (require 'etaf)
 ```
 

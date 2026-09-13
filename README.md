@@ -1,5 +1,9 @@
 # ETAF
 
+Source layout: runtime code lives in `lisp/`; add that directory to `load-path`
+when using a checkout. Update older checkout configurations from the repository
+root to its `lisp/` subdirectory.
+
 ETAF builds text applications from reusable Components above the independent
 [Ebox](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/) layout and rendering engine.
 
@@ -173,10 +177,10 @@ through the retired v1 capability.
 During development, load the sibling Ebox checkout before ETAF:
 
 ```elisp
-(add-to-list 'load-path "/path/to/github/ecss")
-(add-to-list 'load-path "/path/to/github/tp")
-(add-to-list 'load-path "/path/to/github/ebox")
-(add-to-list 'load-path "/path/to/github/etaf")
+(add-to-list 'load-path "/path/to/github/ecss/lisp")
+(add-to-list 'load-path "/path/to/github/tp/lisp")
+(add-to-list 'load-path "/path/to/github/ebox/lisp")
+(add-to-list 'load-path "/path/to/github/etaf/lisp")
 (require 'etaf)
 ```
 

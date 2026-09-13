@@ -597,7 +597,9 @@
                   "etaf-playground/scripts/benchmark-research-shelf.el"
                   "etaf-playground/scripts/playground-gui-scenarios.el"
                   "etaf-playground/scripts/run-gui-verification.sh"))
-    (should (file-exists-p (expand-file-name file etaf-g1--workspace-root)))))
+    (should (file-exists-p (expand-file-name
+       (if (and (string-suffix-p ".el" file) (not (file-name-directory file)))
+           (concat "lisp/" file) file) etaf-g1--workspace-root)))))
 
 (ert-deftest etaf-g1-research-shelf-gui-recovery-harness-contract ()
   "The GUI harness exposes the actions required by external GUI execution."
@@ -783,8 +785,8 @@
          (load-directories
           (mapcar (lambda (directory)
                     (expand-file-name directory etaf-g1--workspace-root))
-                  '("etaf" "etaf/examples" "etaf/scripts"
-                    "ebox" "tp" "ecss")))
+                  '("etaf/lisp" "etaf/examples" "etaf/scripts"
+                    "ebox/lisp" "tp/lisp" "ecss/lisp")))
          (arguments
           (append
            '("-Q" "--batch")

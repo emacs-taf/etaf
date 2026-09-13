@@ -1,12 +1,12 @@
 {
   "schema": 1,
   "load_path": [
-    ".",
+    "lisp",
     "tests",
     "examples",
-    "../ebox",
-    "../ecss",
-    "../tp"
+    "../ebox/lisp",
+    "../ecss/lisp",
+    "../tp/lisp"
   ],
   "support": [],
   "cases": [

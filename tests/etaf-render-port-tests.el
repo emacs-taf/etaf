@@ -17,7 +17,7 @@
   (require 'package)
   (with-temp-buffer
     (insert-file-contents
-     (expand-file-name "etaf.el" etaf-render-port-test--root))
+     (expand-file-name "lisp/etaf.el" etaf-render-port-test--root))
     (let ((description (package-buffer-info)))
       (should (equal (package-desc-version description) '(0 2 1)))
       (should
@@ -533,7 +533,7 @@
 
 (ert-deftest etaf-render-port-is-the-only-protocol-probe-owner ()
   "No downstream ETAF module probes Ebox framework SPI protocol state."
-  (dolist (file (directory-files etaf-render-port-test--root t "\\.el\\'"))
+  (dolist (file (directory-files (expand-file-name "lisp" etaf-render-port-test--root) t "\\.el\\'"))
     (unless (string= (file-name-nondirectory file) "etaf-render-port.el")
       (with-temp-buffer
         (insert-file-contents file)
@@ -545,14 +545,14 @@
   "Runtime updates use the selected port instead of calling Ebox directly."
   (with-temp-buffer
     (insert-file-contents
-     (expand-file-name "etaf-runtime.el" etaf-render-port-test--root))
+     (expand-file-name "lisp/etaf-runtime.el" etaf-render-port-test--root))
     (let ((source (buffer-string)))
       (should (string-match-p "(etaf-render-port-update" source))
       (should-not (string-match-p "(ebox-commit" source)))))
 
 (ert-deftest etaf-render-port-owns-all-live-publication-routing ()
   "No ETAF module except the selected-port owner publishes directly to Ebox."
-  (dolist (file (directory-files etaf-render-port-test--root t "\\.el\\'"))
+  (dolist (file (directory-files (expand-file-name "lisp" etaf-render-port-test--root) t "\\.el\\'"))
     (unless (string= (file-name-nondirectory file) "etaf-render-port.el")
       (with-temp-buffer
         (insert-file-contents file)
@@ -564,7 +564,7 @@
 
 (ert-deftest etaf-render-port-production-has-no-v1-render-route ()
   "Production ETAF contains no retired render-port policy or v1 helper."
-  (dolist (file (directory-files etaf-render-port-test--root t "\\.el\\'"))
+  (dolist (file (directory-files (expand-file-name "lisp" etaf-render-port-test--root) t "\\.el\\'"))
     (with-temp-buffer
       (insert-file-contents file)
       (let ((source (buffer-string)))

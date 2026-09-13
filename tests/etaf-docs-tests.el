@@ -94,8 +94,8 @@
                           (expand-file-name invocation-name invocation-directory)
                           nil (current-buffer) nil "-Q" "--batch"
                           (append
-                           (cl-loop for directory in '("." "../ebox" "../tp"
-                                                       "../ecss")
+                           (cl-loop for directory in '("lisp" "../ebox/lisp" "../tp/lisp"
+                                                       "../ecss/lisp")
                                     append (list "-L" (expand-file-name
                                                        directory
                                                        etaf-docs-test--root)))
@@ -300,7 +300,7 @@
   "Reject Ebox private functions, fields and dynamic construction context."
   (dolist (file
            (append
-            (directory-files etaf-docs-test--root t "\\.el\\'")
+            (directory-files (expand-file-name "lisp" etaf-docs-test--root) t "\\.el\\'")
             (directory-files
              (expand-file-name "examples" etaf-docs-test--root)
              t "\\.el\\'")))
