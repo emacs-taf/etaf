@@ -478,6 +478,15 @@
 ;; Function: etaf-dispatch-event (runtime host-ref kind &optional payload (payload-p nil))
 ;;;###autoload (autoload 'etaf-dispatch-event "etaf" nil nil)
 ;; Dispatch KIND for HOST-REF through mounted RUNTIME.
+;; Native Hosts support :on-press activation and :on-drag gestures. ON-DRAG
+;; receives the gesture plist documented by `ebox-keymap-create' :drag, once
+;; per start/move/end/cancel phase. Each phase runs in its own reactive event
+;; batch and publishes before the next pointer event. Primary-button tracking
+;; belongs to Ebox; when both handlers are supplied, press is keyboard-only.
+;; Callbacks follow the current committed Host. A retained disabled Host can
+;; receive native cancellation; removed or unmounted Hosts receive no more
+;; application callbacks. Their Component scopes clean up normally. Other
+;; :on-* names require explicit dispatch and do not imply native event support.
 ;;
 ;;   When PAYLOAD-P is non-nil, pass PAYLOAD as the callback's only argument;
 ;; otherwise call the local callback with no arguments.

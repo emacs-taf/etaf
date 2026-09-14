@@ -332,7 +332,7 @@ Behavior = 安装多个非视觉能力的可复用 bundle
 
 `etaf-behavior-create` 接受保留的 `:install` 属性，用于可选的零参数 installer。Installer 可以返回 cleanup；`etaf-current-behavior-context` 返回不透明安装上下文，`etaf-behavior-context-info` 查询其 Runtime、实际 Host 引用及安装时语义属性。这些信息不授予候选输入权。替换、候选回滚或 owner 卸载时释放 installer 状态；成功发布之前，已提交状态仍是权威。
 
-Host press 绑定与规范 source 事实一起降为 Ebox 原生 keymap。每个 Runtime 的有界
+Host press 和 drag 绑定与规范 source 事实一起降为 Ebox 原生 keymap。每个 Runtime 的有界
 缓存保留查找已提交 handler 的分发 map，替换回调不会调用候选闭包。禁用和无回调的
 控件边界发布显式 nil map。Ebox 解析可见位置归属；ETAF 不再扫描 Host bounds
 选择激活目标。Tab index 和禁用声明发布为 Ebox 交互事实；Ebox 从中派生禁用选择器状态，
@@ -342,6 +342,12 @@ point 保持与回滚均由 Ebox 管理。ETAF 的焦点 API 转换 Runtime 上�
 Runtime 不再保存焦点字段、扫描排序 Host 候选或包装 flush 来修正 point。挂载的 Ebox
 buffer mode 管理默认输入绑定和键盘焦点优先级，包括父子位置重合的情况。ETAF 不再
 有独立输入模式或目标覆盖；原生回调只分派所选 Host 已提交的 handler。
+
+Ebox 持有完整的原生拖动循环并保持指针目标。ETAF 分别将每个手势阶段交给普通
+事件批处理，因此按住按钮时也能持续发布响应式位置。Runtime 按 Host 和启用的
+事件能力缓存 keymap，每个阶段读取已提交的 handler。存续但被禁用的 Host 可以
+收到原生取消阶段；移除或卸载后不再调用应用回调。ETAF 不保存手势坐标、跟踪
+循环或第二份目标索引。
 
 交互组合是确定的：显式 Host `:on-*` callback 先运行，然后按声明顺序运行 Behavior
 callback；任一错误会 short-circuit 后续 callback。非事件属性由显式 Host 值优先，

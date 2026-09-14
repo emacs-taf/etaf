@@ -26,6 +26,8 @@
 (require 'etaf-behavior)
 (require 'etaf-observer)
 
+(defvar etaf--drag-cancel-p)
+
 (declare-function etaf--render-value-list "etaf-renderer" (value path))
 (declare-function etaf--generated-host-ref
                   "etaf-renderer" (props path &optional site-token))
@@ -441,16 +443,23 @@ checking them against a fresh generation projection."
           (list (list width style) color)))
     (error nil)))
 
-(defun etaf--runtime-interaction-keymap (runtime host-ref)
+(defun etaf--runtime-interaction-keymap (runtime host-ref press drag)
   "Return a native keymap dispatching the committed HOST-REF in RUNTIME."
-  (let ((maps (etaf-runtime-interaction-keymaps runtime)))
-    (or (gethash host-ref maps)
+  (let ((maps (etaf-runtime-interaction-keymaps runtime))
+        (key (list host-ref press drag)))
+    (or (gethash key maps)
         (let ((map (ebox-keymap-create
                     :activate
-                    (lambda ()
-                      (etaf--dispatch-activation runtime host-ref)))))
+                    (when press (lambda () (etaf--dispatch-activation runtime host-ref)))
+                    :drag
+                    (when drag
+                      (lambda (gesture)
+                        (when (and (etaf-runtime-mounted-p runtime)
+                                   (cdr (assq 'drag (etaf-runtime-handler-for runtime host-ref))))
+                          (let ((etaf--drag-cancel-p (eq (plist-get gesture :phase) 'cancel)))
+                            (etaf-dispatch-event runtime host-ref 'drag gesture t))))))))
           (when (>= (hash-table-count maps) 512) (clrhash maps))
-          (puthash host-ref map maps)
+          (puthash key map maps)
           map))))
 
 (defun etaf--runtime-theme-paint-value

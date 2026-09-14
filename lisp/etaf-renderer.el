@@ -362,6 +362,7 @@ structure must use the ordinary typed lowering path."
 Disabled and callbackless controls still own their hit area.  Ordinary text
 with only a reference or accessibility label remains part of its parent."
   (or (functionp (plist-get props :on-press))
+      (functionp (plist-get props :on-drag))
       (plist-get props :disabled)
       (numberp (plist-get props :tab-index))
       (member (let ((role (plist-get props :role)))
@@ -416,10 +417,11 @@ HOST-REF preserves an already allocated identity during retained updates."
            (or host-ref (etaf--generated-host-ref source-props path site-token))))
     (when (etaf--interaction-boundary-p source-props)
       (let* ((runtime (or runtime etaf--render-runtime))
-             (callback (plist-get source-props :on-press))
-             (map (and runtime callback (not (plist-get source-props :disabled))
+             (press (functionp (plist-get source-props :on-press)))
+             (drag (functionp (plist-get source-props :on-drag)))
+             (map (and runtime (or press drag) (not (plist-get source-props :disabled))
                        (etaf--runtime-interaction-keymap
-                        runtime (plist-get ebox-props :source-identity)))))
+                        runtime (plist-get ebox-props :source-identity) press drag))))
         (setq ebox-props
               (etaf--merge-property
                ebox-props :interactions

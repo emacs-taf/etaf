@@ -42,6 +42,9 @@
 (defvar etaf--current-event nil
   "Event context active while one Runtime callback runs.")
 
+(defvar etaf--drag-cancel-p nil
+  "Non-nil while Ebox delivers the terminal cancellation of an active drag.")
+
 ;;;###autoload
 (defun etaf-call-with-input (reader)
   "Run native input READER for the current event's committed Host.
@@ -86,8 +89,8 @@ otherwise call the local callback with no arguments."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (let* ((dispatch
          (lambda ()
-           (when (plist-get (etaf-runtime-host-props-for runtime host-ref)
-                            :disabled)
+           (when (and (plist-get (etaf-runtime-host-props-for runtime host-ref) :disabled)
+                      (not (and etaf--drag-cancel-p (eq (etaf-event-kind kind) 'drag))))
              (signal 'etaf-event-error
                      (list (format "Cannot dispatch to disabled Host reference: %S"
                                    host-ref))))

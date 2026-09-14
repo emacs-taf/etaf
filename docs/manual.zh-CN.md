@@ -673,6 +673,34 @@ Ebox 保留其数值位置并限制在可访问范围内。发布被拒绝时恢
 执行所选 Host 已提交的 handler。卸载释放 Ebox buffer 绑定。require Ebox 后可配置
 `ebox-buffer-mode-map` 修改共享按键，不需要 ETAF 输入模式。
 
+直接操纵界面时，在 Host 上声明 `:on-drag`，接收共享 Ebox 手势。每个阶段
+单独进入普通响应式事件批处理：
+
+```elisp
+(etaf-define-component draggable-card ()
+  :bindings ((x (etaf-ref 0)) (origin (etaf-ref 0)))
+  :view
+  (column :width '(ch 60)
+   (box :position 'relative :left (list 'px (etaf-value x))
+        :on-drag (lambda (gesture)
+                   (pcase (plist-get gesture :phase)
+                     ('start (setf (etaf-value origin) (etaf-value x)))
+                     ((or 'move 'end)
+                      (setf (etaf-value x)
+                            (+ (etaf-value origin) (car (plist-get gesture :delta)))))))
+        "水平拖动")
+   (text (expr (format "X: %d" (etaf-value x))))))
+
+(etaf-mount "*Draggable card*" (etaf-view (draggable-card)))
+```
+
+`origin` 是本次手势开始时的位置，Ebox 提供指针位移。移动与释放各自完成发布
+后再读取输入。每个阶段使用当前已提交的 Host 回调；存续目标被禁用时可收到
+最后的取消阶段，移除或卸载后不再调用应用回调。Ebox 管理目标保持、窗口坐标
+和原生跟踪，ETAF 不保存这些事实。同时声明 `:on-press` 与 `:on-drag` 时，
+press 处理键盘激活，drag 持有主鼠标按钮序列。字段和同一 GUI 窗口的支持边界
+见 [Ebox 手势契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el)。
+
 事件回调需要自定义原生输入时，使用 `etaf-call-with-input`。它把当前已提交
 事件目标交给 Ebox 的输入边界，不要求应用查找 Runtime、维护存活标志或恢复焦点。
 

@@ -42,6 +42,10 @@
 
 ### Added
 
+- Host `:on-drag` callbacks use Ebox's shared native gesture lifecycle. Each
+  motion publishes through its own reactive event batch; target retention,
+  coordinates and native input remain owned by Ebox. Update Ebox together.
+
 - Expose Data source capabilities for adapters that preserve storage and disposal while wrapping load or mutation operations.
 
 - Add `etaf-call-with-input` for native editing and selection inside event callbacks, using Ebox target lifetime and focus restoration.

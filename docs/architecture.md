@@ -350,7 +350,7 @@ Use `etaf-action-define` and `etaf-dispatch` when the mutation is named and shar
 
 `etaf-behavior-create` accepts the reserved `:install` attribute for an optional zero-argument installer. The installer may return a cleanup function; `etaf-current-behavior-context` returns an opaque installation context; `etaf-behavior-context-info` exposes its Runtime, effective Host reference and installation-time semantic props. These facts do not authorize candidate input. Installer state is disposed on replacement, candidate rollback or owner unmount; committed state remains authoritative until successful publication.
 
-Host press bindings lower to Ebox native keymaps alongside canonical source
+Host press and drag bindings lower to Ebox native keymaps alongside canonical source
 facts. A bounded per-Runtime cache holds dispatch maps that look up committed
 handlers, so callback replacement does not retain candidate closures. Disabled
 and callbackless control boundaries emit explicit nil maps. Ebox resolves visible
@@ -366,6 +366,14 @@ Host candidates or wraps flushes to repair point. The mounted Ebox buffer mode
 owns default input bindings and keyboard focus precedence, including coincident
 parent/child positions. ETAF has no independent input mode or target override;
 its native callback simply dispatches the selected committed Host handler.
+
+Ebox owns the complete native drag loop and retains the pointer target. ETAF
+dispatches each gesture phase separately through its ordinary event batch,
+allowing reactive motion to publish while the button is held. Runtime caches
+maps by Host and enabled event capabilities; every phase reads the committed
+handler. A native terminal cancellation may reach a retained disabled Host,
+while removal or unmount stops application delivery. No gesture coordinates,
+tracking loop or second target index is maintained by ETAF.
 
 Interaction composition is deterministic.  An explicit Host `:on-*` callback
 runs first, followed by Behavior callbacks in declaration order; an error

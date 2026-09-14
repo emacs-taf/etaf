@@ -736,6 +736,38 @@ runs the chosen Host's committed handler within its application event batch.
 Unmount releases Ebox's buffer bindings. Customize `ebox-buffer-mode-map`
 after requiring Ebox to change shared bindings; no ETAF input mode is needed.
 
+For direct manipulation, declare `:on-drag` on a Host. It receives the shared
+Ebox gesture and runs once per phase in an ordinary reactive event batch:
+
+```elisp
+(etaf-define-component draggable-card ()
+  :bindings ((x (etaf-ref 0)) (origin (etaf-ref 0)))
+  :view
+  (column :width '(ch 60)
+   (box :position 'relative :left (list 'px (etaf-value x))
+        :on-drag (lambda (gesture)
+                   (pcase (plist-get gesture :phase)
+                     ('start (setf (etaf-value origin) (etaf-value x)))
+                     ((or 'move 'end)
+                      (setf (etaf-value x)
+                            (+ (etaf-value origin) (car (plist-get gesture :delta)))))))
+        "Drag horizontally")
+   (text (expr (format "X: %d" (etaf-value x))))))
+
+(etaf-mount "*Draggable card*" (etaf-view (draggable-card)))
+```
+
+`origin` is the position captured when the gesture starts; Ebox supplies the
+pointer displacement. Movement and release each publish before more input is
+read. The currently committed Host handler receives each phase, including a
+terminal cancellation when a retained target becomes disabled. Removed or
+unmounted Hosts no longer receive application callbacks. Ebox owns target
+retention, window coordinates and the native tracking loop; ETAF stores none
+of those facts. With both `:on-press` and `:on-drag`, press handles keyboard
+activation and drag owns the primary mouse sequence. See the
+[Ebox gesture contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el)
+for payload fields and the same-window GUI support boundary.
+
 For custom native input inside an event callback, use `etaf-call-with-input`.
 It supplies the current committed event target to Ebox's input boundary:
 

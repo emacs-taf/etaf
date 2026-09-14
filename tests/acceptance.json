@@ -903,6 +903,16 @@
       "name": "etaf-conditional-data-detail-retires-staged-descendants",
       "file": "tests/etaf-conditional-lifecycle-tests.el",
       "purpose": "Filtering or deleting an asynchronously refreshed selection releases its whole detail and permits later loads and reselection."
+    },
+    {
+      "name": "etaf-drag-publishes-each-motion-through-ebox",
+      "file": "tests/etaf-drag-tests.el",
+      "purpose": "Native Ebox gestures publish reactive motion before release and preserve the Host target."
+    },
+    {
+      "name": "etaf-drag-cancellation-clears-transient-state-on-disable",
+      "file": "tests/etaf-drag-tests.el",
+      "purpose": "Disabling a retained target delivers cancellation and then prevents new input."
     }
   ]
 }
