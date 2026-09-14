@@ -299,6 +299,10 @@ Runtime 的挂载是事务性的：
 
 `etaf-effect-scope` 负责 effects 和 cleanup。Component setup 自动运行在 Component Scope 内；Component 释放时，会停止子 scope、watcher 和 resource cleanup。
 
+排队的语义祖先先于后代运行。条件 Range 在子组件输入或渲染产生候选之前确定
+其挂载关系，避免已移除的组件因排队更新而重新进入已提交代。独立 owner 保留
+稳定的 effect 优先级与 ID 顺序；祖先关系来自已有 generation 图，不增加调度权威。
+
 ## 8. Behavior、事件、Action 与 Effect
 
 ```text

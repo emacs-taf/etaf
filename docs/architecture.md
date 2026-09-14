@@ -297,6 +297,11 @@ An update follows the same path. Reactive refs and computed values invalidate th
 
 Rendering, lowering, and Ebox publication form the rollback boundary. If one of those candidate steps fails, the last committed tree remains active. Lifecycle and cleanup callbacks run after the retained state is promoted and publication has completed; their errors remain visible and do not pretend to roll back an already published Ebox tree.
 
+Queued semantic ancestors run before their descendants. A conditional Range
+resolves attachment before a child input or render can stage an update.
+Independent owners retain stable effect priority and ID order; the existing
+generation graph supplies ancestry without a separate scheduling authority.
+
 The reactive API is one model:
 
 ```elisp

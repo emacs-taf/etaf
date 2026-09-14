@@ -1105,22 +1105,35 @@ must not absorb that subtree's independently dirty work."
     (_ 3)))
 
 (defun etaf--runtime-sort-dirty-effects (generation effect-ids)
-  "Return EFFECT-IDS in stable priority/id order for GENERATION.
-Each immutable generation effect is resolved once instead of on every sort
-comparison."
-  (mapcar
-   #'cdr
-   (sort
-    (mapcar
-     (lambda (effect-id)
-       (cons (etaf--runtime-effect-priority
-              (etaf--generation-effect generation effect-id))
-             effect-id))
-     effect-ids)
-    (lambda (left right)
-      (if (= (car left) (car right))
-          (< (cdr left) (cdr right))
-        (< (car left) (car right)))))))
+  "Order EFFECT-IDS after their queued semantic ancestors in GENERATION.
+Use stable priority/id order among otherwise independent owners.  A
+conditional Range must decide child lifetime before that child's input or
+render effect can stage work; staged work alone is not proof of attachment."
+  (let ((owners (make-hash-table :test #'eql))
+        (visited (make-hash-table :test #'eql))
+        entries result)
+    (dolist (effect-id effect-ids)
+      (let ((effect (etaf--generation-effect generation effect-id)))
+        (push (list (etaf--runtime-effect-priority effect) effect-id
+                    (etaf--generation-effect-semantic-id effect)) entries)))
+    (setq entries
+          (sort entries (lambda (left right)
+                          (if (= (car left) (car right))
+                              (< (cadr left) (cadr right))
+                            (< (car left) (car right))))))
+    (dolist (entry (reverse entries))
+      (push (cadr entry) (gethash (nth 2 entry) owners)))
+    (cl-labels
+        ((visit-owner
+          (semantic-id)
+          (unless (gethash semantic-id visited)
+            (puthash semantic-id t visited)
+            (when-let* ((parent-id (etaf--generation-parent-id generation semantic-id)))
+              (visit-owner parent-id))
+            (dolist (effect-id (gethash semantic-id owners))
+              (push effect-id result)))))
+      (dolist (entry entries) (visit-owner (nth 2 entry))))
+    (nreverse result)))
 
 (defun etaf--runtime-fixed-point-safe-hash (value)
   "Return a stable hash for immutable fixed-point VALUE, or nil.
@@ -6088,12 +6101,9 @@ RENDERED-IDENTITIES names the Component render participants."
                           (etaf-runtime-dirty-effect-queue runtime))
                          (etaf-runtime-dirty-effect-queue-tail runtime)
                          (last (etaf-runtime-dirty-effect-queue runtime)))
-                   ;; `component-render' deliberately keeps its historical
-                   ;; sort class for the public priority contract, but a
-                   ;; render created by this input update must run before an
-                   ;; already queued child Range/inline effect.  Move only
-                   ;; this known dependent to the front of the remaining
-                   ;; turn; the ordinary FIFO remains unchanged otherwise.
+                   ;; Finish this input's render before already queued child
+                   ;; work.  The ancestor-aware sort also preserves this order
+                   ;; when both input and render were queued initially.
                    (let ((render-id
                           (etaf--semantic-component-effect-id semantic)))
                      (when (gethash render-id

@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Resolve conditional ancestors before descendant input/render work, so hidden components release their callbacks and repeated show/hide updates never address a retired Host.
+
 - Pure `etaf-render` rejects reactive writes in expressions before they can
   change application state, matching mounted rendering's read-only boundary.
 

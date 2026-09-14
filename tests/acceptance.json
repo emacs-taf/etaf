@@ -888,6 +888,11 @@
       "name": "etaf-native-input-unmount-cancels-results-and-forwarded-observers",
       "file": "tests/etaf-native-input-tests.el",
       "purpose": "Closing a mounted owner during input cannot publish a value or observer."
+    },
+    {
+      "name": "etaf-conditional-component-retires-before-stale-input-work",
+      "file": "tests/etaf-conditional-lifecycle-tests.el",
+      "purpose": "Repeated conditional removal and recreation retain matching text, callbacks and disposal."
     }
   ]
 }
