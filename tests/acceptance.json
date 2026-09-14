@@ -878,6 +878,16 @@
       "name": "etaf-async-data-outcome-is-reactive-while-status-stays-loading",
       "file": "tests/etaf-async-tests.el",
       "purpose": "A pending write and its commit are observable even before first page completion."
+    },
+    {
+      "name": "etaf-native-input-uses-the-current-event-and-restores-focus",
+      "file": "tests/etaf-native-input-tests.el",
+      "purpose": "The current event supplies the mounted owner, including from another buffer."
+    },
+    {
+      "name": "etaf-native-input-unmount-cancels-results-and-forwarded-observers",
+      "file": "tests/etaf-native-input-tests.el",
+      "purpose": "Closing a mounted owner during input cannot publish a value or observer."
     }
   ]
 }

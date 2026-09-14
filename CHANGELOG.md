@@ -32,6 +32,8 @@
 
 ### Added
 
+- Add `etaf-call-with-input` for native editing and selection inside event callbacks, using Ebox target lifetime and focus restoration.
+
 - Resource and Data accept native asynchronous loaders through `etaf-async`,
   with cancellation, timeout, late-result protection and Scope-owned disposal.
   Resource supports `:keep-value`; Data exposes write certainty and read-only

@@ -455,6 +455,15 @@
 ;; An explicit Runtime may be supplied as the first argument: `(etaf-dispatch
 ;; RUNTIME ACTION ...)'.  Action functions receive Runtime first.
 ;;
+;; Function: etaf-call-with-input (reader)
+;;;###autoload (autoload 'etaf-call-with-input "etaf" nil nil)
+;; Run zero-argument native input READER from the current Host event callback.
+;; Ebox restores logical focus and checks that the same mounted Host remains
+;; visible and enabled; invalidation signals a subtype of quit. Return the
+;; reader result without applying application state. Reader errors and user
+;; quit propagate. Calls outside events signal etaf-event-error. Native editing
+;; owns its minibuffer or separate buffer; it must not edit the rendered surface.
+;;
 ;; Function: etaf-dispatch-event (runtime host-ref kind &optional payload (payload-p nil))
 ;;;###autoload (autoload 'etaf-dispatch-event "etaf" nil nil)
 ;; Dispatch KIND for HOST-REF through mounted RUNTIME.

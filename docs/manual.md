@@ -736,6 +736,27 @@ runs the chosen Host's committed handler within its application event batch.
 Unmount releases Ebox's buffer bindings. Customize `ebox-buffer-mode-map`
 after requiring Ebox to change shared bindings; no ETAF input mode is needed.
 
+For custom native input inside an event callback, use `etaf-call-with-input`.
+It supplies the current committed event target to Ebox's input boundary:
+
+```elisp
+(etaf-mount "*native-input*"
+            (etaf-view
+             (box :role 'button :tab-index 0
+                  :on-press
+                  (lambda ()
+                    (message "Accepted: %s"
+                             (etaf-call-with-input (lambda () (read-string "Title: ")))))
+              "Edit title")))
+```
+
+The reader owns native editing; apply its result after return. Error and quit
+propagate. Ebox cancels a result whose mounted target is no longer valid and
+restores focus when possible. The function requires an active Host event and
+cannot run while rendering; no Runtime lookup, manual focus flag or second
+input registry is needed. UI TextInput, NumberInput and Select use this path.
+See the [Ebox native interaction contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction).
+
 ## 9. Context / Provide / Inject
 
 Use Context for a dependency shared across component depth, not for ordinary props:

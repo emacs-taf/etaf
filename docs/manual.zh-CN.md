@@ -673,6 +673,25 @@ Ebox 保留其数值位置并限制在可访问范围内。发布被拒绝时恢
 执行所选 Host 已提交的 handler。卸载释放 Ebox buffer 绑定。require Ebox 后可配置
 `ebox-buffer-mode-map` 修改共享按键，不需要 ETAF 输入模式。
 
+事件回调需要自定义原生输入时，使用 `etaf-call-with-input`。它把当前已提交
+事件目标交给 Ebox 的输入边界，不要求应用查找 Runtime、维护存活标志或恢复焦点。
+
+```elisp
+(etaf-mount "*native-input*"
+            (etaf-view
+             (box :role 'button :tab-index 0
+                  :on-press
+                  (lambda ()
+                    (message "已接受：%s"
+                             (etaf-call-with-input (lambda () (read-string "标题：")))))
+              "编辑标题")))
+```
+
+reader 管理原生编辑，调用返回后再应用结果。错误与 quit 继续传播；所属挂载
+目标失效时 Ebox 取消结果，入口有效时恢复焦点。该接口需要活动 Host 事件，
+不能在渲染时调用。UI TextInput、NumberInput 和 Select 共用此路径。详细所有权
+见 [Ebox 原生交互契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction)。
+
 ## 9. Context / Provide / Inject
 
 Context 适合跨多层共享依赖，不适合普通 label：

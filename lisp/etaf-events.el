@@ -4,9 +4,9 @@
 
 ;;; Commentary:
 
-;; Events are Runtime-owned entry points into local `:on-*' callbacks.  The
-;; input minor mode is deliberately small: Runtime only toggles it at mount
-;; boundaries, while this module owns key and mouse command definitions.
+;; Events are Runtime-owned entry points into committed `:on-*' callbacks.
+;; Ebox owns native targeting, focus and input lifetime; this module connects
+;; those capabilities to application callbacks and reactive batches.
 
 ;;; Code:
 
@@ -35,11 +35,27 @@
                   "etaf-runtime" (runtime kind label function))
 (declare-function ebox-call-with-render-burst
                   "ebox-buffer-backend" (function &rest arguments))
+(declare-function ebox-call-with-input "ebox" (host-ref reader &optional buffer-or-name))
 
 (define-error 'etaf-event-error "Invalid ETAF Event")
 
 (defvar etaf--current-event nil
   "Event context active while one Runtime callback runs.")
+
+;;;###autoload
+(defun etaf-call-with-input (reader)
+  "Run native input READER for the current event's committed Host.
+Call from an event callback; no Runtime or Host reference is needed.  Ebox
+owns target validity and focus restoration, while READER owns the native
+editing session.  Return its result only if the target is still valid.
+Errors and user quit propagate; target invalidation signals a subtype of
+`quit'.  No application value is applied by this function."
+  (etaf--assert-not-rendering 'read-input)
+  (unless etaf--current-event
+    (signal 'etaf-event-error (list "Native input requires a Host event callback")))
+  (let ((runtime (plist-get etaf--current-event :runtime))
+        (host-ref (plist-get etaf--current-event :host-ref)))
+    (ebox-call-with-input host-ref reader (etaf-runtime-buffer runtime))))
 
 (defun etaf-event-kind (kind)
   "Normalize event KIND to a non-keyword symbol."
