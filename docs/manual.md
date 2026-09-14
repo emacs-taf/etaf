@@ -326,7 +326,25 @@ The small reactive API is:
   (etaf-value double))
 ```
 
-Use `etaf-set-value` when a function form is clearer than `setf`. `etaf-watch-effect` is for a reactive side effect and can return a cleanup function:
+Use `etaf-set-value` when a function form is clearer than `setf`. To derive a
+replacement from the current value, use `etaf-update-value` with an ordinary
+function. For lists, vectors and records, return a replacement; mutating an
+object in place does not notify subscribers. Copy only the parts you change:
+
+```elisp
+(let ((task (etaf-ref '(:title "Draft" :done nil))))
+  (etaf-update-value
+   task (lambda (old done) (plist-put (copy-sequence old) :done done)) t)
+  (etaf-value task))
+```
+
+The updater runs once with the current value and any extra arguments. It must
+not mutate the old object or perform external effects. An updater error leaves
+the ref unchanged; a rendering failure after the write keeps the application
+value, as other ref writes do. Use it in events or ordinary application code,
+not during rendering. It uses the same shallow equality and batching rules.
+
+`etaf-watch-effect` is for a reactive side effect and can return a cleanup function:
 
 ```elisp
 (etaf-watch-effect

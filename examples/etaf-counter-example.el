@@ -17,13 +17,14 @@
 (etaf-action-define etaf-counter-example-update (runtime count operation)
   "Apply OPERATION to COUNT inside RUNTIME."
   (ignore runtime)
-  (etaf-set-value
+  (etaf-update-value
    count
-   (pcase operation
-     ('increment (1+ (etaf-value count)))
-     ('decrement (max 0 (1- (etaf-value count))))
-     ('reset 0)
-     (_ (user-error "Unknown counter operation: %S" operation)))))
+   (lambda (value)
+     (pcase operation
+       ('increment (1+ value))
+       ('decrement (max 0 (1- value)))
+       ('reset 0)
+       (_ (user-error "Unknown counter operation: %S" operation))))))
 
 (etaf-define-component etaf-counter-example-action
     (&key count label operation)

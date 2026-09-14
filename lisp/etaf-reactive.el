@@ -412,13 +412,17 @@ computed value."
    ((etaf-computed-p source) (etaf--computed-value source))
    (t (signal 'wrong-type-argument (list 'etaf-reactive-source-p source)))))
 
-(defun etaf-set-value (source new-value)
-  "Set writable reactive SOURCE to NEW-VALUE and return NEW-VALUE."
+(defun etaf--check-value-write (source)
+  "Require writable SOURCE outside View rendering."
   (when etaf--render-phase-p
     (signal 'etaf-render-write-error
             (list (and (etaf-ref-p source) (etaf-ref-name source)))))
   (unless (etaf-ref-p source)
-    (error "ETAF computed values are read-only: %S" source))
+    (error "ETAF computed values are read-only: %S" source)))
+
+(defun etaf-set-value (source new-value)
+  "Set writable reactive SOURCE to NEW-VALUE and return NEW-VALUE."
+  (etaf--check-value-write source)
   (let ((old-value (etaf-ref-value source)))
     (unless (funcall (etaf--source-test source) old-value new-value)
       (setf (etaf-ref-value source) new-value)
@@ -428,6 +432,20 @@ computed value."
 
 (gv-define-setter etaf-value (new-value source)
   `(etaf-set-value ,source ,new-value))
+
+;;;###autoload
+(defun etaf-update-value (source function &rest arguments)
+  "Replace SOURCE with FUNCTION applied to its current value and ARGUMENTS.
+Return the replacement value.  SOURCE must be a writable ref; rendering
+rejects the operation before FUNCTION runs.  FUNCTION runs once and must
+return a replacement without mutating the old value or performing effects.
+An error from FUNCTION leaves SOURCE unchanged.  Publication errors after
+replacement follow `etaf-set-value': the application write is not rolled back.
+This is a shallow update with the ref's existing equality and batching rules."
+  (etaf--check-value-write source)
+  (unless (functionp function)
+    (signal 'wrong-type-argument (list 'functionp function)))
+  (etaf-set-value source (apply function (etaf-value source) arguments)))
 
 (defun etaf--watch-getter (source)
   "Return a zero-argument getter for watch SOURCE."

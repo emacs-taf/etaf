@@ -306,7 +306,23 @@ props。成功发布后，实例保留默认值直到替换或卸载，期间调
   (etaf-value double))
 ```
 
-如果函数形式更清楚，可以使用 `etaf-set-value`。`etaf-watch-effect` 用于响应式副作用，并且可以返回 cleanup：
+如果函数形式更清楚，可以使用 `etaf-set-value`。需要根据当前值生成新值时，
+使用 `etaf-update-value` 和普通函数。列表、向量等采用替换更新；原地修改
+对象不会通知订阅者。只复制需要修改的部分：
+
+```elisp
+(let ((task (etaf-ref '(:title "Draft" :done nil))))
+  (etaf-update-value
+   task (lambda (old done) (plist-put (copy-sequence old) :done done)) t)
+  (etaf-value task))
+```
+
+更新函数执行一次，接收当前值与额外参数。它不得原地修改旧对象或执行外部
+副作用。函数报错时 ref 保持原值；写入之后若渲染失败，业务值仍然保留，
+与其他 ref 写入一致。在事件或普通应用代码中使用，不能在渲染中调用。
+它沿用现有浅比较与批处理规则，不引入深层代理或自动复制。
+
+`etaf-watch-effect` 用于响应式副作用，并且可以返回 cleanup：
 
 ```elisp
 (etaf-watch-effect

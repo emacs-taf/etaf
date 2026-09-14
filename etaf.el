@@ -974,6 +974,17 @@
 ;;;###autoload (autoload 'etaf-value "etaf" nil nil)
 ;; Read reactive SOURCE and track the read in the current effect.
 ;;
+;; Function: etaf-update-value (source function &rest arguments)
+;;;###autoload (autoload 'etaf-update-value "etaf" nil nil)
+;; Replace writable ref SOURCE with FUNCTION applied to its current value and
+;; ARGUMENTS, returning the replacement.  For example:
+;; (etaf-update-value count #'+ 2).  FUNCTION runs once; it must return a new
+;; value without mutating the old value or performing external effects.
+;; Rendering and read-only sources are rejected before FUNCTION runs.  An
+;; updater error leaves the ref unchanged.  A later publication error retains
+;; the application write, as with `etaf-set-value'.  Existing shallow equality,
+;; reactive tracking and event batching apply; there is no implicit deep copy.
+;;
 ;; Macro: etaf-view (form)
 ;;;###autoload (autoload 'etaf-view "etaf" nil nil 'macro)
 ;; Construct a normalized ETAF View from structural FORM.

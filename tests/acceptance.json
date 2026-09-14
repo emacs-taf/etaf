@@ -793,6 +793,21 @@
       "name": "etaf-instance-bindings-compose-resource-state-and-inherited-paint",
       "file": "tests/etaf-instance-bindings-tests.el",
       "purpose": "An instance-owned Resource publishes reload, error, cleanup and retry consistently with inherited paint in nested text."
+    },
+    {
+      "name": "etaf-value-update-replaces-structured-state-and-renders",
+      "file": "tests/etaf-value-update-tests.el",
+      "purpose": "Public events replace structured ref values, preserve previous objects and stop publishing after unmount."
+    },
+    {
+      "name": "etaf-value-update-rejects-invalid-writes-before-updater",
+      "file": "tests/etaf-value-update-tests.el",
+      "purpose": "Read-only and render writes reject before updater execution; updater failure preserves the ref."
+    },
+    {
+      "name": "etaf-value-update-preserves-write-after-rejected-publication",
+      "file": "tests/etaf-value-update-tests.el",
+      "purpose": "A rendering failure retains the application replacement and later repair updates the displayed value."
     }
   ]
 }

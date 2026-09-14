@@ -873,7 +873,8 @@ RANGE-CHILD-P preserves the direct material Range parent."
 
 This pure entry supports stateless Components.  Stateful Components require a
   Runtime because their setup Scope must have a lifecycle owner."
-  (let ((builder (ebox-source-builder-create)))
+  (let ((builder (ebox-source-builder-create))
+        (etaf--render-phase-p t))
     (let* ((etaf--ebox-source-builder builder)
            (root
             (etaf--ebox-forest-root

@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Pure `etaf-render` rejects reactive writes in expressions before they can
+  change application state, matching mounted rendering's read-only boundary.
+
 - Repairing a rejected root input now publishes pending descendant state changes,
   including when the repaired props equal the previously committed props.
 
@@ -22,6 +25,10 @@
   Update Ebox together with ETAF and use its shared buffer map for custom keys.
 
 ### Added
+
+- `etaf-update-value` applies an ordinary function to a ref's current value
+  and publishes its replacement through the existing reactive write path.
+  Updaters need no manual read/write pair or deep reactive proxy.
 
 - Components accept `:bindings ((name initializer) ...)` for stable instance
   values shared directly by setup, views and callbacks. Initializers run once
