@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Repairing a rejected root input now publishes pending descendant state changes,
+  including when the repaired props equal the previously committed props.
+
 - Composed slots can update a controlled child and conditional content together
   without duplicating retained children. Both declarative and programmatic slot
   containers preserve the child's interactive identity across repeated updates.
@@ -19,6 +22,12 @@
   Update Ebox together with ETAF and use its shared buffer map for custom keys.
 
 ### Added
+
+- Components accept `:bindings ((name initializer) ...)` for stable instance
+  values shared directly by setup, views and callbacks. Initializers run once
+  in order, using the existing Scope lifecycle. Examples and manuals use this
+  form instead of packing and unpacking `etaf-state`; the latter remains an
+  advanced accessor for an explicit setup result in components without bindings.
 
 - ECSS-tagged Box layout and outer values now use Ebox's canonical projection,
   including important, CSS-wide and variable values during reactive updates.

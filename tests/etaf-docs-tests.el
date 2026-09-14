@@ -103,7 +103,8 @@
            ("counter"
             '(let ((runtime (etaf-runtime-for-buffer "*etaf-counter*")))
                (should runtime)
-               (etaf-dispatch-event runtime 'increment 'press)
+               (etaf-focus-next runtime)
+               (etaf-activate runtime)
                (with-current-buffer "*etaf-counter*"
                  (should (string-match-p "Count: 1" (buffer-string))))
                (etaf-unmount runtime)))))))))

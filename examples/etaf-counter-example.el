@@ -31,10 +31,7 @@
   :view
   (box :class "action" :role 'button :use (list (etaf-focusable))
        :on-press
-       (let ((cell count) (next-operation operation))
-         (lambda ()
-           (etaf-dispatch 'etaf-counter-example-update
-                          cell next-operation)))
+       (lambda () (etaf-dispatch 'etaf-counter-example-update count operation))
     (text (expr label)))
   :styles
   (("&" :flex-grow 1 :flex-shrink 1 :flex-basis (px 160)
@@ -43,55 +40,54 @@
 
 (etaf-define-component etaf-counter-example-card (&key title initial-value)
   "Render a retained counter named TITLE starting at INITIAL-VALUE."
-  :setup
-  (let* ((count (etaf-ref (or initial-value 0) :name 'counter))
-         (double (etaf-computed
-                  (lambda () (* 2 (etaf-value count)))
-                  :name 'counter-double))
-         (status (etaf-computed
-                  (lambda ()
-                    (if (zerop (etaf-value count)) "READY" "ACTIVE"))
-                  :name 'counter-status)))
-    (list :count count :double double :status status))
+  :bindings
+  ((count (etaf-ref (or initial-value 0) :name 'counter))
+   (double (etaf-computed
+            (lambda () (* 2 (etaf-value count)))
+            :name 'counter-double))
+   (status (etaf-computed
+            (lambda ()
+              (if (zerop (etaf-value count)) "READY" "ACTIVE"))
+            :name 'counter-status)))
   :view
   (column
    (box :class "hero"
-    (column
-     (text :class "eyebrow" "BEST PRACTICE  /  RETAINED STATE")
-     (text :font-weight 'bold (expr title))
-     (text :color "#66706A"
-           "State belongs to setup; rendering only reads it.")))
+        (column
+         (text :class "eyebrow" "BEST PRACTICE  /  RETAINED STATE")
+         (text :font-weight 'bold (expr title))
+         (text :color "#66706A"
+               "Bindings initialize once; rendering reads their values.")))
    (box :height '(lh 1))
    (flex :width '(px 680) :flex-flow '(row wrap) :gap '((lh 1) (px 12))
-    (box :class "metric"
-     (text (expr
-            (format "COUNT  %d"
-                    (etaf-value (plist-get (etaf-state) :count))))))
-    (box :class "metric"
-     (text (expr
-            (format "DOUBLE  %d"
-                    (etaf-value (plist-get (etaf-state) :double))))))
-    (box :class "metric"
-     (text (expr
-            (format "STATE  %s"
-                    (etaf-value (plist-get (etaf-state) :status)))))))
+         (box :class "metric"
+              (text (expr
+                     (format "COUNT  %d"
+                             (etaf-value count)))))
+         (box :class "metric"
+              (text (expr
+                     (format "DOUBLE  %d"
+                             (etaf-value double)))))
+         (box :class "metric"
+              (text (expr
+                     (format "STATE  %s"
+                             (etaf-value status))))))
    (box :height '(lh 1))
    (flex :width '(px 680) :flex-flow '(row wrap) :gap '((lh 1) (px 12))
-    (etaf-counter-example-action
-     :ref 'counter-decrement
-     :count (plist-get (etaf-state) :count)
-     :label "−  DECREMENT" :operation 'decrement)
-    (etaf-counter-example-action
-     :ref 'counter-reset
-     :count (plist-get (etaf-state) :count)
-     :label "RESET" :operation 'reset)
-    (etaf-counter-example-action
-     :ref 'counter-increment
-     :count (plist-get (etaf-state) :count)
-     :label "+  INCREMENT" :operation 'increment))
+         (etaf-counter-example-action
+          :ref 'counter-decrement
+          :count count
+          :label "−  DECREMENT" :operation 'decrement)
+         (etaf-counter-example-action
+          :ref 'counter-reset
+          :count count
+          :label "RESET" :operation 'reset)
+         (etaf-counter-example-action
+          :ref 'counter-increment
+          :count count
+          :label "+  INCREMENT" :operation 'increment))
    (box :height '(lh 1))
    (box :class "note"
-    (text "Public path: Event → Action → Ref → Computed → Runtime commit")))
+        (text "Public path: Event → Action → Ref → Computed → Runtime commit")))
   :styles
   (("&" :width (px 680) :color "#252A2E" :bgcolor "#F8F5EE")
    (".hero" :width (px 680) :padding ((lh 1) (px 18)) :border "#8F432F"

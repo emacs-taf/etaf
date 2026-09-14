@@ -108,7 +108,7 @@ ATTRIBUTE = :KEY VALUE
 它不创建 Ebox wrapper、identity、生命周期、watch 或 effect。`if`、`when`、`cond`、
 `let`、`mapcar`、`cl-loop` 等仍是 form 中的普通 Elisp。
 
-当前 core 没有面向文件的 `.etaf` pair loader。`etaf-define-component` 才是结构/样式/行为单元：View 定义结构，`:styles` 负责 presentation，`:setup` 负责 retained state、事件和生命周期行为。未来的 `.etaf` SFC 属于把结果 lowering 到同一套公共 View/Component 契约的 compiler layer，而不是第二套 Runtime 语法。
+当前 core 没有面向文件的 `.etaf` pair loader。`etaf-define-component` 才是结构/样式/行为单元：View 定义结构，`:styles` 负责 presentation，`:bindings` 负责保留值，`:setup` 初始化生命周期行为。未来的 `.etaf` SFC 属于把结果 lowering 到同一套公共 View/Component 契约的 compiler layer，而不是第二套 Runtime 语法。
 
 ## 4. Component
 
@@ -117,22 +117,24 @@ ATTRIBUTE = :KEY VALUE
 ```text
 (etaf-define-component NAME (&key PROPS)
   DOCSTRING?
-  :setup OPAQUE-STATE-FORM
+  :bindings ((NAME INITIALIZER) ...)
+  :setup INITIALIZATION-FORM
   :view VIEW
   :styles (RULE...))
 
 (etaf-define-component NAME (&key PROPS)
   DOCSTRING?
-  :setup OPAQUE-STATE-FORM
+  :bindings ((NAME INITIALIZER) ...)
+  :setup INITIALIZATION-FORM
   :render ORDINARY-ELISP
   :styles (RULE...))
 ```
 
 `:view` 和 `:render` 互斥且必须恰好出现一个。`:render` 是普通 Elisp，可以返回
 `etaf-view` 或程序化构造的 `etaf-node`；两者共用 View 编译、prop 校验与 slot
-投影，不增加另一套表示或状态模型。`:setup` 与 `:styles` 可选且各最多出现一次。Props 是唯一需要声明的业务输入；普通尾部子节点和命名 slot 会被规范化为 Component 的 slot 集合。
+投影，不增加另一套表示或状态模型。`:bindings`、`:setup` 与 `:styles` 可选且各最多出现一次。Props 是唯一需要声明的业务输入；普通尾部子节点和命名 slot 会被规范化为 Component 的 slot 集合。
 
-Component definition 是当前结构/样式/行为边界：动态状态、Action callback 和生命周期工作放进 `:setup`，静态 presentation 放进 `:styles`。未来 `.etaf` SFC compiler 可以生成这些 definition，但 Runtime 不会直接加载 `.etaf` 文件。
+Component definition 是当前结构/样式/行为边界：保留句柄放进 `:bindings`，生命周期工作放进 `:setup`，静态 presentation 放进 `:styles`。未来 `.etaf` SFC compiler 可以生成这些 definition，但 Runtime 不会直接加载 `.etaf` 文件。
 
 ### 4.1 无状态与状态型形式
 
@@ -148,27 +150,23 @@ Component definition 是当前结构/样式/行为边界：动态状态、Action
 ```elisp
 (etaf-define-component disclosure (&key title)
   "Render a retained disclosure."
-  :setup
-  (etaf-ref nil)
+  :bindings ((open (etaf-ref nil)))
   :view
   (column
    (text
     :role 'button
     :on-press
-    (let ((open (etaf-state)))
-      (lambda ()
-        (setf (etaf-value open)
-              (not (etaf-value open)))))
-    (expr (if (etaf-value (etaf-state)) "Hide" "Show")))
+    (lambda () (setf (etaf-value open) (not (etaf-value open))))
+    (expr (if (etaf-value open) "Hide" "Show")))
    (expr
-    (when (etaf-value (etaf-state))
+    (when (etaf-value open)
       (etaf-view (text (expr title)))))))
 ```
 
-`:setup` 对一个 retained Component instance 只运行一次，返回一个 opaque 状态值。
-`:view` 或 `:render` 中用 `etaf-state` 取得这个准确值。重新渲染读取当前 props 和
-state，不重新运行 setup。setup 负责局部 ref、computed、watch、Effect 和 cleanup，
-不返回 render 函数。
+命名绑定与可选 setup 共用实例初始化和 Scope。宏把初始值按声明顺序保存到实例，
+每次渲染重新建立引用这些值的词法环境；声明 props 则使用本次输入。原有
+`etaf-state` 仅用于无命名绑定的组件；有绑定时忽略 setup 返回值。重排保留实例及绑定；初始化失败和
+卸载使用同一资源清理路径，不引入第二套状态图。
 
 Component 实例保存内部 Host 名称到不透明符号的映射。`etaf-local-ref` 在
 setup 分配句柄，保留实例保持映射，替换实例重新分配。句柄与显式 `:ref`
@@ -358,8 +356,8 @@ Context 是继承的 Component Scope 环境：
 
 (etaf-define-component service-consumer ()
   "Read the inherited service."
-  :setup (etaf-inject 'service nil t)
-  :view (text (expr (format "Service: %s" (etaf-value (etaf-state))))))
+  :bindings ((service (etaf-inject 'service nil t)))
+  :view (text (expr (format "Service: %s" (etaf-value service)))))
 
 (etaf-define-component service-provider ()
   "Provide a reactive service to its own child Component."

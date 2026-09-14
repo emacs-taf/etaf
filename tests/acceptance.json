@@ -768,6 +768,31 @@
       "name": "etaf-slot-code-composes-controlled-and-conditional-updates",
       "file": "tests/etaf-slot-updates-tests.el",
       "purpose": "Code slots keep one interactive child and current conditional content across repeated updates."
+    },
+    {
+      "name": "etaf-instance-bindings-retain-values-and-current-props",
+      "file": "tests/etaf-instance-bindings-tests.el",
+      "purpose": "Named instance handles retain identity, committed callbacks and reactive output through reorder, rejected publication, recovery and unmount."
+    },
+    {
+      "name": "etaf-instance-bindings-clean-up-rejected-initialization",
+      "file": "tests/etaf-instance-bindings-tests.el",
+      "purpose": "Failed initialization releases tracked sources, while a later mount owns fresh values."
+    },
+    {
+      "name": "etaf-instance-bindings-validate-definition-names",
+      "file": "tests/etaf-instance-bindings-tests.el",
+      "purpose": "Binding declarations reject malformed, duplicate and prop-shadowing names."
+    },
+    {
+      "name": "etaf-instance-bindings-preserve-setup-result-contract",
+      "file": "tests/etaf-instance-bindings-tests.el",
+      "purpose": "Named bindings ignore lifecycle initialization results and reject the opaque setup-state accessor."
+    },
+    {
+      "name": "etaf-instance-bindings-compose-resource-state-and-inherited-paint",
+      "file": "tests/etaf-instance-bindings-tests.el",
+      "purpose": "An instance-owned Resource publishes reload, error, cleanup and retry consistently with inherited paint in nested text."
     }
   ]
 }

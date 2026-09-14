@@ -24,98 +24,87 @@
 
 (etaf-define-component etaf-resource-example-app ()
   "Render a reloadable Resource with visible cleanup and error state."
-  :setup
-  (let ((fail-next (etaf-ref nil :name 'etaf-resource-example-fail))
-        (cleanup-count (etaf-ref 0 :name 'etaf-resource-example-cleanups))
-        (generation 0)
-        resource)
-    (setq resource
-          (etaf-resource
-           (lambda ()
-             (cl-incf generation)
-             (if (etaf-value fail-next)
-                 (progn
-                   (etaf-set-value fail-next nil)
-                   (error "Synthetic service failure %d" generation))
-               (etaf-resource-result
-                (format "Generation %d is healthy." generation)
-                :cleanup
-                (lambda ()
-                  (etaf-set-value
-                   cleanup-count
-                   (1+ (etaf-value cleanup-count)))))))
-           :immediate nil
-           :name 'etaf-resource-example))
-    (etaf-on-mounted (lambda () (etaf-resource-load resource)))
-    (list :resource resource :fail-next fail-next
-          :cleanup-count cleanup-count))
+  :bindings
+  ((fail-next (etaf-ref nil :name 'etaf-resource-example-fail))
+   (cleanup-count (etaf-ref 0 :name 'etaf-resource-example-cleanups))
+   (resource
+    (let ((generation 0))
+      (etaf-resource
+       (lambda ()
+         (cl-incf generation)
+         (if (etaf-value fail-next)
+             (progn
+               (etaf-set-value fail-next nil)
+               (error "Synthetic service failure %d" generation))
+           (etaf-resource-result
+            (format "Generation %d is healthy." generation)
+            :cleanup (lambda () (cl-incf (etaf-value cleanup-count))))))
+       :immediate nil :name 'etaf-resource-example))))
+  :setup (etaf-on-mounted (lambda () (etaf-resource-load resource)))
   :view
   (column :width '(px 680) :color "#252A2E" :bgcolor "#F8F5EE"
-   (box :width '(px 680) :padding '((lh 1) (px 18)) :border "#8F432F"
-        :bgcolor "#FFFDF8" :text-align 'center
-    (column
-     (text :color "#8F432F" :font-weight 'bold
-           "BEST PRACTICE  /  RESOURCE LIFECYCLE")
-     (text :font-weight 'bold "Service health")
-     (text :color "#66706A"
-           "Loader errors become explicit state; cleanup stays scoped.")))
-   (box :height '(lh 1))
-   (box :width '(px 680) :padding '((lh 2) (px 18))
-        :border
-        (if (eq (etaf-resource-status
-                 (plist-get (etaf-state) :resource)) 'success)
-            "#6D8A73" "#C97252")
-        :bgcolor
-        (if (eq (etaf-resource-status
-                 (plist-get (etaf-state) :resource)) 'success)
-            "#DCEBDD" "#F1D4C9")
-        :color
-        (if (eq (etaf-resource-status
-                 (plist-get (etaf-state) :resource)) 'success)
-            "#24422D" "#6B3020")
-        :text-align 'center
-    (column
-     (text :font-weight 'bold
-      (expr
-       (upcase
-        (symbol-name
-         (etaf-resource-status (plist-get (etaf-state) :resource))))))
-     (text
-      (expr
-       (etaf-resource-example--message
-        (plist-get (etaf-state) :resource))))
-     (text :color "#66706A"
-      (expr
-       (format "CLEANUPS  %d"
-               (etaf-value (plist-get (etaf-state) :cleanup-count)))))))
-   (box :height '(lh 1))
-   (flex :width '(px 680) :flex-flow '(row wrap) :gap '((lh 1) (px 12))
-    (box :flex-grow 1 :flex-shrink 1 :flex-basis '(px 200)
-         :min-width '(px 180) :padding '((lh 1) (px 12))
-         :border "#4E7890" :bgcolor "#D9EAF2" :font-weight 'bold
-         :text-align 'center :ref 'resource-reload :role 'button
-         :use (list (etaf-focusable))
-         :on-press
-         (let ((resource (plist-get (etaf-state) :resource)))
-           (lambda () (etaf-resource-load resource)))
-     (text "RELOAD"))
-    (box :flex-grow 1 :flex-shrink 1 :flex-basis '(px 200)
-         :min-width '(px 180) :padding '((lh 1) (px 12))
-         :border "#C97252" :bgcolor "#F1D4C9" :font-weight 'bold
-         :text-align 'center :ref 'resource-fail :role 'button
-         :use (list (etaf-focusable))
-         :on-press
-         (let ((resource (plist-get (etaf-state) :resource))
-               (fail-next (plist-get (etaf-state) :fail-next)))
-           (lambda ()
-             (etaf-set-value fail-next t)
-             (etaf-resource-load resource)))
-     (text "SIMULATE FAILURE")))
-   (box :height '(lh 1))
-   (box :width '(px 680) :padding '((lh 1) (px 16)) :border "#8D887F"
-        :color "#4D5651" :bgcolor "#EEEAE2"
-    (text
-     "Scope rule: reload releases the old value; unmount releases the last one"))))
+          (box :width '(px 680) :padding '((lh 1) (px 18)) :border "#8F432F"
+               :bgcolor "#FFFDF8" :text-align 'center
+               (column
+                (text :color "#8F432F" :font-weight 'bold
+                      "BEST PRACTICE  /  RESOURCE LIFECYCLE")
+                (text :font-weight 'bold "Service health")
+                (text :color "#66706A"
+                      "Loader errors become explicit state; cleanup stays scoped.")))
+          (box :height '(lh 1))
+          (box :width '(px 680) :padding '((lh 2) (px 18))
+               :border
+               (if (eq (etaf-resource-status
+                        resource) 'success)
+                   "#6D8A73" "#C97252")
+               :bgcolor
+               (if (eq (etaf-resource-status
+                        resource) 'success)
+                   "#DCEBDD" "#F1D4C9")
+               :color
+               (if (eq (etaf-resource-status
+                        resource) 'success)
+                   "#24422D" "#6B3020")
+               :text-align 'center
+               (column
+                (text :font-weight 'bold
+                      (expr
+                       (upcase
+                        (symbol-name
+                         (etaf-resource-status resource)))))
+                (text
+                 (expr
+                  (etaf-resource-example--message
+                   resource)))
+                (text :color "#66706A"
+                      (expr
+                       (format "CLEANUPS  %d"
+                               (etaf-value cleanup-count))))))
+          (box :height '(lh 1))
+          (flex :width '(px 680) :flex-flow '(row wrap) :gap '((lh 1) (px 12))
+                (box :flex-grow 1 :flex-shrink 1 :flex-basis '(px 200)
+                     :min-width '(px 180) :padding '((lh 1) (px 12))
+                     :border "#4E7890" :bgcolor "#D9EAF2" :font-weight 'bold
+                     :text-align 'center :ref 'resource-reload :role 'button
+                     :use (list (etaf-focusable))
+                     :on-press
+                     (lambda () (etaf-resource-load resource))
+                     (text "RELOAD"))
+                (box :flex-grow 1 :flex-shrink 1 :flex-basis '(px 200)
+                     :min-width '(px 180) :padding '((lh 1) (px 12))
+                     :border "#C97252" :bgcolor "#F1D4C9" :font-weight 'bold
+                     :text-align 'center :ref 'resource-fail :role 'button
+                     :use (list (etaf-focusable))
+                     :on-press
+                     (lambda ()
+                       (etaf-set-value fail-next t)
+                       (etaf-resource-load resource))
+                     (text "SIMULATE FAILURE")))
+          (box :height '(lh 1))
+          (box :width '(px 680) :padding '((lh 1) (px 16)) :border "#8D887F"
+               :color "#4D5651" :bgcolor "#EEEAE2"
+               (text
+                "Scope rule: reload releases the old value; unmount releases the last one"))))
 
 ;;;###autoload
 (defun etaf-resource-example-view ()

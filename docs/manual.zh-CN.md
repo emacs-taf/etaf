@@ -1,6 +1,6 @@
 # etaf 使用手册
 
-ETAF 使用一套很小的词汇构建文本应用：`View`、`Component`、props、children、响应式状态和 Ebox 渲染。先学习 `etaf-view` 与 `etaf-mount`；只有 Component 需要局部状态或生命周期时才增加 `:setup`。
+ETAF 使用一套很小的词汇构建文本应用：`View`、`Component`、props、children、响应式状态和 Ebox 渲染。先学习 `etaf-view` 与 `etaf-mount`；需要局部句柄时增加 `:bindings`，生命周期工作放入 `:setup`。
 
 ## 1. 安装与加载
 
@@ -96,7 +96,7 @@ revision 可能尚未提交。普通 flush 不导出整棵树，也不强制重�
 `etaf-runtime-snapshot`，保留 canonical input 中与根节点配套的 source facts；
 不要再把旧 getter 当作低成本字段读取或写入目标。
 
-当前 core 不直接加载 `.etaf`。`etaf-define-component` 是结构/样式/行为单元：用 View 定义结构，用 `:styles` 放静态 presentation，用 `:setup` 管理 retained state、Action 和生命周期。未来 `.etaf` SFC 属于把结果编译成同一套 Component 契约的 compiler layer，而不是第二个 Runtime 入口。
+当前 core 不直接加载 `.etaf`。`etaf-define-component` 是结构/样式/行为单元：用 View 定义结构，用 `:styles` 放静态 presentation，用 `:bindings` 管理保留值，用 `:setup` 管理生命周期。未来 `.etaf` SFC 属于把结果编译成同一套 Component 契约的 compiler layer，而不是第二个 Runtime 入口。
 
 ## 3. 属性与子节点
 
@@ -210,10 +210,11 @@ View 属性；通过上述语义属性声明 Host 元数据。
 | --- | --- |
 | `:view` | 声明式 View frontend，与 `:render` 互斥 |
 | `:render` | 普通 Elisp 返回一个 typed View，通常使用 `etaf-view`；程序化构造也可使用 `etaf-node` |
-| `:setup` | 可选的一次性初始化，返回由 `etaf-state` 读取的 opaque 状态 |
+| `:bindings` | 按顺序初始化一次的命名值，setup、View 与回调直接使用 |
+| `:setup` | 可选的一次性生命周期工作；有命名绑定时忽略返回值 |
 | `:styles` | 可选的静态作用域样式声明 |
 
-没有单独的 children、slot、event、state 或 variant 声明块。业务 props 通过 `(&key ...)` 声明，children 和 slot 是隐式内容。
+没有单独的 children、slot、event 或 variant 声明块。业务 props 通过 `(&key ...)` 声明，children 和 slot 是隐式内容。
 
 Props 支持 `(&key NAME (NAME DEFAULT) ...)`。实例首次缺少对应输入时求值
 DEFAULT；显式 nil 属于已传入的值。默认值按声明顺序解析，表达式可读取前面的
@@ -230,42 +231,41 @@ props。成功发布后，实例保留默认值直到替换或卸载，期间调
 
 ## 5. 局部状态与生命周期
 
-Component 自己拥有状态时使用 `:setup`：
+用 `:bindings` 声明稳定句柄，在 `:setup` 注册生命周期工作：
 
 ```elisp
 (etaf-define-component counter (&key title)
   "Render a retained counter."
+  :bindings ((count (etaf-ref 0))
+             (initial-title title))
   :setup
-  (let ((count (etaf-ref 0))
-        (initial-title title))
-    (etaf-on-mounted
-     (lambda () (message "%s mounted" initial-title)))
-    (etaf-on-unmounted
-     (lambda () (message "%s unmounted" initial-title)))
-    count)
-  :render
-  (let ((count (etaf-state))
-        (caption title))
-    (etaf-view
-     (column
-       (text :font-weight 'bold (expr caption))
-       (text (expr (format "Count: %d" (etaf-value count))))
-       (text :role 'button :tab-index 0
-             :on-press (lambda () (cl-incf (etaf-value count)))
-         "Increment")))))
+  (progn
+    (etaf-on-mounted (lambda () (message "%s mounted" initial-title)))
+    (etaf-on-unmounted (lambda () (message "%s unmounted" initial-title))))
+  :view
+  (column
+    (text :font-weight 'bold (expr title))
+    (text (expr (format "Count: %d" (etaf-value count))))
+    (text :role 'button :tab-index 0
+          :on-press (lambda () (cl-incf (etaf-value count)))
+      "Increment")))
 ```
 
-Setup 对 retained instance 只执行一次，返回一个 opaque 状态值。选定的 `:view` 或
-`:render` frontend 在更新时运行，并通过 `etaf-state` 读取这个准确值。
-`etaf-on-mounted`、`etaf-on-updated` 和 `etaf-on-unmounted` 注册该 Component 的生命周期
-callback。Scope 释放时会自动停止响应式 effect 并运行 cleanup。
+`:bindings` 按 `let*` 顺序在每个保留实例中初始化一次，可引用初始 props 和前面的
+绑定。名字不能重复或遮蔽声明的 prop。可选 `:setup` 在其后执行，两个视图入口和
+回调直接引用保留值，不再需要打包和拆包。重排保留身份；失败的初始化、实例替换
+及卸载按原有 Scope 生命周期清理 computed、watch、资源和局部引用。
+`setq` 只改变当前词法变量，不替换实例保存的值；可变业务值应使用 ref。
+`etaf-on-mounted`、`etaf-on-updated` 和 `etaf-on-unmounted` 注册实例生命周期回调。
+有命名绑定时忽略 setup 的返回值，直接使用命名值，不能再调用 `etaf-state`。
+进阶接口 `etaf-state` 仅用于没有命名绑定的组件，在渲染时读取其显式 setup
+返回值（含 nil）。它不是事件时的接口。
 
 `:view` 和 `:render` 共用编译、slot 投影与 prop 校验。声明的 props 是每次求值的
 词法快照，延后执行的回调可直接使用 `title`，无需额外的 `let`。更新成功发布后
 安装捕获新 props 的回调；候选失败保留旧回调。Setup 闭包保留初始 props。
 传入的 ref 保留原有身份，在回调中通过 `etaf-value` 读取实时值；普通值不会
-被深复制或自动变成响应式来源。用普通 `let`/`let*` 为回调捕获 state 句柄；
-`etaf-state` 只在 render 时读取，不留到事件触发时调用。把 `etaf-value` 保留在
+被深复制或自动变成响应式来源。把 `etaf-value` 保留在
 需要更新的属性或 `expr` 内；提取句柄
 不需要提前读取它的值。含有持久闭包的组件代码放在启用 lexical-binding 的 `.el`
 文件中。简单本地回调不需要定义 Action。
@@ -275,10 +275,10 @@ callback。Scope 释放时会自动停止响应式 effect 并运行 cleanup。
 
 ```elisp
 (etaf-define-component greeting (&key (name "World"))
-  :setup
-  (let ((input (etaf-prop 'name)))
-    (etaf-computed (lambda () (concat "Hello, " (etaf-value input)))))
-  :view (text (expr (etaf-value (etaf-state)))))
+  :bindings ((input (etaf-prop 'name))
+             (greeting (etaf-computed
+                        (lambda () (concat "Hello, " (etaf-value input))))))
+  :view (text (expr (etaf-value greeting))))
 
 (let ((name (etaf-ref "Ada")))
   (etaf-mount (get-buffer-create "*Greeting*")
@@ -606,12 +606,10 @@ Focus 和 hit testing 是 Runtime 操作：
 
 ```elisp
 (etaf-define-component local-button (&key label on-ready on-press)
-  :setup
-  (let ((target (etaf-local-ref 'button)))
-    (etaf-on-mounted (lambda () (funcall on-ready target)))
-    target)
+  :bindings ((target (etaf-local-ref 'button)))
+  :setup (etaf-on-mounted (lambda () (funcall on-ready target)))
   :view
-  (box :ref (etaf-state) :role 'button :tab-index 0 :on-press on-press
+  (box :ref target :role 'button :tab-index 0 :on-press on-press
     (text (expr label))))
 
 (let (target)
@@ -669,9 +667,9 @@ Context 适合跨多层共享依赖，不适合普通 label：
 
 (etaf-define-component service-label ()
   "Read the inherited service."
-  :setup (etaf-inject 'service nil t)
+  :bindings ((service (etaf-inject 'service nil t)))
   :view
-  (text (expr (format "Service: %s" (etaf-value (etaf-state))))))
+  (text (expr (format "Service: %s" (etaf-value service)))))
 
 (etaf-define-component application-shell ()
   "Provide a service to its own child Component."

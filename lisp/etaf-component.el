@@ -6,7 +6,8 @@
 
 ;; Components have one public definition boundary with two authoring
 ;; frontends: compiled `:view' DSL and ordinary Elisp `:render'.  Optional
-;; `:setup' runs once and returns opaque state read through `etaf-state'.
+;; `:bindings' initializes named instance values; optional `:setup' registers
+;; lifecycle work.  Opaque setup results remain an advanced authoring option.
 
 ;;; Code:
 
@@ -23,6 +24,11 @@
 (cl-defstruct (etaf--slot-content (:constructor etaf--slot-content-create))
   "Internal caller ownership metadata for one slot entry."
   owner-component-id children)
+
+(cl-defstruct (etaf--component-bindings
+               (:constructor etaf--component-bindings-create))
+  "Instance-owned lexical values."
+  values)
 
 (defvar etaf--raw-slot-read-p nil
   "Set while a Component render uses public raw slot accessors.")
@@ -97,7 +103,8 @@ The function is also useful to code that deliberately avoids that shorthand."
 (defun etaf-state ()
   "Return the current Component instance's exact setup result.
 The accessor is valid only while rendering a Component that declares setup.
-A defined setup may return nil; setup presence is tracked independently."
+A defined setup may return nil; setup presence is tracked independently.
+Components using named bindings must refer to those values directly."
   (unless (and (eq etaf--component-phase 'render)
                etaf--current-component-instance)
     (etaf--component-definition-error
@@ -108,7 +115,10 @@ A defined setup may return nil; setup presence is tracked independently."
   (unless etaf--current-component-setup-complete-p
     (etaf--component-definition-error
      "Current Component setup has not completed"))
-  etaf--current-component-state)
+  (if (etaf--component-bindings-p etaf--current-component-state)
+      (etaf--component-definition-error
+       "Current Component uses :bindings; refer to its named values directly")
+    etaf--current-component-state))
 
 ;;;###autoload
 (defun etaf-component-set-styles (name styles)
@@ -194,6 +204,27 @@ does not depend on ETAF's private registry flag."
             `(,prop (etaf-current-prop ',prop)))
           props))
 
+(defun etaf--component-validate-bindings (name bindings props)
+  "Validate NAME's sequential BINDINGS and return their distinct names.
+PROPS cannot be shadowed by instance bindings."
+  (unless (proper-list-p bindings)
+    (etaf--component-definition-error
+     "Component %S :bindings must be a proper binding list" name))
+  (let (names)
+    (dolist (binding bindings)
+      (unless (and (proper-list-p binding) (= (length binding) 2)
+                   (symbolp (car binding))
+                   (not (or (keywordp (car binding))
+                            (memq (car binding) '(nil t))
+                            (string-prefix-p "&" (symbol-name (car binding))))))
+        (etaf--component-definition-error
+         "Component %S binding must be (NAME INITIALIZER): %S" name binding))
+      (when (or (memq (car binding) names) (memq (car binding) props))
+        (etaf--component-definition-error
+         "Component %S binding %S duplicates a binding or prop" name (car binding)))
+      (push (car binding) names))
+    (nreverse names)))
+
 (defun etaf--component-default-resolver (arguments)
   "Compile ARGUMENTS into an instance-default resolver, or nil."
   (when (cl-some #'consp (cdr arguments))
@@ -274,6 +305,7 @@ does not depend on ETAF's private registry flag."
 Choose exactly one authoring frontend:
 
   (etaf-define-component NAME (&key PROPS)
+    [:bindings ((NAME INITIALIZER) ...)]
     [:setup SETUP]
     :view VIEW
     :styles ((SELECTOR ATTR ...)))
@@ -281,18 +313,31 @@ Choose exactly one authoring frontend:
 or:
 
   (etaf-define-component NAME (&key PROPS)
+    [:bindings ((NAME INITIALIZER) ...)]
     [:setup SETUP]
     :render ORDINARY-ELISP
     :styles ((SELECTOR ATTR ...)))
 
-`:setup' runs once per retained identity and returns opaque state.  `:view'
+`:bindings' initializes named values once, in let* order, before optional
+`:setup'.  Initializers can use initial props and earlier bindings.  Setup,
+both View frontends and their callbacks can refer directly to these stable
+values.  Names must be distinct ordinary symbols, not declared props.
+Ref/computed/watch/local-ref ownership remains the Component Scope; failed
+initialization disposes it.  Reorder retains values; replacement/unmount
+releases the instance.  Rebinding a lexical name with setq does not replace
+its stored value: mutate refs explicitly through `etaf-value'.
+
+With named bindings, optional `:setup' performs initialization; its return
+value is ignored.  Without bindings, setup can return opaque state read by
+the advanced `etaf-state' accessor, but not a render function.  `:view'
 is unquoted DSL; `:render' is ordinary Elisp returning the same typed View,
 usually through `etaf-view'.  `etaf-node' also constructs Views
 programmatically.  Both frontends use the same prop and slot rules.  Declared
 props are lexical snapshots for each setup or render evaluation; callbacks
 may refer to them directly.  Passed refs retain identity and live value reads.
-Bind state handles during rendering, and keep reactive value reads inside
-the View properties or expressions they update.
+Keep reactive value reads inside the View properties or expressions they
+update.  Use `etaf-prop' in a binding initializer for a tracked input; a plain
+prop variable in initialization is an initial snapshot.
 
 Props accept NAME or (NAME DEFAULT) after &key.  Defaults evaluate in order
 on first missing input and can read earlier props.  Explicit nil is supplied.
@@ -307,10 +352,12 @@ safe to retry after rejected publication; allocate mutable values explicitly."
         view-form
         render-form
         setup-form
+        bindings-form
         styles-form
         saw-view
         saw-render
         saw-setup
+        saw-bindings
         saw-styles)
     (while clauses
       (let ((keyword (pop clauses)))
@@ -336,6 +383,11 @@ safe to retry after rejected publication; allocate mutable values explicitly."
              (etaf--component-definition-error
               "Component %S has duplicate :setup" name))
            (setq setup-form (pop clauses) saw-setup t))
+          (:bindings
+           (when saw-bindings
+             (etaf--component-definition-error
+              "Component %S has duplicate :bindings" name))
+           (setq bindings-form (pop clauses) saw-bindings t))
           (:styles
            (when saw-styles
              (etaf--component-definition-error
@@ -361,6 +413,14 @@ safe to retry after rejected publication; allocate mutable values explicitly."
       (etaf--component-definition-error
        "Component %S :setup cannot return a render function" name))
     (let* ((props (etaf--parse-component-props arguments))
+           (binding-names (etaf--component-validate-bindings name bindings-form props))
+           (binding-values (make-symbol "instance-values"))
+           (render-bindings
+            (and binding-names
+                 `((,binding-values
+                    (etaf--component-bindings-values etaf--current-component-state))
+                   ,@(cl-loop for binding in binding-names for index from 0
+                              collect `(,binding (aref ,binding-values ,index))))))
            (styles-form (etaf--validate-styles-form styles-form name))
            (definition-symbol
             (intern (format "%s--etaf-component-definition" name)))
@@ -369,7 +429,7 @@ safe to retry after rejected publication; allocate mutable values explicitly."
                (let ((etaf--current-component-props etaf--component-props)
                      (etaf--current-component-slots etaf--component-slots)
                      (etaf--component-phase 'render))
-                 ,(let ((etaf--compiling-component-props props))
+                 ,(let ((etaf--compiling-component-props (append props binding-names)))
                     ;; Expand every embedded View inside its Component prop
                     ;; grammar, including Views produced by lexical macros.
                     ;; Lexical props belong to this evaluation and its closures.
@@ -377,19 +437,26 @@ safe to retry after rejected publication; allocate mutable values explicitly."
                     (macroexpand-all
                      `(let ,(etaf--component-prop-bindings props)
                         (ignore ,@props)
-                        ,(if saw-view
-                             (etaf-compiler-expand-view view-form :projection)
-                           render-form))
+                        (let* ,render-bindings
+                          (ignore ,@binding-names)
+                          ,(if saw-view
+                               (etaf-compiler-expand-view view-form :projection)
+                             render-form)))
                      macroexpand-all-environment)))))
            (setup-lambda
-            (when saw-setup
+            (when (or saw-setup binding-names)
               `(lambda (etaf--component-props _etaf--component-slots)
                  (let ((etaf--current-component-props etaf--component-props)
                        (etaf--current-component-slots nil)
                        (etaf--component-phase 'setup))
                    (let ,(etaf--component-prop-bindings props)
                      (ignore ,@props)
-                     ,setup-form))))))
+                     ,(if binding-names
+                          `(let* ,bindings-form
+                             ,setup-form
+                             (etaf--component-bindings-create
+                              :values (vector ,@binding-names)))
+                        setup-form)))))))
       `(progn
          (defconst ,definition-symbol
            (etaf--component-spec-create

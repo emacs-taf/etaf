@@ -49,9 +49,8 @@ Host 或 Component View，或这些值组成的 proper sequence；`text` 内的�
     (slot :name 'footer (text "Footer")))))
 ```
 
-组件拥有状态时才增加 `:setup`，它对每个保留的实例执行一次。
-`:render` 使用普通 Elisp 捕获句柄，再返回 `etaf-view`；更短的 `:view`
-形式编译为同一种 View 模型。
+用 `:bindings` 为每个保留实例初始化一次命名状态，视图与回调直接使用这些句柄。
+需要生命周期工作时再增加 `:setup`；程序构造视图仍可使用 `:render` 与 `etaf-node`。
 
 <!-- etaf-example: counter -->
 ```elisp
@@ -59,21 +58,19 @@ Host 或 Component View，或这些值组成的 proper sequence；`text` 内的�
 (require 'etaf)
 
 (etaf-define-component demo-counter ()
-  :setup (etaf-ref 0)
-  :render
-  (let ((count (etaf-state)))
-    (etaf-view
-     (column
-       (text (expr (format "Count: %d" (etaf-value count))))
-       (box :ref 'increment :role 'button :tab-index 0
-            :on-press (lambda () (cl-incf (etaf-value count)))
-         "Increment")))))
+  :bindings ((count (etaf-ref 0)))
+  :view
+  (column
+    (text (expr (format "Count: %d" (etaf-value count))))
+    (box :role 'button :tab-index 0
+         :on-press (lambda () (cl-incf (etaf-value count)))
+      "Increment")))
 
 (etaf-mount "*etaf-counter*" (etaf-view (demo-counter)))
 ```
 
 把 `etaf-value` 放在需要更新的属性或 `expr` 内，保留局部更新边界。
-事件回调捕获普通词法变量，`etaf-state` 在 render 时读取。可复用应用代码放进
+事件回调直接捕获命名句柄和该次渲染的词法 props。可复用应用代码放进
 启用 lexical-binding 的 `.el` 文件。程序化构造 View 时也可使用 `etaf-node`。
 Context、Data、Behavior 和命名 Action 按需学习，简单回调不需要注册 Action。
 

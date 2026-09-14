@@ -1,6 +1,6 @@
 # etaf Manual
 
-ETAF builds text applications from one small vocabulary: `View`, `Component`, props, children, reactive state, and Ebox rendering. Start with `etaf-view` and `etaf-mount`; add `:setup` only when a Component needs local state or lifecycle.
+ETAF builds text applications from one small vocabulary: `View`, `Component`, props, children, reactive state, and Ebox rendering. Start with `etaf-view` and `etaf-mount`; add `:bindings` for local handles and `:setup` for lifecycle work.
 
 ## 1. Install and load
 
@@ -101,7 +101,7 @@ root mirror. Migrate consumers to `etaf-runtime-snapshot` so the canonical input
 retains the root's matching source facts; do not treat the obsolete getter as a
 cheap field read or use it as a mutation target.
 
-The current core has no direct `.etaf` loader. `etaf-define-component` is the structure/style/behavior unit: use its View for structure, `:styles` for static presentation, and `:setup` for retained state, Actions, and lifecycle. A future `.etaf` SFC belongs to a compiler layer that emits this same Component contract; it is not a second Runtime entry point.
+The current core has no direct `.etaf` loader. `etaf-define-component` is the structure/style/behavior unit: use its View for structure, `:styles` for static presentation, and `:bindings` for retained values and `:setup` for lifecycle work. A future `.etaf` SFC belongs to a compiler layer that emits this same Component contract; it is not a second Runtime entry point.
 
 ## 3. Properties and children
 
@@ -218,10 +218,11 @@ The definition macro accepts only these keywords:
 | --- | --- |
 | `:view` | Declarative View frontend; mutually exclusive with `:render` |
 | `:render` | Ordinary Elisp returning one typed View, usually with `etaf-view`; programmatic builders may use `etaf-node` |
-| `:setup` | Optional one-time initialization returning opaque state read with `etaf-state` |
+| `:bindings` | Named values initialized once in order, accessible directly in setup, View and callbacks |
+| `:setup` | Optional one-time lifecycle work; with named bindings its result is ignored |
 | `:styles` | Optional static scoped style declaration |
 
-There is no separate declaration block for children, slots, events, state, or variants. Props are declared with `(&key ...)`; children and slots are implicit content.
+There is no separate declaration block for children, slots, events, or variants. Props are declared with `(&key ...)`; children and slots are implicit content.
 
 Props accept `(&key NAME (NAME DEFAULT) ...)`. Missing inputs evaluate their
 DEFAULT expression on first use by an instance; explicit nil is a supplied
@@ -241,36 +242,38 @@ defaults anew on each call.
 
 ## 5. Local state and lifecycle
 
-Use `:setup` when the Component owns local state:
+Declare stable handles with `:bindings`, then register lifecycle work in `:setup`:
 
 ```elisp
 (etaf-define-component counter (&key title)
   "Render a retained counter."
+  :bindings ((count (etaf-ref 0))
+             (initial-title title))
   :setup
-  (let ((count (etaf-ref 0))
-        (initial-title title))
-    (etaf-on-mounted
-     (lambda () (message "%s mounted" initial-title)))
-    (etaf-on-unmounted
-     (lambda () (message "%s unmounted" initial-title)))
-    count)
-  :render
-  (let ((count (etaf-state))
-        (caption title))
-    (etaf-view
-     (column
-       (text :font-weight 'bold (expr caption))
-       (text (expr (format "Count: %d" (etaf-value count))))
-       (text :role 'button :tab-index 0
-             :on-press (lambda () (cl-incf (etaf-value count)))
-         "Increment")))))
+  (progn
+    (etaf-on-mounted (lambda () (message "%s mounted" initial-title)))
+    (etaf-on-unmounted (lambda () (message "%s unmounted" initial-title))))
+  :view
+  (column
+    (text :font-weight 'bold (expr title))
+    (text (expr (format "Count: %d" (etaf-value count))))
+    (text :role 'button :tab-index 0
+          :on-press (lambda () (cl-incf (etaf-value count)))
+      "Increment")))
 ```
 
-Setup runs once for the retained instance and returns one opaque state value.
-The selected `:view` or `:render` frontend runs on each update and reads that
-exact value with `etaf-state`. `etaf-on-mounted`, `etaf-on-updated`, and
-`etaf-on-unmounted` register lifecycle callbacks for that Component instance.
-Scope disposal automatically stops reactive effects and cleanup.
+`:bindings` initializes once in `let*` order per retained instance, with access
+to initial props and earlier bindings. Names cannot repeat or shadow declared
+props. Optional `:setup` runs afterward; both View frontends and callbacks use
+the retained values directly. Reorder keeps their identities. Failed initialization,
+replacement and unmount dispose computed values, watches, resources and local
+references through the existing Component Scope. `setq` changes only the current
+lexical variable, not the stored instance value; use refs for mutable business state.
+`etaf-on-mounted`, `etaf-on-updated`, and `etaf-on-unmounted` register instance hooks.
+With named bindings, setup is initialization work and its return value is ignored.
+The advanced `etaf-state` accessor is reserved for Components without named
+bindings: it reads their explicit setup result (including nil) during rendering.
+Ordinary application code should refer to bindings directly.
 
 `:view` and `:render` share compilation, slot projection, and prop validation.
 Declared props are lexical snapshots of each evaluation: a deferred callback
@@ -279,8 +282,6 @@ install callbacks with the new props; a rejected candidate preserves the old
 callbacks. Setup closures retain initial props. A prop containing a ref keeps
 that exact ref, so `etaf-value` in a callback reads its current value; ordinary
 values are not deep-copied or made reactive.
-Use ordinary `let`/`let*` to capture state handles for callbacks. `etaf-state`
-is a render-time accessor, not an event-time accessor.
 Keep reactive `etaf-value` reads inside the property or `expr` that needs the
 update; extracting a handle does not require reading its value early. Component
 code with retained closures belongs in an `.el` file with lexical binding.
@@ -291,10 +292,10 @@ an `etaf-prop` source during setup. Read it explicitly with `etaf-value`:
 
 ```elisp
 (etaf-define-component greeting (&key (name "World"))
-  :setup
-  (let ((input (etaf-prop 'name)))
-    (etaf-computed (lambda () (concat "Hello, " (etaf-value input)))))
-  :view (text (expr (etaf-value (etaf-state)))))
+  :bindings ((input (etaf-prop 'name))
+             (greeting (etaf-computed
+                        (lambda () (concat "Hello, " (etaf-value input))))))
+  :view (text (expr (etaf-value greeting))))
 
 (let ((name (etaf-ref "Ada")))
   (etaf-mount (get-buffer-create "*Greeting*")
@@ -653,12 +654,10 @@ Use a callback or prop to expose the handle deliberately:
 
 ```elisp
 (etaf-define-component local-button (&key label on-ready on-press)
-  :setup
-  (let ((target (etaf-local-ref 'button)))
-    (etaf-on-mounted (lambda () (funcall on-ready target)))
-    target)
+  :bindings ((target (etaf-local-ref 'button)))
+  :setup (etaf-on-mounted (lambda () (funcall on-ready target)))
   :view
-  (box :ref (etaf-state) :role 'button :tab-index 0 :on-press on-press
+  (box :ref target :role 'button :tab-index 0 :on-press on-press
     (text (expr label))))
 
 (let (target)
@@ -729,9 +728,9 @@ Use Context for a dependency shared across component depth, not for ordinary pro
 
 (etaf-define-component service-label ()
   "Read the inherited service."
-  :setup (etaf-inject 'service nil t)
+  :bindings ((service (etaf-inject 'service nil t)))
   :view
-  (text (expr (format "Service: %s" (etaf-value (etaf-state))))))
+  (text (expr (format "Service: %s" (etaf-value service)))))
 
 (etaf-define-component application-shell ()
   "Provide a service to its own child Component."

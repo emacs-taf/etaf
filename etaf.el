@@ -327,6 +327,7 @@
 ;; Choose exactly one authoring frontend:
 ;;
 ;;   (etaf-define-component NAME (&key PROPS)
+;;     [:bindings ((NAME INITIALIZER) ...)]
 ;;     [:setup SETUP]
 ;;     :view VIEW
 ;;     :styles ((SELECTOR ATTR ...)))
@@ -334,29 +335,42 @@
 ;; or:
 ;;
 ;;   (etaf-define-component NAME (&key PROPS)
+;;     [:bindings ((NAME INITIALIZER) ...)]
 ;;     [:setup SETUP]
 ;;     :render ORDINARY-ELISP
 ;;     :styles ((SELECTOR ATTR ...)))
 ;;
-;; Component rules use ECSS author origin, specificity, source order and
-;; importance through Ebox. &/:scope match each topmost owned Host; ordinary
-;; selectors match owned descendants. Slots retain caller ownership and fallback
-;; retains the consumer's scope. Inline declarations remain separate cascade input.
+;; `:bindings' initializes named values once, in let* order, before optional
+;; `:setup'.  Initializers can use initial props and earlier bindings.  Setup,
+;; both View frontends and their callbacks can refer directly to these stable
+;; values.  Names must be distinct ordinary symbols, not declared props.
+;; Ref/computed/watch/local-ref ownership remains the Component Scope; failed
+;; initialization disposes it.  Reorder retains values; replacement/unmount
+;; releases the instance.  Rebinding a lexical name with setq does not replace
+;; its stored value: mutate refs explicitly through `etaf-value'.
 ;;
-;; `:setup' runs once per retained identity and returns opaque state.  `:view'
+;; With named bindings, optional `:setup' performs initialization; its return
+;; value is ignored.  Without bindings, setup can return opaque state read by
+;; the advanced `etaf-state' accessor, but not a render function.  `:view'
 ;; is unquoted DSL; `:render' is ordinary Elisp returning the same typed View,
 ;; usually through `etaf-view'.  `etaf-node' also constructs Views
 ;; programmatically.  Both frontends use the same prop and slot rules.  Declared
 ;; props are lexical snapshots for each setup or render evaluation; callbacks
 ;; may refer to them directly.  Passed refs retain identity and live value reads.
-;; Bind state handles during rendering, and keep reactive value reads inside
-;; the View properties or expressions they update.
+;; Keep reactive value reads inside the View properties or expressions they
+;; update.  Use `etaf-prop' in a binding initializer for a tracked input; a plain
+;; prop variable in initialization is an initial snapshot.
 ;;
 ;; Props accept NAME or (NAME DEFAULT) after &key.  Defaults evaluate in order
 ;; on first missing input and can read earlier props.  Explicit nil is supplied.
 ;; Mounted instances retain successfully published defaults until replacement or
 ;; unmount; pure rendering evaluates defaults anew.  Default expressions must be
 ;; safe to retry after rejected publication; allocate mutable values explicitly.
+;;
+;; Component rules use ECSS author origin, specificity, source order and
+;; importance through Ebox. &/:scope match each topmost owned Host; ordinary
+;; selectors match owned descendants. Slots retain caller ownership and fallback
+;; retains the consumer's scope. Inline declarations remain separate cascade input.
 ;;
 ;; Function: etaf-dispatch (action &rest arguments)
 ;;;###autoload (autoload 'etaf-dispatch "etaf" nil nil)
@@ -879,6 +893,8 @@
 ;; Return the current Component instance's exact setup result.
 ;; The accessor is valid only while rendering a Component that declares setup.
 ;; A defined setup may return nil; setup presence is tracked independently.
+;; Prefer named `:bindings' for handles used by the View and event callbacks.
+;; Components using named bindings cannot also use this accessor.
 ;;
 ;; Function: etaf-theme-current-mode ()
 ;;;###autoload (autoload 'etaf-theme-current-mode "etaf" nil nil)

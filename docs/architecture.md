@@ -77,7 +77,7 @@ not be interleaved.
 The rule is simple:
 
 1. Structural View positions are not quoted. This includes `etaf-view`, Hosts, Component calls, children, slot forms, and static Component styles.
-2. Elisp expression positions follow normal Elisp evaluation. This includes attribute values, `:key`, `:on-*`, `:use`, `expr`, `:setup`, Context values, Behavior constructors, and Actions.
+2. Elisp expression positions follow normal Elisp evaluation. This includes attribute values, `:key`, `:on-*`, `:use`, `expr`, `:bindings`, `:setup`, Context values, Behavior constructors, and Actions.
 
 ```elisp
 (etaf-view
@@ -110,7 +110,7 @@ View sequence, or `nil`. It creates no Ebox wrapper, identity, lifecycle,
 watcher, or effect. `if`, `when`, `cond`, `let`, `mapcar`, `cl-loop`, and other
 Elisp forms remain ordinary Elisp inside the form.
 
-The current core has no file-facing `.etaf` pair loader. `etaf-define-component` is the structure/style/behavior unit: its View defines structure, `:styles` owns presentation rules, and `:setup` owns retained state, events, and lifecycle behavior. A future `.etaf` single-file component format belongs in a compiler layer that lowers into this same public View and Component contract; it is not a second runtime grammar.
+The current core has no file-facing `.etaf` pair loader. `etaf-define-component` is the structure/style/behavior unit: its View defines structure, `:styles` owns presentation rules, and `:bindings` owns retained values and `:setup` initializes lifecycle behavior. A future `.etaf` single-file component format belongs in a compiler layer that lowers into this same public View and Component contract; it is not a second runtime grammar.
 
 ## 4. Components
 
@@ -120,13 +120,15 @@ the other two clauses are optional:
 ```text
 (etaf-define-component NAME (&key PROPS)
   DOCSTRING?
-  :setup OPAQUE-STATE-FORM
+  :bindings ((NAME INITIALIZER) ...)
+  :setup INITIALIZATION-FORM
   :view VIEW
   :styles (RULE...))
 
 (etaf-define-component NAME (&key PROPS)
   DOCSTRING?
-  :setup OPAQUE-STATE-FORM
+  :bindings ((NAME INITIALIZER) ...)
+  :setup INITIALIZATION-FORM
   :render ORDINARY-ELISP
   :styles (RULE...))
 ```
@@ -135,9 +137,9 @@ the other two clauses are optional:
 `:render` is ordinary Elisp and may return `etaf-view` or a programmatically
 built `etaf-node`. Both share View compilation, prop validation, and slot
 projection; `:render` adds no second representation or state model.
-`:setup` and `:styles` are optional and may each appear once. Props are the only declared business inputs; ordinary trailing children and named slots are normalized separately into the Component's slot collection.
+`:bindings`, `:setup` and `:styles` are optional and may each appear once. Props are the only declared business inputs; ordinary trailing children and named slots are normalized separately into the Component's slot collection.
 
-The Component definition is the current structure/style/behavior boundary. Keep dynamic state, Action callbacks, and lifecycle work in `:setup`; keep static presentation in `:styles`. A future `.etaf` SFC compiler may produce these definitions, but the Runtime does not load `.etaf` files directly.
+The Component definition is the current structure/style/behavior boundary. Keep retained handles in `:bindings` and lifecycle work in `:setup`; keep static presentation in `:styles`. A future `.etaf` SFC compiler may produce these definitions, but the Runtime does not load `.etaf` files directly.
 
 ### 4.1 Stateless and stateful forms
 
@@ -153,28 +155,25 @@ The Component definition is the current structure/style/behavior boundary. Keep 
 ```elisp
 (etaf-define-component disclosure (&key title)
   "Render a retained disclosure."
-  :setup
-  (etaf-ref nil)
+  :bindings ((open (etaf-ref nil)))
   :view
   (column
    (text
     :role 'button
     :on-press
-    (let ((open (etaf-state)))
-      (lambda ()
-        (setf (etaf-value open)
-              (not (etaf-value open)))))
-    (expr (if (etaf-value (etaf-state)) "Hide" "Show")))
+    (lambda () (setf (etaf-value open) (not (etaf-value open))))
+    (expr (if (etaf-value open) "Hide" "Show")))
    (expr
-    (when (etaf-value (etaf-state))
+    (when (etaf-value open)
       (etaf-view (text (expr title)))))))
 ```
 
-`:setup` runs once for a retained Component instance and returns one opaque state
-value.  `etaf-state` returns that exact value during `:view` or `:render`.
-Re-render reads current props and state without rerunning setup. Setup is the
-owner for local refs, computed values, watches, Effects, and cleanup
-registration; it never returns a render function.
+Named bindings and optional setup share instance initialization and Scope. The
+macro stores initial values in declaration order and builds each render's lexical
+environment from those same values and the current props. The existing `etaf-state`
+accessor is only available without named bindings; otherwise setup results are ignored. Reorder retains the
+instance and its bindings; rejected initialization and unmount use the same resource
+cleanup path, without a second state graph.
 
 Instance-local Host names map to opaque symbols in the Component instance.
 `etaf-local-ref` allocates them during setup; retained instances keep the mapping,
@@ -380,8 +379,8 @@ Context is an inherited Component Scope environment:
 
 (etaf-define-component service-consumer ()
   "Read the inherited service."
-  :setup (etaf-inject 'service nil t)
-  :view (text (expr (format "Service: %s" (etaf-value (etaf-state))))))
+  :bindings ((service (etaf-inject 'service nil t)))
+  :view (text (expr (format "Service: %s" (etaf-value service)))))
 
 (etaf-define-component service-provider ()
   "Provide a reactive service to its own child Component."

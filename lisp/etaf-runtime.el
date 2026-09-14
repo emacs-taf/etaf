@@ -2587,6 +2587,17 @@ subtrees keep their committed resources without being traversed."
   (dolist (hook (reverse hooks))
     (funcall hook)))
 
+(defun etaf--runtime-dirty-descendant-p (runtime generation semantic-id)
+  "Return non-nil when SEMANTIC-ID contains queued work in GENERATION."
+  (cl-some
+   (lambda (effect-id)
+     (let ((walk (when-let* ((effect (etaf--generation-effect generation effect-id)))
+                   (etaf--generation-effect-semantic-id effect))))
+       (while (and walk (not (eql walk semantic-id)))
+         (setq walk (etaf--generation-parent-id generation walk)))
+       (eql walk semantic-id)))
+   (etaf-runtime-dirty-effect-queue runtime)))
+
 (defun etaf--runtime-render-component-resource
     (runtime instance identity props attrs slots path
              &optional old-output-range-id old-publication-kind old-context-frame)
@@ -2883,6 +2894,7 @@ subtrees keep their committed resources without being traversed."
                  (gethash input-effect-id
                           (etaf-runtime-dirty-effect-ids runtime))
                  (gethash effect-id (etaf-runtime-dirty-effect-ids runtime))
+                 (etaf--runtime-dirty-descendant-p runtime old-generation semantic-id)
                  (and slots etaf--rendering-component-effect-p
                       (not slot-retargeted-p))
                  (not (equal-including-properties
@@ -6395,6 +6407,7 @@ RENDERED-IDENTITIES names the Component render participants."
   (let ((etaf--computed-snapshot-observer
          (lambda (computed) (etaf--runtime-snapshot-computed runtime computed)))
         (old-generation (etaf-runtime-current-generation runtime))
+        (retry-effect-ids (copy-sequence (etaf-runtime-dirty-effect-queue runtime)))
         next-root root-node candidate-generation semantic-candidate
         journal resource-journal participant)
     (condition-case err
@@ -6464,6 +6477,11 @@ RENDERED-IDENTITIES names the Component render participants."
        (etaf--runtime-rollback-prearm runtime journal)
        (etaf--runtime-rollback-resource-journal runtime resource-journal)
        (etaf--runtime-clear-dirty-effects runtime)
+       ;; Application refs are not rolled back with a failed publication.
+       ;; Keep their committed-generation work pending for the repaired input.
+       (dolist (effect-id retry-effect-ids)
+         (when (etaf--generation-effect old-generation effect-id)
+           (etaf--runtime-enqueue-effect runtime effect-id)))
        (etaf--runtime-dispose-created-candidate runtime)
        (etaf--runtime-rollback-behaviors runtime)
        (etaf--runtime-clear-candidate runtime)

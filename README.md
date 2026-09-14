@@ -52,9 +52,9 @@ those values. Inside `text`, an expression must return a string.
     (slot :name 'footer (text "Footer")))))
 ```
 
-Add `:setup` when a Component owns state. It runs once per retained instance;
-`:render` uses ordinary Elisp to capture handles before returning `etaf-view`.
-The shorter `:view` form compiles the same View model.
+Use `:bindings` to initialize named state once per retained instance. The View
+and its callbacks use these handles directly. Add `:setup` for lifecycle work;
+`:render` and `etaf-node` remain available for programmatic View construction.
 
 <!-- etaf-example: counter -->
 ```elisp
@@ -62,21 +62,19 @@ The shorter `:view` form compiles the same View model.
 (require 'etaf)
 
 (etaf-define-component demo-counter ()
-  :setup (etaf-ref 0)
-  :render
-  (let ((count (etaf-state)))
-    (etaf-view
-     (column
-       (text (expr (format "Count: %d" (etaf-value count))))
-       (box :ref 'increment :role 'button :tab-index 0
-            :on-press (lambda () (cl-incf (etaf-value count)))
-         "Increment")))))
+  :bindings ((count (etaf-ref 0)))
+  :view
+  (column
+    (text (expr (format "Count: %d" (etaf-value count))))
+    (box :role 'button :tab-index 0
+         :on-press (lambda () (cl-incf (etaf-value count)))
+      "Increment")))
 
 (etaf-mount "*etaf-counter*" (etaf-view (demo-counter)))
 ```
 
 Keep `etaf-value` reads inside the property or `expr` that should update. Event
-callbacks capture ordinary lexical locals; call `etaf-state` during rendering.
+callbacks capture the named handles and the current render's lexical props.
 Use a lexical-binding `.el` file for reusable application code. `etaf-node` is
 available for programmatic View builders. Context, Data, Behavior, and named
 Actions are optional capabilities; simple callbacks need no Action registration.
