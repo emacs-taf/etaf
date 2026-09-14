@@ -42,6 +42,9 @@
 
 ### Added
 
+- Hosts and Component root attributes accept Ebox native help, pointer and
+  hover paint, preserving inheritance and explicit nil boundaries on updates.
+
 - Host `:on-drag` callbacks use Ebox's shared native gesture lifecycle. Each
   motion publishes through its own reactive event batch; target retention,
   coordinates and native input remain owned by Ebox. Update Ebox together.

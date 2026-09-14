@@ -913,6 +913,16 @@
       "name": "etaf-drag-cancellation-clears-transient-state-on-disable",
       "file": "tests/etaf-drag-tests.el",
       "purpose": "Disabling a retained target delivers cancellation and then prevents new input."
+    },
+    {
+      "name": "etaf-native-affordances-match-ebox-inheritance",
+      "file": "tests/etaf-native-affordance-tests.el",
+      "purpose": "Nested Hosts preserve Ebox native hover, help and explicit nil boundaries."
+    },
+    {
+      "name": "etaf-native-affordances-update-through-component-attributes",
+      "file": "tests/etaf-native-affordance-tests.el",
+      "purpose": "Forwarded affordances update with reactive inputs without replacing activation."
     }
   ]
 }

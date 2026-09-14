@@ -84,7 +84,8 @@ this list merely to make a demo convenient.")
   "Compiler-owned DSL properties rejected by ordinary node construction.")
 
 (defconst etaf--semantic-props
-  '(:class :id :role :disabled :tab-index :ref :use)
+  '(:class :id :role :disabled :tab-index :ref :use
+    :help-echo :pointer :hover-style)
   "ETAF Host metadata outside the Ebox style schema.")
 
 (defun etaf--aria-property-p (property)

@@ -706,6 +706,16 @@ Native clicks preserve point and window selection unless the handler changes
 them. Native keyboard activation retains an explicitly focused Host when its
 position coincides with a nested child.
 
+Hosts and Component root attributes also accept Ebox `:help-echo`, `:pointer`
+and `:hover-style`. For example, add `:pointer 'hand :help-echo "Save changes"
+:hover-style '(:text-decoration-line underline)` to a Button or Host.
+Help may be a native `(window object position)` function, which Emacs calls
+when requesting help. Hover accepts Ebox color and text-decoration paint;
+geometry remains ordinary style. Omitted capabilities inherit, while explicit
+nil blocks inheritance. These capabilities work on non-activating text too.
+They follow Ebox native ownership and do not add a hover callback or selector
+state in ETAF. See the [Ebox native capability contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction) for values and painting boundaries.
+
 ETAF lowers `:tab-index` and `:disabled` to Ebox's committed interaction facts.
 `etaf-focus`, `etaf-focused-host-ref` and next/previous navigation operate Ebox's
 single buffer focus; direct `ebox-focus` calls are immediately visible through

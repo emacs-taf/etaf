@@ -350,6 +350,12 @@ Use `etaf-action-define` and `etaf-dispatch` when the mutation is named and shar
 
 `etaf-behavior-create` accepts the reserved `:install` attribute for an optional zero-argument installer. The installer may return a cleanup function; `etaf-current-behavior-context` returns an opaque installation context; `etaf-behavior-context-info` exposes its Runtime, effective Host reference and installation-time semantic props. These facts do not authorize candidate input. Installer state is disposed on replacement, candidate rollback or owner unmount; committed state remains authoritative until successful publication.
 
+Native help, pointer and hover-paint declarations pass unchanged into Ebox
+canonical interaction facts, including explicit nil inheritance barriers.
+Component root forwarding uses the same path as direct Hosts. Ebox owns
+validation, native property projection and hover painting; ETAF adds no
+hover target registry or alternate cascade.
+
 Host press and drag bindings lower to Ebox native keymaps alongside canonical source
 facts. A bounded per-Runtime cache holds dispatch maps that look up committed
 handlers, so callback replacement does not retain candidate closures. Disabled

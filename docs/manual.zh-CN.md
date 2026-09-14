@@ -651,6 +651,14 @@ Focus 和 hit testing 是 Runtime 操作：
 命中屏障，避免激活祖先。原生点击保留 point 和窗口选择，除非 handler 主动改变它们。
 原生键盘激活在父子位置重合时仍尊重显式焦点。
 
+Host 与组件根属性也支持 Ebox 的 `:help-echo`、`:pointer` 和 `:hover-style`。
+例如，可为按钮或 Host 增加 `:pointer 'hand :help-echo "保存修改"
+:hover-style '(:text-decoration-line underline)`。帮助值也可以是原生
+`(window object position)` 函数，由 Emacs 在请求帮助时调用。悬停支持 Ebox 的颜色
+与文本装饰绘制，几何仍使用普通样式。省略能力时继承，显式 nil 阻止继承；普通
+非交互文本也可使用。这些能力遵循 Ebox 原生所有权，不产生 ETAF 悬停回调或
+选择器状态。取值与绘制范围见 [Ebox 原生能力契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.zh-CN.md#native-node-interaction)。
+
 ETAF 把 `:tab-index` 与 `:disabled` 转为 Ebox 已提交的交互事实。`etaf-focus`、
 `etaf-focused-host-ref` 以及前后导航操作同一个 Ebox buffer 焦点；直接调用
 `ebox-focus` 的结果立即在 ETAF 中可见，反之亦然。Runtime 不保留焦点副本或独立导航表。

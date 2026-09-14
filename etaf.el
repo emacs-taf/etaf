@@ -594,6 +594,13 @@
 ;; CHILDREN is a list of typed View children, and NAMED-SLOTS is a Component-only
 ;; alist from stable slot symbols to typed child lists.
 ;;
+;; Hosts also accept Ebox native :help-echo (string, native three-argument
+;; help function, or nil), :pointer (Ebox pointer symbol or nil), and
+;; :hover-style (Ebox color/text-decoration paint plist or nil). These are
+;; inherited capabilities, including through Component root attributes;
+;; explicit nil blocks inheritance. Ebox validates and paints them. They do
+;; not create an activation boundary or an ETAF hover event/state.
+;;
 ;; Error: etaf-observer-error
 ;; Invalid ETAF observer operation
 ;; Catch this condition with condition-case; failed calls do not return a value.

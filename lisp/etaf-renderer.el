@@ -427,6 +427,16 @@ HOST-REF preserves an already allocated identity during retained updates."
                ebox-props :interactions
                (list :keymap map :tab-index (plist-get source-props :tab-index)
                      :disabled (and (plist-get source-props :disabled) t))))))
+    ;; Native affordances belong to Ebox even on ordinary, non-activating text.
+    ;; Preserve explicit nil so a child can stop its parent's inherited paint
+    ;; or help without creating an activation boundary.
+    (dolist (property '(:help-echo :pointer :hover-style))
+      (when (plist-member source-props property)
+        (setq ebox-props
+              (etaf--merge-property
+               ebox-props :interactions
+               (append (plist-get ebox-props :interactions)
+                       (list property (plist-get source-props property)))))))
     ebox-props))
 
 (defconst etaf--ebox-source-fields
