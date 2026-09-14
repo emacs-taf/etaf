@@ -4345,13 +4345,19 @@ with staged effects and contributions before building the next Generation."
                (record-detached old-child-id))))
          candidate-children)
         (maphash (lambda (id _node) (record-detached id)) candidate-nodes))
+      ;; Reused Component records can be staged without copying their graph
+      ;; subtree.  Prune this registry by semantic identity independently of
+      ;; graph staging, or generation construction can resurrect a Component
+      ;; whose children and Scope have already been retired.
+      (maphash
+       (lambda (identity semantic)
+         (when (gethash (etaf--semantic-component-semantic-id semantic) removed)
+           (remhash identity (etaf-runtime-candidate-semantic-nodes runtime))
+           (remhash identity (etaf-runtime-candidate-live runtime))))
+       (etaf-runtime-candidate-semantic-nodes runtime))
       (maphash
        (lambda (id _removed)
          (when-let* ((node (gethash id candidate-nodes)))
-           (when (etaf--semantic-component-p node)
-             (let ((identity (etaf--semantic-component-identity node)))
-               (remhash identity (etaf-runtime-candidate-semantic-nodes runtime))
-               (remhash identity (etaf-runtime-candidate-live runtime))))
            (when (etaf--semantic-host-p node)
              (let ((ref (etaf--semantic-host-host-ref node)))
                (remhash ref (etaf-runtime-candidate-host-props runtime))

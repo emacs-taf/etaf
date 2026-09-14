@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Retire reused Component records with their removed branch, including records
+  whose unchanged subtree was not staged. Filtering an edited selection out
+  and restoring it no longer leaves loading stuck on a missing render node.
+
 - Retire staged descendants and pending Host updates when their enclosing
   branch is removed. Deleting an edited Data selection leaves subsequent loads
   and filtering usable; slot updates preserve their physical parent.

@@ -902,7 +902,7 @@
     {
       "name": "etaf-conditional-data-detail-retires-staged-descendants",
       "file": "tests/etaf-conditional-lifecycle-tests.el",
-      "purpose": "Deleting an asynchronously refreshed selection releases nested slot controls and permits later loads and selection."
+      "purpose": "Filtering or deleting an asynchronously refreshed selection releases its whole detail and permits later loads and reselection."
     }
   ]
 }

@@ -62,17 +62,21 @@
     :disabled (and (memq (etaf-value (etaf-data-status data)) '(loading refreshing)) t)
     :dispose dispose)))
 
+(etaf-define-component etaf-conditional-test-summary (&key item)
+  :view (column (text "Selected record") (text (expr (plist-get item :title)))))
+
 (etaf-define-component etaf-conditional-test-detail (&key data dispose)
   :view
   (etaf-conditional-test-panel
    (expr (if-let* ((item (etaf-data-selected-item data)))
-             (etaf-view (column (etaf-conditional-test-form
+             (etaf-view (column (etaf-conditional-test-summary :item item)
+                               (etaf-conditional-test-form
                                  :item item :original (etaf-data-selected-item data)
                                  :data data :dispose dispose)))
            (etaf-view (text "No selection"))))))
 
 (ert-deftest etaf-conditional-data-detail-retires-staged-descendants ()
-  "Removing a selected record retires nested controls before subsequent loads."
+  "Filtering or deleting a selected record retires and recreates its whole detail."
   (let* ((buffer (generate-new-buffer " *conditional-data-detail*"))
          (deliver nil)
          (source (etaf-data-source-capabilities
@@ -102,9 +106,21 @@
             (etaf-data-select-one data 1)
             (etaf-data-mutate data 'update '(:id 1 :title "Edited"))
             (funcall deliver)
-            (etaf-data-mutate data 'delete 1)
+            (etaf-data-set-query data '(:id 2))
             (funcall deliver)
             (should (= disposals 1))
+            (should (with-current-buffer buffer
+                      (string-match-p "No selection" (buffer-string))))
+            (etaf-data-set-query data nil)
+            (funcall deliver)
+            (etaf-data-select-one data 1)
+            (should (with-current-buffer buffer
+                      (string-match-p "Selected record" (buffer-string))))
+            (should (with-current-buffer buffer
+                      (string-match-p "Edited" (buffer-string))))
+            (etaf-data-mutate data 'delete 1)
+            (funcall deliver)
+            (should (= disposals 2))
             (should (with-current-buffer buffer
                       (string-match-p "No selection" (buffer-string))))
             (should-error (etaf-dispatch-event runtime 'conditional-field 'press)
@@ -113,9 +129,9 @@
             (etaf-data-select-one data 2)
             (should (with-current-buffer buffer
                       (string-match-p "Second" (buffer-string))))
-            (should (= disposals 1))
+            (should (= disposals 2))
             (etaf-unmount runtime)
-            (should (= disposals 2))))
+            (should (= disposals 3))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (etaf-data-stop data)
       (kill-buffer buffer))))

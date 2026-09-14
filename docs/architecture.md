@@ -305,6 +305,9 @@ generation graph supplies ancestry without a separate scheduling authority.
 Before publication, attachment follows the final candidate parent/child edges
 to Root. Staged descendants of a detached branch lose their effects, Host
 contributions and publication edits; staging alone cannot preserve lifetime.
+Reused Component records follow the same retirement even when their unchanged
+graph subtree was not copied into the candidate. Generation construction must
+not retain those records after their descendants have been removed.
 Slot updates retain their physical parent independently of their lexical owner.
 Existing Component scopes retire after successful publication, while speculative
 instances that never attach are disposed without mounted/unmounted callbacks.
