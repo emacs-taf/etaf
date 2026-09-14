@@ -461,13 +461,13 @@ Data is a core ETAF capability, not a second framework package. A Data Source is
  :dispose (lambda () t))
 ```
 
-`:load` is required and receives `QUERY`, `PAGE`, and `PAGE-SIZE`; it returns a plist with `:items` and optional `:total`, `:page`, and `:page-size`. `:mutate` and `:dispose` are optional. The core boundary is synchronous so it does not need a Promise, Task, or Executor concept. External callback-based integrations can publish their result through the same reactive refs or a Resource boundary.
+`:load` is required and receives `QUERY`, `PAGE`, and `PAGE-SIZE`; it returns a plist with `:items` and optional `:total`, `:page`, and `:page-size`. `:mutate` and `:dispose` are optional. Load and mutation callbacks return ordinary synchronous results or an `etaf-async` descriptor. Data and Resource share request start, single completion, invalidation, cancellation and timeout. Data continues to own collections, paging, selection and read-side reconciliation. Unknown external outcomes never imply rollback; retrying a committed mutation refreshes without repeating the write.
 
 `etaf-data-controller` owns query, pagination, items, total, status, error, selection, request generation, and disposal. `etaf-data-memory-source` is the built-in source used for examples and tests. Storage packages are concrete sources; SQLite is not a core assumption and an ORM, when used, remains outside ETAF's data model.
 
 ### 9.3 Resource and error boundary
 
-`etaf-resource` is a Scope-owned synchronous loader with reactive `loading`, `success`, and `error` state:
+`etaf-resource` owns synchronous or asynchronous loading within a Scope. It starts `idle`; requests report `loading` or `refreshing` with a retained successful value, then `success`, `error` or `cancelled`. A synchronous resource remains straightforward:
 
 ```elisp
 (let* ((filename "README.md")
@@ -487,7 +487,9 @@ Data is a core ETAF capability, not a second framework package. A Data Source is
     (etaf-resource-dispose resource)))
 ```
 
-`etaf-resource-result` adds replacement/disposal cleanup. `etaf-error-boundary-run` is an explicit function boundary: it handles errors raised by its body and leaves unrelated errors visible. Resource and Data state are projected into ordinary `expr` branches rather than special Error or Loading nodes.
+The shared request invalidates before external cancellation, releases owner callbacks and prevents late completion from publishing. Resource exclusively owns successful values and `etaf-resource-result` cleanup, including the first discarded late result. Data exclusively owns its accepted collection and external write certainty; cancelling a wait does not undo a write. See the [user guide](manual.md#11-resource-and-raw-ebox) for adapters and native timer examples.
+
+ `etaf-error-boundary-run` is an explicit function boundary: it handles errors raised by its body and leaves unrelated errors visible. Resource and Data state are projected into ordinary `expr` branches rather than special Error or Loading nodes.
 
 ## 10. Official UI and package boundaries
 

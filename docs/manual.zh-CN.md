@@ -824,7 +824,7 @@ DataGrid 要求 `:row-key` 对每一行返回非 nil 的稳定标量。它通过
 
 ## 11. Resource 与 raw Ebox
 
-Resource 是 Scope 所有的同步 loader：
+Resource 管理 Scope 所有的值及可选 cleanup。同步 loader 的用法如下：
 
 ```elisp
 (let ((resource
@@ -838,6 +838,71 @@ Resource 是 Scope 所有的同步 loader：
            (etaf-resource-value resource))
   (etaf-resource-dispose resource))
 ```
+
+Resource 与 Data 的 loader 可以返回 `etaf-async`，由框架启动原生定时器或进程。
+它的启动函数接收 `resolve`、`reject`，返回 nil 或取消函数。成功时 resolve 普通
+加载结果，失败时 reject Emacs condition 数据；每次操作只完成一次。框架使旧请求
+失效、忽略重复完成，并在取消、超时和释放时移除 owner 回调。即使外部操作不能
+取消，旧请求也不能重新发布。这是 loader 适配入口，不是独立 Promise。
+
+```elisp
+;;; -*- lexical-binding: t; -*-
+(require 'etaf)
+(etaf-define-component delayed-greeting ()
+  :bindings
+  ((resource
+    (etaf-resource
+     (lambda ()
+       (etaf-async
+        (lambda (resolve _reject)
+          (let ((timer (run-at-time 0.2 nil resolve "Hello")))
+            (lambda () (cancel-timer timer))))))
+     :immediate nil :keep-value t :timeout 2)))
+  :setup (etaf-on-mounted (lambda () (etaf-resource-load resource)))
+  :view
+  (column
+    (text (expr (format "%s: %s" (etaf-resource-status resource)
+                        (or (etaf-resource-value resource) "Waiting"))))
+    (box :role 'button :tab-index 0
+         :on-press (lambda () (etaf-resource-load resource)) "Reload")
+    (box :role 'button :tab-index 0
+         :on-press (lambda () (etaf-resource-cancel resource)) "Cancel")))
+(etaf-mount "*delayed-greeting*" (etaf-view (delayed-greeting)))
+```
+
+延迟 Resource 初始为 `idle`，首次加载为 `loading`。`:keep-value t` 在 `refreshing`、
+失败和取消后保留最近的成功值；不设置时，重载立即清空并释放旧值。成功替换和卸载
+都会调用相应 cleanup；取消后首次晚到的结果也会被丢弃并清理。重载即显式重试。
+`:timeout` 为 nil 或正数秒，只限制异步等待，不能中断阻塞 loader。取消记录
+`etaf-async-cancelled`，超时记录 `etaf-async-timeout`，两者都不会释放 owner。
+
+Data 的 `:load`、`:mutate`、`:mutate-v2` 使用同一适配器。加载 resolve 页面 plist。
+Data 在刷新、读取失败或取消后保留已接受的集合，状态 ref 区分 `idle`、`loading`、
+`refreshing`、`success`、`error`、`cancelled`。`etaf-data-cancel` 使当前请求失效；
+`etaf-data-stop` 还释放数据源。每个 Controller 独占数据源生命周期；detached owner
+必须显式释放。`etaf-data-source-load-page` 只接受同步结果，遇到异步描述时不启动操作
+并抛出错误。
+
+异步加载和写入尚未完成时返回 nil；视图观察状态 ref，再读取
+`etaf-data-mutation-outcome`（读取本身也跟踪写入状态变化）。等待中的写入为 `:pending-p t`、`external-unknown`。
+v1 成功结果代表 `committed`；v2 的 `:certainty` 为 `committed`、`rolled-back` 或
+`external-unknown`，提交附带 `:result`，回滚附带 `:error` condition。取消、超时或
+普通拒绝不证明外部写入回滚。等待写入时拒绝第二次写入；新的读取会替换当前请求，
+其中被替换的等待中写入会记录为结果未知。
+
+已知写入提交后，Data 自动刷新。同步写入可以返回结果，同时其异步刷新仍在等待。
+刷新失败保留已提交事实；`etaf-data-retry-reconciliation` 只重试读取，
+`etaf-data-reconciliation-state` 显示恢复状态。未知或回滚的写入不会自动重放：
+
+```elisp
+;; 在回调中使用已有 controller；视图同时观察它的 status ref：
+(when (eq (plist-get (etaf-data-mutation-outcome controller) :certainty) 'committed)
+  (etaf-data-retry-reconciliation controller))
+```
+
+同步 Data 数据源错误记录后向调用者抛出；异步数据源错误记录在状态中。渲染和发布错误
+仍从完成回调抛出，适配器不能把它们重新解释成 IO 失败。卸载使完成回调失效，不代表
+撤销已经发生的外部写入。
 
 使用 `(etaf-resource-error resource)` 读取 Resource 捕获的 loader 错误，直接
 返回 condition 数据或 nil，并跟踪 Resource 状态。Data 的读取函数返回 ref，
@@ -864,6 +929,12 @@ Resource 是 Scope 所有的同步 loader：
 
 公共 View 语法只接受 Host 和 Component，不接受裸 Ebox Node。需要更低层端口的框架集成直接使用 Ebox typed TextNode 和 BoxNode constructor；应用 View 始终走普通 Host/Component lowering 路径。
 
+Resource 示例的稳定 GUI 流程位于 `scripts/resource-gui-scenarios.el`。
+在现有图形 Emacs 中将包的 `scripts/` 加入 `load-path`，require
+`resource-gui-scenarios`，再调用 `(etaf-resource-gui-run "/tmp/resource-gui-run" t)`，
+证据目录须未使用过。它通过原生 RET 操作，等待可见结果，保存截图及 `result.json`。
+须检查截图；回调计时只覆盖请求启动，不包含异步完成发布或前台呈现延迟。
+
 ## 12. Playgrounds
 
 如果需要小型、可复制的 core 模式，可以加载 `examples/` 中的可执行应用：
@@ -874,7 +945,7 @@ Resource 是 Scope 所有的同步 loader：
 (etaf-counter-example-open)
 ```
 
-计数器示例演示保留式状态、computed 值、Event、Action 和可聚焦 Host。`etaf-data-example-open` 演示 mounted 后的 Data 加载、查询、选择、变更和显式 controller 释放。`etaf-resource-example-open` 演示延迟 Resource 加载、可见错误状态、reload cleanup 与 Scope 释放。每个示例要教授的所有权规则见 [`README.zh-CN.md`](../README.zh-CN.md)。
+计数器示例演示保留式状态、computed 值、Event、Action 和可聚焦 Host。`etaf-data-example-open` 演示 mounted 后的 Data 加载、查询、选择、变更和显式 controller 释放。`etaf-resource-example-open` 演示原生异步加载、保留旧值刷新、取消、可见错误状态与 Scope 释放。每个示例要教授的所有权规则见 [`README.zh-CN.md`](../README.zh-CN.md)。
 
 独立的 ETAF Playground 是一个完整的 ETAF 应用示例：
 

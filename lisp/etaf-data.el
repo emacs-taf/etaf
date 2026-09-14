@@ -15,6 +15,7 @@
 (require 'etaf-observer)
 (require 'etaf-scheduler)
 (require 'etaf-reactive)
+(require 'etaf-async)
 (require 'etaf-retirement)
 
 (define-error 'etaf-data-error "Invalid ETAF data operation")
@@ -112,6 +113,10 @@ actual capture semantics remain owned by `etaf-data--capture-condition'."
   error
   selection
   request-id
+  request
+  request-kind
+  timeout
+  loaded-p
   stopped-p
   auto-load-p
   item-key
@@ -122,6 +127,13 @@ actual capture semantics remain owned by `etaf-data--capture-condition'."
   reconciliation-token
   projection-candidate
   projection-history)
+
+(defun etaf-data--mutation-outcome (controller)
+  "Read CONTROLLER's authoritative reactive mutation outcome."
+  (etaf-value (etaf-data--controller-mutation-outcome controller)))
+
+(gv-define-setter etaf-data--mutation-outcome (value controller)
+  `(etaf-set-value (etaf-data--controller-mutation-outcome ,controller) ,value))
 
 (defun etaf-data-source (&rest capabilities)
   "Create a Data source from callable CAPABILITIES.
@@ -134,7 +146,14 @@ arguments but may return a tagged commit-certainty outcome; it is additive and
 never changes the v1 callback.  `:dispose' is optional and runs when the owning
 controller stops.  `:item-key' optionally returns stable selection identity
 for one item.  `:provider' may name the source in observation reports and
-defaults to `data'."
+defaults to `data'.
+Load and mutation callbacks may instead return `etaf-async'; resolve with the
+ordinary result and reject with condition data.  A v2 result has :certainty
+committed/rolled-back/external-unknown, :result for committed, and :error
+condition data for rolled-back.  A v1 normal return means committed.
+A rejection, cancellation or timeout leaves external write certainty unknown.
+Each Controller owns its source disposal; use separate source lifecycles for
+independent Controllers."
   (let ((load (plist-get capabilities :load))
         (mutate (plist-get capabilities :mutate))
         (mutate-v2 (plist-get capabilities :mutate-v2))
@@ -484,11 +503,16 @@ and `reset'."
   "Load and normalize one SOURCE page without creating a Controller.
 QUERY is passed through unchanged.  PAGE and PAGE-SIZE default to 1 and 20.
 This public preparation boundary performs no reactive publication; callers may
-use its result as `:initial-result' for `etaf-data-controller'."
+use its result as `:initial-result' for `etaf-data-controller'.
+Only synchronous sources are supported; an asynchronous descriptor signals
+`etaf-async-error' without starting its work."
   (let ((page (max 1 (or page 1)))
         (page-size (max 1 (or page-size 20))))
-    (etaf-data--normalize-result
-     (etaf-data--source-load source query page page-size))))
+    (let ((result (etaf-data--source-load source query page page-size)))
+      (when (etaf--async-p result)
+        (signal 'etaf-async-error
+                (list "Asynchronous sources require a Data Controller")))
+      (etaf-data--normalize-result result))))
 
 (defun etaf-data--item-identity (controller item)
   "Return ITEM's selection identity in CONTROLLER."
@@ -834,6 +858,8 @@ candidate without becoming a second fault-injection target."
       (setf (etaf-data--projection-candidate-state candidate) 'aborted)
       (etaf-data--signal-condition precommit-condition))
     (setf (etaf-data--projection-candidate-state candidate) 'committed)
+    (when (eq (etaf-data--projection-candidate-kind candidate) 'success)
+      (setf (etaf-data--controller-loaded-p controller) t))
     (push candidate (etaf-data--controller-projection-history controller))
     (when (> (length (etaf-data--controller-projection-history controller))
              etaf-data--projection-history-limit)
@@ -973,7 +999,7 @@ still lets scheduler containment report any render fault separately."
      (setf (etaf-value (etaf-data--controller-error controller)) condition
            (etaf-value (etaf-data--controller-status controller)) 'error))))
 
-(defun etaf-data--apply-load-loading (controller request-id)
+(defun etaf-data--apply-load-loading (controller request-id &optional outcome)
   "Publish the loading marker as a first-class projection candidate.
 
 The marker is committed before the source callback runs, so a source can
@@ -984,9 +1010,15 @@ error candidates remain the fault-injection boundary for atomicity tests."
     (let* ((candidate
             (etaf-data--make-projection-candidate
              controller request-id 'loading
-             (list (list 'error (etaf-data--controller-error controller) nil)
+             (append
+              (when outcome
+                (list (list 'mutation-outcome
+                            (etaf-data--controller-mutation-outcome controller) outcome)))
+              (list (list 'error (etaf-data--controller-error controller) nil)
                    (list 'status (etaf-data--controller-status controller)
-                         'loading))))
+                         (if (and (etaf-data--controller-loaded-p controller)
+                                  (eq (etaf-data--controller-request-kind controller) 'load))
+                             'refreshing 'loading))))))
            (publication
             (etaf-data--capture-condition
              (lambda ()
@@ -1142,10 +1174,15 @@ The old items/page values remain untouched.  Return the projection result."
            (candidate
             (etaf-data--make-projection-candidate
              controller request-id 'load-error
-             (list (list 'error (etaf-data--controller-error controller)
+             (append
+              (when outcome
+                (list (list 'mutation-outcome
+                            (etaf-data--controller-mutation-outcome controller) outcome)))
+              (list (list 'error (etaf-data--controller-error controller)
                          error-data)
                    (list 'status (etaf-data--controller-status controller)
-                         'error))
+                         (if (eq (car error-data) 'etaf-async-cancelled)
+                             'cancelled 'error))))
              certainty mutation-result token))
            (publication
             (etaf-data--capture-condition
@@ -1213,7 +1250,7 @@ cause-compatible projection trailer as a render fault."
 ;;;###autoload
 (cl-defun etaf-data-controller
     (source &key query (page 1) (page-size 20) selection auto-load name
-            item-key owner-scope initial-result)
+            item-key owner-scope initial-result timeout)
   "Create a reactive Data Controller for SOURCE.
 
 QUERY, PAGE, PAGE-SIZE, result ITEMS, TOTAL, STATUS, ERROR, and SELECTION are
@@ -1225,7 +1262,12 @@ When OWNER-SCOPE is supplied, or when a current ETAF Scope exists, the
 controller's own child Scope is disposed with that owner; otherwise it keeps
 the detached Scope behavior.  INITIAL-RESULT may be a normalized source result
 for QUERY/PAGE/PAGE-SIZE; it seeds a successful Controller without another
-load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive."
+load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive.
+TIMEOUT is nil or positive seconds for each asynchronous operation.
+Loads retain previously accepted items while refreshing, after error and after
+cancellation.  Stopping the Controller cancels pending work and ignores late
+completion without undoing external writes."
+  (etaf--load-check-timeout timeout)
   (unless (etaf-data-source-p source)
     (signal 'wrong-type-argument (list 'etaf-data-source-p source)))
   (setq item-key (or item-key (plist-get source :item-key)))
@@ -1274,11 +1316,11 @@ load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive."
            :selection-snapshot (copy-sequence selection)
            :selected-refs (make-hash-table :test #'equal)
            :id (cl-incf etaf-data--controller-id-counter)
-           :mutation-outcome nil
+           :mutation-outcome (etaf-ref nil :name 'etaf-data-mutation-outcome)
            :reconciliation-token nil
            :projection-candidate nil
            :projection-history nil
-           :request-id 0
+           :request-id 0 :timeout timeout :loaded-p (not (null initial-result))
            :auto-load-p auto-load
            :item-key item-key)))
     (etaf-data--prepare-selected-refs controller initial-items)
@@ -1332,34 +1374,23 @@ load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive."
             (etaf-reactive-effect-run effect))
           (etaf-on-scope-dispose
            (lambda ()
-             (clrhash (etaf-data--controller-selected-refs controller))
-             (when-let* ((dispose (etaf-data--source-function
-                                  source :dispose nil)))
-               (funcall dispose))))))
-    (when auto-load
-      (etaf-data-load controller))
+             (setf (etaf-data--controller-stopped-p controller) t)
+             (unwind-protect
+                 (etaf--load-abort (etaf-data--controller-request controller))
+               (setf (etaf-data--controller-request controller) nil)
+               (clrhash (etaf-data--controller-selected-refs controller))
+               (when-let* ((dispose (etaf-data--source-function source :dispose nil)))
+                 (funcall dispose)))))))
+    (condition-case err
+        (when auto-load (etaf-data-load controller))
+      ((error quit)
+       (etaf-data-stop controller)
+       (signal (car err) (cdr err))))
     controller))
 
-;;;###autoload
-(defun etaf-data--load-request
-    (controller &optional outcome reconciliation-token)
-  "Run one source load and return its result/condition envelope.
-
-OUTCOME and RECONCILIATION-TOKEN identify a previously committed mutation;
-the load itself is always a fresh request and never replays that mutation."
-  (let ((request-id (1+ (etaf-data--controller-request-id controller))))
-    (setf (etaf-data--controller-request-id controller) request-id)
-    (etaf-data--apply-load-loading controller request-id)
-    (let* ((source-call
-            (etaf-data--capture-condition
-             (lambda ()
-               (etaf-data--source-load
-                (etaf-data--controller-source controller)
-                (etaf-value (etaf-data--controller-query controller))
-                (etaf-value (etaf-data--controller-page controller))
-                (etaf-value (etaf-data--controller-page-size controller))))))
-           (source-condition (plist-get source-call :condition))
-           (result (plist-get source-call :value)))
+(defun etaf-data--finish-load
+    (controller request-id result source-condition outcome reconciliation-token)
+  "Publish one current source completion without changing its failure semantics."
       (if source-condition
           (let* ((publication
                   (etaf-data--capture-condition
@@ -1407,11 +1438,79 @@ the load itself is always a fresh request and never replays that mutation."
                     projection-condition)
                 :projection-condition
                 (and normalization-condition projection-condition)
-                :source-condition normalization-condition))))))
+                :source-condition normalization-condition))))
+
+(defun etaf-data--begin-request (controller kind)
+  "Invalidate CONTROLLER's previous request and begin one of KIND."
+  (etaf--assert-not-rendering 'load-data)
+  (let ((previous (etaf-data--controller-request controller)))
+    (when (and previous (etaf--load-task-pending-p previous)
+               (eq kind 'mutate) (eq (etaf-data--controller-request-kind controller) 'mutate))
+      (signal 'etaf-data-error (list "A mutation is already pending")))
+    (etaf--load-abort previous
+                     (when (eq (etaf-data--controller-request-kind controller) 'mutate)
+                       '(etaf-async-cancelled))))
+  (setf (etaf-data--controller-request-kind controller) kind)
+  (cl-incf (etaf-data--controller-request-id controller)))
+
+(defun etaf-data--report-completion (envelope synchronous-p)
+  "Expose asynchronous projection failures from ENVELOPE.
+Source failures are observable state; synchronous callers signal them
+on return."
+  (unless synchronous-p
+    (etaf-data--signal-condition
+     (or (plist-get envelope :projection-condition)
+         (unless (plist-get envelope :source-condition)
+           (plist-get envelope :condition))))))
+
+(defun etaf-data--load-request (controller &optional outcome reconciliation-token)
+  "Start a source load and return its immediate result/condition envelope.
+An asynchronous load returns a pending envelope and completes through the same
+publication path later. OUTCOME identifies a committed mutation to reconcile."
+  (let* ((request-id (etaf-data--begin-request controller 'load))
+         (envelope (list :request-id request-id :pending-p t))
+         (synchronous-p t)
+         (task
+          (etaf--load-task-create
+           :scope (etaf-data--controller-scope controller)
+           :timeout (etaf-data--controller-timeout controller)
+           :success
+           (lambda (result)
+             (setq envelope (etaf-data--finish-load
+                             controller request-id result nil outcome reconciliation-token))
+             (etaf-data--report-completion envelope synchronous-p))
+           :failure
+           (lambda (condition)
+             (setq envelope (etaf-data--finish-load
+                             controller request-id nil condition outcome reconciliation-token))
+             (etaf-data--report-completion envelope synchronous-p)))))
+    (setf (etaf-data--controller-request controller) task)
+    (unwind-protect
+        (condition-case err
+            (progn
+              (etaf-data--apply-load-loading controller request-id outcome)
+              (etaf--load-start
+               task (lambda ()
+                      (etaf-data--source-load
+                       (etaf-data--controller-source controller)
+                       (etaf-value (etaf-data--controller-query controller))
+                       (etaf-value (etaf-data--controller-page controller))
+                       (etaf-value (etaf-data--controller-page-size controller))))))
+          ((error quit)
+           (etaf--load-abort task)
+           (signal (car err) (cdr err))))
+      (setq synchronous-p nil))
+    envelope))
 
 ;;;###autoload
 (defun etaf-data-load (controller)
-  "Load CONTROLLER from its source and publish loading, success, or error."
+  "Start CONTROLLER's source load; return the synchronous result or nil pending.
+Loading before first success uses `loading'; later reads use `refreshing' and
+retain items.  Completion publishes `success', `error' or `cancelled'.
+Synchronous source errors are recorded and re-signaled.  Asynchronous source
+errors are recorded; projection/rendering errors still signal from completion.
+A new load cancels the old request.  Superseding a pending write records unknown
+external certainty; it does not imply rollback."
   (etaf-data--require-controller controller)
   (let ((request (etaf-data--load-request controller)))
     (etaf-data--signal-condition (plist-get request :condition))
@@ -1419,39 +1518,13 @@ the load itself is always a fresh request and never replays that mutation."
 
 ;;;###autoload
 (defun etaf-data-reload (controller)
-  "Reload CONTROLLER and return the source result."
+  "Reload CONTROLLER; return the synchronous result or nil while pending."
   (etaf-data-load controller))
 
-;;;###autoload
-(defun etaf-data-mutate (controller operation payload)
-  "Run source OPERATION with PAYLOAD, then reload CONTROLLER.
-
-Errors are stored in the controller error ref and re-signaled.  Return the
-source mutation result after the reload succeeds."
-  (etaf-data--require-controller controller)
-  (let* ((source (etaf-data--controller-source controller))
-         (operation-id (cl-incf etaf-data--operation-id-counter))
-         (request-id (1+ (etaf-data--controller-request-id controller)))
-         (v2-function (etaf-data--source-mutate-v2-function source))
-         (v2-p (functionp v2-function))
-         raw-call raw outcome token error-condition normalization-call
-         normalization-condition)
-    ;; The mutation request owns its own loading boundary.  A committed
-    ;; mutation's subsequent reconciliation load receives a new request id.
-    (setf (etaf-data--controller-request-id controller) request-id)
-    ;; Use the same first-class candidate boundary as an ordinary load.  This
-    ;; makes the mutation's observable loading transition atomic and lets a
-    ;; source inspect the current candidate without exposing a direct live-ref
-    ;; write as a special case.
-    (etaf-data--apply-load-loading controller request-id)
-    (setq raw-call
-          (etaf-data--capture-condition
-           (lambda ()
-             (if v2-p
-                 (etaf-data--source-mutate-v2 source operation payload)
-               (etaf-data--source-mutate source operation payload)))))
-    (setq raw (plist-get raw-call :value)
-          error-condition (plist-get raw-call :condition))
+(defun etaf-data--finish-mutation
+    (controller operation operation-id request-id v2-p raw error-condition)
+  "Publish one mutation completion and reconcile only a known committed write."
+  (let (outcome token normalization-call normalization-condition)
     ;; Normalize inside the same compatibility boundary as the source call.
     ;; A malformed v2 envelope is itself an uncertain external operation: the
     ;; adapter was invoked exactly once, but Data cannot safely infer whether
@@ -1489,8 +1562,7 @@ source mutation result after the reload succeeds."
                (plist-get outcome :result))
            (plist-get outcome :reconciliation-token)))
     (setq outcome (plist-put outcome :reconciliation-token token))
-    (setf (etaf-data--controller-mutation-outcome controller) outcome
-          (etaf-data--controller-reconciliation-token controller) token)
+    (setf (etaf-data--controller-reconciliation-token controller) token)
     (cond
      ;; A v1 signal or an explicitly uncertain v2 result cannot be replayed.
      ((or error-condition normalization-condition
@@ -1526,14 +1598,84 @@ source mutation result after the reload succeeds."
         ;; v2 rollback/uncertainty diagnostic we synthesized above.  Do not
         ;; discard a projection condition merely because the primary operation
         ;; was already known to have failed.
-        (etaf-data--signal-condition public-failure)
-        (plist-get outcome :mutation-result)))
+        (list :condition public-failure :source-condition failure
+              :projection-condition projection-condition)))
      (t
       ;; Exactly one source mutation has happened.  Reconciliation may issue a
       ;; load, but it never invokes the mutation callback again.
       (let ((request (etaf-data--load-request controller outcome token)))
-        (etaf-data--signal-condition (plist-get request :condition))
-        (plist-get outcome :mutation-result))))))
+        (plist-put request :result (plist-get outcome :mutation-result)))))))
+
+;;;###autoload
+(defun etaf-data-mutate (controller operation payload)
+  "Run source OPERATION with PAYLOAD and then reconcile its result.
+Synchronous writes return their result.  An asynchronous write returns nil
+while pending; inspect status and mutation outcome after completion.  A second
+write is rejected while the first write is pending.  Cancellation, timeout or
+an unclassified external failure never implies that the write was rolled back."
+  (etaf-data--require-controller controller)
+  (let* ((source (etaf-data--controller-source controller))
+         (operation-id (cl-incf etaf-data--operation-id-counter))
+         (request-id (etaf-data--begin-request controller 'mutate))
+         (v2-p (functionp (etaf-data--source-mutate-v2-function source)))
+         (synchronous-p t)
+         result condition task invoked)
+    (setf (etaf-data--controller-reconciliation-token controller) nil)
+    (cl-labels
+        ((finish (raw source-condition)
+           (when (and (not (etaf-data--controller-stopped-p controller))
+                      (= request-id (etaf-data--controller-request-id controller)))
+             (let ((completion
+                    (etaf-data--finish-mutation
+                     controller operation operation-id request-id v2-p raw source-condition)))
+               (setq result (plist-get completion :result)
+                     condition (plist-get completion :condition))
+               (etaf-data--report-completion completion synchronous-p)))))
+      (setq task (etaf--load-task-create
+                  :scope (etaf-data--controller-scope controller)
+                  :timeout (etaf-data--controller-timeout controller)
+                  :success (lambda (raw) (finish raw nil))
+                  :failure (lambda (error-data) (finish nil error-data)))))
+    (setf (etaf-data--controller-request controller) task)
+    (unwind-protect
+        (condition-case err
+            (progn
+              (etaf-data--apply-load-loading
+               controller request-id
+               (list :certainty 'external-unknown :external-commit-certainty 'external-unknown
+                     :pending-p t :operation operation :operation-id operation-id))
+              (etaf--load-start task
+                                (lambda ()
+                                  (setq invoked t)
+                                  (if v2-p
+                                      (etaf-data--source-mutate-v2 source operation payload)
+                                    (etaf-data--source-mutate source operation payload)))))
+          ((error quit)
+           (etaf--load-abort task)
+           (when (plist-get (etaf-data--mutation-outcome controller) :pending-p)
+             (let ((outcome (copy-sequence (etaf-data--mutation-outcome controller)))
+                   (certainty (if invoked 'external-unknown 'rolled-back)))
+               (setf (etaf-data--mutation-outcome controller)
+                     (plist-put
+                      (plist-put
+                       (plist-put (plist-put outcome :pending-p nil) :certainty certainty)
+                       :external-commit-certainty certainty)
+                      :error err))))
+           (signal (car err) (cdr err))))
+      (setq synchronous-p nil))
+    (etaf-data--signal-condition condition)
+    result))
+
+;;;###autoload
+(defun etaf-data-cancel (controller)
+  "Cancel CONTROLLER's pending request without stopping it; return CONTROLLER.
+Loaded items remain available.  A cancelled write has unknown external
+certainty unless its provider already reported a committed result; cancelling
+its subsequent refresh never changes that known result."
+  (etaf--assert-not-rendering 'cancel-data)
+  (etaf-data--require-controller controller)
+  (etaf--load-abort (etaf-data--controller-request controller) '(etaf-async-cancelled))
+  controller)
 
 (defun etaf-data--reconciliation-candidate (controller)
   "Return CONTROLLER's latest candidate, if any."
@@ -1619,9 +1761,12 @@ returns nil."
   "Reload a committed mutation without replaying its source mutation.
 
 The operation is allowed only for a committed outcome with a pending token;
-unknown and rolled-back outcomes are deliberately not retried."
+unknown and rolled-back outcomes are deliberately not retried.
+Return the synchronous loaded page, or nil when asynchronous work is pending
+or no retry is eligible.  Observe status and `etaf-data-reconciliation-state'
+to distinguish completion.  No automatic write retry is performed."
   (etaf-data--require-controller controller)
-  (let* ((outcome (etaf-data--controller-mutation-outcome controller))
+  (let* ((outcome (etaf-data--mutation-outcome controller))
          (token (and outcome (plist-get outcome :reconciliation-token))))
     (when (and outcome token
                (eq (plist-get outcome :certainty) 'committed)
@@ -1666,7 +1811,9 @@ unknown and rolled-back outcomes are deliberately not retried."
 (defun etaf-data-status (controller)
   "Return CONTROLLER's status ref.
 
-The status value is one of `idle', `loading', `success', or `error'."
+The status is idle, loading, refreshing, success, error or cancelled.
+Read-only reloads use refreshing after an accepted result; writes use loading.
+Previous items remain readable until a successful load replaces them."
   (etaf-data--controller-status (etaf-data--require-controller controller)))
 
 (defun etaf-data-error (controller)
@@ -1679,9 +1826,13 @@ The status value is one of `idle', `loading', `success', or `error'."
 
 The envelope contains `:certainty' (`committed', `rolled-back', or
 `external-unknown'), the raw mutation result, and an opaque reconciliation
-token.  It is read-only metadata; the v1 mutation return value is unchanged."
+token.  While an asynchronous write is outstanding, :pending-p is non-nil and
+certainty is external-unknown.  After completion :pending-p is nil or absent.
+The reader tracks mutation changes in reactive Views and effects; callers
+do not write its state.  Treat the token as opaque.  No outcome means
+no mutation has started.  Stopped Controllers reject access."
   (copy-tree
-   (etaf-data--controller-mutation-outcome
+   (etaf-data--mutation-outcome
     (etaf-data--require-controller controller))))
 
 ;;;###autoload

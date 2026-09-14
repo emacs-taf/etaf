@@ -808,6 +808,76 @@
       "name": "etaf-value-update-preserves-write-after-rejected-publication",
       "file": "tests/etaf-value-update-tests.el",
       "purpose": "A rendering failure retains the application replacement and later repair updates the displayed value."
+    },
+    {
+      "name": "etaf-async-resource-native-timer-refreshes-retained-value",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "Native completion replaces a retained value and releases it once."
+    },
+    {
+      "name": "etaf-async-resource-reject-cancel-timeout-and-retry",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "Failures retain optional old data, timeout cancels work, and reload retries."
+    },
+    {
+      "name": "etaf-async-resource-discards-old-and-duplicate-completions",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "Uncancellable old results cannot replace new data and transfer cleanup once."
+    },
+    {
+      "name": "etaf-async-validates-adapters-and-synchronous-page-preparation",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "Invalid adapters become errors; synchronous preparation never starts async IO."
+    },
+    {
+      "name": "etaf-async-data-native-search-keeps-only-current-result",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "A slow old search finishing after a new search cannot change the current page."
+    },
+    {
+      "name": "etaf-async-data-cancel-timeout-and-malformed-result-retain-items",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "Cancellation, timeout and invalid source pages preserve the accepted collection."
+    },
+    {
+      "name": "etaf-async-data-committed-write-retries-only-failed-refresh",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "An asynchronous committed write is never replayed when its refresh fails."
+    },
+    {
+      "name": "etaf-async-data-write-certainty-survives-cancel-and-rejection",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "Only explicit provider evidence means rollback; cancelled writes remain unknown."
+    },
+    {
+      "name": "etaf-async-mounted-owner-unmount-invalidates-late-work",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "Unmount cancels owned work; late success cleans up without reviving the UI."
+    },
+    {
+      "name": "etaf-async-resource-publication-error-is-not-loader-error",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "A completion preserves its accepted value when an observer fails."
+    },
+    {
+      "name": "etaf-async-resource-cleanup-cannot-revive-an-old-request",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "Cleanup may start a newer request or dispose the owner without stale publication."
+    },
+    {
+      "name": "etaf-async-cancellation-during-start-releases-returned-handle",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "Cancellation inside START still releases the handle returned afterward."
+    },
+    {
+      "name": "etaf-async-resource-example-renders-real-loading-and-cancellation",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "The shipped example handles asynchronous success, refresh, failure and cancel."
+    },
+    {
+      "name": "etaf-async-data-outcome-is-reactive-while-status-stays-loading",
+      "file": "tests/etaf-async-tests.el",
+      "purpose": "A pending write and its commit are observable even before first page completion."
     }
   ]
 }

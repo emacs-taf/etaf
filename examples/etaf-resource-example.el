@@ -4,8 +4,8 @@
 
 ;;; Commentary:
 
-;; This example keeps a synchronous Resource inside Component setup, exposes
-;; success and error states, and lets Scope disposal own loader cleanup.
+;; This example owns a native asynchronous Resource, retains the last successful
+;; value during refresh, and lets the Scope cancel work and release results.
 
 ;;; Code:
 
@@ -20,6 +20,8 @@
     ('success (etaf-resource-value resource))
     ('error (error-message-string (etaf-resource-error resource)))
     ('loading "Loading service snapshot…")
+    ('refreshing (format "Refreshing… %s" (etaf-resource-value resource)))
+    ('cancelled "Request cancelled. Reload to try again.")
     (_ "Resource has not loaded.")))
 
 (etaf-define-component etaf-resource-example-app ()
@@ -31,15 +33,25 @@
     (let ((generation 0))
       (etaf-resource
        (lambda ()
-         (cl-incf generation)
-         (if (etaf-value fail-next)
-             (progn
-               (etaf-set-value fail-next nil)
-               (error "Synthetic service failure %d" generation))
-           (etaf-resource-result
-            (format "Generation %d is healthy." generation)
-            :cleanup (lambda () (cl-incf (etaf-value cleanup-count))))))
-       :immediate nil :name 'etaf-resource-example))))
+         (let ((request-generation (cl-incf generation))
+               (fail (etaf-value fail-next)))
+           (etaf-set-value fail-next nil)
+           (etaf-async
+            (lambda (resolve reject)
+              (let ((timer
+                     (run-at-time
+                      0.4 nil
+                      (lambda ()
+                        (if fail
+                            (funcall reject
+                                     (list 'error (format "Synthetic service failure %d"
+                                                          request-generation)))
+                          (funcall resolve
+                                   (etaf-resource-result
+                                    (format "Generation %d is healthy." request-generation)
+                                    :cleanup (lambda () (cl-incf (etaf-value cleanup-count))))))))))
+                (lambda () (cancel-timer timer)))))))
+       :immediate nil :keep-value t :timeout 5 :name 'etaf-resource-example))))
   :setup (etaf-on-mounted (lambda () (etaf-resource-load resource)))
   :view
   (column :width '(px 680) :color "#252A2E" :bgcolor "#F8F5EE"
@@ -50,7 +62,7 @@
                       "BEST PRACTICE  /  RESOURCE LIFECYCLE")
                 (text :font-weight 'bold "Service health")
                 (text :color "#66706A"
-                      "Loader errors become explicit state; cleanup stays scoped.")))
+                      "Async refresh keeps the last value; cancellation stays scoped.")))
           (box :height '(lh 1))
           (box :width '(px 680) :padding '((lh 2) (px 18))
                :border
@@ -99,12 +111,20 @@
                      (lambda ()
                        (etaf-set-value fail-next t)
                        (etaf-resource-load resource))
-                     (text "SIMULATE FAILURE")))
+                     (text "SIMULATE FAILURE"))
+                (box :flex-grow 1 :flex-shrink 1 :flex-basis '(px 200)
+                     :min-width '(px 180) :padding '((lh 1) (px 12))
+                     :border "#8D887F" :bgcolor "#EEEAE2" :font-weight 'bold
+                     :text-align 'center :ref 'resource-cancel :role 'button
+                     :tab-index 0
+                     :disabled (not (memq (etaf-resource-status resource) '(loading refreshing)))
+                     :on-press (lambda () (etaf-resource-cancel resource))
+                     (text "CANCEL")))
           (box :height '(lh 1))
           (box :width '(px 680) :padding '((lh 1) (px 16)) :border "#8D887F"
                :color "#4D5651" :bgcolor "#EEEAE2"
                (text
-                "Scope rule: reload releases the old value; unmount releases the last one"))))
+                "Scope rule: replace releases the old value; unmount cancels and releases"))))
 
 ;;;###autoload
 (defun etaf-resource-example-view ()

@@ -24,7 +24,22 @@
   `ebox-buffer-mode` automatically; remove calls and hook setup for the old mode.
   Update Ebox together with ETAF and use its shared buffer map for custom keys.
 
+### Changed
+
+- Deferred Resources now start `idle`; successful Data reloads report
+  `refreshing` while retaining items. Consumers matching status symbols must
+  handle `idle`, `refreshing` and `cancelled` as well as loading/success/error.
+
 ### Added
+
+- Resource and Data accept native asynchronous loaders through `etaf-async`,
+  with cancellation, timeout, late-result protection and Scope-owned disposal.
+  Resource supports `:keep-value`; Data exposes write certainty and read-only
+  recovery with `etaf-data-mutation-outcome`, `etaf-data-reconciliation-state`
+  and `etaf-data-retry-reconciliation`.
+- The Resource example demonstrates native timers, retained refresh and cancel.
+  Its open/close commands are available directly after requiring `etaf`.
+
 
 - `etaf-update-value` applies an ordinary function to a ref's current value
   and publishes its replacement through the existing reactive write path.

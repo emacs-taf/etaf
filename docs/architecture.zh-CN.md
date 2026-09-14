@@ -430,13 +430,13 @@ Data 是 ETAF core 能力，不是需要用户额外学习的第二套框架。D
  :dispose (lambda () t))
 ```
 
-`:load` 必选，接收 `QUERY`、`PAGE` 和 `PAGE-SIZE`，返回带 `:items` 的 plist，可选 `:total`、`:page` 和 `:page-size`。`:mutate` 和 `:dispose` 可选。核心边界刻意是同步的，因此不需要 Promise、Task 或 Executor 概念；外部 callback 型集成可以通过同一套响应式 ref 或 Resource 边界发布结果。
+`:load` 必选，接收 `QUERY`、`PAGE` 和 `PAGE-SIZE`，返回带 `:items` 的 plist，可选 `:total`、`:page` 和 `:page-size`。`:mutate` 和 `:dispose` 可选。加载和变更回调可直接返回同步结果，或返回 `etaf-async` 描述的原生异步操作。Data 与 Resource 共用请求的启动、单次完成、失效、取消和超时机制；Data 仍独占集合、分页、选择和写入后刷新。外部结果未知时不推断回滚，已提交写入的刷新重试只调用读取。
 
 `etaf-data-controller` 负责 query、分页、items、total、status、error、selection、request generation 和释放。`etaf-data-memory-source` 是示例和测试使用的内存 source。存储包只是具体 source；SQLite 不是 core 前提，ORM 也保持在 ETAF 数据模型之外。
 
 ### 9.3 Resource 与 Error Boundary
 
-`etaf-resource` 是 Scope 所有的同步 loader，拥有响应式的 `loading`、`success` 和 `error` 状态：
+`etaf-resource` 管理 Scope 所有的同步或异步 loader。未启动时为 `idle`；请求中的 `loading` 与保留成功值的 `refreshing` 区分，完成后为 `success`、`error` 或 `cancelled`。例如同步资源：
 
 ```elisp
 (let* ((filename "README.md")
@@ -456,7 +456,9 @@ Data 是 ETAF core 能力，不是需要用户额外学习的第二套框架。D
     (etaf-resource-dispose resource)))
 ```
 
-`etaf-resource-result` 为替换和释放提供 cleanup。`etaf-error-boundary-run` 是明确的函数边界：它处理 body 抛出的错误，让边界外的错误保持可见。Resource 和 Data 状态通过普通 `expr` 分支投影，不增加专门的 Error 或 Loading 节点。
+共享请求先失效再取消外部任务，释放 owner 回调并使晚到结果不能重新发布。Resource 独占成功值及 `etaf-resource-result` 的 cleanup；取消后的首次晚到结果也释放 cleanup。Data 独占已接受的集合和写入确定性，取消等待不撤销外部写入。使用及原生定时器示例见[用户指南](manual.zh-CN.md#11-resource-与-raw-ebox)。
+
+`etaf-error-boundary-run` 是明确的函数边界：它处理 body 抛出的错误，让边界外的错误保持可见。Resource 和 Data 状态通过普通 `expr` 分支投影，不增加专门的 Error 或 Loading 节点。
 
 ## 10. 官方 UI 与包边界
 

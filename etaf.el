@@ -31,6 +31,27 @@
 ;; Invalid ETAF Action
 ;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
+;; Error: etaf-async-error
+;; Invalid asynchronous adapter or timeout; parent is etaf-reactive-error.
+;; Error: etaf-async-timeout
+;; Asynchronous wait exceeded its timeout; parent is etaf-async-error.
+;; Error: etaf-async-cancelled
+;; Pending work was cancelled; parent is etaf-async-error.
+;; These conditions are recorded in Resource/Data error state. Cancellation or
+;; timeout never certifies rollback of external writes.
+;;
+;; Function: etaf-async (start)
+;;;###autoload (autoload 'etaf-async "etaf" nil nil)
+;; Describe a lazy asynchronous loader using START.
+;; Return this value from a Resource loader or Data source operation.  START
+;; receives RESOLVE and REJECT functions and may return a zero-argument cancel
+;; function.  It starts work without blocking and completes once: RESOLVE takes
+;; the ordinary loader result; REJECT takes Emacs condition data.  Returning nil
+;; means the work cannot be cancelled, but obsolete completion is still ignored.
+;; The owning Resource or Controller starts and releases the operation; this is
+;; not a standalone promise.  Native timers and processes may call completion
+;; functions later on the Emacs thread.
+;;
 ;; Function: etaf-action-redefine-run (function)
 ;;;###autoload (autoload 'etaf-action-redefine-run "etaf" nil nil)
 ;; Run FUNCTION while allowing intentional Action redefinition.
@@ -137,7 +158,14 @@
 ;; Return the current Component's slot alist of opaque composable children.
 ;; Values follow etaf-current-slot ownership and lifecycle constraints.
 ;;
-;; Function: etaf-data-controller (source &key query (page 1) (page-size 20) selection auto-load name item-key owner-scope initial-result)
+;; Function: etaf-data-cancel (controller)
+;;;###autoload (autoload 'etaf-data-cancel "etaf" nil nil)
+;; Cancel CONTROLLER's pending request without stopping it; return CONTROLLER.
+;; Loaded items remain available.  A cancelled write has unknown external
+;; certainty unless its provider already reported a committed result; cancelling
+;; its subsequent refresh never changes that known result.
+;;
+;; Function: etaf-data-controller (source &key query (page 1) (page-size 20) selection auto-load name item-key owner-scope initial-result timeout)
 ;;;###autoload (autoload 'etaf-data-controller "etaf" nil nil)
 ;; Create a reactive Data Controller for SOURCE.
 ;;
@@ -151,6 +179,10 @@
 ;; the detached Scope behavior.  INITIAL-RESULT may be a normalized source result
 ;; for QUERY/PAGE/PAGE-SIZE; it seeds a successful Controller without another
 ;; load.  INITIAL-RESULT and AUTO-LOAD are mutually exclusive.
+;; TIMEOUT is nil or positive seconds for each asynchronous operation.
+;; Loads retain previously accepted items while refreshing, after error and after
+;; cancellation.  Stopping the Controller cancels pending work and ignores late
+;; completion without undoing external writes.
 ;;
 ;; Function: etaf-data-error (controller)
 ;;;###autoload (autoload 'etaf-data-error "etaf" nil nil)
@@ -176,7 +208,13 @@
 ;;
 ;; Function: etaf-data-load (controller)
 ;;;###autoload (autoload 'etaf-data-load "etaf" nil nil)
-;; Load CONTROLLER from its source and publish loading, success, or error.
+;; Start CONTROLLER's source load; return the synchronous result or nil pending.
+;; Loading before first success uses `loading'; later reads use `refreshing' and
+;; retain items.  Completion publishes `success', `error' or `cancelled'.
+;; Synchronous source errors are recorded and re-signaled.  Asynchronous source
+;; errors are recorded; projection/rendering errors still signal from completion.
+;; A new load cancels the old request.  Superseding a pending write records unknown
+;; external certainty; it does not imply rollback.
 ;;
 ;; Function: etaf-data-memory-source (items &key id-key name)
 ;;;###autoload (autoload 'etaf-data-memory-source "etaf" nil nil)
@@ -191,10 +229,23 @@
 ;;
 ;; Function: etaf-data-mutate (controller operation payload)
 ;;;###autoload (autoload 'etaf-data-mutate "etaf" nil nil)
-;; Run source OPERATION with PAYLOAD, then reload CONTROLLER.
+;; Run source OPERATION with PAYLOAD and then reconcile its result.
+;; Synchronous writes return their result.  An asynchronous write returns nil
+;; while pending; inspect status and mutation outcome after completion.  A second
+;; write is rejected while the first write is pending.  Cancellation, timeout or
+;; an unclassified external failure never implies that the write was rolled back.
 ;;
-;; Errors are stored in the controller error ref and re-signaled.  Return the
-;; source mutation result after the reload succeeds.
+;; Function: etaf-data-mutation-outcome (controller)
+;;;###autoload (autoload 'etaf-data-mutation-outcome "etaf" nil nil)
+;; Return a copy of CONTROLLER's latest mutation outcome envelope.
+;;
+;; The envelope contains `:certainty' (`committed', `rolled-back', or
+;; `external-unknown'), the raw mutation result, and an opaque reconciliation
+;; token.  While an asynchronous write is outstanding, :pending-p is non-nil and
+;; certainty is external-unknown.  After completion :pending-p is nil or absent.
+;; The reader tracks mutation changes in reactive Views and effects; callers
+;; do not write its state.  Treat the token as opaque.  No outcome means
+;; no mutation has started.  Stopped Controllers reject access.
 ;;
 ;; Function: etaf-data-next-page (controller)
 ;;;###autoload (autoload 'etaf-data-next-page "etaf" nil nil)
@@ -224,9 +275,23 @@
 ;;;###autoload (autoload 'etaf-data-query "etaf" nil nil)
 ;; Return CONTROLLER's query ref.
 ;;
+;; Function: etaf-data-reconciliation-state (controller)
+;;;###autoload (autoload 'etaf-data-reconciliation-state "etaf" nil nil)
+;; Return CONTROLLER's current reconciliation state symbol, if any.
+;;
+;; Function: etaf-data-retry-reconciliation (controller)
+;;;###autoload (autoload 'etaf-data-retry-reconciliation "etaf" nil nil)
+;; Reload a committed mutation without replaying its source mutation.
+;;
+;; The operation is allowed only for a committed outcome with a pending token;
+;; unknown and rolled-back outcomes are deliberately not retried.
+;; Return the synchronous loaded page, or nil when asynchronous work is pending
+;; or no retry is eligible.  Observe status and `etaf-data-reconciliation-state'
+;; to distinguish completion.  No automatic write retry is performed.
+;;
 ;; Function: etaf-data-reload (controller)
 ;;;###autoload (autoload 'etaf-data-reload "etaf" nil nil)
-;; Reload CONTROLLER and return the source result.
+;; Reload CONTROLLER; return the synchronous result or nil while pending.
 ;;
 ;; Function: etaf-data-select (controller identity &optional (selected-p t))
 ;;;###autoload (autoload 'etaf-data-select "etaf" nil nil)
@@ -287,6 +352,13 @@
 ;; controller stops.  `:item-key' optionally returns stable selection identity
 ;; for one item.  `:provider' may name the source in observation reports and
 ;; defaults to `data'.
+;; Load and mutation callbacks may instead return `etaf-async'; resolve with the
+;; ordinary result and reject with condition data.  A v2 result has :certainty
+;; committed/rolled-back/external-unknown, :result for committed, and :error
+;; condition data for rolled-back.  A v1 normal return means committed.
+;; A rejection, cancellation or timeout leaves external write certainty unknown.
+;; Each Controller owns its source disposal; use separate source lifecycles for
+;; independent Controllers.
 ;;
 ;; Function: etaf-data-source-load-page (source &optional query page page-size)
 ;;;###autoload (autoload 'etaf-data-source-load-page "etaf" nil nil)
@@ -294,12 +366,16 @@
 ;; QUERY is passed through unchanged.  PAGE and PAGE-SIZE default to 1 and 20.
 ;; This public preparation boundary performs no reactive publication; callers may
 ;; use its result as `:initial-result' for `etaf-data-controller'.
+;; Only synchronous sources are supported; an asynchronous descriptor signals
+;; `etaf-async-error' without starting its work.
 ;;
 ;; Function: etaf-data-status (controller)
 ;;;###autoload (autoload 'etaf-data-status "etaf" nil nil)
 ;; Return CONTROLLER's status ref.
 ;;
-;; The status value is one of `idle', `loading', `success', or `error'.
+;; The status is idle, loading, refreshing, success, error or cancelled.
+;; Read-only reloads use refreshing after an accepted result; writes use loading.
+;; Previous items remain readable until a successful load replaces them.
 ;;
 ;; Function: etaf-data-stop (controller)
 ;;;###autoload (autoload 'etaf-data-stop "etaf" nil nil)
@@ -728,13 +804,23 @@
 ;; ETAF rendering error
 ;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
-;; Function: etaf-resource (loader &key (immediate t) scope name)
+;; Function: etaf-resource (loader &key (immediate t) scope name timeout keep-value)
 ;;;###autoload (autoload 'etaf-resource "etaf" nil nil)
-;; Create a Resource backed by synchronous LOADER.
+;; Create a Scope-owned Resource backed by LOADER.
+;; LOADER returns a value, `etaf-resource-result', or a lazy `etaf-async' operation.
+;; IMMEDIATE starts loading before returning; otherwise status starts as `idle'.
+;; TIMEOUT is nil or positive seconds, applied to asynchronous waiting only.
+;; With KEEP-VALUE non-nil, reload reports `refreshing' and retains the last
+;; successful value until a replacement succeeds.  Failure or cancellation also
+;; retains it.  Otherwise reload clears and cleans up the old value immediately.
+;; The Resource owns a child Scope under SCOPE or the current Scope; without a
+;; parent it is detached and the caller must dispose it.
 ;;
-;; The Resource owns a child Scope under SCOPE, or under the current active Scope
-;; when SCOPE is nil.  Without any parent Scope it creates a detached Scope.
-;; When IMMEDIATE is non-nil, load the Resource before returning it.
+;; Function: etaf-resource-cancel (resource)
+;;;###autoload (autoload 'etaf-resource-cancel "etaf" nil nil)
+;; Cancel RESOURCE's pending load without disposing it, and return RESOURCE.
+;; The first late completion is discarded, even when external work cannot be
+;; cancelled.  The Resource may be loaded again.  No pending request is a no-op.
 ;;
 ;; Function: etaf-resource-dispose (resource)
 ;;;###autoload (autoload 'etaf-resource-dispose "etaf" nil nil)
@@ -742,9 +828,7 @@
 ;;
 ;; Function: etaf-resource-error (resource)
 ;;;###autoload (autoload 'etaf-resource-error "etaf" nil nil)
-;; Return RESOURCE's captured loader condition, or nil when not in error.
-;; This reader tracks Resource state and returns the condition directly,
-;; without requiring `etaf-value`. Treat the returned condition as read-only.
+;; Return RESOURCE's current loader failure or cancellation condition, or nil.
 ;;
 ;; Error: etaf-resource-error
 ;; Invalid ETAF Resource operation, such as reloading a disposed Resource.
@@ -753,22 +837,24 @@
 ;;
 ;; Function: etaf-resource-load (resource)
 ;;;###autoload (autoload 'etaf-resource-load "etaf" nil nil)
-;; Reload RESOURCE and return it.
-;;
-;; Only LOADER errors are captured into Resource state.  Cleanup failures and
-;; wrong Resource usage continue to signal normally.
+;; Reload RESOURCE and return it, without waiting for asynchronous completion.
+;; Cancel the previous request before starting the next.  Only the current
+;; request can publish a result.  Loader failures become observable state;
+;; cleanup and rendering failures still signal normally.  Reload after error,
+;; timeout or cancellation retries the loader; no automatic retry is performed.
 ;;
 ;; Function: etaf-resource-result (value &key cleanup)
 ;;;###autoload (autoload 'etaf-resource-result "etaf" nil nil)
 ;; Return a Resource loader result containing VALUE and optional CLEANUP.
 ;;
-;; CLEANUP must be nil or a zero-argument function.  It runs before the next
-;; successful load replaces the resource value, and when the Resource is
-;; disposed.
+;; CLEANUP must be nil or a zero-argument function.  The Resource runs it when
+;; clearing or replacing the value and on disposal.  A first completion arriving
+;; after cancellation is discarded and cleaned up; duplicate completions are
+;; ignored.  A loader must transfer each result to only one Resource.
 ;;
 ;; Function: etaf-resource-status (resource)
 ;;;###autoload (autoload 'etaf-resource-status "etaf" nil nil)
-;; Return RESOURCE status: `loading', `success', or `error'.
+;; Return RESOURCE status: idle, loading, refreshing, success, error or cancelled.
 ;;
 ;; Function: etaf-resource-value (resource)
 ;;;###autoload (autoload 'etaf-resource-value "etaf" nil nil)
@@ -1022,6 +1108,17 @@
 ;; effect.  If FUNCTION returns a function, it cleans up the previous run.
 ;;
 
+;; Function: etaf-resource-example-open ()
+;;;###autoload (autoload 'etaf-resource-example-open "etaf" nil t)
+;; Mount the asynchronous Resource example in *ETAF Resource Example* and
+;; return that buffer. Interactive calls display it. Reloading, simulated
+;; failure and cancellation use the displayed buttons. Repeated opens replace
+;; the previous mount, releasing its pending work and loaded value.
+;;
+;; Function: etaf-resource-example-close ()
+;;;###autoload (autoload 'etaf-resource-example-close "etaf" nil t)
+;; Unmount and kill *ETAF Resource Example*. Repeated closing is harmless.
+;;
 ;;; Code:
 
 ;;;###autoload
@@ -1053,6 +1150,9 @@
 (require 'etaf-events)
 (require 'etaf-theme-tp)
 (require 'etaf-performance)
+
+(autoload 'etaf-resource-example-open "examples/etaf-resource-example" nil t)
+(autoload 'etaf-resource-example-close "examples/etaf-resource-example" nil t)
 
 (unless (fboundp 'ebox-call-with-render-burst)
   (error "ETAF requires an Ebox build with framework render-burst support"))

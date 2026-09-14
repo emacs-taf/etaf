@@ -892,7 +892,7 @@ This package uses Emacs' built-in SQLite support and deliberately does not add a
 
 ## 11. Resource and raw Ebox
 
-Use a Resource for a Scope-owned synchronous loader:
+Use a Resource for a Scope-owned value and optional cleanup. A synchronous loader remains simple:
 
 ```elisp
 (let ((resource
@@ -906,6 +906,83 @@ Use a Resource for a Scope-owned synchronous loader:
            (etaf-resource-value resource))
   (etaf-resource-dispose resource))
 ```
+
+Resource and Data loaders can return `etaf-async` to start native timer or process
+work after the loader returns. Its start function receives `resolve` and `reject`,
+and returns nil or a cancellation function. Resolve with the ordinary result;
+reject with Emacs condition data. Complete each operation once. The framework
+ignores obsolete or duplicate completion and releases owner callbacks on cancel,
+timeout and disposal. An adapter without cancellation still cannot revive an old
+request. This is a loader adapter, not a standalone promise.
+
+```elisp
+;;; -*- lexical-binding: t; -*-
+(require 'etaf)
+(etaf-define-component delayed-greeting ()
+  :bindings
+  ((resource
+    (etaf-resource
+     (lambda ()
+       (etaf-async
+        (lambda (resolve _reject)
+          (let ((timer (run-at-time 0.2 nil resolve "Hello")))
+            (lambda () (cancel-timer timer))))))
+     :immediate nil :keep-value t :timeout 2)))
+  :setup (etaf-on-mounted (lambda () (etaf-resource-load resource)))
+  :view
+  (column
+    (text (expr (format "%s: %s" (etaf-resource-status resource)
+                        (or (etaf-resource-value resource) "Waiting"))))
+    (box :role 'button :tab-index 0
+         :on-press (lambda () (etaf-resource-load resource)) "Reload")
+    (box :role 'button :tab-index 0
+         :on-press (lambda () (etaf-resource-cancel resource)) "Cancel")))
+(etaf-mount "*delayed-greeting*" (etaf-view (delayed-greeting)))
+```
+
+A deferred Resource starts `idle`. First load uses `loading`; `:keep-value t`
+retains the last successful value during `refreshing`, failure and cancellation.
+Without that option reload clears and cleans the old value immediately. Success
+replaces and cleans it; unmount cleans the last value. The first result arriving
+after cancellation is discarded with its cleanup. Reload retries explicitly.
+`:timeout` is nil or positive seconds of asynchronous waiting; it cannot interrupt
+a blocking loader. Cancellation records `etaf-async-cancelled`, timeout records
+`etaf-async-timeout`; neither disposes the owner.
+
+The same adapter works in Data `:load`, `:mutate` and `:mutate-v2`. Resolve a load
+with its page plist. Data retains accepted items while refreshing or after a failed
+or cancelled read; its status ref distinguishes `idle`, `loading`, `refreshing`,
+`success`, `error` and `cancelled`. `etaf-data-cancel` invalidates pending work;
+`etaf-data-stop` also releases the source. Each Controller owns its source lifecycle.
+Detached owners require explicit disposal. `etaf-data-source-load-page` only accepts
+synchronous results and rejects an async descriptor without starting it.
+
+Async loads and mutations return nil while pending: observe the status ref and
+read `etaf-data-mutation-outcome`, which also tracks its own reactive changes.
+A pending write reports `:pending-p t` with
+`external-unknown` certainty. A v1 successful result means `committed`; v2 reports
+`:certainty` as `committed`, `rolled-back` or `external-unknown`, with `:result` for
+commit or `:error` condition data for rollback. Cancellation, timeout and generic
+rejection do not prove rollback. A second pending write is rejected. A new read
+supersedes the pending request, including a write, whose outcome becomes unknown.
+
+After a known commit, Data refreshes automatically. A synchronous write can return
+its result while an asynchronous refresh remains pending. Failed refresh preserves
+the committed outcome; use `etaf-data-retry-reconciliation` to retry only the read,
+and `etaf-data-reconciliation-state` to observe recovery. Unknown and rolled-back
+writes are never automatically replayed. Example recovery:
+
+```elisp
+;; In a callback, using an existing controller whose view observes its status:
+(when (eq (plist-get (etaf-data-mutation-outcome controller) :certainty) 'committed)
+  (etaf-data-retry-reconciliation controller))
+```
+
+Synchronous Data source failures are recorded and signaled to their caller.
+Asynchronous source failures are recorded; rendering/publication failures still
+signal from the completion callback. Do not catch those failures in an adapter and
+reinterpret them as IO errors. Unmount invalidates completion without pretending
+that an external write was undone.
 
 Read a captured Resource loader failure with `(etaf-resource-error resource)`;
 this returns condition data or nil directly and tracks Resource state. Data's
@@ -935,6 +1012,14 @@ handles only errors raised by its function body:
 
 The public View grammar accepts Hosts and Components, not raw Ebox Nodes. Framework integrations that need the lower-level port use Ebox's typed TextNode and BoxNode constructors directly; application Views remain on the normal Host and Component lowering path.
 
+The Resource example has a repeatable GUI scenario in
+`scripts/resource-gui-scenarios.el`. From the existing graphical Emacs, add the
+package's `scripts/` directory to `load-path`, require `resource-gui-scenarios`,
+and call `(etaf-resource-gui-run "/tmp/resource-gui-run" t)` with a fresh evidence
+directory. It drives native RET, waits on visible postconditions and saves
+screenshots plus `result.json`. Review the images. Its callback timings cover
+request initiation, not asynchronous completion or foreground presentation.
+
 ## 12. Playgrounds
 
 For small copyable core patterns, load one of the executable applications in `examples/`:
@@ -945,7 +1030,7 @@ For small copyable core patterns, load one of the executable applications in `ex
 (etaf-counter-example-open)
 ```
 
-The counter example demonstrates retained state, computed values, Events, Actions, and focusable Hosts. `etaf-data-example-open` demonstrates mounted Data loading, query, selection, mutation, and explicit controller disposal. `etaf-resource-example-open` demonstrates deferred Resource loading, visible error state, reload cleanup, and Scope disposal. See [`README.md`](../README.md) for the ownership rules each example is designed to teach.
+The counter example demonstrates retained state, computed values, Events, Actions, and focusable Hosts. `etaf-data-example-open` demonstrates mounted Data loading, query, selection, mutation, and explicit controller disposal. `etaf-resource-example-open` demonstrates native asynchronous loading, retained refresh, cancellation, visible error state and Scope disposal. See [`README.md`](../README.md) for the ownership rules each example is designed to teach.
 
 The independent ETAF playground is a complete ETAF application example:
 
