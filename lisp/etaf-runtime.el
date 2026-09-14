@@ -2382,7 +2382,7 @@ Installers receive final Host props including the effective public reference."
             (puthash identity key
                      (etaf-runtime-candidate-behavior-resource-keys runtime)))))))))
 
-(defun etaf--runtime-prune-candidate-behaviors (runtime generation)
+(defun etaf--runtime-prune-candidate-behaviors (runtime _generation)
   "Drop Behaviors absent from RUNTIME's changed Hosts over GENERATION.
 Only changed or removed Host ids constrain the candidate map; unaffected
 subtrees keep their committed resources without being traversed."
@@ -2390,10 +2390,7 @@ subtrees keep their committed resources without being traversed."
         (missing (make-symbol "etaf-unchanged-behavior-host"))
         (nodes (etaf-runtime-candidate-graph-nodes runtime)))
     (dolist (id (etaf-runtime-candidate-removed-semantic-ids runtime))
-      (when generation
-        (let ((old (etaf--pvec-get (etaf-generation-semantic-nodes generation) id)))
-          (when (etaf--semantic-host-p old)
-            (puthash (etaf--semantic-host-semantic-id old) nil uses)))))
+      (puthash id nil uses))
     (maphash
      (lambda (_id node)
        (when (etaf--semantic-host-p node)
@@ -4290,45 +4287,98 @@ RETIREMENT-JOURNAL owns hooks and Scope disposal after successful publication."
 (defun etaf--runtime-record-detached-candidate-subtrees (runtime base)
   "Record BASE subtrees detached by RUNTIME's changed candidate edges.
 
-Only parents present in the candidate child table are examined.  A child
-reattached by another candidate edge remains live together with its committed
-subtree; every genuinely detached descendant is retired from the next
-Generation, including its effects and Host contributions."
+Changed edges determine attachment through their parents up to Root.  Staging
+a node under a detached parent does not keep it alive.  A child reattached to
+a live parent retains its committed subtree.  Retire detached nodes together
+with staged effects and contributions before building the next Generation."
   (when base
     (let ((candidate-children
            (etaf-runtime-candidate-graph-children runtime))
           (candidate-nodes (etaf-runtime-candidate-graph-nodes runtime))
-          (candidate-attached (make-hash-table :test #'eql))
-          (removed (make-hash-table :test #'eql)))
-      (dolist (semantic-id
-               (etaf-runtime-candidate-removed-semantic-ids runtime))
-        (puthash semantic-id t removed))
-      (maphash
-       (lambda (_parent-id children)
-         (dolist (semantic-id children)
-           (puthash semantic-id t candidate-attached)))
-       candidate-children)
+          (attachment (make-hash-table :test #'eql))
+          (removed (make-hash-table :test #'eql))
+          (missing (make-symbol "etaf-attachment-unresolved")))
       (cl-labels
           ((candidate-attached-p
             (semantic-id)
-            (gethash semantic-id candidate-attached))
+            (if (eql semantic-id 0) t
+              (let ((known (gethash semantic-id attachment missing)))
+                (if (not (eq known missing)) known
+                  ;; A cycle cannot establish a path to Root.
+                  (puthash semantic-id nil attachment)
+                  (let* ((node (or (gethash semantic-id candidate-nodes)
+                                   (etaf--pvec-get
+                                    (etaf-generation-semantic-nodes base)
+                                    semantic-id)))
+                         (parent-id (etaf--semantic-parent-id node))
+                         (siblings
+                          (and parent-id
+                               (gethash parent-id candidate-children missing))))
+                    (puthash
+                     semantic-id
+                     (and parent-id (candidate-attached-p parent-id)
+                          (memq semantic-id
+                                (if (eq siblings missing)
+                                    (etaf--generation-child-ids base parent-id)
+                                  siblings)))
+                     attachment))))))
            (record-detached
             (semantic-id)
             (unless (or (candidate-attached-p semantic-id)
                         (gethash semantic-id removed))
               (puthash semantic-id t removed)
-              (push semantic-id
-                    (etaf-runtime-candidate-removed-semantic-ids runtime))
+              (cl-pushnew semantic-id
+                          (etaf-runtime-candidate-removed-semantic-ids runtime))
               (dolist (child-id
-                       (etaf--generation-child-ids base semantic-id))
+                       (append (etaf--generation-child-ids base semantic-id)
+                               (gethash semantic-id candidate-children)))
                 (record-detached child-id)))))
+        ;; Explicit removals can already contain staged ancestors.  Walk them
+        ;; too; the removal journal is not a visited set for this traversal.
+        (dolist (id (etaf-runtime-candidate-removed-semantic-ids runtime))
+          (record-detached id))
         (maphash
          (lambda (parent-id children)
            (dolist (old-child-id
                     (etaf--generation-child-ids base parent-id))
              (unless (memq old-child-id children)
                (record-detached old-child-id))))
-         candidate-children))
+         candidate-children)
+        (maphash (lambda (id _node) (record-detached id)) candidate-nodes))
+      (maphash
+       (lambda (id _removed)
+         (when-let* ((node (gethash id candidate-nodes)))
+           (when (etaf--semantic-component-p node)
+             (let ((identity (etaf--semantic-component-identity node)))
+               (remhash identity (etaf-runtime-candidate-semantic-nodes runtime))
+               (remhash identity (etaf-runtime-candidate-live runtime))))
+           (when (etaf--semantic-host-p node)
+             (let ((ref (etaf--semantic-host-host-ref node)))
+               (remhash ref (etaf-runtime-candidate-host-props runtime))
+               (remhash ref (etaf-runtime-candidate-handlers runtime)))))
+         (remhash id candidate-nodes)
+         (remhash id (etaf-runtime-candidate-component-envs runtime)))
+       removed)
+      (maphash
+       (lambda (effect-id effect)
+         (when (gethash (etaf--generation-effect-semantic-id effect) removed)
+           (remhash effect-id (etaf-runtime-candidate-effects runtime))
+           (remhash effect-id (etaf-runtime-candidate-artifacts runtime))
+           (remhash effect-id (etaf-runtime-candidate-range-artifacts runtime))))
+       (etaf-runtime-candidate-effects runtime))
+      (maphash
+       (lambda (identity id)
+         (when (gethash id removed)
+           (remhash identity (etaf-runtime-candidate-identity-entries runtime))))
+       (etaf-runtime-candidate-identity-entries runtime))
+      ;; Speculative instances that never reach Root have no mounted lifecycle.
+      ;; Existing instances are retired only after publication succeeds.
+      (dolist (instance (etaf-runtime-candidate-created runtime))
+        (unless (gethash (etaf--component-instance-identity instance)
+                         (etaf-runtime-candidate-live runtime))
+          (setf (etaf-runtime-candidate-created runtime)
+                (delq instance (etaf-runtime-candidate-created runtime)))
+          (etaf--runtime-dispose-instance instance nil)))
       ;; A stable semantic address may be reused while its public Host ref
       ;; changes.  Retire the previous contribution even though the semantic
       ;; node itself remains attached and is overwritten in place.
@@ -5747,6 +5797,8 @@ range is not eligible for keyed incremental rendering."
   (let* ((target (etaf--generation-effect-target effect))
          (semantic-id (etaf--semantic-slot-range-semantic-id slot-range))
          (effect-id (etaf--semantic-slot-range-effect-id slot-range))
+         (etaf--current-semantic-parent-id
+          (etaf--semantic-slot-range-parent-id slot-range))
          (builder (ebox-source-builder-create)))
     (let ((etaf--ebox-source-builder builder))
       (cl-multiple-value-bind (value deps nodes context-deps)
@@ -6256,12 +6308,36 @@ RENDERED-IDENTITIES names the Component render participants."
                (puthash (etaf--semantic-component-effect-id semantic) input
                         (etaf-runtime-candidate-artifacts runtime))
                (list semantic (nth 1 change) input)))
-           changes))
+           (cl-remove-if-not
+            (lambda (change)
+              (etaf--pvec-get
+               (etaf-generation-semantic-nodes candidate-generation)
+               (etaf--semantic-component-semantic-id (car change))))
+            changes)))
+    ;; Only final attached owners may publish.  A descendant can have staged
+    ;; work before another owner removes its enclosing branch in this turn.
+    (setq range-changes
+          (cl-remove-if-not
+           (lambda (change)
+             (etaf--pvec-get
+              (etaf-generation-semantic-nodes candidate-generation)
+              (etaf--semantic-backend-range-semantic-id (car change))))
+           range-changes)
+          inline-changes
+          (cl-remove-if-not
+           (lambda (change)
+             (etaf--pvec-get
+              (etaf-generation-semantic-nodes candidate-generation)
+              (etaf--semantic-host-semantic-id (car change))))
+           inline-changes))
     (dolist (host (nreverse host-property-semantics))
-      (unless (member
-               (etaf--generation-host-owner-component-identity
-                candidate-generation host)
-               backend-component-identities)
+      (when (and (etaf--pvec-get
+                  (etaf-generation-semantic-nodes candidate-generation)
+                  (etaf--semantic-host-semantic-id host))
+                 (not (member
+                       (etaf--generation-host-owner-component-identity
+                        candidate-generation host)
+                       backend-component-identities)))
         (let* ((semantic-id (etaf--semantic-host-semantic-id host))
                (old-host
                 (etaf--pvec-get (etaf-generation-semantic-nodes old)

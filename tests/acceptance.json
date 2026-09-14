@@ -898,6 +898,11 @@
       "name": "etaf-conditional-component-retires-before-stale-input-work",
       "file": "tests/etaf-conditional-lifecycle-tests.el",
       "purpose": "Repeated conditional removal and recreation retain matching text, callbacks and disposal."
+    },
+    {
+      "name": "etaf-conditional-data-detail-retires-staged-descendants",
+      "file": "tests/etaf-conditional-lifecycle-tests.el",
+      "purpose": "Deleting an asynchronously refreshed selection releases nested slot controls and permits later loads and selection."
     }
   ]
 }

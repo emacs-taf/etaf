@@ -302,6 +302,13 @@ resolves attachment before a child input or render can stage an update.
 Independent owners retain stable effect priority and ID order; the existing
 generation graph supplies ancestry without a separate scheduling authority.
 
+Before publication, attachment follows the final candidate parent/child edges
+to Root. Staged descendants of a detached branch lose their effects, Host
+contributions and publication edits; staging alone cannot preserve lifetime.
+Slot updates retain their physical parent independently of their lexical owner.
+Existing Component scopes retire after successful publication, while speculative
+instances that never attach are disposed without mounted/unmounted callbacks.
+
 The reactive API is one model:
 
 ```elisp

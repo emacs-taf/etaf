@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Retire staged descendants and pending Host updates when their enclosing
+  branch is removed. Deleting an edited Data selection leaves subsequent loads
+  and filtering usable; slot updates preserve their physical parent.
+
 - Resolve conditional ancestors before descendant input/render work, so hidden components release their callbacks and repeated show/hide updates never address a retired Host.
 
 - Pure `etaf-render` rejects reactive writes in expressions before they can
