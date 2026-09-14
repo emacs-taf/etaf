@@ -360,6 +360,17 @@
 ;; Each Controller owns its source disposal; use separate source lifecycles for
 ;; independent Controllers.
 ;;
+;; Function: etaf-data-source-capabilities (source)
+;;;###autoload (autoload 'etaf-data-source-capabilities "etaf" nil nil)
+;; Return a fresh plist of SOURCE's supported :load, :mutate, :mutate-v2,
+;; :dispose, :item-key, :provider and :name entries when present. Callbacks
+;; and metadata retain identity; replacing entries leaves SOURCE unchanged.
+;; Use to compose an adapter with etaf-data-source without inspecting private
+;; representation. Preserve callback inputs/results and forward disposal.
+;; The adapted source has one owning Controller; do not give its underlying
+;; source another owner. Reading capabilities starts no work and transfers
+;; no ownership. Invalid sources signal wrong-type-argument.
+;;
 ;; Function: etaf-data-source-load-page (source &optional query page page-size)
 ;;;###autoload (autoload 'etaf-data-source-load-page "etaf" nil nil)
 ;; Load and normalize one SOURCE page without creating a Controller.

@@ -890,6 +890,11 @@
       "purpose": "Closing a mounted owner during input cannot publish a value or observer."
     },
     {
+      "name": "etaf-data-source-capabilities-compose-async-storage-and-disposal",
+      "file": "tests/etaf-data-source-composition-tests.el",
+      "purpose": "An adapted source retains storage and lifecycle while Data publishes asynchronous results."
+    },
+    {
       "name": "etaf-conditional-component-retires-before-stale-input-work",
       "file": "tests/etaf-conditional-lifecycle-tests.el",
       "purpose": "Repeated conditional removal and recreation retain matching text, callbacks and disposal."

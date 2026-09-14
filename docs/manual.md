@@ -844,6 +844,32 @@ The Component emits the next value; the caller owns the ref and supplies the cur
       (etaf-data-controller source :page-size 10 :auto-load t))
 ```
 
+To adapt an existing source, read its supported capabilities with
+`etaf-data-source-capabilities`, replace the callbacks you need, and construct
+one new source. For example, this adds native asynchronous delivery to reads
+while retaining the memory source's mutation and identity behavior:
+
+```elisp
+(let* ((capabilities (etaf-data-source-capabilities
+                      (etaf-data-memory-source '((:id 1 :name "Ada")) :id-key :id)))
+       (load (plist-get capabilities :load)))
+  (setf (plist-get capabilities :load)
+        (lambda (&rest args)
+          (let ((result (apply load args)))
+            (etaf-async
+             (lambda (resolve _reject)
+               (let ((timer (run-at-time 0.05 nil resolve result)))
+                 (lambda () (cancel-timer timer))))))))
+  (setq controller (etaf-data-controller (apply #'etaf-data-source capabilities))))
+(etaf-data-load controller)
+;; Later: (etaf-data-stop controller)
+```
+
+Use lexical binding for retained callbacks. The snapshot is a fresh plist, not
+another store or a second owner. Keep the provider's disposal callback and do
+not give the original and adapted source separate Controllers. Preserve v1/v2
+mutation results; only a provider with evidence may declare a write rolled back.
+
 The controller exposes reactive refs through `etaf-data-items`, `etaf-data-status`, `etaf-data-error`, `etaf-data-total`, `etaf-data-query`, `etaf-data-page`, `etaf-data-page-size`, and `etaf-data-selection`. Use `etaf-data-load`, `etaf-data-reload`, `etaf-data-mutate`, `etaf-data-set-query`, `etaf-data-next-page`, `etaf-data-previous-page`, `etaf-data-select` (additive multi-select), `etaf-data-select-one` (exclusive single-select), `etaf-data-selected-item`, and `etaf-data-stop` for operations. The imperative next/previous commands also reload a Controller whose `:auto-load` is nil; `:auto-load t` keeps reload ownership with the reactive effect.
 
 `etaf-data-selected-ref` returns one stable boolean ref for a row identity.  It

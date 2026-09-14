@@ -34,6 +34,8 @@
 
 ### Added
 
+- Expose Data source capabilities for adapters that preserve storage and disposal while wrapping load or mutation operations.
+
 - Add `etaf-call-with-input` for native editing and selection inside event callbacks, using Ebox target lifetime and focus restoration.
 
 - Resource and Data accept native asynchronous loaders through `etaf-async`,

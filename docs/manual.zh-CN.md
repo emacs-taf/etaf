@@ -778,6 +778,30 @@ Component 发出 next value；ref 由调用方拥有，并在下一次 render �
       (etaf-data-controller source :page-size 10 :auto-load t))
 ```
 
+适配已有数据源时，通过 `etaf-data-source-capabilities` 读取公开能力，替换需要
+包装的回调，再构建一个数据源。例如，异步交付读取结果，同时保留内存源的写入
+和身份规则：
+
+```elisp
+(let* ((capabilities (etaf-data-source-capabilities
+                      (etaf-data-memory-source '((:id 1 :name "Ada")) :id-key :id)))
+       (load (plist-get capabilities :load)))
+  (setf (plist-get capabilities :load)
+        (lambda (&rest args)
+          (let ((result (apply load args)))
+            (etaf-async
+             (lambda (resolve _reject)
+               (let ((timer (run-at-time 0.05 nil resolve result)))
+                 (lambda () (cancel-timer timer))))))))
+  (setq controller (etaf-data-controller (apply #'etaf-data-source capabilities))))
+(etaf-data-load controller)
+;; 完成后：(etaf-data-stop controller)
+```
+
+保留回调的代码使用 lexical binding。能力快照是独立的 plist，不是第二份存储或
+另一个所有者。保留提供方的 dispose 回调，不要为原始源和适配源分别创建 Controller。
+保持 v1/v2 写入结果契约；只有具备证据的提供方才能声明写入已回滚。
+
 Controller 通过 `etaf-data-items`、`etaf-data-status`、`etaf-data-error`、`etaf-data-total`、`etaf-data-query`、`etaf-data-page`、`etaf-data-page-size` 和 `etaf-data-selection` 暴露响应式 ref。操作使用 `etaf-data-load`、`etaf-data-reload`、`etaf-data-mutate`、`etaf-data-set-query`、`etaf-data-next-page`、`etaf-data-previous-page`、`etaf-data-select`（追加式多选）、`etaf-data-select-one`（互斥单选）、`etaf-data-selected-item` 和 `etaf-data-stop`。当 Controller 的 `:auto-load` 为 nil 时，命令式的 next/previous 也会自动 reload；`:auto-load t` 时仍由 reactive effect 负责 reload，避免重复请求。
 
 `etaf-data-selected-ref` 会为某个 row identity 返回稳定的 boolean ref；只有该

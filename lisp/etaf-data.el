@@ -181,6 +181,20 @@ independent Controllers."
        (eq (plist-get value :etaf-data-source) t)
        (functionp (plist-get value :load))))
 
+;;;###autoload
+(defun etaf-data-source-capabilities (source)
+  "Return a fresh plist of SOURCE's supported capabilities for composition.
+Callbacks and metadata retain identity; replacing entries does not change
+SOURCE.  An adapter can wrap load or mutation callbacks, then pass the
+result to `etaf-data-source'.  Preserve callback result/error contracts and
+forward disposal to the underlying source.  The adapted source must have
+one owning Controller; do not also mount the original source elsewhere."
+  (unless (etaf-data-source-p source)
+    (signal 'wrong-type-argument (list 'etaf-data-source-p source)))
+  (cl-loop for key in '(:load :mutate :mutate-v2 :dispose :item-key :provider :name)
+           when (plist-member source key)
+           append (list key (plist-get source key))))
+
 (defun etaf-data--source-function (source key required-p)
   "Return SOURCE function KEY, requiring it when REQUIRED-P is non-nil."
   (unless (etaf-data-source-p source)
