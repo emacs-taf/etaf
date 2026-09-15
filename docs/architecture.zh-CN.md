@@ -183,6 +183,10 @@ setup 分配句柄，保留实例保持映射，替换实例重新分配。句�
 解析缺省输入，只复制属性容器，保留传入值及默认值的对象身份。新默认值与
 画面一同发布，回滚时丢弃；求值及所有权约定见[用户手册](manual.zh-CN.md)。
 
+业务 props、可跟踪属性来源与 keyed 迭代项共用响应式层的浅比较规则。输入 plist
+和数据项索引保留应用值的对象身份，不保存深复制的值。整树与局部输入更新因此
+接受相同的对象替换；稳定 key 保留实例，其输出和回调使用当前数据项。
+
 `:key` 是稳定的 identity metadata，不是业务 prop。放在 Component 调用上时，它选择同级作用域内要保留的 Component instance；放在 Host 上时，它会作为 Ebox node key 向下传递。候选渲染失败时，Runtime 恢复旧 instance、handlers、Behaviors 和 buffer。
 
 Component 调用使用定义时准确注册的名称，注册表不会自动生成省略前缀或 `-view` alias。官方目录组件使用 `etaf-button` 等名称；应用可以显式使用任何合法且尚未占用的名称定义自己的组件。

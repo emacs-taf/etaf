@@ -444,6 +444,9 @@
 ;; programmatically.  Both frontends use the same prop and slot rules.  Declared
 ;; props are lexical snapshots for each setup or render evaluation; callbacks
 ;; may refer to them directly.  Passed refs retain identity and live value reads.
+;; Business prop values use the reactive shallow equality rule: replacing an
+;; object updates the retained instance even when its contents compare equal.
+;; Keyed list items follow the same rule; keys retain instances, not old inputs.
 ;; Keep reactive value reads inside the View properties or expressions they
 ;; update.  Use `etaf-prop' in a binding initializer for a tracked input; a plain
 ;; prop variable in initialization is an initial snapshot.
@@ -817,6 +820,9 @@
 ;; Function: etaf-ref (initial-value &key test name)
 ;;;###autoload (autoload 'etaf-ref "etaf" nil nil)
 ;; Create a writable shallow reactive cell containing INITIAL-VALUE.
+;; Lists, vectors, hash tables, records, functions and editor handles compare by
+;; identity; other values use equal. Replacing an object notifies dependents
+;; even when its contents match.
 ;;
 ;; TEST optionally compares old and new values.  NAME is used in diagnostics.
 ;;

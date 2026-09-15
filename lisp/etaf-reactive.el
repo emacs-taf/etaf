@@ -171,7 +171,7 @@ The default context preserves the legacy two-argument facade."
 
 (defun etaf--reactive-same-p (left right)
   "Return whether LEFT and RIGHT are equal under ETAF's shallow rule."
-  (if (or (consp left) (vectorp left) (hash-table-p left)
+  (if (or (functionp left) (consp left) (vectorp left) (hash-table-p left)
           (recordp left) (bufferp left) (windowp left)
           (markerp left) (overlayp left) (processp left))
       (eq left right)
@@ -337,6 +337,9 @@ an earlier projection epoch."
 (cl-defun etaf-ref (initial-value &key test name)
   "Create a writable shallow reactive cell containing INITIAL-VALUE.
 
+Lists, vectors, hash tables, records, functions and editor handles compare by
+identity; other values use equal. Replacing an object notifies dependents
+even when its contents match.
 TEST optionally compares old and new values.  NAME is used in diagnostics."
   (etaf--assert-not-rendering 'create-ref)
   (when (and test (not (functionp test)))

@@ -953,6 +953,16 @@
       "name": "etaf-component-output-shapes-retain-owner-and-child-lifetimes",
       "file": "tests/etaf-component-output-tests.el",
       "purpose": "A component keeps its state across output shape changes, retains keyed child state and focus while attached, and releases children and owners at their own lifecycle boundaries."
+    },
+    {
+      "name": "etaf-component-input-replacement-preserves-application-identity",
+      "file": "tests/etaf-input-identity-tests.el",
+      "purpose": "Both Component frontends accept replacement business objects through root, input, expression and slot updates while preserving instance state and focus."
+    },
+    {
+      "name": "etaf-keyed-items-follow-object-replacement",
+      "file": "tests/etaf-input-identity-tests.el",
+      "purpose": "Keyed Hosts and Components publish callbacks to replacement row objects with equal contents, retaining state and focus under the same key."
     }
   ]
 }

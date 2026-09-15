@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- Retained Components and keyed rows receive replacement input objects even
+  when their contents compare equal. Business props and list items now share
+  refs' shallow equality, keeping state and focus while updating callbacks.
+  Function-valued refs also preserve this identity rule across Emacs function
+  representations.
+
 - Components can change between empty, single-root and fragment output without
   changing the enclosing layout or rejecting a valid update. Component bindings
   survive output changes; retained keyed children keep state and focus. Nested

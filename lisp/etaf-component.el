@@ -335,6 +335,9 @@ usually through `etaf-view'.  `etaf-node' also constructs Views
 programmatically.  Both frontends use the same prop and slot rules.  Declared
 props are lexical snapshots for each setup or render evaluation; callbacks
 may refer to them directly.  Passed refs retain identity and live value reads.
+Business prop values use the reactive shallow equality rule: replacing an
+object updates the retained instance even when its contents compare equal.
+Keyed list items follow the same rule; keys retain instances, not old inputs.
 Keep reactive value reads inside the View properties or expressions they
 update.  Use `etaf-prop' in a binding initializer for a tracked input; a plain
 prop variable in initialization is an initial snapshot.

@@ -282,6 +282,11 @@ install callbacks with the new props; a rejected candidate preserves the old
 callbacks. Setup closures retain initial props. A prop containing a ref keeps
 that exact ref, so `etaf-value` in a callback reads its current value; ordinary
 values are not deep-copied or made reactive.
+Business props and keyed list items use the same shallow equality rule as refs.
+Replacing a list, vector, function or other object updates the retained child
+even when the new object's contents compare equal. The key preserves the child's
+state and focus; it does not preserve callbacks to an old input object. Mutating
+an existing object in place does not notify dependents.
 Keep reactive `etaf-value` reads inside the property or `expr` that needs the
 update; extracting a handle does not require reading its value early. Component
 code with retained closures belongs in an `.el` file with lexical binding.

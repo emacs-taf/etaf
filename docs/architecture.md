@@ -196,6 +196,12 @@ resolved defaults become authoritative with the same publication as the output;
 rollback discards them. See the [manual](manual.md#4-define-a-component) for evaluation
 and ownership rules.
 
+Business prop values, tracked prop sources and keyed iteration items share the
+reactive shallow equality rule. Input plists and item indexes retain application
+values by identity instead of taking deep copies. Whole-tree and local input
+updates therefore accept the same replacement objects; a stable key preserves
+the instance while its output and callbacks receive the current item.
+
 `:key` is stable identity metadata, not a business prop. On a Component call it selects the retained Component instance within the sibling scope; on a Host it is forwarded as the Ebox node key. If a render candidate fails, the Runtime restores the previous instance, handlers, behaviors, and buffer.
 
 Component calls use the exact registered definition name. The registry creates no automatic prefix or `-view` aliases. Official catalog Components use names such as `etaf-button`; an application may explicitly define its own Component under any valid unoccupied name.

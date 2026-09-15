@@ -1837,6 +1837,15 @@ reading Runtime storage fields."
             (puthash source (cons instance next) (etaf-runtime-candidate-prop-values runtime))
             (invalidate source)))))))
 
+(defun etaf--runtime-props-equal-p (left right)
+  "Compare input plists LEFT and RIGHT using the reactive shallow value rule.
+The property containers are snapshots; application objects remain identities."
+  (while (and left right
+              (eq (car left) (car right))
+              (etaf--reactive-same-p (cadr left) (cadr right)))
+    (setq left (cddr left) right (cddr right)))
+  (and (null left) (null right)))
+
 (defun etaf--runtime-accept-prop-inputs (runtime)
   "Accept RUNTIME computed caches and notify property watchers after publication."
   (let ((sources (etaf-runtime-candidate-prop-values runtime)))
@@ -2975,9 +2984,9 @@ subtrees keep their committed resources without being traversed."
                  (etaf--runtime-dirty-descendant-p runtime old-generation semantic-id)
                  (and slots etaf--rendering-component-effect-p
                       (not slot-retargeted-p))
-                 (not (equal-including-properties
+                 (not (etaf--runtime-props-equal-p
                        defaults (etaf--semantic-component-defaults old)))
-                 (not (equal-including-properties
+                 (not (etaf--runtime-props-equal-p
                        props (etaf--semantic-component-props old)))
                  (not (equal-including-properties
                        attrs (etaf--semantic-component-attrs old)))
@@ -3703,7 +3712,7 @@ ITEM-ROOT-GROUPS and ITEM-NODE-COUNTS describe aligned item spans."
              (signal 'etaf-runtime-error
                      (list "Invalid keyed Range item span" key)))
            (puthash key t seen)
-           (puthash key (copy-tree item) signatures)
+           (puthash key item signatures)
            (puthash key (copy-sequence root-ids) root-id-index)
            (puthash key (cons node-offset node-count) node-span-index)
            (cl-incf node-offset node-count)
@@ -4964,7 +4973,7 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
                      :deps (etaf--semantic-component-input-deps candidate))
                     (etaf-runtime-candidate-effects runtime))
            (unless
-               (and (etaf--runtime-target-value-equal-p
+               (and (etaf--runtime-props-equal-p
                      props (etaf--semantic-component-props semantic))
                     (etaf--runtime-target-value-equal-p
                      attrs (etaf--semantic-component-attrs semantic))
@@ -5328,13 +5337,13 @@ range is not eligible for keyed incremental rendering."
                        (and context-stable-p
                             (not (eq old-root-ids missing))
                             (not (eq old-node-span missing))
-                            (equal-including-properties item old-signature))))
+                            (etaf--reactive-same-p item old-signature))))
                  (when (gethash key seen)
                    (signal 'etaf-runtime-error
                            (list "Keyed Range keys must be unique" key)))
                  (puthash key t seen)
                  (push key keys)
-                 (push (copy-tree item) signatures)
+                 (push item signatures)
                  (if reuse-p
                      (let* ((old-start (car old-node-span))
                             (old-count (cdr old-node-span))
