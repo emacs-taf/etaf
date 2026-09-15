@@ -780,6 +780,12 @@ ETAF lowers `:tab-index` and `:disabled` to Ebox's committed interaction facts.
 `etaf-focus`, `etaf-focused-host-ref` and next/previous navigation operate Ebox's
 single buffer focus; direct `ebox-focus` calls are immediately visible through
 ETAF and vice versa. No Runtime focus copy or separate navigation list exists.
+`(etaf-focus-within runtime panel)` selects the first eligible stop in a
+panel's committed subtree. A third argument of 1 or -1 cycles forward or
+backward inside it; zero queries whether current focus belongs to the panel.
+Menus and dialogs can bind their navigation keys to this shared operation.
+It installs no persistent trap and uses Ebox's painted visibility and identity.
+
 Calling `etaf-focus` without a Host reference selects the first eligible stop,
 leaving existing focus unchanged if none exists. Explicit invalid or disabled
 Host targets still signal `etaf-event-error`. Component `:styles` can match

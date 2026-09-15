@@ -570,6 +570,15 @@
 ;;;###autoload (autoload 'etaf-focus-previous "etaf" nil t)
 ;; Focus the previous visible Host in mounted RUNTIME.
 ;;
+;; Function: etaf-focus-within (runtime host-ref &optional count)
+;;;###autoload (autoload 'etaf-focus-within "etaf" nil nil)
+;; Navigate inside HOST-REF's committed subtree in RUNTIME (nil: current buffer).
+;; Nil COUNT selects its first eligible stop; integer COUNT moves with wrapping,
+;; negative moves backward and zero queries current focus membership. Ebox owns
+;; ordering, visibility and identity. Missing/inaccessible roots or stops signal
+;; user-error without changing focus or point. Focus changes require an accepted
+;; publication boundary. This installs no input bindings or persistent trap.
+;;
 ;; Function: etaf-focusable (&rest attributes)
 ;;;###autoload (autoload 'etaf-focusable "etaf" nil nil)
 ;; Return a focusable Behavior from ATTRIBUTES.

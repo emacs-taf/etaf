@@ -983,6 +983,11 @@
       "name": "etaf-component-validation-rejects-malformed-definition",
       "file": "tests/etaf-input-validation-tests.el",
       "purpose": "Duplicate validation clauses and incomplete check metadata report definition errors."
+    },
+    {
+      "name": "etaf-focus-within-shares-provider-order-and-reactive-visibility",
+      "file": "tests/etaf-focus-within-tests.el",
+      "purpose": "ETAF panel navigation shares Ebox focus, nested ordering and reactive visibility without admitting outside controls."
     }
   ]
 }

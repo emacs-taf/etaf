@@ -187,6 +187,16 @@ navigation; a negative or absent index permits explicit focus."
   (interactive)
   (ebox-focus-previous 1 t (etaf-runtime-buffer (etaf-runtime-require-mounted runtime))))
 
+;;;###autoload
+(defun etaf-focus-within (runtime host-ref &optional count)
+  "Focus a stop inside HOST-REF's committed subtree in RUNTIME.
+Nil COUNT selects the first stop.  Integer COUNT moves forward or backward
+with wrapping; zero queries current focus membership.  Ebox owns ordering,
+visibility and retained identity.  Missing roots or stops signal `user-error'.
+This creates no persistent focus restriction or additional input bindings."
+  (ebox-focus-within host-ref count t
+                     (etaf-runtime-buffer (etaf-runtime-require-mounted runtime))))
+
 (provide 'etaf-events)
 
 ;;; etaf-events.el ends here

@@ -711,6 +711,11 @@ Host 与组件根属性也支持 Ebox 的 `:help-echo`、`:pointer` 和 `:hover-
 选择器状态。取值与绘制范围见 [Ebox 原生能力契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.zh-CN.md#native-node-interaction)。
 
 ETAF 把 `:tab-index` 与 `:disabled` 转为 Ebox 已提交的交互事实。`etaf-focus`、
+`(etaf-focus-within runtime panel)` 选择面板已提交子树中的首个有效停靠点。
+第三个参数为 1／-1 时在区域内循环前进／后退，零步查询焦点归属。菜单和
+对话框可将导航按键绑定到这个共享操作；它复用 Ebox 的绘制可用性与身份，
+不安装持续的焦点限制。
+
 `etaf-focused-host-ref` 以及前后导航操作同一个 Ebox buffer 焦点；直接调用
 `ebox-focus` 的结果立即在 ETAF 中可见，反之亦然。Runtime 不保留焦点副本或独立导航表。
 `etaf-focus` 省略 Host 引用时选择第一个有效停靠点，没有停靠点则保持原焦点；显式

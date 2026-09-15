@@ -62,6 +62,10 @@
 
 ### Added
 
+- `etaf-focus-within` delegates panel-local navigation to Ebox's shared focus
+  implementation. Menus and dialogs can cycle within a committed subtree
+  without keeping their own target index. Requires Ebox's `ebox-focus-within`.
+
 - Components can declare optional `:validate` checks using ordinary Elisp after
   defaults resolve, before initialization or updated inputs publish. The shared
   `etaf-check-prop` helper reports the component, property, received value and
