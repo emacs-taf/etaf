@@ -499,8 +499,8 @@ etaf → ebox
 etaf-ui → etaf
   └── 官方 Button、Checkbox、Label、Panel、DataGrid 等 Component
 
-etaf-sqlite → etaf
-  └── 类型化 SQLite Data Source
+etaf-db → etaf
+  └── 数据库后端（目前为类型化 SQLite Data Source）
 
 etaf-playground → etaf
   └── 展示官方 Component 时可选依赖 etaf-ui
@@ -508,11 +508,11 @@ etaf-playground → etaf
 
 `etaf-ui` 是官方现成 Component 目录。用户只需要理解 Component；文件只是维护者边界。Controls、Widgets 和 DataGrid 不是平行的 Runtime 类型，DataGrid 只是由同一套 View、props、slot、事件和 Data 契约构成的复合 Component。
 
-`etaf-sqlite` 是具体的数据源包，负责 schema 声明、标识符校验、连接、分页和 mutation；`etaf-data` 仍然属于 ETAF core。PostgreSQL、REST、文件和 ORM 集成可以在独立包中实现同一个 source capability，不增加 `etaf-adapters` 概念。
+`etaf-db` 通过核心 Data Source capability 契约提供数据库后端接入。目前的 SQLite 后端负责 schema 声明、标识符校验、连接、分页和 mutation；Data Controller 及其响应式生命周期仍属于 ETAF core。SQLite 专用构造函数保留 `etaf-sqlite-*` 名称，通过唯一的 `etaf-db` 包入口加载。
 
-`ebox-playground`、`etaf-playground`、`etaf-ui` 和 `etaf-sqlite` 都是可以独立加载的同级包。`ebox-playground` 只使用 Ebox 公共 API，不加载 ETAF；`etaf-playground` 使用 ETAF 公共 API，并且只在展示官方组件时可选加载 `etaf-ui`，不依赖 `ebox-playground`。核心包不会自动加载任何可选包。
+`ebox-playground`、`etaf-playground`、`etaf-ui` 和 `etaf-db` 都是可以独立加载的同级包。`ebox-playground` 只使用 Ebox 公共 API，不加载 ETAF；`etaf-playground` 使用 ETAF 公共 API，并且只在展示官方组件时可选加载 `etaf-ui`，不依赖 `ebox-playground`。核心包不会自动加载任何可选包。
 
-可选存储集成应使用具体名称，例如 SQLite 或 PostgreSQL source。通用 adapter 包无法拥有稳定的行为，只会增加用户需要记忆的名称，因此不属于公共模型。
+数据库后端由 `etaf-db` 承担，目前只实现 SQLite。REST、文件等非数据库集成可以独立实现 `etaf-data-source`，不增加通用 adapter 层或重复的数据源协议。
 
 ## 11. 保留式发布与 fixed-point 安全
 

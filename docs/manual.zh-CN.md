@@ -14,7 +14,7 @@ ETAF 依赖独立的 Ebox 包。开发时把核心检出目录放入 `load-path`
 (require 'etaf)
 ```
 
-这个入口会加载核心 View、Component、Runtime、reactive、Context、Data、Resource、事件、Behavior 和 Action API。`etaf-ui`、`etaf-sqlite` 和两个 Playground 都是独立的可选包；加载 `etaf` 不会自动加载它们。
+这个入口会加载核心 View、Component、Runtime、reactive、Context、Data、Resource、事件、Behavior 和 Action API。`etaf-ui`、`etaf-db` 和两个 Playground 都是独立的可选包；加载 `etaf` 不会自动加载它们。
 
 ## 2. 第一个 View
 
@@ -883,10 +883,11 @@ DataGrid 要求 `:row-key` 对每一行返回非 nil 的稳定标量。它通过
 
 存储不绑定 SQLite。PostgreSQL、REST、文件或 ORM 集成都应该提供同样契约的具体 Data Source；它们是可选集成，不改变 ETAF 的用户模型。
 
-独立的 `etaf-sqlite` 包是第一个具体存储 source：
+独立的 `etaf-db` 包为 ETAF 提供数据库后端，目前支持 SQLite，
+使用明确的 `etaf-sqlite-*` 后端 API：
 
 ```elisp
-(require 'etaf-sqlite)
+(require 'etaf-db)
 
 (let* ((table (etaf-sqlite-table
                'tasks
@@ -904,7 +905,9 @@ DataGrid 要求 `:row-key` 对每一行返回非 nil 的稳定标量。它通过
     (etaf-data-stop controller)))
 ```
 
-这个包使用 Emacs 内置 SQLite 能力，有意不增加 ORM 层。其他存储包应直接实现 `etaf-data-source`。
+SQLite 后端使用 Emacs 内置 SQLite 能力。数据库后端提供既有的
+`etaf-data-source` capability；ETAF DB 不增加第二套 Controller 或 ORM。
+支持的存储流程见 [ETAF DB 手册](https://gitea.gklazycat.heiyu.space/geekinney/etaf-db/src/branch/main/docs/manual.zh-CN.md)。
 
 ## 11. Resource 与 raw Ebox
 

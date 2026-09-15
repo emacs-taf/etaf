@@ -154,7 +154,7 @@ The [`examples/`](README.md) directory contains three core-only best-practice ap
 | Package | Role |
 | --- | --- |
 | [`etaf-ui`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-ui/src/branch/main/README.md) | Official Component catalog: Button, Checkbox, Label, Panel, and DataGrid. |
-| [`etaf-sqlite`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-db/src/branch/main/README.md) | Concrete SQLite Data Source; the Data Controller remains in ETAF core. |
+| [`etaf-db`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-db/src/branch/main/README.md) | Database backend package, currently providing SQLite; the Data Controller remains in ETAF core. |
 | [`etaf-playground`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-playground/src/branch/main/README.md) | ETAF examples, with the UI catalog loaded only when requested. |
 | [`ebox-playground`](https://gitea.gklazycat.heiyu.space/geekinney/ebox-playground/src/branch/main/README.md) | Ebox-only layout examples, independent from ETAF. |
 
@@ -189,7 +189,7 @@ Run the complete local gate:
 make check EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs
 ```
 
-The core gate byte-compiles the implementation, runs the core/Data/Resource tests, and checks documentation/API boundaries. Run `make check` in the sibling `etaf-ui`, `etaf-sqlite`, `etaf-playground`, and `ebox-playground` repositories for their independent gates; none is loaded by the core facade.
+The core gate byte-compiles the implementation, runs the core/Data/Resource tests, and checks documentation/API boundaries. Run `make check` in the sibling `etaf-ui`, `etaf-db`, `etaf-playground`, and `ebox-playground` repositories for their independent gates; none is loaded by the core facade.
 
 
 

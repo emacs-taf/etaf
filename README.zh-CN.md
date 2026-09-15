@@ -141,7 +141,7 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 | 包 | 职责 |
 | --- | --- |
 | [`etaf-ui`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-ui/src/branch/main/README.md) | 官方 Component 目录：Button、Checkbox、Label、Panel 和 DataGrid。 |
-| [`etaf-sqlite`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-db/src/branch/main/README.md) | 具体 SQLite Data Source；Data Controller 仍属于 ETAF core。 |
+| [`etaf-db`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-db/src/branch/main/README.md) | 数据库后端包，目前提供 SQLite；Data Controller 仍属于 ETAF core。 |
 | [`etaf-playground`](https://gitea.gklazycat.heiyu.space/geekinney/etaf-playground/src/branch/main/README.md) | ETAF 示例；只有请求官方目录示例时才加载 UI 包。 |
 | [`ebox-playground`](https://gitea.gklazycat.heiyu.space/geekinney/ebox-playground/src/branch/main/README.md) | 只使用 Ebox 的布局示例，与 ETAF 独立。 |
 
@@ -175,7 +175,7 @@ ETAF 为当前 Emacs 进程 snapshot 一个不可变的 v2 render port。按依�
 make check EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs
 ```
 
-核心门禁会编译实现、运行 core/Data/Resource 测试，并检查文档和 API 边界。还应在同级 `etaf-ui`、`etaf-sqlite`、`etaf-playground` 和 `ebox-playground` 仓库分别运行 `make check`；它们都不会被 core facade 自动加载。
+核心门禁会编译实现、运行 core/Data/Resource 测试，并检查文档和 API 边界。还应在同级 `etaf-ui`、`etaf-db`、`etaf-playground` 和 `ebox-playground` 仓库分别运行 `make check`；它们都不会被 core facade 自动加载。
 
 
 

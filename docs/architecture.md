@@ -539,8 +539,8 @@ etaf → ebox
 etaf-ui → etaf
   └── official Button, Checkbox, Label, Panel, DataGrid, ... Components
 
-etaf-sqlite → etaf
-  └── typed SQLite Data Source
+etaf-db → etaf
+  └── database backends (currently typed SQLite Data Source)
 
 etaf-playground → etaf
   └── optionally etaf-ui for catalog examples
@@ -548,11 +548,11 @@ etaf-playground → etaf
 
 `etaf-ui` is the official ready-made Component catalog. Its public user concept is Component; files are maintainer boundaries. Controls, Widgets, and DataGrid are not parallel runtime types, and DataGrid is simply a compound Component built from the same View, props, slots, events, and Data contracts.
 
-`etaf-sqlite` is a concrete source package. It owns schema declarations, identifier validation, connections, pagination, and mutations; `etaf-data` remains part of ETAF core. PostgreSQL, REST, file, and ORM integrations may implement the same source capability in separate packages without adding an `etaf-adapters` concept.
+`etaf-db` owns database backend integration through the core Data Source capability contract. Its current SQLite backend owns schema declarations, identifier validation, connections, pagination and mutations. Data Controllers and their reactive lifecycle remain in ETAF core. SQLite-specific constructors keep their `etaf-sqlite-*` names within the single `etaf-db` package entry.
 
-`ebox-playground`, `etaf-playground`, `etaf-ui`, and `etaf-sqlite` are independently loadable sibling packages. `ebox-playground` uses only Ebox public APIs and never loads ETAF. `etaf-playground` uses ETAF public APIs and optionally loads `etaf-ui`; it never depends on `ebox-playground`. Core packages do not load any optional package automatically.
+`ebox-playground`, `etaf-playground`, `etaf-ui`, and `etaf-db` are independently loadable sibling packages. `ebox-playground` uses only Ebox public APIs and never loads ETAF. `etaf-playground` uses ETAF public APIs and optionally loads `etaf-ui`; it never depends on `ebox-playground`. Core packages do not load any optional package automatically.
 
-Optional storage integrations should use explicit package names such as a concrete SQLite or PostgreSQL source. A generic adapter package would add a name without owning a stable behavior, so it is not part of the public model.
+Database backends belong to `etaf-db`; SQLite is the only implemented backend. REST, file and other non-database integrations may implement `etaf-data-source` independently. There is no additional generic adapter layer or duplicate source protocol.
 
 ## 11. Retained publication and fixed-point safety
 

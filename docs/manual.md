@@ -14,7 +14,7 @@ ETAF depends on the independent Ebox package. During development, put the core c
 (require 'etaf)
 ```
 
-The package entry loads the core View, Component, Runtime, reactive, Context, Data, Resource, event, Behavior, and Action APIs. `etaf-ui`, `etaf-sqlite`, and the two Playgrounds are independent optional packages; loading `etaf` does not load them.
+The package entry loads the core View, Component, Runtime, reactive, Context, Data, Resource, event, Behavior, and Action APIs. `etaf-ui`, `etaf-db`, and the two Playgrounds are independent optional packages; loading `etaf` does not load them.
 
 ## 2. The first View
 
@@ -962,10 +962,11 @@ DataGrid requires `:row-key` to return a non-nil stable scalar for every row. It
 
 Storage is not tied to SQLite. A PostgreSQL, REST, file, or ORM integration should expose a concrete Data Source with the same contract. Such an integration is optional and does not change the ETAF user model.
 
-The independent `etaf-sqlite` package is the first concrete storage source:
+The independent `etaf-db` package provides database backends for ETAF. SQLite
+is the currently supported backend, using the explicit `etaf-sqlite-*` API:
 
 ```elisp
-(require 'etaf-sqlite)
+(require 'etaf-db)
 
 (let* ((table (etaf-sqlite-table
                'tasks
@@ -983,7 +984,10 @@ The independent `etaf-sqlite` package is the first concrete storage source:
     (etaf-data-stop controller)))
 ```
 
-This package uses Emacs' built-in SQLite support and deliberately does not add an ORM layer. Other storage packages should implement `etaf-data-source` directly.
+The SQLite backend uses Emacs' built-in SQLite support. Database backends
+produce the existing `etaf-data-source` capabilities; ETAF DB does not add a
+second controller or ORM. See the [ETAF DB manual](https://gitea.gklazycat.heiyu.space/geekinney/etaf-db/src/branch/main/docs/manual.md)
+for its supported storage workflow.
 
 ## 11. Resource and raw Ebox
 
