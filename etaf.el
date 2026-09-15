@@ -448,6 +448,10 @@
 ;; update.  Use `etaf-prop' in a binding initializer for a tracked input; a plain
 ;; prop variable in initialization is an initial snapshot.
 ;;
+;; A fragment result keeps its children in the enclosing Host layout, including
+;; projected slots and stateful children. Component retention adds no visual
+;; container. Declare a layout Host explicitly when the Component needs one.
+;;
 ;; Props accept NAME or (NAME DEFAULT) after &key.  Defaults evaluate in order
 ;; on first missing input and can read earlier props.  Explicit nil is supplied.
 ;; Mounted instances retain successfully published defaults until replacement or

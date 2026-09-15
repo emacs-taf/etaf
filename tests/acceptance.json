@@ -933,6 +933,16 @@
       "name": "etaf-host-properties-compose-with-retained-components",
       "file": "tests/etaf-host-properties-tests.el",
       "purpose": "Reactive parent geometry and interaction changes compose with retained Component state, child content and conditional siblings."
+    },
+    {
+      "name": "etaf-slot-fragments-preserve-parent-layout",
+      "file": "tests/etaf-transparent-slots-tests.el",
+      "purpose": "Transparent declarative and programmatic slot components preserve direct-child Row, Column, Flex and Grid presentation."
+    },
+    {
+      "name": "etaf-slot-fragments-retain-keyed-children",
+      "file": "tests/etaf-transparent-slots-tests.el",
+      "purpose": "Named and default slots preserve keyed child state and focus through reorder, updates, removal and recreation without adding a layout container."
     }
   ]
 }

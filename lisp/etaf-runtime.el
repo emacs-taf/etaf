@@ -2713,11 +2713,9 @@ subtrees keep their committed resources without being traversed."
                   (etaf--runtime-begin-child-order runtime range-id))
                 (etaf--render-value-list rendered
                                          (append path (list :view))))))
-        ;; An unretained/raw slot projection still owns its structure through
-        ;; the Component render target.  Keep that existing material boundary
-        ;; until every projection is represented by a semantic slot Range.
-        (when etaf--raw-slot-read-p
-          (setq transparent-p nil))
+        ;; Slot reads belong to this Component's render effect.  They do not
+        ;; change its declared layout: the output Range already retains a
+        ;; transparent forest and its descendants without a visual container.
         (let ((node
                (unless transparent-p
                  (etaf--ebox-forest-root

@@ -419,6 +419,25 @@ Named slots use `:name` and must use a stable non-keyword symbol:
 
 The two default-slot shorthands are `(slot)` and `(slot FALLBACK...)`. The normalized spelling is `(slot :name 'default FALLBACK...)`. At a call site, ordinary children fill `default`; a named input uses `(slot :name 'header CHILD...)`. An explicit empty `(slot :name 'header)` suppresses the fallback. Strings, numbers, variables, and runtime expressions are not valid slot names.
 
+Use a `fragment` when a Component groups content without owning its layout:
+
+```elisp
+(etaf-define-component content-group ()
+  :view (fragment (slot)))
+
+(etaf-view
+ (row
+  (text "Left")
+  (content-group (text "A") (text "B"))
+  (text "Right")))
+```
+
+All four texts participate in the enclosing Row. Mounted Components preserve
+this layout while retaining their children's state and identity. Programmatic
+composition with `(etaf-node 'fragment nil (etaf-current-slot 'default))` has
+the same behavior. Declare a Row, Column, Flex or Grid inside the Component
+when it should own a layout container.
+
 Slot expressions keep their author's props, state, and Context throughout the
 projected subtree. Components created inside that subtree still own their own
 props, state, styles, and Scope; they inherit Context from the slot author's

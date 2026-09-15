@@ -245,6 +245,12 @@ Named slot names are stable non-keyword symbols. Strings, numbers, variables, an
 
 Inside a Component, `slot` projects content. In a Component call's child region, `slot :name` contributes content. The compiler uses the same normalized slot representation for both roles.
 
+A Component returning a fragment retains its output through an Ebox child Range.
+Slot reads remain dependencies of the Component render effect; they do not select
+a different physical container. Both slot frontends therefore preserve the
+enclosing Host's layout while the Component and its children retain their own
+identity and lifecycle.
+
 Authored slot expressions retain their author's props, state, and Context across
 the entire projected subtree. A Component created in that subtree owns its own
 props, state, styles, and Scope, inheriting Context from the slot author. The

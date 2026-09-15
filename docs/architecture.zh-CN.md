@@ -232,6 +232,10 @@ children 只是匿名/默认 slot 的便捷写法，不是第二套内容模型�
 
 在 Component 内，`slot` 表示投影；在 Component 调用的子节点区，带 `:name` 的 `slot` 表示贡献内容。编译器对两种位置使用同一个规范化 slot 表示。
 
+返回 fragment 的组件通过 Ebox child Range 保留输出。slot 读取仍归组件渲染 effect
+负责，不因此选择另一种物理容器。两种 slot 写法都保持外层 Host 的布局，组件及其
+子组件分别保留自己的身份和生命周期。
+
 Slot 中作者写下的表达式在整个投影子树中保留作者的 props、state 和 Context。
 其中创建的 Component 拥有自己的 props、state、styles 和 Scope，但其 Context
 从 slot 作者环境继承。接收方自己定义的 fallback、普通子节点和产生 View 的

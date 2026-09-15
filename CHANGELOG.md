@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Fragment Components projecting slots no longer introduce an implicit Column
+  when mounted. Their children participate directly in the enclosing layout,
+  matching pure rendering while preserving state, focus and cleanup.
+
 - Host property updates use Ebox's general property operation for layout, style
   and interaction changes. They compose with retained Component state and child
   updates without rebuilding the Host subtree. Framework checkouts require the

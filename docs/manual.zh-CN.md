@@ -395,6 +395,23 @@ Component setup 中的 effect 和 watch 由 Component Scope 持有，卸载时�
 
 默认 slot 的两个用户简写是 `(slot)` 和 `(slot FALLBACK...)`。内部统一形式是 `(slot :name 'default FALLBACK...)`。调用处的普通子节点填充 `default`；命名内容写成 `(slot :name 'header CHILD...)`。显式空的 `(slot :name 'header)` 会抑制 fallback。字符串、数字、变量和运行时表达式都不是合法 slot name。
 
+组件只组合内容而不负责布局时，使用 `fragment`：
+
+```elisp
+(etaf-define-component content-group ()
+  :view (fragment (slot)))
+
+(etaf-view
+ (row
+  (text "Left")
+  (content-group (text "A") (text "B"))
+  (text "Right")))
+```
+
+四段文本共同参与外层 Row 的布局。挂载后，组件在保留子组件状态和身份的同时保持
+该布局。程序化组合 `(etaf-node 'fragment nil (etaf-current-slot 'default))`
+遵循相同规则。组件确实需要自己的布局容器时，在内部显式声明 Row、Column、Flex 或 Grid。
+
 Slot 中作者写下的表达式在整个投影子树中保留作者的 props、state 和 Context。
 其中创建的 Component 仍有自己的 props、state、styles 和 Scope，其 Context 从
 slot 作者环境继承。接收 slot 的 Component 不会把自己的 Context 注入调用者内容。
