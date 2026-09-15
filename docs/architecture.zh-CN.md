@@ -264,6 +264,11 @@ text · fragment · container · row · column · stack · flex · grid · space
 
 ETAF 的 Renderer 是唯一把 View 语义 lower 为 Ebox 节点、属性与 Host 查询的框架模块；`etaf-render-port.el` 是唯一探测 versioned Ebox framework SPI 并选择发布路径的模块。两者都只使用 Ebox 公共 API，Runtime 只读取已经选定的 immutable port，不再自行猜测 Ebox 版本。Ebox 不理解 Component、slot、Action、Context、Behavior 或 Data。
 
+响应式 Host 属性变化只把前后两代 Host 声明转换为 Ebox 通用候选属性操作。
+Ebox 保留内容与子节点，并将其更新与 Component、Range 替换组合。ETAF
+不判断变化是否仅涉及绘制，也不因为属性影响布局或原生交互而重建子树；
+这些后果由 Ebox 的发布流程处理。
+
 公共 View 语法不接受裸 Ebox Node。框架集成层通过 Ebox 的 typed integration port 构造规范的 TextNode 和 BoxNode；普通 ETAF 应用只使用 Host 与 Component。这样 measurement、identity 和 rollback 始终由同一条 lowering 路径负责。
 
 ## 7. Runtime 与响应式状态

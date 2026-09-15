@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Host property updates use Ebox's general property operation for layout, style
+  and interaction changes. They compose with retained Component state and child
+  updates without rebuilding the Host subtree. Framework checkouts require the
+  Ebox version providing `ebox-candidate-update-host-properties`.
+
 - Retire reused Component records with their removed branch, including records
   whose unchanged subtree was not staged. Filtering an edited selection out
   and restoring it no longer leaves loading stuck on a missing render node.

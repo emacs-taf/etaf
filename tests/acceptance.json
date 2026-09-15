@@ -928,6 +928,11 @@
       "name": "etaf-component-active-rules-share-native-press-lifecycle",
       "file": "tests/etaf-component-cascade-tests.el",
       "purpose": "Native primary press publishes scoped active paint in its mounted instance and releases before one reactive activation."
+    },
+    {
+      "name": "etaf-host-properties-compose-with-retained-components",
+      "file": "tests/etaf-host-properties-tests.el",
+      "purpose": "Reactive parent geometry and interaction changes compose with retained Component state, child content and conditional siblings."
     }
   ]
 }

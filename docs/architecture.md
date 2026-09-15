@@ -278,6 +278,12 @@ Strings are the smallest text View and lower to Ebox content. Nested `text` View
 
 ETAF's Renderer is the only framework module that lowers View semantics into Ebox nodes, properties, and Host queries; `etaf-render-port.el` is the only module that probes the versioned Ebox framework SPI and selects a publication route. Both use only public Ebox APIs, while Runtime reads the already-selected immutable port instead of guessing the Ebox version. Ebox does not know about Components, slots, Actions, Context, Behaviors, or Data.
 
+Reactive Host property changes lower only the previous and next Host declarations
+into Ebox's general candidate property operation. Ebox retains content and children
+and combines their updates with Component and Range replacements. ETAF does not
+classify paint changes or rebuild a subtree because a property affects layout or
+native interaction; those consequences belong to Ebox's publication pipeline.
+
 The public View grammar does not accept raw Ebox Nodes. Framework integrations construct canonical TextNode and BoxNode values through Ebox's typed integration port, while ordinary ETAF applications stay on Hosts and Components. This keeps measurement, identity, and rollback ownership inside one lowering path.
 
 ## 7. Runtime and reactive state

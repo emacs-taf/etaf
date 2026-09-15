@@ -6364,8 +6364,7 @@ RENDERED-IDENTITIES names the Component render participants."
             (push
              (list old-host
                    (etaf--runtime-lower-semantic-host-shallow old-host)
-                   (etaf--runtime-lower-semantic-host-shallow host)
-                   semantic-id)
+                   (etaf--runtime-lower-semantic-host-shallow host))
              host-changes)))))
     (setq host-changes (nreverse host-changes))
     (setq semantic-candidate
@@ -6419,14 +6418,9 @@ RENDERED-IDENTITIES names the Component render participants."
                  candidate (etaf--semantic-host-host-ref (car change))
                  (nth 2 change)))
               (dolist (change host-changes)
-                (unless
-                    (ebox-candidate-patch-host-paint
-                     candidate (etaf--semantic-host-host-ref (car change))
-                     (nth 1 change) (nth 2 change))
-                  (ebox-candidate-replace-host-ref
-                   candidate (etaf--semantic-host-host-ref (car change))
-                   (etaf--runtime-lower-semantic-input
-                    runtime candidate-generation (nth 3 change)))))
+                (ebox-candidate-update-host-properties
+                 candidate (etaf--semantic-host-host-ref (car change))
+                 (nth 1 change) (nth 2 change)))
               (etaf-render-port-update
                (etaf-runtime-buffer runtime) candidate
                (lambda (_report)
