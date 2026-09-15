@@ -341,7 +341,9 @@ Host press 和 drag 绑定与规范 source 事实一起降为 Ebox 原生 keymap
 控件边界发布显式 nil map。Ebox 解析可见位置归属；ETAF 不再扫描 Host bounds
 选择激活目标。Tab index 和禁用声明发布为 Ebox 交互事实；Ebox 从中派生禁用选择器状态，
 ETAF 不维护独立的 selector-state 投影。挂载焦点的 `:focus` 也由 Ebox 经同一
-cascade 原子发布，纯组件渲染不带焦点状态。焦点身份、导航顺序、可见性、
+cascade 原子发布，纯组件渲染不带焦点状态。生成的按下与拖动跟踪通过同一 source
+投影提供 `:active`，组件规则直接使用它，Runtime 不保存按下状态字段。指针激活
+在 Ebox 清除该状态后运行。焦点身份、导航顺序、可见性、
 point 保持与回滚均由 Ebox 管理。ETAF 的焦点 API 转换 Runtime 上下文并保持公开错误条件，
 Runtime 不再保存焦点字段、扫描排序 Host 候选或包装 flush 来修正 point。挂载的 Ebox
 buffer mode 管理默认输入绑定和键盘焦点优先级，包括父子位置重合的情况。ETAF 不再

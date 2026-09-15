@@ -514,6 +514,11 @@ Theme。ETAF 会在 lowering 样式作用域时解析它，使重复的 retained
  "Save")
 ```
 
+原生主按钮按住期间会发布 `:active`。组件可在普通 `:styles` 规则中声明
+`("&:active" :color "#ff0000")`。Ebox 负责产生状态并在响应式拖动更新中保持它，
+释放时先清除状态再调用 `:on-press`。键盘激活与显式 dispatch 不产生按住状态。
+完整语义见 [Ebox 原生交互](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.zh-CN.md)。
+
 Runtime 会按 Host 引用保存 handler。测试和集成可以直接 dispatch：
 
 ```elisp

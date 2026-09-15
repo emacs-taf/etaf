@@ -923,6 +923,11 @@
       "name": "etaf-native-affordances-update-through-component-attributes",
       "file": "tests/etaf-native-affordance-tests.el",
       "purpose": "Forwarded affordances update with reactive inputs without replacing activation."
+    },
+    {
+      "name": "etaf-component-active-rules-share-native-press-lifecycle",
+      "file": "tests/etaf-component-cascade-tests.el",
+      "purpose": "Native primary press publishes scoped active paint in its mounted instance and releases before one reactive activation."
     }
   ]
 }

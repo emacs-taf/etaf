@@ -483,6 +483,9 @@
 ;; per start/move/end/cancel phase. Each phase runs in its own reactive event
 ;; batch and publishes before the next pointer event. Primary-button tracking
 ;; belongs to Ebox; when both handlers are supplied, press is keyboard-only.
+;; Generated pointer gestures publish Ebox :active state through component
+;; styles while held; pointer activation clears it before invoking :on-press.
+;; Explicit event dispatch and keyboard activation do not create pointer state.
 ;; Callbacks follow the current committed Host. A retained disabled Host can
 ;; receive native cancellation; removed or unmounted Hosts receive no more
 ;; application callbacks. Their Component scopes clean up normally. Other

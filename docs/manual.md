@@ -549,6 +549,12 @@ One local event uses an `:on-*` property:
  "Save")
 ```
 
+Native primary-button presses publish `:active` while held. Component styles
+can declare `("&:active" :color "#ff0000")` alongside their ordinary rules.
+Ebox owns the state and keeps it through reactive drag updates; release clears
+it before `:on-press` runs. Keyboard activation and explicit dispatch do not
+create held-pointer state. See [Ebox interaction semantics](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction).
+
 The Runtime stores handlers by Host reference. Tests and integrations can dispatch directly:
 
 ```elisp

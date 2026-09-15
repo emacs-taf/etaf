@@ -221,5 +221,48 @@
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(etaf-define-component etaf-component-cascade-test-active (&key count)
+  :styles (("&" :color "#111111")
+           ("&:active" :color "#ff0000"))
+  :view (text :ref 'control
+              :on-press (lambda ()
+                          (should-not (ebox-selector-query-buffer (current-buffer) ":active"))
+                          (cl-incf (etaf-value count)))
+              (expr (format "Press %d" (etaf-value count)))))
+
+(ert-deftest etaf-component-active-rules-share-native-press-lifecycle ()
+  "Ebox publishes scoped pressed paint and releases before one reactive callback."
+  (let* ((count (etaf-ref 0))
+         (view (etaf-view (etaf-component-cascade-test-active :count count)))
+         (buffer (generate-new-buffer " *etaf-active-cascade*"))
+         (other (generate-new-buffer " *etaf-active-isolation*")))
+    (unwind-protect
+        (save-window-excursion
+          (set-window-buffer (selected-window) buffer)
+          (etaf-mount buffer view)
+          (etaf-mount other view)
+          (with-current-buffer buffer
+            (let* ((position (etaf-host-ref-position (etaf-runtime-for-buffer buffer) 'control))
+                   (press (list 'down-mouse-1 (list (selected-window) position '(1 . 0) 0)))
+                   (release (list 'mouse-1 (list (selected-window) position '(1 . 0) 1)))
+                   (command (key-binding (vector press) nil nil position)))
+              (cl-letf (((symbol-function 'read-event)
+                         (lambda (&rest _)
+                           (should (= 1 (length (ebox-selector-query-buffer buffer ":active"))))
+                           (should (equal "#ff0000" (etaf-component-cascade-test-color (buffer-string) "Press")))
+                           (should-not (ebox-selector-query-buffer other ":active"))
+                           (should (equal "#111111" (etaf-component-cascade-test-color
+                                                     (ebox-render (etaf-render view)) "Press")))
+                           (should (= 0 (etaf-value count)))
+                           release)))
+                (funcall command press)))
+            (should (= 1 (etaf-value count)))
+            (should (string-match-p "Press 1" (buffer-string)))
+            (should-not (ebox-selector-query-buffer buffer ":active"))
+            (should (equal "#111111" (etaf-component-cascade-test-color (buffer-string) "Press")))))
+      (dolist (target (list buffer other))
+        (when-let* ((runtime (etaf-runtime-for-buffer target))) (etaf-unmount runtime))
+        (kill-buffer target)))))
+
 (provide 'etaf-component-cascade-tests)
 ;;; etaf-component-cascade-tests.el ends here

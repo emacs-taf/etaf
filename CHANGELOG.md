@@ -42,6 +42,10 @@
 
 ### Added
 
+- Component rules can use Ebox-derived `:active` during native press and drag
+  gestures. Reactive updates retain the state; pointer activation observes it
+  cleared. No application pressed-state binding is required.
+
 - Hosts and Component root attributes accept Ebox native help, pointer and
   hover paint, preserving inheritance and explicit nil boundaries on updates.
 

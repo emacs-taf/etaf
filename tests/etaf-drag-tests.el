@@ -7,6 +7,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'etaf)
+(require 'ebox)
 
 (defun etaf-drag-test--run (runtime before-release)
   "Drag RUNTIME's handle, invoking BEFORE-RELEASE after the motion was consumed."
@@ -45,10 +46,13 @@
              (text (expr (format "X %d" (etaf-value offset)))))))
           (let ((runtime (etaf-runtime-for-buffer buffer)))
             (etaf-drag-test--run
-             runtime (lambda () (should (string-match-p "X 3" (buffer-string)))))
+             runtime (lambda ()
+                       (should (string-match-p "X 3" (buffer-string)))
+                       (should (= 1 (length (ebox-selector-query-buffer buffer ":active"))))))
             (should (equal (reverse phases) '(start move end)))
             (should (equal targets '(handle handle handle)))
             (should (= (etaf-value offset) 6))
+            (should-not (ebox-selector-query-buffer buffer ":active"))
             (with-current-buffer buffer (should (string-match-p "X 6" (buffer-string))))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (kill-buffer buffer))))
