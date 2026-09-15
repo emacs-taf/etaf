@@ -963,6 +963,11 @@
       "name": "etaf-keyed-items-follow-object-replacement",
       "file": "tests/etaf-input-identity-tests.el",
       "purpose": "Keyed Hosts and Components publish callbacks to replacement row objects with equal contents, retaining state and focus under the same key."
+    },
+    {
+      "name": "etaf-nested-reorder-keeps-state-visible-without-host-keys",
+      "file": "tests/etaf-nested-reorder-tests.el",
+      "purpose": "Nested row and column Components preserve local state, focus, visible updates and cleanup without repeating component keys on internal Hosts."
     }
   ]
 }
