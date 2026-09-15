@@ -46,7 +46,8 @@
   defaults
   render
   setup
-  styles)
+  styles
+  validate)
 
 (cl-defstruct (etaf--component-call
                (:constructor etaf--component-call-create))

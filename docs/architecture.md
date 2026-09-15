@@ -168,6 +168,13 @@ The Component definition is the current structure/style/behavior boundary. Keep 
       (etaf-view (text (expr title)))))))
 ```
 
+Pure rendering and mounted input evaluation share default resolution and the
+optional `:validate` phase. The validator receives resolved lexical props before
+instance initialization or tracked input publication. It does not own state or
+resources; live ref reads remain in rendering to preserve their dependency
+ownership. `etaf-check-prop` provides shared, bounded input error messages to
+Component validators and ordinary UI helpers.
+
 Named bindings and optional setup share instance initialization and Scope. The
 macro stores initial values in declaration order and builds each render's lexical
 environment from those same values and the current props. The existing `etaf-state`

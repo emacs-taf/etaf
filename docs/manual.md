@@ -220,6 +220,7 @@ The definition macro accepts only these keywords:
 | `:render` | Ordinary Elisp returning one typed View, usually with `etaf-view`; programmatic builders may use `etaf-node` |
 | `:bindings` | Named values initialized once in order, accessible directly in setup, View and callbacks |
 | `:setup` | Optional one-time lifecycle work; with named bindings its result is ignored |
+| `:validate` | Optional ordinary Elisp checking resolved props before initialization or input publication |
 | `:styles` | Optional static scoped style declaration |
 
 There is no separate declaration block for children, slots, events, or variants. Props are declared with `(&key ...)`; children and slots are implicit content.
@@ -239,6 +240,29 @@ defaults anew on each call.
 (etaf-define-component titled-card (&key (title "Untitled"))
   :view (text (expr (or title "No title"))))
 ```
+
+For component-specific input constraints, add an optional `:validate` form:
+
+```elisp
+(require 'etaf)
+(etaf-define-component rated-label (&key (rating 0))
+  :validate (etaf-check-prop :rating rating
+                            (and (integerp rating) (<= 0 rating 5))
+                            "an integer from 0 to 5")
+  :view (text (expr (format "Rating: %s" rating))))
+
+(etaf-mount "*Rating*" (etaf-view (rated-label :rating 3)))
+```
+
+Validation uses resolved lexical props on pure rendering, initial mount and
+subsequent input evaluation. Keep it pure and safe to repeat; instance bindings,
+state, slots and lifecycle are unavailable. Check passed reactive handles by
+their public type here, keeping live value reads and value-dependent checks in
+the rendering expressions that use them. Rejected updates retain published
+inputs and callbacks; they do not undo the caller's business ref write.
+`etaf-check-prop` reports the component, property, received value and expectation,
+abbreviating large values. Ordinary helpers outside `:validate` supply its
+optional component name explicitly. See the [public API](../etaf.el) for details.
 
 ## 5. Local state and lifecycle
 

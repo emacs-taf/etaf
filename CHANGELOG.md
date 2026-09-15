@@ -62,6 +62,11 @@
 
 ### Added
 
+- Components can declare optional `:validate` checks using ordinary Elisp after
+  defaults resolve, before initialization or updated inputs publish. The shared
+  `etaf-check-prop` helper reports the component, property, received value and
+  expectation. Pure and mounted rendering use the same input contract.
+
 - Component rules can use Ebox-derived `:active` during native press and drag
   gestures. Reactive updates retain the state; pointer activation observes it
   cleared. No application pressed-state binding is required.

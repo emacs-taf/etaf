@@ -97,6 +97,19 @@
 ;; Invalid ETAF Component call
 ;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
+;; Function: etaf-check-prop (property value valid-p expected &optional component)
+;;;###autoload (autoload 'etaf-check-prop "etaf" nil nil)
+;; Return VALUE when VALID-P is non-nil; otherwise report an input error.
+;; PROPERTY is a keyword and EXPECTED is a description string. COMPONENT names
+;; the input owner, defaulting to the Component whose :validate form is running.
+;; Helpers outside validation supply COMPONENT explicitly. Checks must not mutate
+;; input values or perform external effects. Failure signals etaf-component-call-error
+;; naming the component, property, received value and expectation. Large values
+;; are abbreviated; no resources are copied or owned.
+;; Use (etaf-check-prop :count count (natnump count) "a nonnegative integer")
+;; in a Component's ordinary Elisp :validate form. Malformed check metadata
+;; signals etaf-component-definition-error.
+;;
 ;; Error: etaf-component-definition-error
 ;; Invalid ETAF Component definition
 ;; Catch this condition with condition-case; failed calls do not return a value.
@@ -415,6 +428,7 @@
 ;;
 ;;   (etaf-define-component NAME (&key PROPS)
 ;;     [:bindings ((NAME INITIALIZER) ...)]
+;;     [:validate ORDINARY-ELISP]
 ;;     [:setup SETUP]
 ;;     :view VIEW
 ;;     :styles ((SELECTOR ATTR ...)))
@@ -423,6 +437,7 @@
 ;;
 ;;   (etaf-define-component NAME (&key PROPS)
 ;;     [:bindings ((NAME INITIALIZER) ...)]
+;;     [:validate ORDINARY-ELISP]
 ;;     [:setup SETUP]
 ;;     :render ORDINARY-ELISP
 ;;     :styles ((SELECTOR ATTR ...)))
@@ -463,6 +478,15 @@
 ;; Mounted instances retain successfully published defaults until replacement or
 ;; unmount; pure rendering evaluates defaults anew.  Default expressions must be
 ;; safe to retry after rejected publication; allocate mutable values explicitly.
+;;
+;; Optional :validate runs ordinary Elisp with resolved lexical props after
+;; defaults, before bindings/setup or updated inputs are published. Its return
+;; is ignored; etaf-check-prop or any signaled error rejects the input. Pure
+;; rendering and mounted input evaluation share this phase. Validation must be
+;; pure and may run again; it cannot use instance bindings, state, slots or
+;; lifecycle. Check reactive handles by type and keep their live value reads and
+;; value-dependent checks in rendering. Rejected input preserves the published
+;; props and callbacks but does not undo the caller's business ref write.
 ;;
 ;; Component rules use ECSS author origin, specificity, source order and
 ;; importance through Ebox. &/:scope match each topmost owned Host; ordinary

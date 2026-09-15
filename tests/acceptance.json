@@ -968,6 +968,21 @@
       "name": "etaf-nested-reorder-keeps-state-visible-without-host-keys",
       "file": "tests/etaf-nested-reorder-tests.el",
       "purpose": "Nested row and column Components preserve local state, focus, visible updates and cleanup without repeating component keys on internal Hosts."
+    },
+    {
+      "name": "etaf-component-validation-reports-resolved-inputs",
+      "file": "tests/etaf-input-validation-tests.el",
+      "purpose": "Defaults and explicit inputs share validation, reporting the component, property, received value and expectation through the public error."
+    },
+    {
+      "name": "etaf-component-validation-precedes-setup-and-input-publication",
+      "file": "tests/etaf-input-validation-tests.el",
+      "purpose": "Rejected initial or updated props preserve lifecycle ownership and committed output across full and local input evaluation."
+    },
+    {
+      "name": "etaf-component-validation-rejects-malformed-definition",
+      "file": "tests/etaf-input-validation-tests.el",
+      "purpose": "Duplicate validation clauses and incomplete check metadata report definition errors."
     }
   ]
 }

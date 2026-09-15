@@ -212,6 +212,7 @@ View 属性；通过上述语义属性声明 Host 元数据。
 | `:render` | 普通 Elisp 返回一个 typed View，通常使用 `etaf-view`；程序化构造也可使用 `etaf-node` |
 | `:bindings` | 按顺序初始化一次的命名值，setup、View 与回调直接使用 |
 | `:setup` | 可选的一次性生命周期工作；有命名绑定时忽略返回值 |
+| `:validate` | 可选的普通 Elisp，在初始化或输入发布前检查已解析 props |
 | `:styles` | 可选的静态作用域样式声明 |
 
 没有单独的 children、slot、event 或 variant 声明块。业务 props 通过 `(&key ...)` 声明，children 和 slot 是隐式内容。
@@ -228,6 +229,27 @@ props。成功发布后，实例保留默认值直到替换或卸载，期间调
 (etaf-define-component titled-card (&key (title "Untitled"))
   :view (text (expr (or title "No title"))))
 ```
+
+组件需要约束输入时，添加可选的 `:validate` 表达式：
+
+```elisp
+(require 'etaf)
+(etaf-define-component rated-label (&key (rating 0))
+  :validate (etaf-check-prop :rating rating
+                            (and (integerp rating) (<= 0 rating 5))
+                            "an integer from 0 to 5")
+  :view (text (expr (format "Rating: %s" rating))))
+
+(etaf-mount "*Rating*" (etaf-view (rated-label :rating 3)))
+```
+
+纯渲染、首次挂载和后续输入求值共用校验阶段，读取解析后的词法 props。
+校验必须纯粹、可重复执行，不能使用实例绑定、state、slot 或生命周期。
+传入响应式句柄时，在这里通过公共类型接口检查句柄，把实时值读取和依赖值的
+检查留在使用它的渲染表达式中。拒绝更新会保留已发布输入和回调，不会撤销
+调用方写入业务 ref 的值。`etaf-check-prop` 的错误指出组件、属性、收到的值和
+期望值，大型值会缩略显示。在 `:validate` 之外调用它的普通辅助函数需要显式
+传入可选的组件名称。详细契约见[公共 API](../etaf.el)。
 
 ## 5. 局部状态与生命周期
 

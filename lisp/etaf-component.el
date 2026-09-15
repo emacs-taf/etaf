@@ -255,11 +255,39 @@ PROPS cannot be shadowed by instance bindings."
                             (cdr arguments)))
            (cons ,input ,cache))))))
 
-(defun etaf--component-resolve-defaults (spec props defaults)
-  "Return (PROPS . DEFAULTS) for SPEC without mutating either input."
-  (if-let* ((resolver (etaf--component-spec-defaults spec)))
-      (funcall resolver props defaults)
-    (cons props defaults)))
+(defvar etaf--validating-component-name nil
+  "Component whose resolved inputs are currently being validated.")
+
+(defun etaf-check-prop (property value valid-p expected &optional component)
+  "Return VALUE when VALID-P is non-nil; otherwise report an input error.
+PROPERTY is a keyword and EXPECTED is a description string. COMPONENT names
+the input owner, defaulting to the Component whose `:validate' form is running.
+Helpers called outside validation supply COMPONENT explicitly. Checks must not
+mutate input values or perform external effects. Failure signals
+`etaf-component-call-error' naming the component, property, received value and
+expectation. Large values are abbreviated in the message."
+  (let ((component (or component etaf--validating-component-name)))
+    (unless (and (symbolp component) component (keywordp property) (stringp expected))
+      (signal 'etaf-component-definition-error
+              (list "Input checks require a Component name, keyword property and expectation string")))
+    (unless valid-p
+      (let ((print-level 4) (print-length 8))
+        (signal 'etaf-component-call-error
+                (list (format "Component %S property %S received %S; expected %s"
+                              component property value expected)))))
+    value))
+
+(defun etaf--component-resolve-input (spec props defaults)
+  "Resolve and validate SPEC's PROPS, returning (PROPS . DEFAULTS).
+Neither input is mutated. Validation follows defaults and precedes setup,
+rendering, and publication of tracked prop sources."
+  (let ((resolved (if-let* ((resolver (etaf--component-spec-defaults spec)))
+                      (funcall resolver props defaults)
+                    (cons props defaults))))
+    (when-let* ((validate (etaf--component-spec-validate spec)))
+      (let ((etaf--validating-component-name (etaf--component-spec-name spec)))
+        (funcall validate (car resolved))))
+    resolved))
 
 (defun etaf--validate-styles-form (form name)
   "Validate static rule list FORM against the Ebox schema for Component NAME."
@@ -306,6 +334,7 @@ Choose exactly one authoring frontend:
 
   (etaf-define-component NAME (&key PROPS)
     [:bindings ((NAME INITIALIZER) ...)]
+    [:validate ORDINARY-ELISP]
     [:setup SETUP]
     :view VIEW
     :styles ((SELECTOR ATTR ...)))
@@ -314,6 +343,7 @@ or:
 
   (etaf-define-component NAME (&key PROPS)
     [:bindings ((NAME INITIALIZER) ...)]
+    [:validate ORDINARY-ELISP]
     [:setup SETUP]
     :render ORDINARY-ELISP
     :styles ((SELECTOR ATTR ...)))
@@ -346,7 +376,16 @@ Props accept NAME or (NAME DEFAULT) after &key.  Defaults evaluate in order
 on first missing input and can read earlier props.  Explicit nil is supplied.
 Mounted instances retain successfully published defaults until replacement or
 unmount; pure rendering evaluates defaults anew.  Default expressions must be
-safe to retry after rejected publication; allocate mutable values explicitly."
+safe to retry after rejected publication; allocate mutable values explicitly.
+
+Optional `:validate' runs ordinary Elisp with resolved lexical props after
+defaults, before bindings/setup or updated inputs are published. Its return is
+ignored; use `etaf-check-prop' or signal an error to reject input. It runs on
+pure rendering and mounted input evaluation. Validation must be pure and may
+run again; it cannot depend on instance bindings, state, slots or lifecycle.
+Validate passed reactive handles by their public type, leaving their live value
+reads and value-dependent checks in rendering. A failed update retains the old
+published props and callbacks; it does not undo the caller's business ref write."
   (declare (indent 2) (debug defun))
   (unless (symbolp name)
     (etaf--component-definition-error
@@ -355,11 +394,13 @@ safe to retry after rejected publication; allocate mutable values explicitly."
         view-form
         render-form
         setup-form
+        validate-form
         bindings-form
         styles-form
         saw-view
         saw-render
         saw-setup
+        saw-validate
         saw-bindings
         saw-styles)
     (while clauses
@@ -386,6 +427,11 @@ safe to retry after rejected publication; allocate mutable values explicitly."
              (etaf--component-definition-error
               "Component %S has duplicate :setup" name))
            (setq setup-form (pop clauses) saw-setup t))
+          (:validate
+           (when saw-validate
+             (etaf--component-definition-error
+              "Component %S has duplicate :validate" name))
+           (setq validate-form (pop clauses) saw-validate t))
           (:bindings
            (when saw-bindings
              (etaf--component-definition-error
@@ -466,6 +512,15 @@ safe to retry after rejected publication; allocate mutable values explicitly."
             :name ',name
             :props ',props
             :defaults ,(etaf--component-default-resolver arguments)
+            :validate ,(when saw-validate
+                         `(lambda (etaf--validated-props)
+                            (let ,(mapcar
+                                   (lambda (prop)
+                                     `(,prop (plist-get etaf--validated-props
+                                                        ,(etaf--component-prop-key prop))))
+                                   props)
+                              (ignore ,@props)
+                              ,validate-form)))
             :render ,render-lambda
             :setup ,setup-lambda
             :styles ',styles-form)

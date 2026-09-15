@@ -2953,7 +2953,7 @@ subtrees keep their committed resources without being traversed."
           (etaf--active-effect nil)
           (etaf--render-phase-p t))
       (let ((resolved
-             (etaf--component-resolve-defaults
+             (etaf--component-resolve-input
               (etaf--component-instance-spec instance)
               (etaf--resolve-property-plist input-props)
               (and old
@@ -4939,7 +4939,7 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
                  (gethash (etaf--semantic-component-resource-key semantic)
                           (etaf-runtime-resource-registry runtime)))
                 (resolved
-                 (etaf--component-resolve-defaults
+                 (etaf--component-resolve-input
                   (etaf--component-instance-spec instance)
                   (etaf--resolve-property-plist
                    (etaf--semantic-component-input-props semantic))
