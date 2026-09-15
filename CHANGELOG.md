@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Components can change between empty, single-root and fragment output without
+  changing the enclosing layout or rejecting a valid update. Component bindings
+  survive output changes; retained keyed children keep state and focus. Nested
+  updates publish from the same final output, including Host property changes.
+
 - Fragment Components projecting slots no longer introduce an implicit Column
   when mounted. Their children participate directly in the enclosing layout,
   matching pure rendering while preserving state, focus and cleanup.

@@ -412,6 +412,10 @@ Component setup 中的 effect 和 watch 由 Component Scope 持有，卸载时�
 该布局。程序化组合 `(etaf-node 'fragment nil (etaf-current-slot 'default))`
 遵循相同规则。组件确实需要自己的布局容器时，在内部显式声明 Row、Column、Flex 或 Grid。
 
+同一组件可以在不同次渲染中返回 nil、一个 View 或 fragment。组件自身的绑定和
+Scope 持续到组件被移除；同一输出分组中的 keyed 子组件在保留期间保持状态和焦点，
+移除后释放自己的实例。返回 nil 会移除输出，不会卸载产生该输出的组件。
+
 Slot 中作者写下的表达式在整个投影子树中保留作者的 props、state 和 Context。
 其中创建的 Component 仍有自己的 props、state、styles 和 Scope，其 Context 从
 slot 作者环境继承。接收 slot 的 Component 不会把自己的 Context 注入调用者内容。

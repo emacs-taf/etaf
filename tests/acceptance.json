@@ -943,6 +943,16 @@
       "name": "etaf-slot-fragments-retain-keyed-children",
       "file": "tests/etaf-transparent-slots-tests.el",
       "purpose": "Named and default slots preserve keyed child state and focus through reorder, updates, removal and recreation without adding a layout container."
+    },
+    {
+      "name": "etaf-component-output-shapes-preserve-enclosing-layout",
+      "file": "tests/etaf-component-output-tests.el",
+      "purpose": "Zero, one and multiple Component roots can repeatedly change at the application root and inside Row, Column, Flex and Grid, matching fresh rendering."
+    },
+    {
+      "name": "etaf-component-output-shapes-retain-owner-and-child-lifetimes",
+      "file": "tests/etaf-component-output-tests.el",
+      "purpose": "A component keeps its state across output shape changes, retains keyed child state and focus while attached, and releases children and owners at their own lifecycle boundaries."
     }
   ]
 }

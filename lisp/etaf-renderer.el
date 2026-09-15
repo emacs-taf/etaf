@@ -697,8 +697,6 @@ multi-root forest; a single material root is returned unchanged."
                    (let ((result (etaf--runtime-render-component
                                   etaf--render-runtime item item-path)))
                      (cond
-                      ((eq (car-safe result) 'component-output-material)
-                       (etaf--ebox-import-input (cdr result)))
                       ((eq (car-safe result) 'component-output-range)
                        (etaf--ebox-import-input (cdr result)))
                       ((eq (car-safe result) 'component-output-anchor)
@@ -791,6 +789,9 @@ multi-root forest; a single material root is returned unchanged."
       ((or 'box 'row 'column 'flex 'grid)
        (let ((nodes nil)
              (etaf--render-parent-path path)
+             ;; A Host starts a new physical child list.  Component output
+             ;; Ranges here keep their own anchor even inside another Range.
+             (etaf--rendering-range-p nil)
              (index 0)
              (range-child-p nil)
              (semantic-id

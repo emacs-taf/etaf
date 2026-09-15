@@ -451,6 +451,9 @@
 ;; A fragment result keeps its children in the enclosing Host layout, including
 ;; projected slots and stateful children. Component retention adds no visual
 ;; container. Declare a layout Host explicitly when the Component needs one.
+;; Output may change between nil, one View and a fragment without resetting the
+;; Component's bindings. Keyed children retain state while present; removal
+;; releases their own instances even when the parent remains mounted.
 ;;
 ;; Props accept NAME or (NAME DEFAULT) after &key.  Defaults evaluate in order
 ;; on first missing input and can read earlier props.  Explicit nil is supplied.

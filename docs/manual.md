@@ -438,6 +438,12 @@ composition with `(etaf-node 'fragment nil (etaf-current-slot 'default))` has
 the same behavior. Declare a Row, Column, Flex or Grid inside the Component
 when it should own a layout container.
 
+A Component can return nil, one View or a fragment on different renders.
+Its bindings and Scope live until the Component itself is removed. A keyed
+child keeps its state and focus while present in the same output group;
+removing that child releases its instance. Returning nil removes the output
+without unmounting the Component that produced it.
+
 Slot expressions keep their author's props, state, and Context throughout the
 projected subtree. Components created inside that subtree still own their own
 props, state, styles, and Scope; they inherit Context from the slot author's

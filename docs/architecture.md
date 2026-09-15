@@ -245,11 +245,17 @@ Named slot names are stable non-keyword symbols. Strings, numbers, variables, an
 
 Inside a Component, `slot` projects content. In a Component call's child region, `slot :name` contributes content. The compiler uses the same normalized slot representation for both roles.
 
-A Component returning a fragment retains its output through an Ebox child Range.
-Slot reads remain dependencies of the Component render effect; they do not select
-a different physical container. Both slot frontends therefore preserve the
-enclosing Host's layout while the Component and its children retain their own
-identity and lifecycle.
+Every Component retains one semantic output Range, regardless of whether it
+produces zero, one or several roots. Slot reads remain dependencies of its render
+effect; neither output cardinality nor slot access introduces a physical container.
+Component identity and lifecycle are independent of the current output shape.
+
+The final semantic generation owns output composition. Range snapshots are derived
+caches; descendant changes invalidate enclosing snapshots. Adjacent semantic
+Ranges share a physical Ebox child list, while a Host starts an independent child
+layout. Publication uses Ebox's committed Range addresses, or its root operation
+when no enclosing child Range is published. It composes the final candidate output
+without rerunning application effects or adding another Component artifact store.
 
 Authored slot expressions retain their author's props, state, and Context across
 the entire projected subtree. A Component created in that subtree owns its own
