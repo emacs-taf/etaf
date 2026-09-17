@@ -66,6 +66,9 @@
 
 ### Added
 
+- `etaf-performance-report-data` exposes a detached structured report for
+  automated consumers, including operation identity and public provider stages.
+
 - `etaf-focus-within` delegates panel-local navigation to Ebox's shared focus
   implementation. Menus and dialogs can cycle within a committed subtree
   without keeping their own target index. Requires Ebox's `ebox-focus-within`.

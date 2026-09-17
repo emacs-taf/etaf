@@ -766,6 +766,16 @@
 ;; historical records after unmount or reuse of a buffer name.  Omitted or nil
 ;; RUNTIME-ID selects all retained records.
 ;;
+;; Function: etaf-performance-report-data (&optional (records (etaf-performance-records)))
+;;;###autoload (autoload 'etaf-performance-report-data "etaf" nil nil)
+;; Return a detached portable report for completed RECORDS. Omitted RECORDS
+;; selects retained records; explicit nil selects none. The versioned plist
+;; includes :format-version, :environment, :summary and :operations. Operations
+;; identify :id, :runtime-id and :buffer-name and contain flat :stages with
+;; :provider, :stage, :duration-ms and provider :metadata. Nested provider
+;; durations may overlap. This read-only operation does not clear recordings,
+;; install observers, change the Runtime or invoke recorded application code.
+;;
 ;; Function: etaf-performance-show ()
 ;;;###autoload (autoload 'etaf-performance-show "etaf" nil t)
 ;; Show retained ETAF operations and stages in a tabulated panel.

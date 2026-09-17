@@ -988,6 +988,11 @@
       "name": "etaf-focus-within-shares-provider-order-and-reactive-visibility",
       "file": "tests/etaf-focus-within-tests.el",
       "purpose": "ETAF panel navigation shares Ebox focus, nested ordering and reactive visibility without admitting outside controls."
+    },
+    {
+      "name": "etaf-performance-portable-report-is-a-detached-snapshot",
+      "file": "tests/etaf-performance-tests.el",
+      "purpose": "Portable performance reports identify the owning runtime and buffer, support explicit empty input and detach mutable labels from supplied record snapshots."
     }
   ]
 }

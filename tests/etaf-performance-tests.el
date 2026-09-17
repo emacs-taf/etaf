@@ -26,5 +26,27 @@
     (should-not (plist-get (etaf-performance-environment-data)
                            :native-comp-jit-compilation))))
 
+(ert-deftest etaf-performance-portable-report-is-a-detached-snapshot ()
+  "Portable consumers identify operations without mutating recorded labels."
+  (let ((buffer (generate-new-buffer " *etaf-portable-report*")) runtime)
+    (unwind-protect
+        (progn
+          (etaf-mount buffer (etaf-view (text "Report fixture")))
+          (setq runtime (etaf-runtime-for-buffer buffer))
+          (etaf-performance-start runtime)
+          (etaf-performance-call-operation runtime 'test (copy-sequence "Portable fixture") #'ignore)
+          (let* ((records (etaf-performance-records))
+                 (report (etaf-performance-report-data records))
+                 (operation (cl-find "Portable fixture" (plist-get report :operations)
+                                     :key (lambda (value) (plist-get value :label)) :test #'equal)))
+            (should (integerp (plist-get report :format-version)))
+            (should (integerp (plist-get operation :runtime-id)))
+            (should (equal (buffer-name buffer) (plist-get operation :buffer-name)))
+            (aset (plist-get operation :label) 0 ?X)
+            (should (cl-find "Portable fixture" records :key #'etaf-performance-operation-label :test #'equal))
+            (should-not (plist-get (etaf-performance-report-data nil) :operations))))
+      (when runtime (etaf-performance-stop runtime) (etaf-unmount runtime))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (provide 'etaf-performance-tests)
 ;;; etaf-performance-tests.el ends here

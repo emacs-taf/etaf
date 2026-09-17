@@ -401,9 +401,9 @@ If another observer replaced the recorder sink, leave that observer intact."
   "Return portable report data for OPERATION."
   (list :id (etaf-performance-operation-id operation)
         :kind (etaf-performance-operation-kind operation)
-        :label (etaf-performance-operation-label operation)
+        :label (etaf-performance--copy-value (etaf-performance-operation-label operation))
         :runtime-id (etaf-performance-operation-runtime-id operation)
-        :buffer-name (etaf-performance-operation-buffer-name operation)
+        :buffer-name (etaf-performance--copy-value (etaf-performance-operation-buffer-name operation))
         :generation-before
         (etaf-performance-operation-generation-before operation)
         :generation-after

@@ -1249,6 +1249,9 @@ returns defensive operation and stage snapshots; caller mutation cannot alter
 retained history.
 Its optional numeric runtime ID selects the identity from observer reports,
 including history from a retired mount whose buffer name has since been reused.
+For automated consumers, `etaf-performance-report-data` returns the portable
+plist directly. Select the required operations by their runtime/buffer identity
+without clearing unrelated recordings; keep overlapping provider totals separate.
 Summary and report functions read all retained records when their argument is
 omitted; explicit `nil` keeps an empty selection empty. The report's environment
 is observed at export time, not at every recorded operation. Runtime durations
