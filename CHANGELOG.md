@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Local updates invalidate enclosing Range snapshots without eagerly rebuilding
+  their complete output. Snapshots are composed from current semantic facts when
+  needed; subsequent parent updates and keyed reorders retain current child state.
+
 - Retained Components and keyed rows receive replacement input objects even
   when their contents compare equal. Business props and list items now share
   refs' shallow equality, keeping state and focus while updating callbacks.

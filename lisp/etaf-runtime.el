@@ -959,10 +959,16 @@ FULL-P means candidate tables describe the complete mounted tree."
     range))
 
 (defun etaf--runtime-committed-range-input (runtime semantic)
-  "Return RUNTIME's committed canonical input for SEMANTIC Range."
-  (let ((artifact
-         (gethash (etaf--semantic-backend-range-artifact-key semantic)
-                  (etaf-runtime-range-artifact-registry runtime))))
+  "Return RUNTIME's committed canonical input for SEMANTIC Range.
+An invalidated derived snapshot is composed only when a caller needs it."
+  (let* ((key (etaf--semantic-backend-range-artifact-key semantic))
+         (registry (etaf-runtime-range-artifact-registry runtime))
+         (artifact (gethash key registry)))
+    (when (eq artifact :invalid)
+      (setq artifact
+            (etaf--runtime-snapshot-range-input
+             runtime (etaf-runtime-current-generation runtime) semantic nil))
+      (puthash key artifact registry))
     (unless (ebox-canonical-input-p artifact)
       (signal 'etaf-runtime-error
               (list "Range artifact has no canonical input")))
@@ -1064,20 +1070,6 @@ starts a new child layout, where another physical Range may be introduced."
                            nodes (list 'etaf-runtime-root
                                        (etaf-runtime-mount-epoch runtime))))))
       (ebox-canonical-input-create nodes (ebox-source-builder-finish builder)))))
-
-(defun etaf--runtime-refresh-range-artifacts (runtime)
-  "Resolve invalidated Range snapshots before RUNTIME publishes its generation."
-  (maphash
-   (lambda (effect-id artifact)
-     (when (eq artifact :invalid)
-       (let* ((generation (etaf-runtime-current-generation runtime))
-              (effect (or (gethash effect-id (etaf-runtime-candidate-effects runtime))
-                          (and generation (etaf--generation-effect generation effect-id))))
-              (range (and effect (etaf--runtime-output-semantic
-                                  runtime generation
-                                  (etaf--generation-effect-semantic-id effect) t))))
-         (when range (etaf--runtime-range-input runtime range)))))
-   (etaf-runtime-candidate-range-artifacts runtime)))
 
 (defun etaf--runtime-range-nodes (runtime semantic)
   "Import SEMANTIC Range's canonical input from RUNTIME and return its nodes."
@@ -4307,7 +4299,6 @@ with staged effects and contributions before building the next Generation."
 (defun etaf--runtime-build-generation (runtime &optional base)
   "Build RUNTIME generation, point-copying candidate owners from BASE."
   (etaf--runtime-record-detached-candidate-subtrees runtime base)
-  (etaf--runtime-refresh-range-artifacts runtime)
   (unless (etaf-runtime-candidate-full-rebuild-p runtime)
     (etaf--runtime-prune-candidate-behaviors runtime base))
   (let* ((full-p (or (null base) (etaf-runtime-root-dirty-p runtime)))
@@ -4737,7 +4728,8 @@ removed inside the same rollback journal."
                (etaf-runtime-candidate-behavior-resource-keys runtime)))
             (maphash
              (lambda (effect-id artifact)
-               (unless (ebox-canonical-input-p artifact)
+               (unless (or (eq artifact :invalid)
+                           (ebox-canonical-input-p artifact))
 		 (signal 'etaf-runtime-error
 			 (list "Range artifact is not canonical input")))
                (when-let* ((range

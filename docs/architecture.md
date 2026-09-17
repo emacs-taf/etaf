@@ -264,7 +264,12 @@ effect; neither output cardinality nor slot access introduces a physical contain
 Component identity and lifecycle are independent of the current output shape.
 
 The final semantic generation owns output composition. Range snapshots are derived
-caches; descendant changes invalidate enclosing snapshots. Adjacent semantic
+caches; descendant changes invalidate enclosing snapshots without eagerly
+lowering those ancestors again. A snapshot is composed from the corresponding
+committed or candidate generation only when a publication or composition needs
+that Range's canonical input. An invalidation carries no captured runtime or
+old generation, and follows the same artifact promotion and rollback lifecycle
+as a materialized snapshot. Adjacent semantic
 Ranges share a physical Ebox child list, while a Host starts an independent child
 layout. Publication uses Ebox's committed Range addresses, or its root operation
 when no enclosing child Range is published. It composes the final candidate output

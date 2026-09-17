@@ -59,7 +59,13 @@
                    (state (assoc '(1 :a) etaf-reorder-test--states))
                    (target (nth 2 state)))
               (when focused (etaf-focus runtime target))
-              (etaf-dispatch-event runtime target 'press)
+              ;; Several descendant generations precede ancestor composition.
+              ;; Reordering must use the latest child output and callbacks.
+              (dotimes (index 4)
+                (etaf-dispatch-event runtime target 'press)
+                (with-current-buffer buffer
+                  (should (string-match-p (format "1/:a=%s" (1+ index))
+                                          (buffer-string)))))
               (setf (etaf-value columns) (reverse (etaf-value columns)))
               (setf (etaf-value rows) '((:id 2) (:id 1)))
               (should (equal (and focused target) (etaf-focused-host-ref runtime)))
@@ -67,9 +73,9 @@
               (should (= 4 (length etaf-reorder-test--states)))
               (dotimes (index 2)
                 (etaf-dispatch-event runtime target 'press)
-                (should (= (+ 2 index) (etaf-value (cadr state))))
+                (should (= (+ 5 index) (etaf-value (cadr state))))
                 (with-current-buffer buffer
-                  (should (string-match-p (format "1/:a=%s" (+ 2 index)) (buffer-string)))
+                  (should (string-match-p (format "1/:a=%s" (+ 5 index)) (buffer-string)))
                   (should (string-match-p "2/:a=0" (buffer-string)))))
               (setf (etaf-value rows) '((:id 2)))
               (should-not (etaf-focused-host-ref runtime))
