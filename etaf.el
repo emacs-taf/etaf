@@ -1087,15 +1087,14 @@
 ;;
 ;; Macro: etaf-theme-define-palette (name &rest plist)
 ;;;###autoload (autoload 'etaf-theme-define-palette "etaf" nil nil 'macro)
-;; Define a TP palette NAME from PLIST for the ETAF Theme adapter.
+;; Define a semantic light/dark palette NAME from PLIST for ETAF Themes.
 ;;
-;; The palette registry remains owned by TP; this wrapper keeps an application
-;; from depending on the lower-level `tp-define-palette' spelling in its View or
-;; Component modules.
+;; Each channel value is a `(LIGHT . DARK)' pair. The registry is independent
+;; of frame state and renderer implementation details.
 ;;
-;; Function: etaf-theme-from-tp-palettes (bindings mode)
-;;;###autoload (autoload 'etaf-theme-from-tp-palettes "etaf" nil nil)
-;; Return an ETAF Theme plist from TP palette BINDINGS in MODE.
+;; Function: etaf-theme-from-palettes (bindings mode)
+;;;###autoload (autoload 'etaf-theme-from-palettes "etaf" nil nil)
+;; Return an ETAF Theme plist from semantic palette BINDINGS in MODE.
 ;;
 ;; BINDINGS is a keyword plist whose values are `(PALETTE . CHANNEL)' pairs,
 ;; where PALETTE is a TP palette symbol and CHANNEL is `:fg', `:bg', or
@@ -1243,7 +1242,7 @@
 (require 'etaf-behavior)
 (require 'etaf-actions)
 (require 'etaf-events)
-(require 'etaf-theme-tp)
+(require 'etaf-theme)
 (require 'etaf-performance)
 
 (autoload 'etaf-resource-example-open "examples/etaf-resource-example" nil t)

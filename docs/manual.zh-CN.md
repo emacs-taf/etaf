@@ -540,9 +540,9 @@ Theme 是 Context 的便捷形式，不是另一个 Runtime 对象：
 
 如果应用有亮/暗两套 palette，应把语义 role 集中放在一份 palette plist 中，
 再显式调用 `(etaf-theme-resolve-palette palette 'light)` 或 `'dark`。这样应用的
-Theme toggle 不依赖 Emacs frame。可选的 `etaf-theme-tp` adapter 可以把 TP 的
+Theme toggle 不依赖 Emacs frame。可选的 `etaf-theme` adapter 可以把 TP 的
 palette registry 转换为同一份 ETAF Theme contract；`etaf-ui` 和 core Runtime
-都不依赖 TP palette 名称。
+都不依赖渲染器 palette 名称。
 
 静态 Component 样式可以用 `(etaf-theme-token :token-key)` 延迟读取继承的
 Theme。ETAF 会在 lowering 样式作用域时解析它，使重复的 retained Host 复用静态

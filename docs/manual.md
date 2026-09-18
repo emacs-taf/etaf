@@ -582,9 +582,9 @@ Theme is a Context convenience, not another runtime object:
 For a light/dark application palette, keep the semantic roles in one palette
 plist and resolve it explicitly with
 `(etaf-theme-resolve-palette palette 'light)` or `'dark`. This keeps an app
-Theme toggle independent from the Emacs frame. The optional `etaf-theme-tp`
-adapter can translate TP palette registry entries into the same ETAF Theme
-contract; `etaf-ui` and the core Runtime do not depend on TP palette names.
+Theme toggle independent from the Emacs frame. The optional `etaf-theme`
+adapter can translate ETAF semantic palette registry entries into the same ETAF Theme
+contract; `etaf-ui` and the core Runtime do not depend on renderer palette names.
 
 Static Component styles can defer one value to the inherited Theme with
 `(etaf-theme-token :token-key)`. ETAF resolves that token while lowering the

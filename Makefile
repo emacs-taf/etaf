@@ -2,7 +2,7 @@
 .NOTPARALLEL:
 EMACS ?= emacs
 LOAD_PATH = -L . -L lisp -L examples -L scripts -L benchmarks -L ../ebox -L ../tp -L ../ecss
-SOURCES = lisp/etaf-view.el lisp/etaf-compiler.el lisp/etaf-component.el lisp/etaf-scheduler.el lisp/etaf-reactive.el lisp/etaf-observer.el lisp/etaf-context.el lisp/etaf-theme-tp.el lisp/etaf-async.el lisp/etaf-resource.el lisp/etaf-data.el lisp/etaf-generation.el lisp/etaf-host.el lisp/etaf-retirement.el lisp/etaf-render-port.el lisp/etaf-renderer.el lisp/etaf-runtime.el lisp/etaf-behavior.el lisp/etaf-actions.el lisp/etaf-events.el lisp/etaf-performance.el etaf.el scripts/emacs-gui-verifier.el benchmarks/benchmark-scheduler-context.el benchmarks/benchmark-ebox-resize.el
+SOURCES = lisp/etaf-view.el lisp/etaf-compiler.el lisp/etaf-component.el lisp/etaf-scheduler.el lisp/etaf-reactive.el lisp/etaf-observer.el lisp/etaf-context.el lisp/etaf-theme.el lisp/etaf-async.el lisp/etaf-resource.el lisp/etaf-data.el lisp/etaf-generation.el lisp/etaf-host.el lisp/etaf-retirement.el lisp/etaf-render-port.el lisp/etaf-renderer.el lisp/etaf-runtime.el lisp/etaf-behavior.el lisp/etaf-actions.el lisp/etaf-events.el lisp/etaf-performance.el etaf.el scripts/emacs-gui-verifier.el benchmarks/benchmark-scheduler-context.el benchmarks/benchmark-ebox-resize.el
 SOURCES += scripts/resource-gui-scenarios.el
 EXAMPLES = examples/etaf-counter-example.el examples/etaf-data-example.el examples/etaf-resource-example.el
 TESTS = $(filter-out tests/etaf-docs-tests.el,$(wildcard tests/*-tests.el))

@@ -489,7 +489,7 @@ property plist:
 
 Palette resolution remains a Theme concern, not a UI catalog concern. Core
 provides `etaf-theme-resolve-palette` for explicit light/dark semantic pairs;
-the optional `etaf-theme-tp` file is the only bridge allowed to read TP's
+the optional `etaf-theme` file is the only bridge allowed to read TP's
 renderer-level palette registry. `etaf-ui` consumes `:ui-*` semantic tokens and
 does not depend on TP names or private Ebox/TP state.
 

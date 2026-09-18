@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- ETAF semantic palettes are now owned by `etaf-theme`; the former TP palette
+  adapter is removed, and Research Shelf consumes the renderer-independent
+  palette registry.
+
 - Narrow Host content updates no longer deep-copy their immutable property
   signature before lowering; renderer and source-builder ownership boundaries
   retain the required snapshots without duplicating interaction metadata.

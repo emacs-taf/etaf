@@ -445,7 +445,7 @@ View，或在那里调用普通的 View-producing callback。投影的 slot 继�
 
 Palette 解析属于 Theme，而不是 UI 目录。core 提供
 `etaf-theme-resolve-palette` 来解析显式的亮/暗语义 pair；可选的
-`etaf-theme-tp` 文件是唯一可以读取 TP renderer-level palette registry 的桥接层。
+`etaf-theme` 文件是唯一可以读取 renderer-independent semantic palette registry 的桥接层。
 `etaf-ui` 只消费 `:ui-*` 语义 token，不依赖 TP 名称，也不访问 Ebox/TP 私有状态。
 
 静态 Component 规则如果需要读取一个 Theme 值，应使用 `etaf-theme-token`；
