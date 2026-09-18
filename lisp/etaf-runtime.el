@@ -3081,9 +3081,14 @@ subtrees keep their committed resources without being traversed."
   (let ((builder (ebox-source-builder-create)))
     (let* ((etaf--ebox-source-builder builder)
            (node
-            (etaf--lower-resolved-semantic-host
+           (etaf--lower-resolved-semantic-host
              (etaf--semantic-host-name semantic)
-             (copy-tree (etaf--semantic-host-props-signature semantic))
+             ;; The committed props signature is immutable for the duration
+             ;; of this lowering pass.  Renderer and source-builder boundaries
+             ;; take their own snapshots where ownership changes; copying the
+             ;; complete plist here duplicated that work for every content
+             ;; patch, including interaction keymaps and scope metadata.
+             (etaf--semantic-host-props-signature semantic)
              (copy-sequence (or content ""))
              nil nil)))
       (ebox-canonical-input-create

@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- Narrow Host content updates no longer deep-copy their immutable property
+  signature before lowering; renderer and source-builder ownership boundaries
+  retain the required snapshots without duplicating interaction metadata.
 - Local updates invalidate enclosing Range snapshots without eagerly rebuilding
   their complete output. Snapshots are composed from current semantic facts when
   needed; subsequent parent updates and keyed reorders retain current child state.
