@@ -77,9 +77,9 @@
 
 (defun etaf-dynamic-test--paint-foreground (buffer color)
   "Read COLOR's currently published foreground in BUFFER."
-  (if (tp-paint-slot-p color)
+  (if (ebox-paint-slot-p color)
       (with-current-buffer buffer
-        (plist-get (cadr (assq (tp-paint-slot-face color) face-remapping-alist))
+        (plist-get (cadr (assq (ebox-paint-slot-face color) face-remapping-alist))
                    :foreground))
     color))
 

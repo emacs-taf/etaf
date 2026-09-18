@@ -42,11 +42,11 @@
 (declare-function ebox-range-ref-present-p "ebox" (buffer-or-name range-ref))
 (declare-function ebox-call-with-render-burst
                   "ebox-buffer-backend" (function &rest arguments))
-(declare-function tp-paint-slot-create "tp-style" (spec))
-(declare-function tp-paint-slot-installed-p "tp-style" (slot))
-(declare-function tp-paint-slot-spec "tp-style" (slot))
-(declare-function tp-paint-slot-apply-updates "tp-style" (buffer updates))
-(declare-function tp-paint-slot-rollback-updates "tp-style" (journal))
+(declare-function ebox-paint-slot-create "ebox" (spec))
+(declare-function ebox-paint-slot-installed-p "ebox" (slot))
+(declare-function ebox-paint-slot-spec "ebox" (slot))
+(declare-function ebox-paint-slot-apply-updates "ebox" (buffer updates))
+(declare-function ebox-paint-slot-rollback-updates "ebox" (journal))
 (declare-function tp-transaction-active-p "tp-reactive" ())
 (defvar etaf--render-runtime)
 (defvar etaf--render-style-owners)
@@ -489,7 +489,7 @@ RESOLVED is the current projected paint value."
                        ((and entry (equal shape (plist-get entry :shape)))
                         entry)
                        ((null entry)
-                        (let* ((slot (tp-paint-slot-create spec))
+                        (let* ((slot (ebox-paint-slot-create spec))
                                (created
                                 (list :shape shape :slot slot
                                       :value
@@ -502,20 +502,20 @@ RESOLVED is the current projected paint value."
                 (if (null entry)
                     resolved
                   (let ((slot (plist-get entry :slot)))
-                    (unless (and (tp-paint-slot-installed-p slot)
-                                 (equal spec (tp-paint-slot-spec slot)))
+                    (unless (and (ebox-paint-slot-installed-p slot)
+                                 (equal spec (ebox-paint-slot-spec slot)))
                       (puthash slot spec updates)))
                   (plist-get entry :value)))
             resolved)
         (let* ((spec (etaf--theme-paint-face-spec property resolved))
                (entry (or (gethash key slots)
-                          (let* ((slot (tp-paint-slot-create spec))
+                          (let* ((slot (ebox-paint-slot-create spec))
                                  (created (list :slot slot :value slot)))
                             (puthash key created slots)
                             created))))
           (let ((slot (plist-get entry :slot)))
-            (unless (and (tp-paint-slot-installed-p slot)
-                         (equal spec (tp-paint-slot-spec slot)))
+            (unless (and (ebox-paint-slot-installed-p slot)
+                         (equal spec (ebox-paint-slot-spec slot)))
               (puthash slot spec updates)))
           (plist-get entry :value))))))
 
@@ -4873,7 +4873,7 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
         (progn
           (when paint-updates
             (setf (etaf--generation-participant-paint-journal participant)
-                  (tp-paint-slot-apply-updates
+                  (ebox-paint-slot-apply-updates
                    (etaf-runtime-buffer runtime) paint-updates)))
           (etaf--runtime-swap-generation
            runtime old candidate semantic-candidate)
@@ -4895,7 +4895,7 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
        semantic-candidate)
       (when-let* ((paint-journal
                   (etaf--generation-participant-paint-journal participant)))
-        (tp-paint-slot-rollback-updates paint-journal)
+        (ebox-paint-slot-rollback-updates paint-journal)
         (setf (etaf--generation-participant-paint-journal participant) nil))
       (etaf--runtime-rollback-semantic-inverse-journal semantic-candidate)
       (setf (etaf--generation-participant-state participant) 'rolled-back)))
