@@ -488,10 +488,10 @@ property plist:
 ```
 
 Palette resolution remains a Theme concern, not a UI catalog concern. Core
-provides `etaf-theme-resolve-palette` for explicit light/dark semantic pairs;
-the optional `etaf-theme` file is the only bridge allowed to read TP's
-renderer-level palette registry. `etaf-ui` consumes `:ui-*` semantic tokens and
-does not depend on TP names or private Ebox/TP state.
+provides `etaf-theme-resolve-palette` for explicit light/dark semantic pairs
+in application-owned data. Resolution returns an ordinary Theme plist without
+a global registry. `etaf-ui` consumes `:ui-*` semantic tokens and does not
+depend on renderer palette names or private Ebox state.
 
 When a static Component rule needs one Theme value, use
 `etaf-theme-token`; ETAF resolves the deferred token at the style boundary so
@@ -500,7 +500,7 @@ the rule remains static for retained Hosts.
 Theme defaults lower to immutable Ebox scopes at UA origin, rooted on their Host.
 ECSS owns their precedence, including importance and inheritance. Host updates
 resolve author props and defaults separately before candidate publication; deferred
-ECSS values bypass concrete TP paint slots after Ebox schema validation.
+ECSS values bypass concrete Ebox paint slots after Ebox schema validation.
 
 Each Component instance owns an immutable Ebox scope identity. Hosts mark
 membership; topmost owned Hosts independently mount rule revisions at author
@@ -595,7 +595,7 @@ Database backends belong to `etaf-db`; SQLite is the only implemented backend. R
 Mounted Component, expr, slot, fragment, raw, inline, and Root owners publish
 through one outer reactive dispatch. A local owner evaluates into a candidate
 generation and Ebox logical replacement; disjoint owners are coalesced into
-one TP/Ebox publication. The Root owner is the only complete-root adapter.
+one Ebox publication. The Root owner is the only complete-root adapter.
 
 The sole mutable pointer to the committed semantic generation belongs to
 `etaf-generation-authority`. Public handler and Host-property queries read that
@@ -605,26 +605,26 @@ back into it. The migration-only `legacy`, `project`, and `shadow` routes prove
 projection equivalence and rollback safety without introducing a second
 committed truth.
 
-At process bootstrap, `etaf-render-port` requires Ebox framework SPI v2 and
-snapshots exactly one immutable port. A missing, malformed, or incompatible
-provider fails closed before any Runtime is mounted. The ordered dependency
-upgrade may expose either a transitional TP v1+v2 manifest or the final v2-only
-manifest; both prove the required v2 capability, and ETAF never calls a v1
-operation. A mounted or in-flight Runtime never switches ports.
+At process bootstrap, `etaf-render-port` requires Ebox framework SPI v3 with
+`ebox-publication/v1` and snapshots exactly one immutable port. A missing,
+malformed, or incompatible provider fails closed before any Runtime is mounted.
+Ebox owns retained publication, transaction participation and final-accept
+markers. ETAF uses those public contracts without a second publication provider
+or compatibility route. A mounted or in-flight Runtime never switches ports.
 
 Each semantic candidate captures the expected generation, semantic token, and
 instance/resource/artifact/route store versions. The render path stages one CAS
 inside the Ebox framework callback and restores it through the same inverse
 journal on failure. A semantic-only change runs that CAS under ETAF ownership
-without creating an Ebox commit or TP revision. Mirror projection and obsolete
+without creating an Ebox publication or revision. Mirror projection and obsolete
 route cleanup after CAS are postcommit work and cannot reverse the committed
 token if they fail. Such failures are retained in the retirement diagnostic
 journal and re-signaled with the same committed trailer used by lifecycle
 failures; they never re-enter semantic rollback.
 
 Each mounted Runtime also owns a distinct Host authority containing `state /
-opaque token / version`. The initial v2 framework stage enters only a
-provisional state and registers a fixed-slot TP final marker; the Host becomes
+opaque token / version`. The initial framework stage enters only a
+provisional state and registers a fixed-slot Ebox final marker; the Host becomes
 attached only when buffer final accept succeeds. Public lookup, events, and
 source routes validate both attached state and token. Detach invalidates the
 token at one O(1) boundary before removing registries, routes, Component scopes,

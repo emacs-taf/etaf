@@ -2,11 +2,27 @@
 
 ## Unreleased
 
+### Changed
+
+- Retained publication is now owned by Ebox. Update Ebox and ETAF together;
+  the integration uses SPI v3 and `ebox-publication/v1`. TP is no longer a
+  package dependency. Publication reports use `:publication-*` fields and the
+  `ebox-publication` provider; consumers must migrate the former TP fields.
+
+
+### Changed
+
+- Rendering requires Ebox framework SPI v3 and `ebox-publication/v1`. Host
+  final-accept authority and committed-query guards now use Ebox transactions;
+  ETAF no longer requires TP. Upgrade Ebox before ETAF and restart Emacs to load
+  one consistent provider and render port. Performance reports correlate the
+  `ebox-publication` stage with rendering through `:publication-transaction-id`.
+
 ### Fixed
 
-- ETAF semantic palettes are now owned by `etaf-theme`; the former TP palette
-  adapter is removed, and Research Shelf consumes the renderer-independent
-  palette registry.
+- Semantic palettes use application-owned token plists and
+  `etaf-theme-resolve-palette`. The TP palette adapter and replacement registry
+  are removed; replace named palette bindings with direct light/dark token pairs.
 
 - Narrow Host content updates no longer deep-copy their immutable property
   signature before lowering; renderer and source-builder ownership boundaries

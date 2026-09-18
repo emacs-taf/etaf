@@ -58,7 +58,7 @@
                           (expand-file-name invocation-name invocation-directory)
                           nil (current-buffer) nil "-Q" "--batch"
                           (append
-                           (cl-loop for directory in '("." "../ebox" "../tp"
+                           (cl-loop for directory in '("." "../ebox"
                                                        "../ecss")
                                     append (list "-L" (expand-file-name
                                                        directory

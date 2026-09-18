@@ -1,8 +1,8 @@
 .DEFAULT_GOAL := check
 .NOTPARALLEL:
 EMACS ?= emacs
-LOAD_PATH = -L . -L lisp -L examples -L scripts -L benchmarks -L ../ebox -L ../tp -L ../ecss
-SOURCES = lisp/etaf-view.el lisp/etaf-compiler.el lisp/etaf-component.el lisp/etaf-scheduler.el lisp/etaf-reactive.el lisp/etaf-observer.el lisp/etaf-context.el lisp/etaf-theme.el lisp/etaf-async.el lisp/etaf-resource.el lisp/etaf-data.el lisp/etaf-generation.el lisp/etaf-host.el lisp/etaf-retirement.el lisp/etaf-render-port.el lisp/etaf-renderer.el lisp/etaf-runtime.el lisp/etaf-behavior.el lisp/etaf-actions.el lisp/etaf-events.el lisp/etaf-performance.el etaf.el scripts/emacs-gui-verifier.el benchmarks/benchmark-scheduler-context.el benchmarks/benchmark-ebox-resize.el
+LOAD_PATH = -L . -L lisp -L examples -L scripts -L benchmarks -L ../ebox -L ../ecss
+SOURCES = lisp/etaf-view.el lisp/etaf-compiler.el lisp/etaf-component.el lisp/etaf-scheduler.el lisp/etaf-reactive.el lisp/etaf-observer.el lisp/etaf-context.el lisp/etaf-async.el lisp/etaf-resource.el lisp/etaf-data.el lisp/etaf-generation.el lisp/etaf-host.el lisp/etaf-retirement.el lisp/etaf-render-port.el lisp/etaf-renderer.el lisp/etaf-runtime.el lisp/etaf-behavior.el lisp/etaf-actions.el lisp/etaf-events.el lisp/etaf-performance.el etaf.el scripts/emacs-gui-verifier.el benchmarks/benchmark-scheduler-context.el benchmarks/benchmark-ebox-resize.el
 SOURCES += scripts/resource-gui-scenarios.el
 EXAMPLES = examples/etaf-counter-example.el examples/etaf-data-example.el examples/etaf-resource-example.el
 TESTS = $(filter-out tests/etaf-docs-tests.el,$(wildcard tests/*-tests.el))
@@ -23,7 +23,7 @@ docs-check:
 		-f ert-run-tests-batch-and-exit
 
 metadata-check:
-	$(EMACS) -Q --batch --eval "(progn (require 'package) (with-temp-buffer (insert-file-contents \"etaf.el\") (let ((desc (package-buffer-info))) (unless (and (equal (package-desc-version desc) '(0 2 1)) (equal (package-desc-reqs desc) '((emacs (29 1)) (ebox (3 0 0)) (tp (2 0 0))))) (error \"Unexpected ETAF package metadata: %S\" desc)))))"
+	$(EMACS) -Q --batch --eval "(progn (require 'package) (with-temp-buffer (insert-file-contents \"etaf.el\") (let ((desc (package-buffer-info))) (unless (and (equal (package-desc-version desc) '(0 2 1)) (equal (package-desc-reqs desc) '((emacs (29 1)) (ebox (3 0 0))))) (error \"Unexpected ETAF package metadata: %S\" desc)))))"
 
 scheduler-benchmark:
 	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" \
@@ -58,7 +58,7 @@ acceptance:
 .PHONY: api-check
 api-check:
 	$(EMACS) -Q --batch -L . $(API_PROVIDER_PATH) --eval '(setq load-prefer-newer t)' -l scripts/check-api.el
-API_PROVIDER_PATH = -L ../ecss -L ../tp -L ../ekp -L ../ebox -L ../etaf-ui -L ../etaf-db -L ../ebox-playground -L ../etaf-playground
+API_PROVIDER_PATH = -L ../ecss -L ../ekp -L ../ebox -L ../etaf-ui -L ../etaf-db -L ../ebox-playground -L ../etaf-playground
 
 .PHONY: test
 test: acceptance

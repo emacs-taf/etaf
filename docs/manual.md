@@ -8,7 +8,6 @@ ETAF depends on the independent Ebox package. During development, put the core c
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/ecss")
-(add-to-list 'load-path "/path/to/github/tp")
 (add-to-list 'load-path "/path/to/github/ebox")
 (add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
@@ -73,7 +72,7 @@ To request pending work explicitly, call `(etaf-runtime-flush runtime)`.
 Its return value is now the **integer committed Ebox revision**, replacing the
 previous Ebox-node return type. Busy or batched work may remain pending; the
 returned revision identifies the publication currently visible to readers.
-Calls inside an active Ebox/TP transaction fail before requesting work, since
+Calls inside an active Ebox transaction fail before requesting work, since
 that transaction's revision may still be provisional. Ordinary flushes do not
 export a tree or force a Root rebuild.
 
@@ -93,7 +92,7 @@ ordinary mutable node payload; it does not drain pending work, evaluate
 Components, publish, or increment the revision. The input remains usable after
 later commits or unmount. Opaque capabilities such as callbacks keep their
 identity; the query does not freeze external capabilities or the display
-environment. Unmounted Runtime and active Ebox/TP transaction queries fail.
+environment. Unmounted Runtime and active Ebox transaction queries fail.
 
 The obsolete `etaf-runtime-root-node` getter remains read-compatible through
 this O(N) query and returns the current single root. Runtime no longer stores a
@@ -582,9 +581,10 @@ Theme is a Context convenience, not another runtime object:
 For a light/dark application palette, keep the semantic roles in one palette
 plist and resolve it explicitly with
 `(etaf-theme-resolve-palette palette 'light)` or `'dark`. This keeps an app
-Theme toggle independent from the Emacs frame. The optional `etaf-theme`
-adapter can translate ETAF semantic palette registry entries into the same ETAF Theme
-contract; `etaf-ui` and the core Runtime do not depend on renderer palette names.
+Theme toggle independent from the Emacs frame. The palette is ordinary
+application-owned data; no global registry or renderer palette names are needed.
+Pass the resolved Theme plist to `etaf-theme-provide`, including the `:ui-*`
+tokens used by the UI catalog.
 
 Static Component styles can defer one value to the inherited Theme with
 `(etaf-theme-token :token-key)`. ETAF resolves that token while lowering the
@@ -1237,7 +1237,7 @@ environment.
 
 The recorder only consumes public Runtime observer reports and installs no
 advice.  Runtime Event, Action, mount, flush, and unmount boundaries create
-bounded operation records.  Ebox, TP, Data, Resource, and SQLite may contribute
+bounded operation records.  Ebox rendering and publication, Data, Resource, and SQLite may contribute
 flat provider stages, ordered by sequence, inside the same operation.  Stages
 may overlap and are therefore not reported as exclusive/self time; failures and
 quits are recorded and then re-signaled unchanged.
@@ -1499,7 +1499,7 @@ or GC policy is created/replaced to make the benchmark pass.
 Use a **new output path** each time. UTF-8 `.eldata` reports retain all requests,
 all completed samples, actual published dimensions, node/text counts, GC,
 per-operation CPU time, code origins and hashes. Optional `:phases '(FUNCTIONS…)`
-records inclusive phase durations for loaded `ebox-`, `tp-` and `etaf-` provider
+records inclusive phase durations for loaded `ebox-` and `etaf-` provider
 functions. The driver and outer publication boundary cannot be selected as
 phases; nested durations must not be summed.
 Publication timing ends when the real public Ebox viewport call returns.

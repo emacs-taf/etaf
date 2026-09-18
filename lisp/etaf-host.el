@@ -5,15 +5,14 @@
 ;;; Commentary:
 
 ;; Owns one mounted Runtime's fixed Host authority token and state machine.
-;; Initial attachment registers a bounded TP final marker so attached
+;; Initial attachment registers a bounded Ebox final marker so attached
 ;; authority and buffer publication share one final-accept boundary.  Detach
 ;; invalidates authority in O(1) before any unbounded retirement work.
 
 ;;; Code:
 
 (require 'cl-lib)
-(require 'tp)
-(require 'tp)
+(require 'ebox)
 
 (define-error 'etaf-host-authority-error "Invalid ETAF Host authority state")
 
@@ -77,8 +76,8 @@
   authority)
 
 (defun etaf-host--slot-write (authority index value)
-  "Return one prebuilt TP marker write for AUTHORITY slot INDEX and VALUE."
-  (tp-final-marker-slot-write-create
+  "Return one prebuilt Ebox marker write for AUTHORITY slot INDEX and VALUE."
+  (ebox-final-marker-slot-write-create
    :target (etaf-host-authority-slots authority)
    :index index
    :value value))
@@ -92,16 +91,16 @@
          (token (etaf-host-authority-token authority))
          (version (etaf-host-authority-version authority)))
     (aset slots etaf-host--state-slot 'provisionally-attached)
-    (tp-transaction-register-final-marker
+    (ebox-transaction-register-final-marker
      :owner-key
      (list 'etaf-host
            (etaf-host-authority-host-id authority)
            (etaf-host-authority-mount-epoch authority))
      :expected-token
-     (tp-final-marker-expectation-create
+     (ebox-final-marker-expectation-create
       :target slots :index etaf-host--token-slot :value token)
      :expected-version
-     (tp-final-marker-expectation-create
+     (ebox-final-marker-expectation-create
       :target slots :index etaf-host--version-slot :value version)
      :next-values
      (vector
@@ -113,7 +112,7 @@
        authority etaf-host--state-slot 'provisionally-attached)
       (etaf-host--slot-write authority etaf-host--version-slot version))
      :slot-write-count 2
-     :operation-key 'tp-vector-slots/v1)
+     :operation-key 'ebox-vector-slots/v1)
     authority))
 
 (defun etaf-host-authority-rollback-attach (authority)

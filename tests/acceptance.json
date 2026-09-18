@@ -9,8 +9,7 @@
     "../ekp",
     "../etaf-db",
     "../etaf-playground",
-    "../etaf-ui",
-    "../tp"
+    "../etaf-ui"
   ],
   "support": [],
   "cases": [
@@ -993,6 +992,16 @@
       "name": "etaf-performance-portable-report-is-a-detached-snapshot",
       "file": "tests/etaf-performance-tests.el",
       "purpose": "Portable performance reports identify the owning runtime and buffer, support explicit empty input and detach mutable labels from supplied record snapshots."
+    },
+    {
+      "name": "etaf-runtime-committed-queries-exclude-active-publication",
+      "file": "tests/etaf-runtime-publication-tests.el",
+      "purpose": "Committed Runtime queries reject provisional Ebox publication while preserving mounted state."
+    },
+    {
+      "name": "etaf-performance-correlates-render-and-publication-reports",
+      "file": "tests/etaf-runtime-publication-tests.el",
+      "purpose": "An observed Runtime event correlates Ebox rendering and publication reports with its visible result."
     }
   ]
 }

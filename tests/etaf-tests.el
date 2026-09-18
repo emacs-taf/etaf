@@ -612,8 +612,23 @@
            '(:ink ("#172033" . "#F4F7FF")
              :paper (:light "#F7F3EA" :dark "#111827"))
            'dark)))
+  (let ((palette '(:ink ("#172033" . "#F4F7FF")
+                   :accent "#3657D6" :border nil)))
+    (dolist (mode '(light dark))
+      (let ((resolved (etaf-theme-resolve-palette palette mode)))
+        (should (equal (plist-get resolved :accent) "#3657D6"))
+        (should (plist-member resolved :border))
+        (should-not (plist-get resolved :border))
+        (setf (plist-get resolved :accent) "changed")))
+    (should (equal (plist-get palette :accent) "#3657D6")))
   (should-error
    (etaf-theme-resolve-palette '(:ink "red") 'sepia)
+   :type 'etaf-context-error)
+  (should-error
+   (etaf-theme-resolve-palette '(ink "red") 'light)
+   :type 'etaf-context-error)
+  (should-error
+   (etaf-theme-resolve-palette '(:ink) 'dark)
    :type 'etaf-context-error))
 
 (ert-deftest etaf-box-composes-adjacent-styled-text-runs ()

@@ -8,7 +8,6 @@ ETAF 依赖独立的 Ebox 包。开发时把核心检出目录放入 `load-path`
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/ecss")
-(add-to-list 'load-path "/path/to/github/tp")
 (add-to-list 'load-path "/path/to/github/ebox")
 (add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)
@@ -72,7 +71,7 @@ View 含有状态型 Component、响应式数据、事件或生命周期时，�
 需要显式请求处理待办更新时，调用 `(etaf-runtime-flush runtime)`。
 它现在返回 **Ebox 已提交 revision 整数**，不再返回旧版的 Ebox 节点。
 Runtime 忙碌或仍处于批处理时，更新可能继续等待；返回值标识此刻读者可见的
-发布版本。活动 Ebox/TP 事务内的调用会在请求更新之前报错，因为事务中的
+发布版本。活动 Ebox 事务内的调用会在请求更新之前报错，因为事务中的
 revision 可能尚未提交。普通 flush 不导出整棵树，也不强制重建 Root。
 
 需要当前树及其配套 source facts 时，显式获取快照：
@@ -89,7 +88,7 @@ revision 可能尚未提交。普通 flush 不导出整棵树，也不强制重�
 （本次挂载的身份）。导出成本为 O(N)，会分离节点的普通可变数据；它不处理
 待办更新，不求值 Component，不发布，也不增加 revision。input 在后续提交或
 卸载后仍可使用。callback 等不透明能力保持身份，查询不会冻结这些外部能力或
-显示环境。对未挂载 Runtime 或在活动 Ebox/TP 事务内查询会报错。
+显示环境。对未挂载 Runtime 或在活动 Ebox 事务内查询会报错。
 
 已废弃的 `etaf-runtime-root-node` getter 通过上述 O(N) 查询保留读取兼容性，
 返回当前唯一根节点；Runtime 不再保存根节点镜像。请迁移到
@@ -540,9 +539,9 @@ Theme 是 Context 的便捷形式，不是另一个 Runtime 对象：
 
 如果应用有亮/暗两套 palette，应把语义 role 集中放在一份 palette plist 中，
 再显式调用 `(etaf-theme-resolve-palette palette 'light)` 或 `'dark`。这样应用的
-Theme toggle 不依赖 Emacs frame。可选的 `etaf-theme` adapter 可以把 TP 的
-palette registry 转换为同一份 ETAF Theme contract；`etaf-ui` 和 core Runtime
-都不依赖渲染器 palette 名称。
+Theme toggle 不依赖 Emacs frame。palette 是应用持有的普通数据，不需要全局
+registry 或渲染器 palette 名称。把解析后的 Theme plist 传给
+`etaf-theme-provide`，其中可包含 UI 目录使用的 `:ui-*` token。
 
 静态 Component 样式可以用 `(etaf-theme-token :token-key)` 延迟读取继承的
 Theme。ETAF 会在 lowering 样式作用域时解析它，使重复的 retained Host 复用静态
@@ -1128,7 +1127,7 @@ Resource 示例的稳定 GUI 流程位于 `scripts/resource-gui-scenarios.el`。
 
 记录器只消费 Runtime 的公共 observer 报告，不安装 advice。Runtime 的 Event、
 Action、mount、flush 和 unmount 会创建有界 operation 记录；同一 operation 内，
-Ebox、TP、Data、Resource 与 SQLite 可以贡献按 sequence 排列的 flat provider
+Ebox 渲染与发布、Data、Resource 与 SQLite 可以贡献按 sequence 排列的 flat provider
 阶段。阶段可能重叠，因此不声称 exclusive/self 时间；error 和 quit 会先被记录，
 再保持原条件继续抛出。
 

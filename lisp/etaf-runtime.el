@@ -47,7 +47,7 @@
 (declare-function ebox-paint-slot-spec "ebox" (slot))
 (declare-function ebox-paint-slot-apply-updates "ebox" (buffer updates))
 (declare-function ebox-paint-slot-rollback-updates "ebox" (journal))
-(declare-function tp-transaction-active-p "tp-reactive" ())
+(declare-function ebox-transaction-active-p "ebox" ())
 (defvar etaf--render-runtime)
 (defvar etaf--render-style-owners)
 (defvar etaf--render-parent-style-owners)
@@ -401,7 +401,7 @@ checking them against a fresh generation projection."
   etaf-runtime--set-current-generation)
 
 (defun etaf--theme-paint-face-spec (property value)
-  "Return PROPERTY's TP face spec for resolved paint VALUE, or nil."
+  "Return PROPERTY's Ebox face spec for resolved paint VALUE, or nil."
   (pcase property
     (:color (and value (list :foreground value)))
     ((or :bgcolor :background-color)
@@ -421,7 +421,7 @@ checking them against a fresh generation projection."
     (_ nil)))
 
 (defun etaf--runtime-theme-paint-property-p (property)
-  "Return non-nil when PROPERTY has a geometry-neutral TP paint slot."
+  "Return non-nil when PROPERTY has a geometry-neutral Ebox paint slot."
   (memq property '(:color :bgcolor :background-color
                    :border :border-color
                    :border-top-color :border-bottom-color
@@ -1429,7 +1429,7 @@ effect-to-source edges.  It is intentionally immutable and suitable as an
   etaf--current-runtime)
 
 (defun etaf--runtime-forward-ebox-report (_buffer report)
-  "Forward accepted Ebox or TP REPORT into the active Runtime operation."
+  "Forward Ebox publication or renderer REPORT into the active operation."
   (etaf-observer-emit report))
 
 (defun etaf--runtime-record-observer-diagnostic (runtime diagnostic)
@@ -6275,13 +6275,13 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
   "Request mounted RUNTIME's pending work and return its committed revision.
 This returns an integer, not an Ebox node.  Busy or batched work may remain
 pending; the result identifies the currently committed Ebox publication.
-An active Ebox/TP transaction is rejected before requesting work, because
+An active Ebox transaction is rejected before requesting work, because
 its current revision may still be provisional.  No tree is exported.
 Use `etaf-runtime-snapshot' for an explicit snapshot."
   (let ((runtime (etaf-runtime-require-mounted runtime)))
-    (when (tp-transaction-active-p)
+    (when (ebox-transaction-active-p)
       (signal 'etaf-runtime-error
-              (list "Cannot flush inside an active Ebox/TP transaction")))
+              (list "Cannot flush inside an active Ebox transaction")))
     (etaf--runtime-request-flush runtime)
     (etaf-render-port-revision (etaf-runtime-buffer runtime))))
 
@@ -6292,7 +6292,7 @@ Return a plist with `:input' (a canonical Ebox input), `:revision', and
 `:mount-id'.  The export costs O(N), detaches mutable node payload, and keeps
 opaque callback identities.  It neither drains pending work nor evaluates
 Components, publishes, or increments the revision.  Unmounted Runtimes and
-reads inside an Ebox/TP transaction signal an error."
+reads inside an Ebox transaction signal an error."
   (let ((runtime (etaf-runtime-require-mounted runtime)))
     (etaf-render-port-snapshot (etaf-runtime-buffer runtime))))
 

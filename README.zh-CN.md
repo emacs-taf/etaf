@@ -82,7 +82,7 @@ Core 不加载 `.etaf` 文件；Playground 将它们作为 inert 结构，由其
 
 ETAF 提供一个独立、按需加载、与具体应用无关的性能记录器。它消费 Runtime
 公共 observer 报告，不使用 advice 或私有跨包探针。Event、Action、mount、flush
-和 unmount 等 Runtime operation 会自动记录；同一 operation 内的 Ebox、TP、Data、
+和 unmount 等 Runtime operation 会自动记录；同一 operation 内的 Ebox 渲染与发布、Data、
 Resource 和 SQLite 等 provider 阶段按 sequence 关联到同一条记录。
 
 ```elisp
@@ -149,21 +149,16 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 
 ## 加载与验证
 
-先安装 ECSS 0.1.0 与 TP 2.0.0，再安装 Ebox 3.0.0，最后安装 ETAF 0.2.1。
-ETAF 直接声明 ECSS 依赖，以便主题解析保留延迟层叠值。
-ETAF 会直接声明 TP 依赖，因为 Host final-accept authority 使用 TP transaction
-contract。渲染要求 Ebox framework SPI v2；provider 缺失、格式错误或不兼容时，
-ETAF 会在 bootstrap 阶段 fail closed。
-
-ETAF 为当前 Emacs 进程 snapshot 一个不可变的 v2 render port。按依赖顺序升级时，
-也接受 Ebox 过渡期的 TP 双能力 manifest，因为其中包含所需的 v2 协议；ETAF
-不会调用已经退役的 v1 capability。
+先安装 ECSS，再安装 Ebox，最后安装 ETAF。ETAF 直接声明 ECSS 依赖，
+以便主题解析保留延迟层叠值。渲染与 Host final-accept authority 都使用 Ebox
+公共契约。renderer 要求 Ebox framework SPI v3 与 `ebox-publication/v1`；
+provider 缺失、格式错误或不兼容时，ETAF 会在 bootstrap 阶段 fail closed。
+ETAF 为当前 Emacs 进程 snapshot 一个不可变 render port。
 
 开发时先把同级 Ebox 检出目录加入 `load-path`：
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/ecss")
-(add-to-list 'load-path "/path/to/github/tp")
 (add-to-list 'load-path "/path/to/github/ebox")
 (add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)

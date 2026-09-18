@@ -5,7 +5,7 @@
 ;;; Commentary:
 
 ;; This file is ETAF's only Ebox framework-SPI bootstrap owner.  It requires
-;; one compatible Ebox v2 provider, snapshots it once, and exposes one immutable
+;; one compatible Ebox v3 provider, snapshots it once, and exposes one immutable
 ;; port to downstream ETAF code without repeated protocol guesses.
 
 ;;; Code:
@@ -20,11 +20,11 @@
   "Incompatible Ebox framework SPI provider"
   'etaf-spi-bootstrap-error)
 
-(defconst etaf-render-port--required-spi-version 2
+(defconst etaf-render-port--required-spi-version 3
   "Ebox framework SPI version consumed by this ETAF build.")
 
 (defconst etaf-render-port--required-schema-version
-  'ebox-framework-spi-schema/v2
+  'ebox-framework-spi-schema/v3
   "Ebox provider schema consumed by this ETAF build.")
 
 (defconst etaf-render-port--required-capabilities
@@ -33,20 +33,18 @@
     combined-participant-ordering
     same-object-legacy-report
     initial-observation-replay)
-  "Capabilities required from an Ebox framework SPI v2 provider.")
+  "Capabilities required from an Ebox framework SPI v3 provider.")
 
-(defconst etaf-render-port--accepted-tp-protocols
-  '(tp-transaction-protocol-v1+v2 tp-transaction-protocol-v2)
-  "TP protocols accepted from an Ebox SPI v2 provider.
-The dual-capability manifest is accepted during dependency-order migration
-because it contains v2; ETAF never dispatches through its v1 capability.")
+(defconst etaf-render-port--required-publication-protocol
+  'ebox-publication/v1
+  "Publication protocol required from the Ebox-owned runtime.")
 
 (defconst etaf-render-port--required-stage-order
   '(ebox-mirror/native framework-stage)
   "Required stage order inside the combined Ebox participant.")
 
 (defconst etaf-render-port--required-rollback-order
-  '(framework-rollback ebox-mirror/native tp)
+  '(framework-rollback ebox-mirror/native publication)
   "Required rollback order inside the combined Ebox participant.")
 
 (cl-defstruct
@@ -58,7 +56,7 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
   (spi-version nil :read-only t)
   (schema-version nil :read-only t)
   (capabilities nil :read-only t)
-  (tp-protocol nil :read-only t)
+  (publication-protocol nil :read-only t)
   (initial-function nil :read-only t)
   (update-function nil :read-only t)
   (revision-function nil :read-only t)
@@ -67,7 +65,7 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
   (snapshot-function nil :read-only t))
 
 (defun etaf-render-port-route (port)
-  "Return selected PORT route, always `v2'."
+  "Return selected PORT route, always `v3'."
   (etaf-render-port--route port))
 
 (defun etaf-render-port-spi-version (port)
@@ -82,9 +80,9 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
   "Return a defensive copy of PORT's capabilities."
   (copy-sequence (etaf-render-port--capabilities port)))
 
-(defun etaf-render-port-tp-protocol (port)
-  "Return PORT's selected TP transaction protocol."
-  (etaf-render-port--tp-protocol port))
+(defun etaf-render-port-publication-protocol (port)
+  "Return PORT's selected Ebox publication protocol."
+  (etaf-render-port--publication-protocol port))
 
 (defun etaf-render-port-initial-function (port)
   "Return PORT's initial mount function symbol."
@@ -112,14 +110,14 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
           (list :reason reason :detail detail)))
 
 (defun etaf-render-port--ensure-accessors ()
-  "Require Ebox's public v2 accessors and explicit snapshot query."
+  "Require Ebox's public v3 accessors and explicit snapshot query."
   (dolist
       (function
        '(ebox-framework-spi-provider-p
          ebox-framework-spi-provider-spi-version
          ebox-framework-spi-provider-schema-version
          ebox-framework-spi-provider-capabilities
-         ebox-framework-spi-provider-tp-protocol
+         ebox-framework-spi-provider-publication-protocol
          ebox-framework-spi-provider-stage-order
          ebox-framework-spi-provider-rollback-order
          ebox-framework-spi-provider-report-semantics
@@ -165,7 +163,7 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
           :result result :paired paired)))
 
 (defun etaf-render-port--provider-snapshot (provider)
-  "Return a validated field snapshot of Ebox v2 PROVIDER."
+  "Return a validated field snapshot of Ebox v3 PROVIDER."
   (etaf-render-port--ensure-accessors)
   (unless (ebox-framework-spi-provider-p provider)
     (etaf-render-port--bootstrap-error 'non-provider-record provider))
@@ -174,7 +172,8 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
          (ebox-framework-spi-provider-schema-version provider))
         (capabilities
          (ebox-framework-spi-provider-capabilities provider))
-        (tp-protocol (ebox-framework-spi-provider-tp-protocol provider))
+        (publication-protocol
+         (ebox-framework-spi-provider-publication-protocol provider))
         (stage-order (ebox-framework-spi-provider-stage-order provider))
         (rollback-order
          (ebox-framework-spi-provider-rollback-order provider))
@@ -185,7 +184,7 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
                  (symbolp schema-version)
                  (proper-list-p capabilities)
                  (cl-every #'symbolp capabilities)
-                 (symbolp tp-protocol)
+                 (symbolp publication-protocol)
                  (proper-list-p stage-order)
                  (cl-every #'symbolp stage-order)
                  (proper-list-p rollback-order)
@@ -194,7 +193,8 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
       (etaf-render-port--bootstrap-error
        'malformed-provider-fields
        (list :spi-version spi-version :schema-version schema-version
-             :capabilities capabilities :tp-protocol tp-protocol
+             :capabilities capabilities
+             :publication-protocol publication-protocol
              :stage-order stage-order :rollback-order rollback-order
              :report-semantics report-semantics)))
     (list
@@ -202,7 +202,7 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
      :spi-version spi-version
      :schema-version schema-version
      :capabilities (copy-sequence capabilities)
-     :tp-protocol tp-protocol
+     :publication-protocol publication-protocol
      :stage-order (copy-sequence stage-order)
      :rollback-order (copy-sequence rollback-order)
      :report-semantics report-semantics
@@ -227,9 +227,11 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
       (dolist (capability etaf-render-port--required-capabilities)
         (unless (memq capability capabilities)
           (push (list :missing-capability capability) failures))))
-    (unless (memq (plist-get snapshot :tp-protocol)
-                  etaf-render-port--accepted-tp-protocols)
-      (push (list :tp-protocol (plist-get snapshot :tp-protocol)) failures))
+    (unless (eq (plist-get snapshot :publication-protocol)
+                etaf-render-port--required-publication-protocol)
+      (push (list :publication-protocol
+                  (plist-get snapshot :publication-protocol))
+            failures))
     (unless (equal (plist-get snapshot :stage-order)
                    etaf-render-port--required-stage-order)
       (push (list :stage-order (plist-get snapshot :stage-order)) failures))
@@ -261,41 +263,41 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
           (push (list slot operation) failures))))
     (nreverse failures)))
 
-(defun etaf-render-port--v2-port (snapshot)
-  "Return an immutable selected v2 port from compatible SNAPSHOT."
+(defun etaf-render-port--v3-port (snapshot)
+  "Return an immutable selected v3 port from compatible SNAPSHOT."
   (let ((failures (etaf-render-port--incompatibilities snapshot)))
     (when failures
       (signal 'etaf-spi-incompatible-error
               (list :incompatibilities failures)))
     (etaf-render-port--create
-     :route 'v2
+     :route 'v3
      :spi-version (plist-get snapshot :spi-version)
      :schema-version (plist-get snapshot :schema-version)
      :capabilities (copy-sequence (plist-get snapshot :capabilities))
-     :tp-protocol (plist-get snapshot :tp-protocol)
+     :publication-protocol (plist-get snapshot :publication-protocol)
      :initial-function
      (plist-get (plist-get snapshot :initial) :function)
      :update-function
      (plist-get (plist-get snapshot :update) :function)
      :revision-function 'ebox-surface-buffer-revision
      :snapshot-function 'ebox-surface-buffer-snapshot
-     :bootstrap-outcome 'valid-v2-selected
+     :bootstrap-outcome 'valid-v3-selected
      :provider (plist-get snapshot :provider))))
 
 (defun etaf-render-port--bootstrap ()
   "Probe Ebox exactly once and return one immutable selected render port."
-  (let ((feature-present-p (featurep 'ebox-framework-spi-v2))
+  (let ((feature-present-p (featurep 'ebox-framework-spi-v3))
         (predicate-present-p (fboundp 'ebox-framework-spi-capabilities)))
     (cond
      ((and (not feature-present-p) (not predicate-present-p))
-      (etaf-render-port--bootstrap-error 'v2-provider-missing))
+      (etaf-render-port--bootstrap-error 'v3-provider-missing))
      ((not feature-present-p)
-      (etaf-render-port--bootstrap-error 'predicate-without-v2-feature))
+      (etaf-render-port--bootstrap-error 'predicate-without-v3-feature))
      ((not predicate-present-p)
-      (etaf-render-port--bootstrap-error 'v2-feature-without-predicate))
+      (etaf-render-port--bootstrap-error 'v3-feature-without-predicate))
      (t
       (condition-case condition
-          (etaf-render-port--v2-port
+          (etaf-render-port--v3-port
            (etaf-render-port--provider-snapshot
             (ebox-framework-spi-capabilities)))
         ((etaf-spi-incompatible-error etaf-spi-bootstrap-error)
@@ -316,8 +318,9 @@ because it contains v2; ETAF never dispatches through its v1 capability.")
     (buffer input framework-stage framework-rollback &optional observer)
   "Run selected initial operation for BUFFER and canonical INPUT.
 FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair.
-OBSERVER, when non-nil, receives TP and Ebox snapshots measured during the
-initial v2 publication and replayed only after successful final accept."
+OBSERVER, when non-nil, receives publication and Ebox render snapshots
+measured during the initial publication and replayed only after successful
+final accept."
   (let ((report
          (funcall
           (etaf-render-port-initial-function etaf-render-port--selected-port)
@@ -346,7 +349,7 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair."
 
 (defun etaf-render-port-revision (buffer)
   "Return BUFFER's current Ebox revision, or zero when it is unmounted.
-During an active TP transaction this can be a provisional revision for the
+During an active Ebox transaction this can be a provisional revision for the
 paired publication stage.  Public committed queries must exclude that extent."
   (let ((buffer (get-buffer buffer)))
     (if (not (and (buffer-live-p buffer)

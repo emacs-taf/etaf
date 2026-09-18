@@ -88,7 +88,7 @@ with its explicit companion registration handling executable Elisp.
 ETAF provides an independent, opt-in, application-neutral timing recorder.  It
 consumes public Runtime observer reports without advice or private cross-package
 probes.  Runtime operations such as Event, Action, mount, flush, and unmount are
-recorded automatically; Ebox, TP, Data, Resource, and SQLite provider stages
+recorded automatically; Ebox rendering and publication, Data, Resource, and SQLite stages
 inside the same operation are correlated by sequence.
 
 ```elisp
@@ -162,22 +162,17 @@ There is no separate `etaf-data` install: Data is a core ETAF capability. There 
 
 ## Load and verify
 
-Install ECSS 0.1.0 and TP 2.0.0 before Ebox 3.0.0, then install ETAF 0.2.1.
-ETAF declares ECSS directly to preserve deferred cascade values when resolving
-Theme tokens. ETAF declares TP directly because Host final-accept authority uses
-the TP transaction contract. Rendering requires Ebox framework SPI v2; a missing,
-malformed, or incompatible provider fails during ETAF bootstrap.
-
-ETAF snapshots one immutable v2 render port for the Emacs process. During an
-ordered upgrade it also accepts Ebox's transitional dual-capability TP manifest
-because that manifest contains the required v2 protocol. ETAF never dispatches
-through the retired v1 capability.
+Install ECSS before Ebox, then install ETAF. ETAF declares ECSS directly to
+preserve deferred cascade values when resolving Theme tokens. Rendering and Host
+final-accept authority use Ebox's public contracts. The renderer requires Ebox
+framework SPI v3 and `ebox-publication/v1`; a missing, malformed, or incompatible
+provider fails during ETAF bootstrap. ETAF snapshots one immutable render port
+for the Emacs process.
 
 During development, load the sibling Ebox checkout before ETAF:
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/ecss")
-(add-to-list 'load-path "/path/to/github/tp")
 (add-to-list 'load-path "/path/to/github/ebox")
 (add-to-list 'load-path "/path/to/github/etaf")
 (require 'etaf)

@@ -413,7 +413,7 @@ request restores the starting width.  OUTPUT must name a new evidence file.
 DELAY spaces completed publications; TIMEOUT bounds startup and publication.
 LIMIT-MS applies to all request→publication samples, including GC and first use.
 RELOAD-FILES explicitly reloads fresh compiled modules before measurement.
-PHASES names loaded ebox-/tp-/etaf- functions for inclusive diagnostics.
+PHASES names loaded ebox-/etaf- functions for inclusive diagnostics.
 Use `ebox-resize-benchmark-status' to poll and `ebox-resize-benchmark-cancel'
 to stop.  Failure stops at the current width.  No frame or server is created,
 no application observer is replaced, and no GC/font policy is changed."
@@ -427,7 +427,7 @@ no application observer is replaced, and no GC/font policy is changed."
     (error "Stop profiling before collecting resize latency"))
   (dolist (name phases)
     (unless (and (symbolp name) (fboundp name)
-                 (string-match-p "\\`\\(?:ebox\\|tp\\|etaf\\)-" (symbol-name name))
+                 (string-match-p "\\`\\(?:ebox\\|etaf\\)-" (symbol-name name))
                  (not (string-prefix-p "ebox-resize-benchmark-" (symbol-name name)))
                  (not (eq name 'ebox-rerender-buffer-with-context)))
       (error "Invalid or duplicate outer measurement phase: %s" name)))

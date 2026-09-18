@@ -444,16 +444,16 @@ View，或在那里调用普通的 View-producing callback。投影的 slot 继�
 ```
 
 Palette 解析属于 Theme，而不是 UI 目录。core 提供
-`etaf-theme-resolve-palette` 来解析显式的亮/暗语义 pair；可选的
-`etaf-theme` 文件是唯一可以读取 renderer-independent semantic palette registry 的桥接层。
-`etaf-ui` 只消费 `:ui-*` 语义 token，不依赖 TP 名称，也不访问 Ebox/TP 私有状态。
+`etaf-theme-resolve-palette` 解析应用持有的显式亮/暗语义 pair，返回普通
+Theme plist，不需要全局 registry。`etaf-ui` 只消费 `:ui-*` 语义 token，
+不依赖渲染器 palette 名称，也不访问 Ebox 私有状态。
 
 静态 Component 规则如果需要读取一个 Theme 值，应使用 `etaf-theme-token`；
 ETAF 会在样式边界解析这个延迟 token，使 retained Host 仍然走静态样式路径。
 
 Theme 默认值降为根位于当前 Host 的不可变 Ebox UA 作用域；ECSS 负责其优先级、
 importance 和继承。Host 更新分别解析 author 属性与默认值，再进入候选发布。
-延迟 ECSS 值通过 Ebox schema 校验后，保留到层叠计算，不进入具体 TP paint slot。
+延迟 ECSS 值通过 Ebox schema 校验后，保留到层叠计算，不进入具体 Ebox paint slot。
 
 每个 Component instance 拥有不可变 Ebox 作用域身份。Host 标记成员归属，最上层的
 自有 Host 分别以 author 来源挂载规则版本；物理祖先归属使透明 Range 和 forest
@@ -544,7 +544,7 @@ etaf-playground → etaf
 
 mounted Component、expr、slot、fragment、raw、inline 和 Root owner 都经过同一
 个外层 reactive dispatch。局部 owner 先生成 candidate generation 和 Ebox logical
-replacement；不相交 owner 会合并为一次 TP/Ebox publication。只有 Root owner
+replacement；不相交 owner 会合并为一次 Ebox publication。只有 Root owner
 可以进入 complete-root adapter。
 
 已提交 semantic generation 的唯一 mutable pointer 由
@@ -554,22 +554,22 @@ generation；Runtime 中同名 hash table 只是由 generation 单向重建的�
 `legacy`/`project`/`shadow` 路由只用于证明投影等价与安全回退，不增加第二份
 committed truth。
 
-进程 bootstrap 时，`etaf-render-port` 要求 Ebox framework SPI v2，并 snapshot
-唯一的不可变 port。provider 缺失、格式错误或不兼容都会在 Runtime mount 前 fail
-closed。按依赖顺序升级时，Ebox 可暂时报告 TP v1+v2 双能力 manifest，也可报告最终
-的 v2-only manifest；两者都证明所需的 v2 capability，ETAF 不会调用 v1 operation。
-mounted 或 in-flight Runtime 绝不会切换 port。
+进程 bootstrap 时，`etaf-render-port` 要求 Ebox framework SPI v3 与
+`ebox-publication/v1`，并 snapshot 唯一的不可变 port。provider 缺失、格式错误或
+不兼容都会在 Runtime mount 前 fail closed。Ebox 拥有 retained publication、
+transaction participant 和 final-accept marker；ETAF 通过这些公共契约集成，
+不引入第二个 publication provider 或兼容路由。mounted 或 in-flight Runtime
+绝不会切换 port。
 
 每个 semantic candidate 同时捕获 expected generation、semantic token，以及
 instance/resource/artifact/route store versions。render 路径在 Ebox framework
 stage 中暂存一次 CAS，失败时由同一个 inverse journal 恢复；没有可见 Ebox
-变化的 semantic-only 路径由 ETAF 自己执行同一 CAS，不创建 Ebox commit 或 TP
-revision。CAS 后的 mirror 与旧 route 清理属于 postcommit，失败不能反向恢复已提交
+变化的 semantic-only 路径由 ETAF 自己执行同一 CAS，不创建 Ebox publication 或 revision。CAS 后的 mirror 与旧 route 清理属于 postcommit，失败不能反向恢复已提交
 token；这类失败会写入 retirement diagnostic journal，并用与 lifecycle failure
 相同的 committed trailer 重新 signal，绝不会重新进入 semantic rollback。
 
 每个 mounted Runtime 还拥有独立的 Host authority：`state / opaque token /
-version`。initial v2 framework stage 只进入 provisional state，并向 TP 注册固定
+version`。initial framework stage 只进入 provisional state，并向 Ebox 注册固定
 slot final marker；只有 buffer final accept 成功时 Host 才成为 attached。公开
 lookup、event 和 source route 同时校验 attached state 与 token。detach 先在 O(1)
 边界让 token 失效，再清理 registry、routes、Component scopes 和 Behaviors；因此

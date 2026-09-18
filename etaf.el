@@ -4,7 +4,7 @@
 
 ;; Author: ETAF contributors
 ;; Version: 0.2.1
-;; Package-Requires: ((emacs "29.1") (ebox "3.0.0") (ecss "0.1.0") (tp "2.0.0"))
+;; Package-Requires: ((emacs "29.1") (ebox "3.0.0") (ecss "0.1.0"))
 ;; Keywords: ui, tools, convenience
 ;; URL: https://github.com/ginqi7/etaf
 
@@ -977,7 +977,7 @@
 ;; Request mounted RUNTIME's pending work and return its committed revision.
 ;; This returns an integer, not an Ebox node.  Busy or batched work may remain
 ;; pending; the result identifies the currently committed Ebox publication.
-;; An active Ebox/TP transaction is rejected before requesting work, because
+;; An active Ebox transaction is rejected before requesting work, because
 ;; its current revision may still be provisional.  No tree is exported.
 ;; Use `etaf-runtime-snapshot' for an explicit snapshot.
 ;;
@@ -1031,7 +1031,7 @@
 ;; `:mount-id'.  The export costs O(N), detaches mutable node payload, and keeps
 ;; opaque callback identities.  It neither drains pending work nor evaluates
 ;; Components, publishes, or increments the revision.  Unmounted Runtimes and
-;; reads inside an Ebox/TP transaction signal an error.
+;; reads inside an Ebox transaction signal an error.
 ;;
 ;; Error: etaf-scheduler-error
 ;; Invalid ETAF scheduler operation
@@ -1084,23 +1084,6 @@
 ;; This is only the default mode for palette resolution.  An application-owned
 ;; Theme toggle should pass its explicit mode to `etaf-theme-resolve-palette'
 ;; instead of changing the Emacs frame.
-;;
-;; Macro: etaf-theme-define-palette (name &rest plist)
-;;;###autoload (autoload 'etaf-theme-define-palette "etaf" nil nil 'macro)
-;; Define a semantic light/dark palette NAME from PLIST for ETAF Themes.
-;;
-;; Each channel value is a `(LIGHT . DARK)' pair. The registry is independent
-;; of frame state and renderer implementation details.
-;;
-;; Function: etaf-theme-from-palettes (bindings mode)
-;;;###autoload (autoload 'etaf-theme-from-palettes "etaf" nil nil)
-;; Return an ETAF Theme plist from semantic palette BINDINGS in MODE.
-;;
-;; BINDINGS is a keyword plist whose values are `(PALETTE . CHANNEL)' pairs,
-;; where PALETTE is a TP palette symbol and CHANNEL is `:fg', `:bg', or
-;; `:border'.  MODE is explicitly `light' or `dark'; the current Emacs frame is
-;; never consulted, so an application Theme toggle remains independent of frame
-;; appearance.
 ;;
 ;; Function: etaf-theme-provide (theme)
 ;;;###autoload (autoload 'etaf-theme-provide "etaf" nil nil)
@@ -1242,7 +1225,6 @@
 (require 'etaf-behavior)
 (require 'etaf-actions)
 (require 'etaf-events)
-(require 'etaf-theme)
 (require 'etaf-performance)
 
 (autoload 'etaf-resource-example-open "examples/etaf-resource-example" nil t)
