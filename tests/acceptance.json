@@ -1002,6 +1002,11 @@
       "name": "etaf-performance-correlates-render-and-publication-reports",
       "file": "tests/etaf-runtime-publication-tests.el",
       "purpose": "An observed Runtime event correlates Ebox rendering and publication reports with its visible result."
+    },
+    {
+      "name": "etaf-data-auto-load-survives-view-switches-without-reloading",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Synchronous auto-load completes once; retained page switches preserve rows without reloading, pagination reloads once, and unmount stops automatic loads."
     }
   ]
 }

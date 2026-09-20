@@ -38,6 +38,64 @@
           (should (eq 'success (etaf-value (etaf-data-status controller)))))
       (etaf-data-stop controller))))
 
+(etaf-define-component etaf-data-test-retained-pages (&key source page ready)
+  :bindings ((data (etaf-data-controller source :auto-load t :page-size 2)))
+  :setup (funcall ready data)
+  :view
+  (column
+   (text "Retained header")
+   (expr (if (eq (etaf-value page) 'data)
+             (etaf-view
+              (column
+               (text (expr (symbol-name (etaf-value (etaf-data-status data)))))
+               (text (expr (mapconcat
+                            (lambda (row) (plist-get row :name))
+                            (etaf-value (etaf-data-items data)) ", ")))))
+           (etaf-view (text "Preferences"))))))
+
+(ert-deftest etaf-data-auto-load-survives-view-switches-without-reloading ()
+  "Retained pages share one loaded Controller until query or pagination changes."
+  (let* ((buffer (generate-new-buffer " *data-pages*"))
+         (page (etaf-ref 'data))
+         (capabilities (etaf-data-source-capabilities
+                        (etaf-data-memory-source etaf-data-test-records :id-key :id)))
+         (load-page (plist-get capabilities :load))
+         (loads 0) data)
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (etaf-view
+            (etaf-data-test-retained-pages
+             :page page :ready (lambda (controller) (setq data controller))
+             :source (apply #'etaf-data-source
+                            (plist-put capabilities :load
+                                       (lambda (&rest args)
+                                         (cl-incf loads)
+                                         (apply load-page args)))))))
+          (should (eq (etaf-value (etaf-data-status data)) 'success))
+          (should (= loads 1))
+          (dotimes (_ 3)
+            (setf (etaf-value page) 'preferences)
+            (should (with-current-buffer buffer
+                      (string-match-p "Preferences" (buffer-string))))
+            (setf (etaf-value page) 'data)
+            (should (with-current-buffer buffer
+                      (string-match-p "Ada, Grace" (buffer-string))))
+            (should (= loads 1)))
+          (etaf-data-next-page data)
+          (should (= loads 2))
+          (should (with-current-buffer buffer
+                    (string-match-p "Alan, Barbara" (buffer-string))))
+          (let ((data-page (etaf-data-page data)))
+            (etaf-unmount (etaf-runtime-for-buffer buffer))
+            (setf (etaf-value data-page) 1))
+          (should-error (etaf-data-load data) :type 'etaf-data-stopped-error)
+          (should (= loads 2)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (when data (etaf-data-stop data))
+      (kill-buffer buffer))))
+
 (ert-deftest etaf-data-controller-accepts-prepared-initial-result ()
   "Seed one data-ready Controller without a second source call."
   (let* ((calls 0)
