@@ -430,7 +430,7 @@ HOST-REF preserves an already allocated identity during retained updates."
     ;; Native affordances belong to Ebox even on ordinary, non-activating text.
     ;; Preserve explicit nil so a child can stop its parent's inherited paint
     ;; or help without creating an activation boundary.
-    (dolist (property '(:help-echo :pointer :hover-style))
+    (dolist (property '(:help-echo :pointer :hover-style :hover-content))
       (when (plist-member source-props property)
         (setq ebox-props
               (etaf--merge-property

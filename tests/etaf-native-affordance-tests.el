@@ -72,5 +72,19 @@
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(ert-deftest etaf-native-hover-content-forwards-to-ebox-text-surface ()
+  "ETAF forwards hover content without introducing an overlay layer."
+  (let ((buffer (generate-new-buffer " *etaf-hover-content*")))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer
+                      (etaf-view (text :hover-content "×" "●")))
+          (with-current-buffer buffer
+            (should (equal "●" (substring-no-properties (buffer-string))))
+            (should (eq track-mouse t))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
+        (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
 (provide 'etaf-native-affordance-tests)
 ;;; etaf-native-affordance-tests.el ends here

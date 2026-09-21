@@ -944,6 +944,11 @@
       "purpose": "Forwarded affordances update with reactive inputs without replacing activation."
     },
     {
+      "name": "etaf-native-hover-content-forwards-to-ebox-text-surface",
+      "file": "tests/etaf-native-affordance-tests.el",
+      "purpose": "ETAF forwards Ebox hover content through text properties and opts only that mounted buffer into local motion tracking."
+    },
+    {
       "name": "etaf-component-active-rules-share-native-press-lifecycle",
       "file": "tests/etaf-component-cascade-tests.el",
       "purpose": "Native primary press publishes scoped active paint in its mounted instance and releases before one reactive activation."
