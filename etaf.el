@@ -1134,7 +1134,10 @@
 ;; Return a controlled drag Behavior for aggregate geometry state.  READ returns
 ;; a plist with :x/:y facts; ON-CHANGE receives the next detached plist.  AXIS
 ;; selects x, y or both.  DELTA converts Ebox pixel movement to caller units.
-;; The Behavior retains only a transient gesture origin.
+;; The Behavior retains only a transient gesture origin.  Construct the
+;; Behavior once in a retained `:bindings' owner (or another retained owner),
+;; not inside `:render': a render-created closure is a new handler identity and
+;; cannot carry an active gesture across a parent projection.
 ;;
 ;; Function: etaf-resizable-controlled (read on-change &key edges min-width max-width min-height max-height delta on-start on-resize on-end on-cancel)
 ;;;###autoload (autoload 'etaf-resizable-controlled "etaf" nil nil)
@@ -1142,7 +1145,9 @@
 ;; state.  EDGES defaults to right and bottom; READ supplies the current
 ;; numeric geometry and ON-CHANGE receives the next detached geometry plist.
 ;; Bounds and DELTA conversion are applied before the callback.  The Behavior
-;; does not retain persistent application geometry.
+;; does not retain persistent application geometry.  Construct it once in a
+;; retained `:bindings' owner when a parent may render during a gesture; a
+;; render-created closure intentionally starts a fresh Behavior lifecycle.
 ;;
 ;; Function: etaf-draggable (&key x y axis delta on-start on-move on-end on-cancel)
 ;;;###autoload (autoload 'etaf-draggable "etaf" nil nil)

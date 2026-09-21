@@ -1037,6 +1037,21 @@
       "name": "etaf-controlled-resizable-applies-edge-and-bounds",
       "file": "tests/etaf-controlled-geometry-behavior-tests.el",
       "purpose": "Controlled resizing applies edge geometry and minimum bounds while preserving the opposite edge."
+    },
+    {
+      "name": "etaf-controlled-draggable-retains-origin-through-rerenders",
+      "file": "tests/etaf-controlled-geometry-behavior-tests.el",
+      "purpose": "A Behavior created in retained bindings keeps one drag origin through multi-motion parent projections."
+    },
+    {
+      "name": "etaf-controlled-draggable-cancel-and-repeated-gestures-use-current-state",
+      "file": "tests/etaf-controlled-geometry-behavior-tests.el",
+      "purpose": "Cancellation clears transient drag state and each later gesture starts from the current aggregate geometry."
+    },
+    {
+      "name": "etaf-controlled-resizable-retains-origin-through-rerenders",
+      "file": "tests/etaf-controlled-geometry-behavior-tests.el",
+      "purpose": "A retained resize Behavior applies move and end deltas from one start geometry through parent projections."
     }
   ]
 }

@@ -884,6 +884,16 @@ detached plist; the Behavior keeps only the transient gesture origin.  This
 avoids mirroring an application's `x/y/width/height` refs while preserving the
 same edge constraints, cancellation and logical-unit delta conversion.
 
+Create these controlled Behaviors once in a retained `:bindings` owner (or in
+another retained owner), and pass the resulting spec through the View.  Do not
+construct one in `:render`: each render creates new callback closures, so the
+runtime correctly treats it as a new Behavior lifecycle.  If a parent renders
+after a move publishes geometry, that new spec has no active gesture origin and
+the following move/end phase cannot continue the original gesture.  Stable
+bindings keep the transient origin while the aggregate `read`/`on-change`
+state remains application-owned.  This contract avoids global caches and
+cannot safely be inferred from handler source or closure contents.
+
 For custom native input inside an event callback, use `etaf-call-with-input`.
 It supplies the current committed event target to Ebox's input boundary:
 
