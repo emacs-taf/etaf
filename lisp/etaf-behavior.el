@@ -163,7 +163,7 @@ When REQUIRED-P is nil, VALUE may be nil.  Return VALUE unchanged."
   value)
 
 (defun etaf--geometry-number (name value)
-  "Return numeric geometry VALUE, or signal an ETAF Behavior error."
+  "Return numeric VALUE for NAME, or signal an ETAF Behavior error."
   (unless (numberp value)
     (signal 'etaf-behavior-error
             (list (format "%s must contain a number, got %S" name value))))
