@@ -420,6 +420,17 @@ handler. A native terminal cancellation may reach a retained disabled Host,
 while removal or unmount stops application delivery. No gesture coordinates,
 tracking loop or second target index is maintained by ETAF.
 
+ETAF's `etaf-draggable` and `etaf-resizable` Behaviors are reusable adapters
+above this input boundary. They consume the gesture callback, write only
+caller-owned writable refs, and let the existing reactive Host property path
+publish incremental geometry updates. Draggable supports axis selection;
+resizable supports edge selection, opposite-edge preservation, and numeric
+minimum/maximum constraints. A caller may provide a pure delta conversion when
+its logical units differ from Ebox pixels. These Behaviors own no window state,
+stacking policy, maximize/minimize mode, or pointer loop. UI Components and
+applications compose them with title bars and handles, while a desktop
+application owns window lifecycle and ordering.
+
 Interaction composition is deterministic.  An explicit Host `:on-*` callback
 runs first, followed by Behavior callbacks in declaration order; an error
 short-circuits the remaining callbacks.  For non-event attributes the explicit

@@ -145,6 +145,241 @@ part of the returned Behavior."
                                    (etaf-value value)
                                  value))))))))))
 
+(defun etaf--geometry-ref (name value required-p)
+  "Validate geometry reactive VALUE for NAME.
+When REQUIRED-P is nil, VALUE may be nil.  Return VALUE unchanged."
+  (when (or required-p value)
+    (unless (etaf-ref-p value)
+      (signal 'etaf-behavior-error
+              (list (format "%s must be a writable `etaf-ref': %S"
+                            name value)))))
+  value)
+
+(defun etaf--geometry-callback (name value)
+  "Validate optional geometry callback VALUE for NAME and return it."
+  (when (and value (not (functionp value)))
+    (signal 'etaf-behavior-error
+            (list (format "%s must be a function or nil: %S" name value))))
+  value)
+
+(defun etaf--geometry-number (name value)
+  "Return numeric geometry VALUE, or signal an ETAF Behavior error."
+  (unless (numberp value)
+    (signal 'etaf-behavior-error
+            (list (format "%s must contain a number, got %S" name value))))
+  value)
+
+(defun etaf--geometry-delta (gesture transform)
+  "Return numeric `(DX . DY)' from Ebox GESTURE and TRANSFORM."
+  (let ((delta (if transform (funcall transform gesture)
+                (plist-get gesture :delta))))
+    (unless (and (consp delta) (numberp (car delta)) (numberp (cdr delta)))
+      (signal 'etaf-behavior-error
+              (list (format "Invalid Ebox gesture delta: %S" delta))))
+    delta))
+
+(defun etaf--geometry-clamp (value minimum maximum)
+  "Clamp numeric VALUE to optional MINIMUM and MAXIMUM bounds."
+  (max (or minimum value) (min (or maximum value) value)))
+
+;;;###autoload
+(cl-defun etaf-draggable
+    (&key x y axis delta on-start on-move on-end on-cancel)
+  "Return a reusable Behavior that moves caller-owned coordinate refs.
+
+X and Y are writable `etaf-ref' objects containing numeric logical
+coordinates.  The caller maps these values to Ebox geometry, for example by
+wrapping each value in an Ebox px size form.  AXIS is nil (infer from supplied
+refs), with symbols x, y, or both.  The Behavior consumes Ebox's `:on-drag'
+gesture but owns no window, pointer, or layout state; each accepted motion
+writes the supplied
+refs and ETAF's normal reactive publication updates the Host incrementally.
+
+DELTA is an optional function receiving the gesture and returning a numeric
+DX/DY cons; use it when caller coordinates use units other than Ebox pixels.
+ON-START, ON-MOVE, ON-END and ON-CANCEL are optional callbacks receiving the
+original gesture plist.  Move and end callbacks run after the coordinate refs
+are updated.  Cancellation does not change coordinates.  A missing coordinate
+ref for the selected axis is an error."
+  (let* ((axis (or axis
+                   (cond ((and x y) 'both)
+                         (x 'x)
+                         (y 'y)
+                         (t (signal 'etaf-behavior-error
+                                   (list "etaf-draggable requires :x or :y"))))))
+         (axis (if (eq axis 'both) 'both axis)))
+    (unless (memq axis '(x y both))
+      (signal 'etaf-behavior-error
+              (list (format "Invalid draggable axis: %S" axis))))
+    (etaf--geometry-ref ":x" x (memq axis '(x both)))
+    (etaf--geometry-ref ":y" y (memq axis '(y both)))
+    (when (and x y (eq x y))
+      (signal 'etaf-behavior-error
+              (list "etaf-draggable :x and :y must be distinct refs")))
+    (mapc (lambda (entry)
+            (etaf--geometry-callback (car entry) (cdr entry)))
+          (list (cons ":on-start" on-start)
+                (cons ":on-move" on-move)
+                (cons ":on-end" on-end)
+                (cons ":on-cancel" on-cancel)))
+    (etaf--geometry-callback ":delta" delta)
+    (let (origin)
+      (apply #'etaf-behavior-create
+             'draggable
+             (list :on-drag
+                   (lambda (gesture)
+                     (pcase (plist-get gesture :phase)
+                       ('start
+                        (setq origin
+                              (list :x (and x (etaf--geometry-number
+                                              ":x" (etaf-value x)))
+                                    :y (and y (etaf--geometry-number
+                                              ":y" (etaf-value y)))))
+                        (when on-start (funcall on-start gesture)))
+                       ((or 'move 'end)
+                        (when origin
+                          (let ((delta (etaf--geometry-delta gesture delta)))
+                            (when (memq axis '(x both))
+                              (setf (etaf-value x)
+                                    (+ (plist-get origin :x) (car delta))))
+                            (when (memq axis '(y both))
+                              (setf (etaf-value y)
+                                    (+ (plist-get origin :y) (cdr delta))))))
+                        (when (and (eq (plist-get gesture :phase) 'move)
+                                   on-move)
+                          (funcall on-move gesture))
+                        (when (and (eq (plist-get gesture :phase) 'end)
+                                   on-end)
+                          (funcall on-end gesture)
+                          (setq origin nil)))
+                       ('cancel
+                        (setq origin nil)
+                        (when on-cancel (funcall on-cancel gesture)))))))))
+      )
+
+;;;###autoload
+(cl-defun etaf-resizable
+    (&key x y width height edges min-width max-width min-height max-height
+          delta on-start on-resize on-end on-cancel)
+  "Return a reusable Behavior that resizes caller-owned geometry refs.
+
+WIDTH and HEIGHT are writable `etaf-ref' objects containing numeric logical
+sizes.  X and Y are optional writable coordinate refs required by left and top
+edges.  EDGES is one symbol or a list containing left, right, top and bottom;
+it defaults to right and bottom.  A left/top resize keeps
+the opposite edge fixed by moving X/Y as the size changes.  Optional minimum
+and maximum bounds are numeric and are applied before refs are published.
+
+The caller maps the logical refs to Ebox size properties.  DELTA optionally
+converts the Ebox gesture to the caller's units and receives the gesture plist.
+Ebox owns the gesture loop and ETAF's normal reactive publication performs the
+incremental render.  ON-START, ON-RESIZE,
+ON-END and ON-CANCEL receive the original gesture plist; resize and end run
+after the refs are updated.  Cancellation leaves the last accepted geometry
+unchanged."
+  (let* ((edges (if (symbolp edges) (list edges) (or edges '(right bottom))))
+         (edges (copy-sequence edges)))
+    (unless (and (proper-list-p edges) edges
+                 (cl-every (lambda (edge) (memq edge '(left right top bottom)))
+                           edges)
+                 (= (length edges) (length (delete-dups (copy-sequence edges)))))
+      (signal 'etaf-behavior-error
+              (list (format "Invalid resizable edges: %S" edges))))
+    (etaf--geometry-ref ":x" x (memq 'left edges))
+    (etaf--geometry-ref ":y" y (memq 'top edges))
+    (etaf--geometry-ref ":width" width (cl-some (lambda (edge)
+                                                   (memq edge '(left right)))
+                                                 edges))
+    (etaf--geometry-ref ":height" height (cl-some (lambda (edge)
+                                                    (memq edge '(top bottom)))
+                                                  edges))
+    (dolist (entry `((:min-width . ,min-width) (:max-width . ,max-width)
+                     (:min-height . ,min-height) (:max-height . ,max-height)))
+      (when (and (cdr entry) (not (numberp (cdr entry))))
+        (signal 'etaf-behavior-error
+                (list (format "%s must be numeric or nil: %S"
+                              (car entry) (cdr entry))))))
+    (when (and min-width max-width (> min-width max-width))
+      (signal 'etaf-behavior-error
+              (list "etaf-resizable :min-width exceeds :max-width")))
+    (when (and min-height max-height (> min-height max-height))
+      (signal 'etaf-behavior-error
+              (list "etaf-resizable :min-height exceeds :max-height")))
+    (mapc (lambda (entry)
+            (etaf--geometry-callback (car entry) (cdr entry)))
+          (list (cons ":on-start" on-start)
+                (cons ":on-resize" on-resize)
+                (cons ":on-end" on-end)
+                (cons ":on-cancel" on-cancel)))
+    (etaf--geometry-callback ":delta" delta)
+    (let (origin)
+      (apply #'etaf-behavior-create
+             'resizable
+             (list :on-drag
+                   (lambda (gesture)
+                     (pcase (plist-get gesture :phase)
+                       ('start
+                        (setq origin
+                              (list :x (and x (etaf--geometry-number
+                                              ":x" (etaf-value x)))
+                                    :y (and y (etaf--geometry-number
+                                              ":y" (etaf-value y)))
+                                    :width (and width
+                                                (etaf--geometry-number
+                                                 ":width" (etaf-value width)))
+                                    :height (and height
+                                                 (etaf--geometry-number
+                                                  ":height" (etaf-value height)))))
+                        (when on-start (funcall on-start gesture)))
+                       ((or 'move 'end)
+                        (when origin
+                          (let* ((delta (etaf--geometry-delta gesture delta))
+                                 (dx (car delta))
+                                 (dy (cdr delta))
+                                 (left-p (memq 'left edges))
+                                 (right-p (memq 'right edges))
+                                 (top-p (memq 'top edges))
+                                 (bottom-p (memq 'bottom edges))
+                                 (new-width
+                                  (and width
+                                       (etaf--geometry-clamp
+                                        (+ (plist-get origin :width)
+                                           (if left-p (- dx) (if right-p dx 0)))
+                                        min-width max-width)))
+                                 (new-height
+                                  (and height
+                                       (etaf--geometry-clamp
+                                        (+ (plist-get origin :height)
+                                           (if top-p (- dy) (if bottom-p dy 0)))
+                                        min-height max-height)))
+                                 (new-x (and x
+                                              (if left-p
+                                                  (+ (plist-get origin :x)
+                                                     (- (plist-get origin :width)
+                                                        new-width))
+                                                (plist-get origin :x))))
+                                 (new-y (and y
+                                              (if top-p
+                                                  (+ (plist-get origin :y)
+                                                     (- (plist-get origin :height)
+                                                        new-height))
+                                                (plist-get origin :y)))))
+                            (when x (setf (etaf-value x) new-x))
+                            (when y (setf (etaf-value y) new-y))
+                            (when width (setf (etaf-value width) new-width))
+                            (when height (setf (etaf-value height) new-height))))
+                        (when (and (eq (plist-get gesture :phase) 'move)
+                                   on-resize)
+                          (funcall on-resize gesture))
+                        (when (and (eq (plist-get gesture :phase) 'end)
+                                   on-end)
+                          (funcall on-end gesture)
+                          (setq origin nil)))
+                       ('cancel
+                        (setq origin nil)
+                        (when on-cancel (funcall on-cancel gesture)))))))))
+      )
+
 (provide 'etaf-behavior)
 
 ;;; etaf-behavior.el ends here

@@ -381,6 +381,13 @@ Ebox 持有完整的原生拖动循环并保持指针目标。ETAF 分别将每�
 收到原生取消阶段；移除或卸载后不再调用应用回调。ETAF 不保存手势坐标、跟踪
 循环或第二份目标索引。
 
+ETAF 的 `etaf-draggable` 与 `etaf-resizable` 是位于该输入边界之上的可复用
+Behavior。它们消费手势 callback，只写调用方拥有的可写 ref，再沿已有响应式 Host
+属性路径发布增量几何。Draggable 支持轴选择；Resizable 支持边选择、相对边保持以及
+数值最小/最大约束。调用方可以提供纯 delta 转换函数，将 Ebox 像素转换为自己的逻辑
+单位。这些 Behavior 不拥有窗口状态、堆叠策略、最大化/最小化模式或指针循环；UI
+组件和应用组合标题栏、手柄等视觉结构，桌面应用负责窗口生命周期和排序。
+
 交互组合是确定的：显式 Host `:on-*` callback 先运行，然后按声明顺序运行 Behavior
 callback；任一错误会 short-circuit 后续 callback。非事件属性由显式 Host 值优先，
 否则第一个声明该属性的 Behavior 获胜（first-wins）。同一 Host 的 Behavior name 必须在任何

@@ -914,6 +914,26 @@
       "purpose": "Disabling a retained target delivers cancellation and then prevents new input."
     },
     {
+      "name": "etaf-draggable-behavior-publishes-coordinate-refs",
+      "file": "tests/etaf-geometry-behavior-tests.el",
+      "purpose": "A reusable Behavior translates Ebox gesture deltas into caller-owned coordinate refs."
+    },
+    {
+      "name": "etaf-resizable-behavior-clamps-and-keeps-left-edge",
+      "file": "tests/etaf-geometry-behavior-tests.el",
+      "purpose": "A reusable resize Behavior updates geometry refs and preserves the opposite edge under bounds."
+    },
+    {
+      "name": "etaf-geometry-behavior-converts-ebox-deltas",
+      "file": "tests/etaf-geometry-behavior-tests.el",
+      "purpose": "A caller-provided converter maps Ebox pixel deltas into logical geometry units."
+    },
+    {
+      "name": "etaf-geometry-behaviors-reject-invalid-contracts",
+      "file": "tests/etaf-geometry-behavior-tests.el",
+      "purpose": "Geometry Behaviors reject missing refs, duplicate edges and invalid bounds at construction."
+    },
+    {
       "name": "etaf-native-affordances-match-ebox-inheritance",
       "file": "tests/etaf-native-affordance-tests.el",
       "purpose": "Nested Hosts preserve Ebox native hover, help and explicit nil boundaries."

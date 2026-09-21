@@ -1129,6 +1129,25 @@
 ;; `:value' and `:on-change' configure the action; all other attributes remain
 ;; part of the returned Behavior.
 ;;
+;; Function: etaf-draggable (&key x y axis delta on-start on-move on-end on-cancel)
+;;;###autoload (autoload 'etaf-draggable "etaf" nil nil)
+;; Return a Behavior that moves caller-owned numeric coordinate refs from Ebox
+;; drag deltas.  X and Y must be writable `etaf-ref' values for the selected
+;; AXIS (nil infers x, y, or both).  Each move and end writes the refs through
+;; the normal reactive boundary; Ebox retains the gesture target and ETAF owns
+;; no window or pointer state.  Optional callbacks receive the source gesture;
+;; move/end run after writes and cancel leaves the last accepted values.
+;;
+;; Function: etaf-resizable (&key x y width height edges min-width max-width min-height max-height delta on-start on-resize on-end on-cancel)
+;;;###autoload (autoload 'etaf-resizable "etaf" nil nil)
+;; Return a Behavior that resizes caller-owned numeric geometry refs from Ebox
+;; drag deltas.  EDGES defaults to right and bottom; left/top also update X/Y
+;; so the opposite edge stays fixed.  WIDTH/HEIGHT and required coordinate refs
+;; must be writable `etaf-ref' values.  Numeric min/max bounds clamp candidates
+;; before publication.  Optional callbacks receive the source gesture and
+;; resize/end run after refs are updated.  This Behavior has no desktop-window
+;; policy and does not call Ebox private APIs.
+;;
 ;; Function: etaf-unmount (&optional runtime)
 ;;;###autoload (autoload 'etaf-unmount "etaf" nil nil)
 ;; Unmount RUNTIME, defaulting to the active or `current-buffer' Runtime.

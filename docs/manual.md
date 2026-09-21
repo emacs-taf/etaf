@@ -844,6 +844,34 @@ activation and drag owns the primary mouse sequence. See the
 [Ebox gesture contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el)
 for payload fields and the same-window GUI support boundary.
 
+Reusable geometry Behaviors apply the same gesture to caller-owned reactive
+values.  They are useful to UI components and applications that need a common
+move or resize interaction while keeping window policy in the application:
+
+```elisp
+(etaf-define-component movable-panel ()
+  :bindings ((x (etaf-ref 4)) (y (etaf-ref 2))
+             (move (etaf-draggable :x x :y y)))
+  :view
+  (box :ref 'panel :position 'absolute
+       :left (list 'px (etaf-value x))
+       :top (list 'lh (etaf-value y))
+       :use (list move)
+       "Panel"))
+```
+
+`etaf-draggable` accepts `:x`, `:y`, and an optional `:axis` of `x`, `y`, or
+`both`.  It writes the coordinate refs on move and end; cancellation leaves
+the last accepted values.  `etaf-resizable` accepts `:width`, `:height`,
+optional `:x`/`:y`, an `:edges` list of `left`, `right`, `top`, and `bottom`,
+and numeric min/max constraints.  Left/top edges move the coordinate ref to
+keep the opposite edge fixed.  Both constructors accept optional lifecycle
+callbacks.  The optional `:delta` function converts the Ebox pixel delta into
+the caller's units, which is useful for vertical line-based sizes.  Behavior
+constructors only update refs; Ebox retains the gesture and ETAF publishes the
+result through the normal incremental render path.  They do not implement
+window ordering, maximize/minimize state, or desktop policy.
+
 For custom native input inside an event callback, use `etaf-call-with-input`.
 It supplies the current committed event target to Ebox's input boundary:
 

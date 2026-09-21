@@ -764,6 +764,30 @@ Ebox 保留其数值位置并限制在可访问范围内。发布被拒绝时恢
 press 处理键盘激活，drag 持有主鼠标按钮序列。字段和同一 GUI 窗口的支持边界
 见 [Ebox 手势契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el)。
 
+可复用的几何 Behavior 可以把同一手势接到调用方持有的响应式值上。这样 UI
+组件和应用可以共享移动、调整大小的交互，而窗口策略仍由应用负责：
+
+```elisp
+(etaf-define-component movable-panel ()
+  :bindings ((x (etaf-ref 4)) (y (etaf-ref 2))
+             (move (etaf-draggable :x x :y y)))
+  :view
+  (box :ref 'panel :position 'absolute
+       :left (list 'px (etaf-value x))
+       :top (list 'lh (etaf-value y))
+       :use (list move)
+       "Panel"))
+```
+
+`etaf-draggable` 接受 `:x`、`:y` 以及 `x`、`y` 或 `both` 轴选择；移动和释放阶段
+写入坐标 ref，取消时保留最近一次已接受的值。`etaf-resizable` 接受 `:width`、
+`:height`、可选的 `:x`/`:y`、由 `left`、`right`、`top`、`bottom` 组成的
+`:edges`，以及数值最小/最大约束。使用左/上边时会同步移动坐标以保持相对边不动。
+两者都接受可选的生命周期回调。`:delta` 函数可以把 Ebox 像素位移转换为调用方
+使用的单位，例如垂直的行高单位。这些 Behavior 只修改调用方持有的 ref；Ebox
+保留手势，ETAF 通过已有增量渲染路径发布结果。它们不实现窗口排序、最大化、最小化
+或桌面策略。
+
 事件回调需要自定义原生输入时，使用 `etaf-call-with-input`。它把当前已提交
 事件目标交给 Ebox 的输入边界，不要求应用查找 Runtime、维护存活标志或恢复焦点。
 
