@@ -388,6 +388,11 @@ Behavior。它们消费手势 callback，只写调用方拥有的可写 ref，�
 单位。这些 Behavior 不拥有窗口状态、堆叠策略、最大化/最小化模式或指针循环；UI
 组件和应用组合标题栏、手柄等视觉结构，桌面应用负责窗口生命周期和排序。
 
+把窗口事实保存在一个聚合记录中的应用可以使用
+`etaf-draggable-controlled` 与 `etaf-resizable-controlled`：`read` 提供已提交的几何
+plist，`on-change` 接收下一份脱离式 plist。这两个变体只保留手势起点，不增加第二份
+持久几何状态。
+
 交互组合是确定的：显式 Host `:on-*` callback 先运行，然后按声明顺序运行 Behavior
 callback；任一错误会 short-circuit 后续 callback。非事件属性由显式 Host 值优先，
 否则第一个声明该属性的 Behavior 获胜（first-wins）。同一 Host 的 Behavior name 必须在任何

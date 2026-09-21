@@ -6,6 +6,7 @@
 
 - 新增 `etaf-draggable` 与 `etaf-resizable` Behavior，将 Ebox 拖拽手势转换为调用方
   持有的响应式几何 ref，支持轴/边选择、边界、生命周期回调和逻辑单位位移转换。
+- 新增受控变体，通过 `read`/`on-change` 适配聚合几何状态，不创建第二份持久几何存储。
 
 ### Changed
 

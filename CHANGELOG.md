@@ -7,6 +7,8 @@
 - `etaf-draggable` and `etaf-resizable` Behaviors translate Ebox drag gestures
   into caller-owned reactive geometry refs, with axis/edge selection, bounds,
   lifecycle callbacks and optional logical-unit delta conversion.
+- Controlled variants accept aggregate geometry through `read`/`on-change`
+  callbacks without creating a second persistent geometry store.
 
 ### Changed
 

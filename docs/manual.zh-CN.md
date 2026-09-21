@@ -793,6 +793,12 @@ press 处理键盘激活，drag 持有主鼠标按钮序列。字段和同一 GU
 保留手势，ETAF 通过已有增量渲染路径发布结果。它们不实现窗口排序、最大化、最小化
 或桌面策略。
 
+如果应用把窗口位置和尺寸保存在一个聚合记录中，可以使用
+`etaf-draggable-controlled` 或 `etaf-resizable-controlled`。它们的 `read`
+函数返回当前几何 plist，`on-change` 接收下一份脱离式 plist；Behavior 只保留当前
+手势的临时起点，不复制应用的 x/y/width/height 状态，同时保留边界、取消和逻辑单位
+位移转换语义。
+
 事件回调需要自定义原生输入时，使用 `etaf-call-with-input`。它把当前已提交
 事件目标交给 Ebox 的输入边界，不要求应用查找 Runtime、维护存活标志或恢复焦点。
 

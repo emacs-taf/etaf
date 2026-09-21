@@ -431,6 +431,12 @@ stacking policy, maximize/minimize mode, or pointer loop. UI Components and
 applications compose them with title bars and handles, while a desktop
 application owns window lifecycle and ordering.
 
+Aggregate-state applications may use `etaf-draggable-controlled` and
+`etaf-resizable-controlled`: a read function supplies the committed geometry
+plist and an `on-change` callback accepts the next detached plist.  These
+variants retain only transient gesture origins and avoid a second persistent
+geometry store.
+
 Interaction composition is deterministic.  An explicit Host `:on-*` callback
 runs first, followed by Behavior callbacks in declaration order; an error
 short-circuits the remaining callbacks.  For non-event attributes the explicit

@@ -877,6 +877,13 @@ constructors only update refs; Ebox retains the gesture and ETAF publishes the
 result through the normal incremental render path.  They do not implement
 window ordering, maximize/minimize state, or desktop policy.
 
+When an application stores all window facts in one aggregate record, use
+`etaf-draggable-controlled` or `etaf-resizable-controlled`.  Their `read`
+function returns the current geometry plist and `on-change` receives the next
+detached plist; the Behavior keeps only the transient gesture origin.  This
+avoids mirroring an application's `x/y/width/height` refs while preserving the
+same edge constraints, cancellation and logical-unit delta conversion.
+
 For custom native input inside an event callback, use `etaf-call-with-input`.
 It supplies the current committed event target to Ebox's input boundary:
 

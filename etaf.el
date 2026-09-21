@@ -1129,6 +1129,21 @@
 ;; `:value' and `:on-change' configure the action; all other attributes remain
 ;; part of the returned Behavior.
 ;;
+;; Function: etaf-draggable-controlled (read on-change &key axis delta on-start on-move on-end on-cancel)
+;;;###autoload (autoload 'etaf-draggable-controlled "etaf" nil nil)
+;; Return a controlled drag Behavior for aggregate geometry state.  READ returns
+;; a plist with :x/:y facts; ON-CHANGE receives the next detached plist.  AXIS
+;; selects x, y or both.  DELTA converts Ebox pixel movement to caller units.
+;; The Behavior retains only a transient gesture origin.
+;;
+;; Function: etaf-resizable-controlled (read on-change &key edges min-width max-width min-height max-height delta on-start on-resize on-end on-cancel)
+;;;###autoload (autoload 'etaf-resizable-controlled "etaf" nil nil)
+;; Return a controlled resize Behavior for aggregate :x/:y/:width/:height
+;; state.  EDGES defaults to right and bottom; READ supplies the current
+;; numeric geometry and ON-CHANGE receives the next detached geometry plist.
+;; Bounds and DELTA conversion are applied before the callback.  The Behavior
+;; does not retain persistent application geometry.
+;;
 ;; Function: etaf-draggable (&key x y axis delta on-start on-move on-end on-cancel)
 ;;;###autoload (autoload 'etaf-draggable "etaf" nil nil)
 ;; Return a Behavior that moves caller-owned numeric coordinate refs from Ebox
@@ -1242,6 +1257,7 @@
 (require 'etaf-renderer)
 (require 'etaf-runtime)
 (require 'etaf-behavior)
+(require 'etaf-controlled-behavior)
 (require 'etaf-actions)
 (require 'etaf-events)
 (require 'etaf-performance)

@@ -1027,6 +1027,16 @@
       "name": "etaf-data-auto-load-survives-view-switches-without-reloading",
       "file": "tests/etaf-data-tests.el",
       "purpose": "Synchronous auto-load completes once; retained page switches preserve rows without reloading, pagination reloads once, and unmount stops automatic loads."
+    },
+    {
+      "name": "etaf-controlled-draggable-keeps-aggregate-state-authoritative",
+      "file": "tests/etaf-controlled-geometry-behavior-tests.el",
+      "purpose": "Controlled dragging emits detached aggregate geometry without creating a second persistent coordinate store."
+    },
+    {
+      "name": "etaf-controlled-resizable-applies-edge-and-bounds",
+      "file": "tests/etaf-controlled-geometry-behavior-tests.el",
+      "purpose": "Controlled resizing applies edge geometry and minimum bounds while preserving the opposite edge."
     }
   ]
 }
