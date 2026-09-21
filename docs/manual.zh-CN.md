@@ -770,7 +770,12 @@ press 处理键盘激活，drag 持有主鼠标按钮序列。字段和同一 GU
 ```elisp
 (etaf-define-component movable-panel ()
   :bindings ((x (etaf-ref 4)) (y (etaf-ref 2))
-             (move (etaf-draggable :x x :y y)))
+             (move (etaf-draggable
+                    :x x :y y
+                    :delta (lambda (gesture)
+                             (let ((d (plist-get gesture :delta)))
+                               (cons (car d)
+                                     (/ (cdr d) (float (frame-char-height)))))))))
   :view
   (box :ref 'panel :position 'absolute
        :left (list 'px (etaf-value x))
