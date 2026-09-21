@@ -28,6 +28,7 @@
 (declare-function etaf-runtime-host-props-for "etaf-runtime" (runtime host-ref))
 (declare-function etaf-runtime-host-props-entries "etaf-runtime" (runtime))
 (declare-function etaf-runtime-host-ancestries "etaf-runtime" (runtime host-refs))
+(declare-function etaf-runtime-host-ancestor-refs "etaf-runtime" (runtime host-ref))
 (declare-function etaf-runtime-event-begin "etaf-runtime" (runtime))
 (declare-function etaf-runtime-event-end "etaf-runtime" (runtime))
 (declare-function etaf-runtime-observer "etaf-runtime" (runtime))
@@ -44,6 +45,9 @@
 
 (defvar etaf--drag-cancel-p nil
   "Non-nil while Ebox delivers the terminal cancellation of an active drag.")
+
+(defvar etaf--event-bubbling nil
+  "Non-nil while dispatching one event's ancestor capture callbacks.")
 
 ;;;###autoload
 (defun etaf-call-with-input (reader)
@@ -94,20 +98,44 @@ otherwise call the local callback with no arguments."
              (signal 'etaf-event-error
                      (list (format "Cannot dispatch to disabled Host reference: %S"
                                    host-ref))))
-           (let ((callback (etaf--event-handler runtime host-ref kind)))
+           (let* ((event-kind (etaf-event-kind kind))
+                  (callback (etaf--event-handler runtime host-ref event-kind)))
              (unless callback
                (signal 'etaf-event-error
                        (list (format "No %S handler for Host reference %S"
-                                     (etaf-event-kind kind) host-ref))))
+                                     event-kind host-ref))))
              (let ((etaf--current-runtime runtime)
                    (etaf--current-event
                     (list :runtime runtime :host-ref host-ref
-                          :kind (etaf-event-kind kind) :payload payload)))
+                          :kind event-kind :payload payload)))
                (etaf-runtime-event-begin runtime)
                (unwind-protect
-                   (if payload-p
-                       (funcall callback payload)
-                     (funcall callback))
+                   (let ((result (if payload-p
+                                     (funcall callback payload)
+                                   (funcall callback))))
+                     ;; UI shells can install a capture callback on an
+                     ;; ancestor Host.  This keeps activation and focus
+                     ;; policy out of every leaf component while preserving
+                     ;; the target callback's return value.
+                     (when (and (eq event-kind 'press)
+                                (not etaf--event-bubbling))
+                       (let ((etaf--event-bubbling t))
+                         (dolist (ancestor
+                                  (etaf-runtime-host-ancestor-refs
+                                   runtime host-ref))
+                           (when-let* ((capture
+                                       (etaf--event-handler
+                                        runtime ancestor 'press-capture)))
+                             (let ((etaf--current-event
+                                    (list :runtime runtime
+                                          :host-ref ancestor
+                                          :target-host-ref host-ref
+                                          :kind 'press-capture
+                                          :payload payload)))
+                               (if payload-p
+                                   (funcall capture payload)
+                                 (funcall capture)))))))
+                     result)
                  (etaf-runtime-event-end runtime))))))
          (run
           (lambda ()

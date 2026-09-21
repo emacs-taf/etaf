@@ -440,21 +440,28 @@ checking them against a fresh generation projection."
           (list (list width style) color)))
     (error nil)))
 
-(defun etaf--runtime-interaction-keymap (runtime host-ref press drag)
+(defun etaf--runtime-interaction-keymap
+    (runtime host-ref press drag drag-lock-modifier)
   "Return a native keymap dispatching the committed HOST-REF in RUNTIME."
   (let ((maps (etaf-runtime-interaction-keymaps runtime))
-        (key (list host-ref press drag)))
+        (key (list host-ref press drag drag-lock-modifier)))
     (or (gethash key maps)
-        (let ((map (ebox-keymap-create
-                    :activate
-                    (when press (lambda () (etaf--dispatch-activation runtime host-ref)))
-                    :drag
-                    (when drag
-                      (lambda (gesture)
-                        (when (and (etaf-runtime-mounted-p runtime)
-                                   (cdr (assq 'drag (etaf-runtime-handler-for runtime host-ref))))
-                          (let ((etaf--drag-cancel-p (eq (plist-get gesture :phase) 'cancel)))
-                            (etaf-dispatch-event runtime host-ref 'drag gesture t))))))))
+        (let ((map
+               (ebox-keymap-create
+                :activate
+                (when press
+                  (lambda () (etaf--dispatch-activation runtime host-ref)))
+                :drag
+                (when drag
+                  (lambda (gesture)
+                    (when (and (etaf-runtime-mounted-p runtime)
+                               (cdr (assq 'drag
+                                          (etaf-runtime-handler-for
+                                           runtime host-ref))))
+                      (let ((etaf--drag-cancel-p
+                             (eq (plist-get gesture :phase) 'cancel)))
+                        (etaf-dispatch-event runtime host-ref 'drag gesture t)))))
+                :drag-lock-modifier drag-lock-modifier)))
           (when (>= (hash-table-count maps) 512) (clrhash maps))
           (puthash key map maps)
           map))))
@@ -686,6 +693,21 @@ candidates; no second retained identity or layout index is maintained."
         (when (and generation host-refs)
           (visit (etaf-generation-root-semantic-id generation) nil))))
     result))
+
+(defun etaf-runtime-host-ancestor-refs (runtime host-ref)
+  "Return committed Host references above HOST-REF in RUNTIME.
+The nearest semantic Host is first.  The result is derived from the retained
+generation graph for one event and is not a second parent index."
+  (let* ((generation (etaf-runtime-current-generation runtime))
+         (lineage (gethash host-ref
+                           (etaf-runtime-host-ancestries runtime (list host-ref))))
+         result)
+    (dolist (id (cdr lineage) result)
+      (when-let* ((semantic (etaf--pvec-get
+                             (etaf-generation-semantic-nodes generation) id))
+                  ((etaf--semantic-host-p semantic))
+                  (ref (etaf--semantic-host-host-ref semantic)))
+        (setq result (append result (list ref)))))))
 
 (defun etaf--runtime-generation-mirror-projection (generation)
   "Return exact compatibility mirrors projected from GENERATION."

@@ -524,6 +524,9 @@
 ;; receive native cancellation; removed or unmounted Hosts receive no more
 ;; application callbacks. Their Component scopes clean up normally. Other
 ;; :on-* names require explicit dispatch and do not imply native event support.
+;; `:on-press-capture' is the one explicit ancestor hook: after a target press
+;; callback succeeds, committed ancestor capture handlers run nearest-first.
+;; Ordinary :on-press callbacks never bubble implicitly.
 ;;
 ;;   When PAYLOAD-P is non-nil, pass PAYLOAD as the callback's only argument;
 ;; otherwise call the local callback with no arguments.

@@ -86,7 +86,8 @@ this list merely to make a demo convenient.")
 
 (defconst etaf--semantic-props
   '(:class :id :role :disabled :tab-index :ref :use
-    :help-echo :pointer :hover-style :hover-content)
+    :help-echo :pointer :hover-style :hover-content :drag-lock-modifier
+    :hover-group)
   "ETAF Host metadata outside the Ebox style schema.")
 
 (defun etaf--aria-property-p (property)

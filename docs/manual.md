@@ -687,7 +687,11 @@ then extra wrapper callbacks from inner to outer, then Behaviors in declaration
 order. Each declaration runs once. For a Checkbox, `:on-change` still receives
 the next boolean before an added `:on-press` observer. A callback error
 short-circuits the remaining callbacks; UI rollback does not undo external
-business writes. Dispatch targets one exact Host, with no capture or bubble.
+business writes. `:on-press-capture` is an explicit ancestor hook: after a
+target `press` callback succeeds, ETAF invokes capture hooks from the nearest
+committed Host toward the root. It is intended for shell policies such as
+raising a window when a nested control is pressed; ordinary `:on-press`
+callbacks do not bubble implicitly.
 
 Wrapper `:use` lists concatenate; duplicate Behavior names fail before any
 installer runs. Non-event Behavior defaults retain first-wins order after Host

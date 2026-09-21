@@ -634,7 +634,9 @@ Behavior equality 对 function 和 reactive value 使用 `eq`，新 installer �
 wrapper 附加的 callback，最后是按声明顺序运行的 Behavior。每个声明位置执行
 一次。Checkbox 的 `:on-change` 仍先收到下一个布尔值，附加的 `:on-press`
 观察回调随后运行。callback 报错会 short-circuit 剩余回调；UI 回滚不会撤销外部
-业务写入。dispatch 只命中准确 Host，不存在 capture 或 bubble。
+业务写入。`:on-press-capture` 是显式的祖先钩子：目标 `press` 成功后，ETAF 会从最近
+的已提交 Host 向根调用 capture handler。它适合窗口置前这类 Shell 策略；普通
+`:on-press` 不会隐式 bubble。
 
 wrapper 的 `:use` 列表顺序连接，重复 Behavior name 在任何 installer 运行前报错。
 非事件 Behavior 默认值仍由 Host 优先、其余 first-wins；`:disabled` 则取 OR。

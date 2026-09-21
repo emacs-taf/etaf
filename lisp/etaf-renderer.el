@@ -421,7 +421,8 @@ HOST-REF preserves an already allocated identity during retained updates."
              (drag (functionp (plist-get source-props :on-drag)))
              (map (and runtime (or press drag) (not (plist-get source-props :disabled))
                        (etaf--runtime-interaction-keymap
-                        runtime (plist-get ebox-props :source-identity) press drag))))
+                        runtime (plist-get ebox-props :source-identity) press drag
+                        (plist-get source-props :drag-lock-modifier)))))
         (setq ebox-props
               (etaf--merge-property
                ebox-props :interactions
@@ -430,7 +431,8 @@ HOST-REF preserves an already allocated identity during retained updates."
     ;; Native affordances belong to Ebox even on ordinary, non-activating text.
     ;; Preserve explicit nil so a child can stop its parent's inherited paint
     ;; or help without creating an activation boundary.
-    (dolist (property '(:help-echo :pointer :hover-style :hover-content))
+    (dolist (property '(:help-echo :pointer :hover-style :hover-content
+                        :drag-lock-modifier :hover-group))
       (when (plist-member source-props property)
         (setq ebox-props
               (etaf--merge-property
