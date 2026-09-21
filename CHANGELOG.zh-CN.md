@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- 新增 `etaf-draggable` 与 `etaf-resizable` Behavior，将 Ebox 拖拽手势转换为调用方
+  持有的响应式几何 ref，支持轴/边选择、边界、生命周期回调和逻辑单位位移转换。
+
 ### Changed
 
 - 渲染要求 Ebox framework SPI v3 与 `ebox-publication/v1`。Host final-accept
