@@ -437,6 +437,13 @@ plist and an `on-change` callback accepts the next detached plist.  These
 variants retain only transient gesture origins and avoid a second persistent
 geometry store.
 
+High-frequency application hosts may use `etaf-runtime-update-host-geometry`
+after changing their controlled state. ETAF maps the public Host reference to
+its retained provider region and delegates the typed incremental geometry
+publication to Ebox. This keeps the incremental boundary in the framework while
+leaving drag policy and authoritative application state with the caller; the
+next normal Runtime publication remains the reconciliation and recovery path.
+
 Interaction composition is deterministic.  An explicit Host `:on-*` callback
 runs first, followed by Behavior callbacks in declaration order; an error
 short-circuits the remaining callbacks.  For non-event attributes the explicit

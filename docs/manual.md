@@ -903,6 +903,23 @@ bindings keep the transient origin while the aggregate `read`/`on-change`
 state remains application-owned.  This contract avoids global caches and
 cannot safely be inferred from handler source or closure contents.
 
+An application that owns aggregate geometry can use
+`etaf-runtime-update-host-geometry` for a high-frequency display projection.
+It takes a mounted Runtime, a committed ETAF Host reference, and Ebox geometry
+facts such as `:left`, `:top`, `:width`, `:height`, and `:z-index`.  ETAF resolves
+the Host's retained provider region and performs the typed incremental Ebox
+publication; it does not implement drag policy or replace the caller's state.
+Update the controlled state first and ensure the next ordinary ETAF render
+supplies the same geometry.  A stale or removed Host can be recovered by the
+caller's normal state publication path; invalid geometry signals
+`etaf-runtime-error` without a partial update.
+
+```elisp
+(etaf-runtime-update-host-geometry
+ (etaf-runtime-for-buffer "*desktop*") 'panel
+ :left '(px 24) :top '(lh 3) :width '(px 320) :height '(lh 12))
+```
+
 For custom native input inside an event callback, use `etaf-call-with-input`.
 It supplies the current committed event target to Ebox's input boundary:
 

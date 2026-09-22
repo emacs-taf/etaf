@@ -1062,6 +1062,11 @@
       "name": "etaf-controlled-resizable-retains-origin-through-rerenders",
       "file": "tests/etaf-controlled-geometry-behavior-tests.el",
       "purpose": "A retained resize Behavior applies move and end deltas from one start geometry through parent projections."
+    },
+    {
+      "name": "etaf-runtime-update-host-geometry-uses-retained-provider-region",
+      "file": "tests/etaf-runtime-geometry-tests.el",
+      "purpose": "The ETAF incremental Host geometry boundary updates the retained Ebox region while leaving window policy to the caller."
     }
   ]
 }

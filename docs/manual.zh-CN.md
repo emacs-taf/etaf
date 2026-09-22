@@ -811,6 +811,21 @@ press 处理键盘激活，drag 持有主鼠标按钮序列。字段和同一 GU
 稳定的 binding 会保留这个临时起点，同时仍由应用持有聚合的 `read`/`on-change` 状态。
 这个契约不依赖全局缓存，也不能安全地通过处理器源码或闭包内容推断。
 
+如果应用已经拥有聚合的几何状态，可以用
+`etaf-runtime-update-host-geometry` 做高频的显示投影。它接收已挂载的
+Runtime、已提交的 ETAF Host 引用，以及 `:left`、`:top`、`:width`、`:height`
+和 `:z-index` 等 Ebox 几何事实。ETAF 会解析 Host 对应的 retained provider
+区域并调用类型化的 Ebox 增量发布；它不实现拖拽策略，也不替换调用方的状态。
+调用方应先更新受控状态，并保证下一次普通 ETAF 渲染提供相同的几何值。Host
+已经移除或几何值无效时会返回 `etaf-runtime-error`，不会产生部分更新；窗口应用
+可以回退到自己的普通状态发布路径。
+
+```elisp
+(etaf-runtime-update-host-geometry
+ (etaf-runtime-for-buffer "*desktop*") 'panel
+ :left '(px 24) :top '(lh 3) :width '(px 320) :height '(lh 12))
+```
+
 事件回调需要自定义原生输入时，使用 `etaf-call-with-input`。它把当前已提交
 事件目标交给 Ebox 的输入边界，不要求应用查找 Runtime、维护存活标志或恢复焦点。
 

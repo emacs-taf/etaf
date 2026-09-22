@@ -393,6 +393,11 @@ Behavior。它们消费手势 callback，只写调用方拥有的可写 ref，�
 plist，`on-change` 接收下一份脱离式 plist。这两个变体只保留手势起点，不增加第二份
 持久几何状态。
 
+需要高频显示投影的应用可以在更新受控状态后调用
+`etaf-runtime-update-host-geometry`。ETAF 将公开 Host 引用解析到 retained provider
+区域，再委托 Ebox 的类型化几何增量发布；拖拽策略和应用的权威状态仍归调用方所有。
+下一次普通 Runtime 发布仍负责一致性校准和恢复。
+
 交互组合是确定的：显式 Host `:on-*` callback 先运行，然后按声明顺序运行 Behavior
 callback；任一错误会 short-circuit 后续 callback。非事件属性由显式 Host 值优先，
 否则第一个声明该属性的 Behavior 获胜（first-wins）。同一 Host 的 Behavior name 必须在任何

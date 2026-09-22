@@ -660,6 +660,31 @@ RESOLVED is the current projected paint value."
   (etaf--generation-index-lookup
    (etaf-runtime-current-generation runtime) 'host-props host-ref))
 
+;;;###autoload
+(defun etaf-runtime-update-host-geometry (runtime host-ref &rest geometry)
+  "Incrementally update HOST-REF geometry in mounted RUNTIME.
+
+This is ETAF's display-side bridge to Ebox's typed geometry operation.  The
+caller owns the controlled state and must publish matching props on the next
+ordinary Runtime turn; this function only changes the retained Host's low-level
+geometry and layer facts.  It deliberately accepts no content, style, or
+window-management policy."
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (let ((props (etaf-runtime-host-props-for runtime host-ref)))
+   (unless props
+    (signal 'etaf-runtime-error
+            (list "Unknown committed Host" host-ref)))
+   (let ((region-id (or (plist-get props :id) host-ref)))
+     (when (ebox-transaction-active-p)
+       (signal 'etaf-runtime-error
+               (list "Cannot update Host geometry inside an active Ebox transaction")))
+     (with-current-buffer (etaf-runtime-buffer runtime)
+       (condition-case error-data
+           (apply #'ebox-region-update-geometry region-id geometry)
+         (error
+          (signal 'etaf-runtime-error
+                  (list "Host geometry update rejected" host-ref error-data))))))))
+
 (defun etaf-runtime-host-props-entries (runtime)
   "Return committed Host contribution entries for RUNTIME."
   (copy-tree (etaf--generation-index-entries

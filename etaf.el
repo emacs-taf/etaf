@@ -1019,6 +1019,18 @@
 ;;;###autoload (autoload 'etaf-runtime-host-props-for "etaf" nil nil)
 ;; Return committed semantic Host props for HOST-REF in RUNTIME.
 ;;
+;; Function: etaf-runtime-update-host-geometry (runtime host-ref &rest geometry)
+;;;###autoload (autoload 'etaf-runtime-update-host-geometry "etaf" nil nil)
+;; Apply Ebox's typed incremental geometry update to HOST-REF in mounted RUNTIME.
+;; GEOMETRY contains only low-level position, size and layer facts accepted by
+;; `ebox-region-update-geometry'.  This is a display projection boundary for a
+;; caller's already-updated controlled state: it does not change Component
+;; props or implement window policy.  The next ordinary ETAF publication must
+;; provide the same values, or the retained Host will be reconciled to that
+;; publication.  Unknown Hosts, unmounted Runtimes and invalid geometry signal
+;; `etaf-runtime-error' or the provider's typed geometry error without a
+;; partial update.
+;;
 ;; Function: etaf-runtime-instances (x)
 ;;;###autoload (autoload 'etaf-runtime-instances "etaf" nil nil)
 ;; Access slot "instances" of `etaf-runtime' struct X.
