@@ -3958,8 +3958,8 @@ does not identify the mounted target."
               :owner (copy-tree (etaf--component-instance-identity instance))
               :kind kind
               :payload (lambda ()
-                       (let ((etaf--render-phase-p nil)
-                             (etaf--current-runtime runtime))
+                         (let ((etaf--render-phase-p nil)
+                               (etaf--current-runtime runtime))
                            (funcall callback)))
               :ordering-key (append ordering-prefix (list 0 index))
               :policy 'run-once-public
@@ -4071,7 +4071,7 @@ RETIREMENT-JOURNAL owns hooks and Scope disposal after successful publication."
      (when (eq instance (gethash identity (etaf-runtime-instances runtime)))
        (remhash identity (etaf-runtime-instances runtime)))
      (remhash key (etaf-runtime-resource-registry runtime))
-    (etaf--runtime-dispose-instance
+     (etaf--runtime-dispose-instance
       runtime instance t retirement-journal (list 0 index)))))
 
 (defun etaf--runtime-promote (runtime retirement-journal)
