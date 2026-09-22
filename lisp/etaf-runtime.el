@@ -3942,8 +3942,13 @@ raw Emacs properties; Text presentation is projected by Ebox."
     found))
 
 (defun etaf--runtime-enqueue-instance-hooks
-    (journal instance kind hooks ordering-prefix)
-  "Enqueue INSTANCE HOOKS of KIND into JOURNAL after ORDERING-PREFIX."
+    (runtime journal instance kind hooks ordering-prefix)
+  "Enqueue INSTANCE HOOKS of KIND into JOURNAL after ORDERING-PREFIX.
+
+Keep RUNTIME dynamically available while a lifecycle callback runs.  A
+callback may be drained while the caller is visiting another buffer (for
+example when `etaf-mount' receives a buffer name), so `current-buffer' alone
+does not identify the mounted target."
   (cl-loop for hook in (reverse hooks)
            for index from 0
            do
@@ -3953,14 +3958,15 @@ raw Emacs properties; Text presentation is projected by Ebox."
               :owner (copy-tree (etaf--component-instance-identity instance))
               :kind kind
               :payload (lambda ()
-                         (let ((etaf--render-phase-p nil))
+                       (let ((etaf--render-phase-p nil)
+                             (etaf--current-runtime runtime))
                            (funcall callback)))
               :ordering-key (append ordering-prefix (list 0 index))
               :policy 'run-once-public
               :max-attempts 1))))
 
 (defun etaf--runtime-dispose-instance
-  (instance &optional run-hooks-p retirement-journal ordering-prefix)
+  (runtime instance &optional run-hooks-p retirement-journal ordering-prefix)
   "Dispose INSTANCE and run public hooks when RUN-HOOKS-P is non-nil.
 When RETIREMENT-JOURNAL is non-nil, enqueue public hooks and structural scope
 cleanup after ORDERING-PREFIX instead of running them inline."
@@ -3973,7 +3979,7 @@ cleanup after ORDERING-PREFIX instead of running them inline."
           (progn
             (when (and run-hooks-p mounted-p)
               (etaf--runtime-enqueue-instance-hooks
-               retirement-journal instance 'unmounted
+               runtime retirement-journal instance 'unmounted
                (etaf--component-instance-unmounted-hooks instance)
                ordering-prefix))
             (etaf-retirement-enqueue
@@ -4001,7 +4007,7 @@ cleanup after ORDERING-PREFIX instead of running them inline."
              (etaf-runtime-instances runtime))
     (remhash (etaf--component-instance-resource-key instance)
              (etaf-runtime-resource-registry runtime))
-    (etaf--runtime-dispose-instance instance nil))
+    (etaf--runtime-dispose-instance runtime instance nil))
   (dolist (entry (etaf-runtime-candidate-old-instances runtime))
     (puthash (car entry) (cadr entry) (etaf-runtime-instances runtime)))
   runtime)
@@ -4065,8 +4071,8 @@ RETIREMENT-JOURNAL owns hooks and Scope disposal after successful publication."
      (when (eq instance (gethash identity (etaf-runtime-instances runtime)))
        (remhash identity (etaf-runtime-instances runtime)))
      (remhash key (etaf-runtime-resource-registry runtime))
-     (etaf--runtime-dispose-instance
-      instance t retirement-journal (list 0 index)))))
+    (etaf--runtime-dispose-instance
+      runtime instance t retirement-journal (list 0 index)))))
 
 (defun etaf--runtime-promote (runtime retirement-journal)
   "Promote RUNTIME candidate and enqueue removals in RETIREMENT-JOURNAL."
@@ -4091,11 +4097,11 @@ RETIREMENT-JOURNAL owns hooks and Scope disposal after successful publication."
       (remhash (etaf--component-instance-resource-key instance)
                (etaf-runtime-resource-registry runtime))
       (etaf--runtime-dispose-instance
-       instance t retirement-journal (list 0 index)))
+       runtime instance t retirement-journal (list 0 index)))
     (cl-loop for entry in (etaf-runtime-candidate-old-instances runtime)
              for index from 0
              do (etaf--runtime-dispose-instance
-                 (cadr entry) t retirement-journal (list 1 index)))
+                 runtime (cadr entry) t retirement-journal (list 1 index)))
     (dolist (instance added)
       (setf (etaf--component-instance-mounted-p instance) t))
     (list
@@ -4105,18 +4111,18 @@ RETIREMENT-JOURNAL owns hooks and Scope disposal after successful publication."
                 (length (etaf--component-instance-identity right)))))
      existing)))
 
-(defun etaf--runtime-run-lifecycle (groups retirement-journal)
+(defun etaf--runtime-run-lifecycle (runtime groups retirement-journal)
   "Enqueue mounted and updated GROUPS in RETIREMENT-JOURNAL."
   (cl-loop for instance in (car groups)
            for index from 0
            do (etaf--runtime-enqueue-instance-hooks
-               retirement-journal instance 'mounted
+               runtime retirement-journal instance 'mounted
                (etaf--component-instance-mounted-hooks instance)
                (list 2 index)))
   (cl-loop for instance in (cadr groups)
            for index from 0
            do (etaf--runtime-enqueue-instance-hooks
-               retirement-journal instance 'updated
+               runtime retirement-journal instance 'updated
                (etaf--component-instance-updated-hooks instance)
                (list 3 index))))
 
@@ -4305,7 +4311,7 @@ with staged effects and contributions before building the next Generation."
                          (etaf-runtime-candidate-live runtime))
           (setf (etaf-runtime-candidate-created runtime)
                 (delq instance (etaf-runtime-candidate-created runtime)))
-          (etaf--runtime-dispose-instance instance nil)))
+          (etaf--runtime-dispose-instance runtime instance nil)))
       ;; A stable semantic address may be reused while its public Host ref
       ;; changes.  Retire the previous contribution even though the semantic
       ;; node itself remains attached and is overwritten in place.
@@ -6100,6 +6106,7 @@ root operation, without discarding and rerunning application effects."
                             (etaf-runtime-resource-registry runtime))))
                        (push instance updated))))
                  (etaf--runtime-run-lifecycle
+                  runtime
                   (list (etaf-runtime-candidate-created runtime)
                         (nreverse updated))
                   retirement)))
@@ -6230,7 +6237,7 @@ root operation, without discarding and rerunning application effects."
                (lambda ()
                  (setq groups (etaf--runtime-promote runtime retirement))
                  (etaf--runtime-promote-behaviors runtime retirement)
-                 (etaf--runtime-run-lifecycle groups retirement)))
+                 (etaf--runtime-run-lifecycle runtime groups retirement)))
               (setq public-condition
                     (etaf--runtime-drain-retirement runtime retirement t))
               (when-let* ((condition (or first-condition public-condition)))
@@ -6548,7 +6555,7 @@ unmount.  Host authority is invalidated before any unbounded cleanup."
                (remhash (etaf--component-instance-resource-key instance)
                         (etaf-runtime-resource-registry runtime))
                (etaf--runtime-dispose-instance
-                instance t retirement (list 1 index))))
+                runtime instance t retirement (list 1 index))))
             (let ((scope (etaf-runtime-scope runtime)))
               (etaf-retirement-enqueue
                retirement

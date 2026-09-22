@@ -298,6 +298,11 @@ The advanced `etaf-state` accessor is reserved for Components without named
 bindings: it reads their explicit setup result (including nil) during rendering.
 Ordinary application code should refer to bindings directly.
 
+Lifecycle callbacks run inside their owning Runtime operation.  Use
+`etaf-current-runtime` to obtain that owner and
+`etaf-runtime-buffer` to address its mounted buffer; `current-buffer` may be
+the caller's buffer when `etaf-mount` was given a buffer name.
+
 `:view` and `:render` share compilation, slot projection, and prop validation.
 Declared props are lexical snapshots of each evaluation: a deferred callback
 can directly use `title`, without an extra `let`. Successfully published updates

@@ -281,6 +281,9 @@ props。成功发布后，实例保留默认值直到替换或卸载，期间调
 有命名绑定时忽略 setup 的返回值，直接使用命名值，不能再调用 `etaf-state`。
 进阶接口 `etaf-state` 仅用于没有命名绑定的组件，在渲染时读取其显式 setup
 返回值（含 nil）。它不是事件时的接口。
+生命周期回调在所属 Runtime 的操作上下文中执行。需要访问挂载缓冲区时，使用
+`etaf-current-runtime` 取得所属 Runtime，再用 `etaf-runtime-buffer` 取得其缓冲区；
+当 `etaf-mount` 接收缓冲区名称时，`current-buffer` 可能仍是调用者的缓冲区。
 
 `:view` 和 `:render` 共用编译、slot 投影与 prop 校验。声明的 props 是每次求值的
 词法快照，延后执行的回调可直接使用 `title`，无需额外的 `let`。更新成功发布后

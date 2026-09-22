@@ -966,6 +966,14 @@
 ;;;###autoload (autoload 'etaf-runtime-buffer "etaf" nil nil)
 ;; Access slot "buffer" of `etaf-runtime' struct X.
 ;;
+;; Function: etaf-current-runtime ()
+;;;###autoload (autoload 'etaf-current-runtime "etaf" nil nil)
+;; Return the Runtime that owns the current setup, lifecycle, or event
+;; callback, or nil outside a Runtime operation.  Lifecycle code that needs
+;; the mounted buffer must use `(etaf-runtime-buffer
+;; (etaf-current-runtime))`; `current-buffer' is the caller's buffer and is
+;; not guaranteed to be the mounted target when `etaf-mount' receives a name.
+;;
 ;;
 ;; Function: etaf-runtime-current-generation (runtime)
 ;;;###autoload (autoload 'etaf-runtime-current-generation "etaf" nil nil)

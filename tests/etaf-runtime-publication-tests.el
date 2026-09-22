@@ -11,6 +11,53 @@
 (require 'ebox)
 (require 'etaf)
 
+(defvar etaf-runtime-publication--lifecycle-events nil)
+
+(etaf-define-component etaf-runtime-publication-lifecycle-probe ()
+  "Record the Runtime visible to lifecycle callbacks."
+  :setup
+  (progn
+    (etaf-on-mounted
+     (lambda ()
+       (push (list 'mounted
+                   (etaf-current-runtime)
+                   (etaf-runtime-buffer (etaf-current-runtime)))
+             etaf-runtime-publication--lifecycle-events)))
+    (etaf-on-unmounted
+     (lambda ()
+       (push (list 'unmounted
+                   (etaf-current-runtime)
+                   (etaf-runtime-buffer (etaf-current-runtime)))
+             etaf-runtime-publication--lifecycle-events)))
+    nil)
+  :view (text "lifecycle"))
+
+(ert-deftest etaf-lifecycle-callbacks-expose-owning-runtime-buffer ()
+  "Lifecycle callbacks identify their mounted target even when called by name."
+  (let ((caller (current-buffer))
+        (buffer (generate-new-buffer " *etaf-lifecycle-target*"))
+        runtime)
+    (setq etaf-runtime-publication--lifecycle-events nil)
+    (unwind-protect
+        (progn
+          (etaf-mount buffer
+                      (etaf-view
+                       (etaf-runtime-publication-lifecycle-probe)))
+          (setq runtime (etaf-runtime-for-buffer buffer))
+          (let ((mounted (car etaf-runtime-publication--lifecycle-events)))
+            (should (eq 'mounted (car mounted)))
+            (should (eq runtime (nth 1 mounted)))
+            (should (eq buffer (nth 2 mounted))))
+          (should (eq caller (current-buffer))))
+      (when runtime
+        (etaf-unmount runtime))
+      (let ((unmounted (car etaf-runtime-publication--lifecycle-events)))
+        (should (eq 'unmounted (car unmounted)))
+        (should (eq runtime (nth 1 unmounted)))
+        (should (eq buffer (nth 2 unmounted))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
 (ert-deftest etaf-runtime-committed-queries-exclude-active-publication ()
   "Provisional publication cannot leak into committed Runtime queries."
   (let ((buffer (generate-new-buffer " *etaf-publication-query*")) runtime)

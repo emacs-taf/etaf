@@ -1019,6 +1019,11 @@
       "purpose": "Portable performance reports identify the owning runtime and buffer, support explicit empty input and detach mutable labels from supplied record snapshots."
     },
     {
+      "name": "etaf-lifecycle-callbacks-expose-owning-runtime-buffer",
+      "file": "tests/etaf-runtime-publication-tests.el",
+      "purpose": "Lifecycle callbacks resolve the owning Runtime and target buffer when mounting by a buffer name from another caller buffer."
+    },
+    {
       "name": "etaf-runtime-committed-queries-exclude-active-publication",
       "file": "tests/etaf-runtime-publication-tests.el",
       "purpose": "Committed Runtime queries reject provisional Ebox publication while preserving mounted state."
