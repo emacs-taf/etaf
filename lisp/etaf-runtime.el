@@ -315,6 +315,7 @@ the sequential `etaf--pvec-put' contract."
   dirty-effect-queue
   handlers
   host-props
+  host-geometry-region-ids
   theme-paint-slots
   (interaction-keymaps (make-hash-table :test #'equal))
   candidate-theme-paint-updates
@@ -678,12 +679,18 @@ retained Host low-level geometry and layer facts.  UPDATES is an alist of
     (dolist (entry updates)
       (let* ((host-ref (car entry))
              (geometry (cdr entry))
-             (props (etaf-runtime-host-props-for runtime host-ref)))
+             (props (gethash host-ref (etaf-runtime-host-props runtime))))
         (unless props
           (signal 'etaf-runtime-error
                   (list "Unknown committed Host" host-ref)))
-        (push (list host-ref (or (plist-get props :id) host-ref) geometry)
-              resolved)))
+        (let* ((region-id (or (plist-get props :id) host-ref))
+               (cached (gethash host-ref
+                                (etaf-runtime-host-geometry-region-ids runtime))))
+          (unless (equal cached region-id)
+            (puthash host-ref region-id
+                     (etaf-runtime-host-geometry-region-ids runtime)))
+          (push (list host-ref region-id geometry)
+                resolved))))
     (when (ebox-transaction-active-p)
       (signal 'etaf-runtime-error
               (list "Cannot update Host geometry inside an active Ebox transaction")))
@@ -6428,6 +6435,7 @@ Use `etaf-runtime-snapshot' to retain the root's matching source facts."
                      :dirty-effect-ids (make-hash-table :test #'eql)
                      :handlers (make-hash-table :test #'equal)
                      :host-props (make-hash-table :test #'equal)
+                     :host-geometry-region-ids (make-hash-table :test #'equal)
                      :theme-paint-slots (make-hash-table :test #'eq)
                      :behaviors (make-hash-table :test #'equal)
                      :behavior-resource-keys (make-hash-table :test #'equal)
