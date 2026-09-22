@@ -661,29 +661,49 @@ RESOLVED is the current projected paint value."
    (etaf-runtime-current-generation runtime) 'host-props host-ref))
 
 ;;;###autoload
-(defun etaf-runtime-update-host-geometry (runtime host-ref &rest geometry)
-  "Incrementally update HOST-REF geometry in mounted RUNTIME.
+(defun etaf-runtime-update-host-geometries (runtime updates)
+  "Incrementally update several HOST-REF geometries in mounted RUNTIME.
 
 This is ETAF's display-side bridge to Ebox's typed geometry operation.  The
-caller owns the controlled state and must publish matching props on the next
-ordinary Runtime turn; this function only changes the retained Host's low-level
-geometry and layer facts.  It deliberately accepts no content, style, or
-window-management policy."
+caller's controlled state remains authoritative; this function only changes
+retained Host low-level geometry and layer facts.  UPDATES is an alist of
+`(HOST-REF . GEOMETRY-PLIST)' entries and is committed as one Ebox batch."
   (setq runtime (etaf-runtime-require-mounted runtime))
-  (let ((props (etaf-runtime-host-props-for runtime host-ref)))
-   (unless props
-    (signal 'etaf-runtime-error
-            (list "Unknown committed Host" host-ref)))
-   (let ((region-id (or (plist-get props :id) host-ref)))
-     (when (ebox-transaction-active-p)
-       (signal 'etaf-runtime-error
-               (list "Cannot update Host geometry inside an active Ebox transaction")))
-     (with-current-buffer (etaf-runtime-buffer runtime)
-       (condition-case error-data
-           (apply #'ebox-region-update-geometry region-id geometry)
-         (error
+  (unless (and (listp updates)
+               (cl-every (lambda (entry)
+                           (and (consp entry) (listp (cdr entry))))
+                         updates))
+    (signal 'etaf-runtime-error (list "Invalid Host geometry updates" updates)))
+  (let (resolved)
+    (dolist (entry updates)
+      (let* ((host-ref (car entry))
+             (geometry (cdr entry))
+             (props (etaf-runtime-host-props-for runtime host-ref)))
+        (unless props
           (signal 'etaf-runtime-error
-                  (list "Host geometry update rejected" host-ref error-data))))))))
+                  (list "Unknown committed Host" host-ref)))
+        (push (list host-ref (or (plist-get props :id) host-ref) geometry)
+              resolved)))
+    (when (ebox-transaction-active-p)
+      (signal 'etaf-runtime-error
+              (list "Cannot update Host geometry inside an active Ebox transaction")))
+    (with-current-buffer (etaf-runtime-buffer runtime)
+      (condition-case error-data
+          (ebox-call-with-update-batch
+           (lambda ()
+             (dolist (entry (nreverse resolved))
+               (apply #'ebox-region-update-geometry
+                      (nth 1 entry) (nth 2 entry)))))
+        (error
+         (signal 'etaf-runtime-error
+                 (list "Host geometry update rejected"
+                       (mapcar #'car resolved) error-data)))))))
+
+;;;###autoload
+(defun etaf-runtime-update-host-geometry (runtime host-ref &rest geometry)
+  "Incrementally update HOST-REF geometry in mounted RUNTIME."
+  (etaf-runtime-update-host-geometries
+   runtime (list (cons host-ref geometry))))
 
 (defun etaf-runtime-host-props-entries (runtime)
   "Return committed Host contribution entries for RUNTIME."

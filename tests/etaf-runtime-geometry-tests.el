@@ -28,7 +28,16 @@
                 (should (equal '(lh 4) (plist-get geometry :top)))
                 (should (equal '(px 64) (plist-get geometry :width)))
                 (should (equal '(lh 5) (plist-get geometry :height)))
-                (should (= 3 (plist-get geometry :z-index)))))))
+                (should (= 3 (plist-get geometry :z-index)))))
+            (should
+             (listp
+              (etaf-runtime-update-host-geometries
+               runtime
+               '((panel :left (px 16) :top (lh 5)
+                        :width (px 72) :height (lh 6) :z-index 4)))))
+            (with-current-buffer buffer-name
+              (should (equal '(px 16)
+                             (plist-get (ebox-region-geometry "panel") :left))))))
       (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
         (etaf-unmount runtime))
       (when-let* ((buffer (get-buffer buffer-name)))

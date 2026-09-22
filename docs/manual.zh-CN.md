@@ -819,6 +819,8 @@ Runtime、已提交的 ETAF Host 引用，以及 `:left`、`:top`、`:width`、`
 调用方应先更新受控状态，并保证下一次普通 ETAF 渲染提供相同的几何值。Host
 已经移除或几何值无效时会返回 `etaf-runtime-error`，不会产生部分更新；窗口应用
 可以回退到自己的普通状态发布路径。
+需要同时更新多个 Host（例如焦点切换前后的两个窗口）时，使用接收 alist 的
+`etaf-runtime-update-host-geometries`，它会把这些几何更新合并到一次 Ebox 发布中。
 
 ```elisp
 (etaf-runtime-update-host-geometry

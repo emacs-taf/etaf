@@ -913,6 +913,8 @@ Update the controlled state first and ensure the next ordinary ETAF render
 supplies the same geometry.  A stale or removed Host can be recovered by the
 caller's normal state publication path; invalid geometry signals
 `etaf-runtime-error` without a partial update.
+Use `etaf-runtime-update-host-geometries` with an alist when several Hosts,
+such as the old and new focused windows, must change in one Ebox publication.
 
 ```elisp
 (etaf-runtime-update-host-geometry

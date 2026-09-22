@@ -1031,6 +1031,12 @@
 ;; `etaf-runtime-error' or the provider's typed geometry error without a
 ;; partial update.
 ;;
+;; Function: etaf-runtime-update-host-geometries (runtime updates)
+;;;###autoload (autoload 'etaf-runtime-update-host-geometries "etaf" nil nil)
+;; Apply several HOST-REF/GEOMETRY pairs in one retained Ebox publication.
+;; UPDATES is an alist whose keys are committed Host references and whose values
+;; are geometry plists.  All targets validate before the batch starts.
+;;
 ;; Function: etaf-runtime-instances (x)
 ;;;###autoload (autoload 'etaf-runtime-instances "etaf" nil nil)
 ;; Access slot "instances" of `etaf-runtime' struct X.
