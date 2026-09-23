@@ -48,6 +48,10 @@
 (declare-function ebox-paint-slot-apply-updates "ebox" (buffer updates))
 (declare-function ebox-paint-slot-rollback-updates "ebox" (journal))
 (declare-function ebox-transaction-active-p "ebox" ())
+(declare-function etaf--host-update-queue-cell
+                  "etaf-host-update" (runtime effect-id))
+(declare-function etaf--host-update-reset "etaf-host-update" (runtime))
+(declare-function etaf--host-update-try-flush "etaf-host-update" (runtime))
 (defvar etaf--render-runtime)
 (defvar etaf--render-style-owners)
 (defvar etaf--render-parent-style-owners)
@@ -104,7 +108,7 @@
   ;; Complete committed Host inputs after resolution/augmentation, before
   ;; lowering to Ebox.  Theme-only updates patch this projection; they must not
   ;; rebuild it from the sparse public Host-props index or append Behaviors again.
-  resolved-props)
+  resolved-props property-deps)
 
 (cl-defstruct (etaf--semantic-range (:constructor etaf--semantic-range-create))
   semantic-id identity effect-id kind parent-id component-id token range-ref
@@ -132,9 +136,17 @@
   semantic-id effect-id input-signature deps child-ids)
 
 (cl-defstruct (etaf--generation-effect
-               (:constructor etaf--generation-effect-create))
+               (:constructor etaf--generation-effect-make))
   "Immutable generation scheduling target."
-  effect-id kind semantic-id deps target)
+  effect-id kind semantic-id deps target dependency-versions)
+
+(cl-defun etaf--generation-effect-create
+    (&key effect-id kind semantic-id deps target)
+  "Compile an evaluated target and its consumed dependency versions."
+  (etaf--generation-effect-make
+   :effect-id effect-id :kind kind :semantic-id semantic-id :deps deps
+   :target target
+   :dependency-versions (vconcat (mapcar #'etaf--source-version deps))))
 
 (cl-defstruct (etaf--contribution-index
                (:constructor etaf--contribution-index-create))
@@ -356,7 +368,8 @@ the sequential `etaf--pvec-put' contract."
   (next-operation-id 0)
   (next-semantic-candidate-id 0)
   (event-depth 0)
-  dirty-effect-queue-tail)
+  dirty-effect-queue-tail
+  prepared-host-updates prepared-host-generation prepared-host-cohorts flush-function)
 
 (defcustom etaf-generation-mirror-route 'project
   "Compatibility mirror route used after a committed generation changes.
@@ -658,8 +671,9 @@ RESOLVED is the current projected paint value."
 
 (defun etaf-runtime-host-props-for (runtime host-ref)
   "Return committed semantic Host props for HOST-REF in RUNTIME."
-  (etaf--generation-index-lookup
-   (etaf-runtime-current-generation runtime) 'host-props host-ref))
+  (copy-sequence
+   (etaf--generation-index-lookup
+    (etaf-runtime-current-generation runtime) 'host-props host-ref)))
 
 ;;;###autoload
 (defun etaf-runtime-update-host-geometries (runtime updates)
@@ -1236,15 +1250,146 @@ must not absorb that subtree's independently dirty work."
         runtime (list :kind 'buffer-kill-retirement
                       :condition condition))))))
 
-(defun etaf--runtime-enqueue-effect (runtime effect-id)
+(defun etaf--runtime-enqueue-effect (runtime effect-id &optional source-only)
   "Append EFFECT-ID once to RUNTIME's stable FIFO work queue."
-  (unless (gethash effect-id (etaf-runtime-dirty-effect-ids runtime))
-    (puthash effect-id t (etaf-runtime-dirty-effect-ids runtime))
-    (let ((cell (list effect-id)))
-      (if (etaf-runtime-dirty-effect-queue-tail runtime)
-          (setcdr (etaf-runtime-dirty-effect-queue-tail runtime) cell)
-        (setf (etaf-runtime-dirty-effect-queue runtime) cell))
-      (setf (etaf-runtime-dirty-effect-queue-tail runtime) cell))))
+  (let ((queued (gethash effect-id (etaf-runtime-dirty-effect-ids runtime))))
+    ;; Explicit candidate input, Context and retry work must still run when
+    ;; its ordinary reactive dependencies retained their previous values.
+    (puthash effect-id (if (and source-only (not (eq queued t))) 'source t)
+             (etaf-runtime-dirty-effect-ids runtime))
+    (unless queued
+      (let ((cell (or (etaf--host-update-queue-cell runtime effect-id)
+                      (list effect-id))))
+        (setcdr cell nil)
+        (if (etaf-runtime-dirty-effect-queue-tail runtime)
+            (setcdr (etaf-runtime-dirty-effect-queue-tail runtime) cell)
+          (setf (etaf-runtime-dirty-effect-queue runtime) cell))
+        (setf (etaf-runtime-dirty-effect-queue-tail runtime) cell)))))
+
+(defun etaf--runtime-source-effect-changed-p (runtime generation effect)
+  "Settle EFFECT's direct inputs and report a changed consumed value.
+Only inputs of already queued targets are visited; unobserved computed
+branches remain lazy.  Source propagation has finished before this gate."
+  (let ((deps (etaf--generation-effect-deps effect))
+        (versions (etaf--generation-effect-dependency-versions effect))
+        (index 0)
+        (etaf--tracking-enabled-p nil)
+        (etaf--runtime-dependency-collector nil)
+        (etaf--active-effect nil)
+        (etaf--render-phase-p t)
+        changed)
+    (while (and deps (not changed))
+      (let ((source (pop deps)))
+        (when (and (etaf-computed-p source) (etaf-computed-dirty-p source))
+          (setq changed
+                (not (etaf--runtime-settle-effect-computed
+                      runtime generation effect source))))
+        (setq changed (or changed
+                          (/= (aref versions index) (etaf--source-version source))))
+        (setq index (1+ index))))
+    changed))
+
+(defun etaf--runtime-settle-effect-computed (runtime generation effect source)
+  "Settle SOURCE in EFFECT's committed environment, or require rendering.
+Context reads use the ordinary render path so its dependency recorder remains
+authoritative even when a new conditional Context read would return an equal
+value.  Such a read unwinds before changing the computed cache."
+  (let* ((semantic (etaf--generation-effect-semantic
+                    generation (etaf--generation-effect-effect-id effect)))
+         (component-id
+          (cond
+           ((etaf--semantic-component-p semantic)
+            (if (eq (etaf--generation-effect-kind effect) 'component-input)
+                (etaf--semantic-component-caller-component-id semantic)
+              (etaf--semantic-component-semantic-id semantic)))
+           ((etaf--semantic-host-p semantic)
+            (etaf--semantic-host-component-id semantic))
+           ((etaf--semantic-range-p semantic)
+            (etaf--semantic-range-component-id semantic))
+           ((etaf--semantic-inline-range-p semantic)
+            (etaf--semantic-inline-range-component-id semantic))
+           ((etaf--semantic-slot-range-p semantic)
+            (etaf--semantic-slot-range-owner-component-id semantic))))
+         (etaf--context-inject-recorder #'etaf--runtime-defer-settled-context))
+    (catch 'etaf-settlement-needs-render
+      (etaf--runtime-call-with-component-env
+       runtime component-id (lambda () (etaf--computed-value source)))
+      t)))
+
+(defun etaf--runtime-defer-settled-context (_frame _key)
+  "Retain the ordinary rendering path for a Context-dependent computed."
+  (throw 'etaf-settlement-needs-render nil))
+
+(defun etaf--runtime-settle-source-effects (runtime)
+  "Remove equal derived inputs from RUNTIME's notified work in place.
+Retain failed work for retry and preserve every explicit candidate request."
+  (let ((generation (etaf-runtime-current-generation runtime))
+        (ids (etaf-runtime-dirty-effect-ids runtime))
+        (single-p (null (cdr (etaf-runtime-dirty-effect-queue runtime))))
+        (again t))
+    (while again
+      (let ((queue (etaf-runtime-dirty-effect-queue runtime))
+            previous removed)
+        (while queue
+          (let* ((effect-id (car queue))
+                 (effect (and (eq (gethash effect-id ids) 'source)
+                              (etaf--generation-effect generation effect-id))))
+            (if (and effect
+                     (not (etaf--runtime-source-effect-shadowed-p
+                           runtime generation effect ids single-p))
+                     (not (etaf--runtime-source-effect-changed-p
+                           runtime generation effect)))
+                (progn
+                  (setq removed t)
+                  (remhash effect-id ids)
+                  (when (equal effect-id (etaf-runtime-root-effect-id runtime))
+                    (setf (etaf-runtime-root-dirty-p runtime) nil))
+                  (if previous (setcdr previous (cdr queue))
+                    (setf (etaf-runtime-dirty-effect-queue runtime) (cdr queue))))
+              (setq previous queue)))
+          (setq queue (cdr queue)))
+        (setf (etaf-runtime-dirty-effect-queue-tail runtime) previous)
+        ;; A source FIFO can put a child before its equal structural parent.
+        ;; Revisit only after pruning makes another target eligible.  Each
+        ;; additional pass removes at least one queued target.
+        (setq again (and removed (not single-p)
+                         (etaf-runtime-dirty-effect-queue runtime)))))))
+
+(defun etaf--runtime-source-effect-shadowed-p
+    (runtime generation effect ids single-p)
+  "Whether pending structural work can retire EFFECT before its next read.
+Use only EFFECT's retained parent chain.  A lone local target has no queued
+structural peer, so ordinary prepared Host work needs no ancestor lookup."
+  (or (and (etaf-runtime-root-dirty-p runtime)
+           (not (eq (etaf--generation-effect-kind effect) 'root)))
+      (and (not single-p)
+           (let* ((effect-id (etaf--generation-effect-effect-id effect))
+                  (id (etaf--generation-effect-semantic-id effect))
+                  (nodes (etaf-generation-semantic-nodes generation))
+                  found)
+             (while (and id (not found))
+               (let* ((node (etaf--pvec-get nodes id))
+                      (owner-effect
+                       (cond
+                        ((etaf--semantic-component-p node)
+                         (etaf--semantic-component-effect-id node))
+                        ((etaf--semantic-range-p node)
+                         (etaf--semantic-range-effect-id node))
+                        ((etaf--semantic-slot-range-p node)
+                         (etaf--semantic-slot-range-effect-id node))))
+                      (input-effect
+                       (and (etaf--semantic-component-p node)
+                            (etaf--semantic-component-input-effect-id node))))
+                 (setq found
+                       (or (and owner-effect (/= owner-effect effect-id)
+                                (not (and (eq (etaf--generation-effect-kind effect)
+                                              'component-input)
+                                          (= id (etaf--generation-effect-semantic-id effect))))
+                                (gethash owner-effect ids))
+                           (and input-effect (/= input-effect effect-id)
+                                (gethash input-effect ids))))
+                 (setq id (etaf--generation-parent-id generation id))))
+             found))))
 
 (defun etaf--runtime-pop-effect (runtime)
   "Pop and return RUNTIME's next dirty effect id."
@@ -1476,12 +1621,12 @@ effect-to-source edges.  It is intentionally immutable and suitable as an
                 (etaf-runtime-current-generation runtime) source))
         (when (etaf--generation-effect
                (etaf-runtime-current-generation runtime) effect-id)
-          (etaf--runtime-enqueue-effect runtime effect-id)
+          (etaf--runtime-enqueue-effect runtime effect-id t)
           (when (equal effect-id (etaf-runtime-root-effect-id runtime))
             (etaf--runtime-mark-root-dirty runtime))))
       (etaf-reactive-enqueue-runtime-flush
        (etaf-runtime-mount-epoch runtime)
-       (lambda () (etaf--runtime-request-flush runtime))
+       (etaf-runtime-flush-function runtime)
        (etaf-runtime-scheduler-context runtime))))
 
 (defun etaf--runtime-evaluate-root-candidate (runtime)
@@ -1989,6 +2134,7 @@ The Component owns this source; reads after disposal signal an error."
                                           (etaf-generation-semantic-nodes generation) id)))
                          (env (and (or etaf--render-phase-p
                                        (eq etaf--component-phase 'setup))
+                                   (etaf-runtime-candidate-component-envs runtime)
                                    (gethash id (etaf-runtime-candidate-component-envs runtime)))))
                     (unless (and (etaf-effect-scope-active-p
                                   (etaf--component-instance-scope instance))
@@ -2006,6 +2152,7 @@ The Component owns this source; reads after disposal signal an error."
                                (and (eq etaf--component-phase 'setup)
                                     (eq etaf--current-component-instance instance))))
                           (env (and candidate-p
+                                    (etaf-runtime-candidate-component-envs runtime)
                                     (gethash id (etaf-runtime-candidate-component-envs runtime))))
                           (generation (etaf-runtime-current-generation runtime))
                           (component (and generation
@@ -2028,6 +2175,7 @@ The Component owns this source; reads after disposal signal an error."
   "Call FUNCTION in RUNTIME candidate/committed COMPONENT-ID environment."
   (let* ((generation (etaf-runtime-current-generation runtime))
          (env (and component-id
+                   (etaf-runtime-candidate-component-envs runtime)
                    (gethash component-id
                             (etaf-runtime-candidate-component-envs runtime))))
          (base (and component-id generation
@@ -2035,8 +2183,9 @@ The Component owns this source; reads after disposal signal an error."
                                     component-id)))
          (component
           (and base
-               (or (gethash (etaf--semantic-component-identity base)
-                            (etaf-runtime-candidate-semantic-nodes runtime))
+               (or (and (etaf-runtime-candidate-semantic-nodes runtime)
+                        (gethash (etaf--semantic-component-identity base)
+                                 (etaf-runtime-candidate-semantic-nodes runtime)))
                    base)))
          (instance
           (or (plist-get env :instance)
@@ -2080,9 +2229,10 @@ The Component owns this source; reads after disposal signal an error."
             (etaf--current-component-props props)
             (etaf--current-component-slots slots)
             (etaf--current-context
-             (or (and component
+             (or (and component (etaf-runtime-candidate-graph-nodes runtime)
                       (etaf--runtime-context-frame-for-candidate
                        runtime component))
+                 (and component (etaf--semantic-component-context-frame component))
                  (etaf--component-instance-context instance))))
         (funcall function)))))
 
@@ -2321,6 +2471,7 @@ receive an independent Host effect."
                   :host-ref (etaf--generated-host-ref props path site-token)
                   :key key :name name :effect-id effect-id
                   :property-bindings property-bindings
+                  :property-deps property-deps
                   :style-root-p style-root-p
                   :deps (delete-dups
                          (append property-deps theme-deps))
@@ -3248,14 +3399,10 @@ subtrees keep their committed resources without being traversed."
                (etaf-runtime-candidate-live runtime))
       (dolist (entry
                (list
-                (etaf--generation-effect-create
-                 :effect-id (etaf--semantic-component-input-effect-id semantic)
-                 :kind 'component-input :semantic-id semantic-id
-                 :deps (etaf--semantic-component-input-deps semantic))
-                (etaf--generation-effect-create
-                 :effect-id (etaf--semantic-component-effect-id semantic)
-                 :kind 'component-render :semantic-id semantic-id
-                 :deps (etaf--semantic-component-deps semantic))))
+                (etaf--generation-effect
+                 generation (etaf--semantic-component-input-effect-id semantic))
+                (etaf--generation-effect
+                 generation (etaf--semantic-component-effect-id semantic))))
         (puthash (etaf--generation-effect-effect-id entry) entry
                  (etaf-runtime-candidate-effects runtime))))
     (when (etaf--semantic-range-p semantic)
@@ -5129,7 +5276,7 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
          (property-bindings
           (copy-sequence (etaf--semantic-host-property-bindings base)))
          (host-props (copy-tree (etaf--semantic-host-base-props base)))
-         theme-scope style-props deps context-deps next-base-props)
+         theme-scope style-props deps property-deps context-deps next-base-props)
     ;; Property expressions and style/Theme transforms are one Host render
     ;; evaluation.  Share its owner, write guard, paint slots and dependency
     ;; collectors; no user transform may escape into publication scope.
@@ -5151,7 +5298,8 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
                             (etaf--host-property-binding-property binding)
                             (etaf--resolve-property-value
                              (etaf--host-property-binding-expression binding)))))
-         (setq next-base-props (copy-tree host-props))
+         (setq property-deps (copy-sequence deps)
+               next-base-props (copy-tree host-props))
          (let* ((etaf--render-style-owners (etaf--semantic-host-style-identity base))
                 (style-result (etaf--host-component-style-properties
                                nil (etaf--semantic-host-style-root-p base)))
@@ -5176,6 +5324,7 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
                                (append (plist-get backend-props field)
                                        (plist-get style-props field))))))
     (setf (etaf--semantic-host-property-bindings candidate) property-bindings
+          (etaf--semantic-host-property-deps candidate) property-deps
           (etaf--semantic-host-base-props candidate) next-base-props
           (etaf--semantic-host-resolved-props candidate) host-props
           (etaf--semantic-host-props-signature candidate) backend-props
@@ -5995,65 +6144,72 @@ root operation, without discarding and rerunning application effects."
         (unless evaluation-completed-p
           (etaf--runtime-restore-component-overlay-retry
            runtime retry-effect-ids))))
-    (setq range-changes
-          (append (nreverse
-                   (etaf-runtime-candidate-eager-range-changes runtime))
-                  range-changes))
-    (setq range-changes
-          (cl-remove-if
-           (lambda (change)
-             (ebox-canonical-input-equal-p
-              (nth 2 change) (nth 3 change)))
-           range-changes))
-    ;; A parent render may render nested Components without scheduling their
-    ;; effects separately.  Collect all accepted output owners, then compose
-    ;; their publication from the final graph rather than intermediate trees.
-    (dolist (identity (etaf-runtime-candidate-rendered-identities runtime))
-      (when-let* ((component (etaf--generation-semantic old identity))
-                  (range (etaf--generation-component-output-range old component)))
-        (push (list range) range-changes)))
-    (dolist (host-id (etaf-runtime-candidate-inline-host-ids runtime))
-      (push (etaf--runtime-stage-inline-host runtime old host-id) inline-changes))
-    (setq candidate-generation (etaf--runtime-build-generation runtime old)
-          range-changes (etaf--runtime-normalize-range-changes
-                         runtime old candidate-generation range-changes))
-    ;; Only final attached owners may publish.  A descendant can have staged
-    ;; work before another owner removes its enclosing branch in this turn.
-    (setq range-changes
-          (cl-remove-if-not
-           (lambda (change)
-             (etaf--pvec-get
-              (etaf-generation-semantic-nodes candidate-generation)
-              (etaf--semantic-backend-range-semantic-id (car change))))
-           range-changes)
-          inline-changes
-          (cl-remove-if-not
-           (lambda (change)
-             (etaf--pvec-get
-              (etaf-generation-semantic-nodes candidate-generation)
-              (etaf--semantic-host-semantic-id (car change))))
-           inline-changes))
-    (dolist (host (nreverse host-property-semantics))
-      (when (etaf--pvec-get
-             (etaf-generation-semantic-nodes candidate-generation)
-             (etaf--semantic-host-semantic-id host))
-        (let* ((semantic-id (etaf--semantic-host-semantic-id host))
-               (old-host
-                (etaf--pvec-get (etaf-generation-semantic-nodes old)
-                                semantic-id)))
-          (unless
-              (equal-including-properties
-               (etaf--semantic-host-props-signature old-host)
-               (etaf--semantic-host-props-signature host))
-            (push
-             (list old-host
-                   (etaf--runtime-lower-semantic-host-shallow old-host)
-                   (etaf--runtime-lower-semantic-host-shallow host))
-             host-changes)))))
-    (setq host-changes (nreverse host-changes))
-    (setq semantic-candidate
-          (etaf--runtime-new-semantic-candidate
-           runtime candidate-generation))
+    ;; Lowering can reject a value after the render effects have completed.
+    ;; Keep that preparation inside the same retry boundary as evaluation.
+    (condition-case error-data
+        (progn
+          (setq range-changes
+                (append (nreverse
+                         (etaf-runtime-candidate-eager-range-changes runtime))
+                        range-changes))
+          (setq range-changes
+                (cl-remove-if
+                 (lambda (change)
+                   (ebox-canonical-input-equal-p
+                    (nth 2 change) (nth 3 change)))
+                 range-changes))
+          ;; A parent render may render nested Components without scheduling their
+          ;; effects separately.  Collect all accepted output owners, then compose
+          ;; their publication from the final graph rather than intermediate trees.
+          (dolist (identity (etaf-runtime-candidate-rendered-identities runtime))
+            (when-let* ((component (etaf--generation-semantic old identity))
+                        (range (etaf--generation-component-output-range old component)))
+              (push (list range) range-changes)))
+          (dolist (host-id (etaf-runtime-candidate-inline-host-ids runtime))
+            (push (etaf--runtime-stage-inline-host runtime old host-id) inline-changes))
+          (setq candidate-generation (etaf--runtime-build-generation runtime old)
+                range-changes (etaf--runtime-normalize-range-changes
+                               runtime old candidate-generation range-changes))
+          ;; Only final attached owners may publish.  A descendant can have staged
+          ;; work before another owner removes its enclosing branch in this turn.
+          (setq range-changes
+                (cl-remove-if-not
+                 (lambda (change)
+                   (etaf--pvec-get
+                    (etaf-generation-semantic-nodes candidate-generation)
+                    (etaf--semantic-backend-range-semantic-id (car change))))
+                 range-changes)
+                inline-changes
+                (cl-remove-if-not
+                 (lambda (change)
+                   (etaf--pvec-get
+                    (etaf-generation-semantic-nodes candidate-generation)
+                    (etaf--semantic-host-semantic-id (car change))))
+                 inline-changes))
+          (dolist (host (nreverse host-property-semantics))
+            (when (etaf--pvec-get
+                   (etaf-generation-semantic-nodes candidate-generation)
+                   (etaf--semantic-host-semantic-id host))
+              (let* ((semantic-id (etaf--semantic-host-semantic-id host))
+                     (old-host
+                      (etaf--pvec-get (etaf-generation-semantic-nodes old)
+                                      semantic-id)))
+                (unless
+                    (equal-including-properties
+                     (etaf--semantic-host-props-signature old-host)
+                     (etaf--semantic-host-props-signature host))
+                  (push
+                   (list old-host
+                         (etaf--runtime-lower-semantic-host-shallow old-host)
+                         (etaf--runtime-lower-semantic-host-shallow host))
+                   host-changes)))))
+          (setq host-changes (nreverse host-changes))
+          (setq semantic-candidate
+                (etaf--runtime-new-semantic-candidate
+                 runtime candidate-generation)))
+      ((error quit)
+       (etaf--runtime-restore-component-overlay-retry runtime retry-effect-ids)
+       (signal (car error-data) (cdr error-data))))
     (condition-case err
         (progn
           (setq resource-journal
@@ -6317,9 +6473,16 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
          (or (etaf-runtime-scheduler-context runtime)
              etaf-scheduler-default-context)))
     (when (etaf-runtime-mounted-p runtime)
-    (if (or (> (etaf-runtime-event-depth runtime) 0)
-            (etaf-runtime-flushing-p runtime))
-        (setf (etaf-runtime-pending-p runtime) t)
+    (cond
+     ((or (> (etaf-runtime-event-depth runtime) 0)
+          (etaf-runtime-flushing-p runtime))
+      (setf (etaf-runtime-pending-p runtime) t))
+     ((and (progn (etaf--runtime-settle-source-effects runtime) t)
+           (not (etaf-runtime-root-dirty-p runtime))
+           (null (etaf-runtime-dirty-effect-queue runtime)))
+      (setf (etaf-runtime-pending-p runtime) nil))
+     ((etaf--host-update-try-flush runtime))
+     (t
       (setf (etaf-runtime-flushing-p runtime) t)
       (let* ((etaf--runtime-fixed-point-stamps
               (make-hash-table :test #'equal))
@@ -6343,12 +6506,15 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
                     (etaf--runtime-render-root-turn runtime)
                   (when (eq (etaf--runtime-component-overlay runtime)
                             :root-fallback)
-                    (etaf--runtime-render-root-turn runtime t)))))
-          (setf (etaf-runtime-flushing-p runtime) nil)))))))
+                    (etaf--runtime-render-root-turn runtime t))))
+              (etaf--host-update-reset runtime))
+          (setf (etaf-runtime-flushing-p runtime) nil))))))))
 
 (defun etaf--runtime-request-flush (runtime)
   "Flush RUNTIME within one optional Runtime operation boundary."
-  (etaf--runtime-with-operation (runtime 'flush "reactive flush")
+  (if (or (etaf-runtime-observer runtime) etaf--observer-context)
+      (etaf--runtime-with-operation (runtime 'flush "reactive flush")
+        (etaf--runtime-request-flush-now runtime))
     (etaf--runtime-request-flush-now runtime)))
 
 ;;;###autoload
@@ -6363,7 +6529,10 @@ Use `etaf-runtime-snapshot' for an explicit snapshot."
     (when (ebox-transaction-active-p)
       (signal 'etaf-runtime-error
               (list "Cannot flush inside an active Ebox transaction")))
-    (etaf--runtime-request-flush runtime)
+    ;; A retry can publish lifecycle hooks without arriving through source
+    ;; dispatch.  Keep their writes in the same projection so follow-up work
+    ;; drains after the currently publishing Runtime releases its busy guard.
+    (etaf-scheduler-call-with-projection (etaf-runtime-flush-function runtime))
     (etaf-render-port-revision (etaf-runtime-buffer runtime))))
 
 ;;;###autoload
@@ -6441,6 +6610,8 @@ Use `etaf-runtime-snapshot' to retain the root's matching source facts."
                      :behavior-resource-keys (make-hash-table :test #'equal)
                      :observer observer
                      :root-dirty-p t)))
+      (setf (etaf-runtime-flush-function runtime)
+            (lambda () (etaf--runtime-request-flush runtime)))
       (etaf-host-authority-begin-attach host-authority)
       (puthash buffer runtime etaf--runtime-table)
       (with-current-buffer buffer
@@ -6470,6 +6641,7 @@ Use `etaf-runtime-snapshot' to retain the root's matching source facts."
             (when (etaf-runtime-pending-p runtime)
               (setf (etaf-runtime-pending-p runtime) nil)
               (etaf--runtime-request-flush runtime))
+            (etaf--host-update-reset runtime)
             buffer)
         ((error quit)
          ;; Postaccept lifecycle errors leave an attached Runtime queryable.

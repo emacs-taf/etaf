@@ -4,6 +4,10 @@
 
 ### Added
 
+- `etaf-batch` and `etaf-call-with-batch` group related reactive writes in
+  ordinary application code. Nested batches defer observers and Runtime
+  updates until the outer scope completes while preserving written refs on
+  failure.
 - `etaf-draggable` and `etaf-resizable` Behaviors translate Ebox drag gestures
   into caller-owned reactive geometry refs, with axis/edge selection, bounds,
   lifecycle callbacks and optional logical-unit delta conversion.
@@ -12,6 +16,17 @@
 
 ### Changed
 
+- Equal computed inputs retain mounted output and update lifecycle without
+  publishing a new revision. Custom `:test` comparisons apply before rendering;
+  unused computations stay lazy and failed computation remains retryable.
+- Supported reactive Host geometry is prepared automatically for direct
+  retained publication. Geometry and semantic queries commit together without
+  rebuilding the Component tree; unsupported or structural changes keep the
+  ordinary update path. Use committed generation numbers or revisions to
+  detect updates, since the opaque generation object may retain identity.
+- Related primitive Host paint, hover and fixed-extent inline text changes
+  can join geometry in one retained publication. Existing batch, lifecycle,
+  snapshot and rejected-update semantics remain available through ordinary Views.
 - Retained publication is now owned by Ebox. Update Ebox and ETAF together;
   the integration uses SPI v3 and `ebox-publication/v1`. Publication reports
   use `:publication-*` fields and the `ebox-publication` provider.

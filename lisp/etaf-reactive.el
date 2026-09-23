@@ -183,6 +183,11 @@ The default context preserves the legacy two-argument facade."
       (and (etaf-computed-p source) (etaf-computed-test source))
       #'etaf--reactive-same-p))
 
+(defun etaf--source-version (source)
+  "Return SOURCE's last successfully evaluated value version."
+  (if (etaf-ref-p source) (etaf-ref-version source)
+    (etaf-computed-version source)))
+
 (defun etaf--source-subscribers (source)
   "Return the subscriber table of reactive SOURCE."
   (cond
@@ -329,9 +334,30 @@ an earlier projection epoch."
                  delivery-context delivery-source projection-epoch
                  subscribers))))))))))
 
-(defun etaf-reactive-call-with-batch (function)
-  "Call FUNCTION inside one cross-context reactive projection."
+(defun etaf-call-with-batch (function)
+  "Call zero-argument FUNCTION with deferred reactive notifications.
+Return FUNCTION's result after pending observers and Runtime updates finish.
+Nested calls join the outer batch.  Ref writes are immediately readable,
+but their notifications wait until the outermost call completes.
+
+If FUNCTION signals an error or quit after writing refs, pending work still
+runs before the original condition is re-signaled.  Written refs are not
+rolled back, and publication across Runtimes is not atomic.  A notification
+or publication error signals when FUNCTION itself completed successfully.
+
+Use outside rendering in synchronous application code on the main Emacs
+event loop.  Later asynchronous callbacks must establish their own batch."
+  (etaf--assert-not-rendering 'batch)
+  (unless (functionp function)
+    (signal 'wrong-type-argument (list 'functionp function)))
   (etaf-scheduler-call-with-projection function))
+
+(defmacro etaf-batch (&rest body)
+  "Evaluate BODY with deferred reactive notifications and return its result.
+Nested batches join the outermost one.  See `etaf-call-with-batch' for
+immediate ref reads, synchronous scope and failure semantics."
+  (declare (indent 0) (debug t))
+  `(etaf-call-with-batch (lambda () ,@body)))
 
 ;;;###autoload
 (cl-defun etaf-ref (initial-value &key test name)
@@ -368,12 +394,13 @@ TEST optionally compares old and new values.  NAME is used in diagnostics."
         (let* ((old (etaf-computed-value computed))
                (was-evaluated (etaf-computed-evaluated-p computed))
                (new (etaf-reactive-effect-run
-                     (etaf-computed-effect computed))))
+                     (etaf-computed-effect computed)))
+               (changed (or (not was-evaluated)
+                            (not (funcall (etaf--source-test computed) old new)))))
           (setf (etaf-computed-value computed) new
                 (etaf-computed-dirty-p computed) nil
                 (etaf-computed-evaluated-p computed) t)
-          (when (or (not was-evaluated)
-                    (not (funcall (etaf--source-test computed) old new)))
+          (when changed
             (cl-incf (etaf-computed-version computed))))
       (setf (etaf-computed-evaluating-p computed) nil)))
   (etaf-computed-value computed))
@@ -383,7 +410,10 @@ TEST optionally compares old and new values.  NAME is used in diagnostics."
   "Create a lazy cached value computed by zero-argument GETTER.
 
 TEST optionally compares old and new values.  NAME optionally labels the
-computed value."
+computed value.  Mounted consumers retain their publication when all their
+reactive inputs compare unchanged; getters reading ambient Context use the
+ordinary render path to preserve Context tracking.  Unobserved computations
+stay lazy."
   (etaf--assert-not-rendering 'create-computed)
   (unless (functionp getter)
     (signal 'wrong-type-argument (list 'functionp getter)))
@@ -421,7 +451,9 @@ computed value."
     (signal 'etaf-render-write-error
             (list (and (etaf-ref-p source) (etaf-ref-name source)))))
   (unless (etaf-ref-p source)
-    (error "ETAF computed values are read-only: %S" source)))
+    (error "ETAF reactive value is read-only: %S"
+           (if (etaf-computed-p source) (etaf-computed-name source)
+             (type-of source)))))
 
 (defun etaf-set-value (source new-value)
   "Set writable reactive SOURCE to NEW-VALUE and return NEW-VALUE."

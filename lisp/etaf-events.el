@@ -142,7 +142,7 @@ otherwise call the local callback with no arguments."
             (etaf-scheduler-call-with-context
              (etaf-runtime-scheduler-context runtime)
              (lambda ()
-               (etaf-reactive-call-with-batch dispatch))))))
+               (etaf-call-with-batch dispatch))))))
     (if (or etaf--observer-context (etaf-runtime-observer runtime))
         (etaf-runtime-call-operation
          runtime 'event

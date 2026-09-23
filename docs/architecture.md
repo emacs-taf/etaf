@@ -621,6 +621,36 @@ through one outer reactive dispatch. A local owner evaluates into a candidate
 generation and Ebox logical replacement; disjoint owners are coalesced into
 one Ebox publication. The Root owner is the only complete-root adapter.
 
+Independently reactive Host properties and sole-expression Text Hosts have a
+prepared execution path. The View compiler supplies their property and inline
+programs. On first use in a settled generation, Runtime binds only the affected
+programs to retained semantic cells, dependency guards and enclosing artifact
+invalidations. A single geometry owner keeps its direct Ebox operation. Mixed
+geometry, color, background, hover-content and inline text owners bind one Ebox
+update cohort; repeated dirty sets reuse its member/value/index vectors and
+match queue membership without constructing new keys. No View, property plist
+or structural candidate is rebuilt on an admitted update, and artifact
+invalidation uses the compiled writes rather than walking Component ancestry.
+
+All getters complete before the cohort stages. One paired stage advances every
+changed member and one semantic generation/token; rollback restores members in
+reverse order. Successful inline changes notify each lexical Component owner
+once. Owners with update hooks use the existing postcommit retirement journal;
+hook failures do not roll back a published cohort. Ordinary publication retires
+the prepared plans. New dependencies, Context/Theme participation, changing
+unsupported properties, multi-part text, provider-rejected text extents and
+structural work retain the ordinary candidate path.
+
+The structural generation owns the prepared mutable scalar cells. Ebox's paired
+stage advances those cells, the semantic generation number and authority token
+together; rejection restores their previous values and artifact validity.
+Instance/resource/route stores retain their versions when their membership has
+not changed. A prepared scalar publication may retain the generation object's
+identity, so settlement uses the public generation number or Ebox revision.
+Public Host-property queries return a fresh plist spine, and explicit Runtime
+snapshots remain detached. Structural reconciliation reads the current committed
+cells, preserving one semantic authority across both execution paths.
+
 The sole mutable pointer to the committed semantic generation belongs to
 `etaf-generation-authority`. Public handler and Host-property queries read that
 generation directly. Same-named Runtime hash tables are one-way compatibility
@@ -636,7 +666,7 @@ Ebox owns retained publication, transaction participation and final-accept
 markers. ETAF uses those public contracts without a second publication provider
 or compatibility route. A mounted or in-flight Runtime never switches ports.
 
-Each semantic candidate captures the expected generation, semantic token, and
+Each structural semantic candidate captures the expected generation, semantic token, and
 instance/resource/artifact/route store versions. The render path stages one CAS
 inside the Ebox framework callback and restores it through the same inverse
 journal on failure. A semantic-only change runs that CAS under ETAF ownership
@@ -681,6 +711,14 @@ callers use `etaf-scheduler-default-context`, while a mount may supply
 `:scheduler-context` to isolate its dispatch authority. Scopes, Effects, and
 opaque Runtime routes inherit and retain that context.
 
+`etaf-batch` and `etaf-call-with-batch` expose the same projection boundary
+used by Events, Actions and Data publication. Ref writes take effect at once;
+notifications and Runtime work drain when the outermost synchronous batch
+finishes. A body error or quit still drains written state and retains precedence
+over a drain failure. The boundary groups work on the main Emacs event loop;
+it owns no application state, provides no write rollback or cross-Runtime
+transaction, and does not extend to later asynchronous callbacks.
+
 One logical projection groups every changed source by its live subscriber
 contexts in one subscriber-table scan before draining. Source propagation
 settles across all touched contexts before any Runtime callback publishes.
@@ -694,7 +732,19 @@ never suppresses another, and registry/token/Host validation filters stale
 Runtime routes before fan-out.
 
 Runtime callbacks are detached as a turn, so a lifecycle write enters the
-following turn. One failing callback is retained as the context fault only
+following turn. Before candidate allocation, a Runtime settles computed inputs
+of source-notified targets against the dependency versions compiled with their
+committed output. Equal targets leave the queue without rendering or publishing.
+This visits only queued targets and their direct dependency paths, keeps unused
+computations lazy, and preserves explicit candidate-input, Context and retry
+work. Prepared Host commits refresh the same retained version vector after
+successful publication; ordinary candidates retain their prior versions on
+rollback. Queued structural owners settle before descendant computations;
+targets underneath changed owners retain the ordinary lifetime-ordered path.
+Getters run in their consumer's committed Component environment. Ambient
+Context reads defer to ordinary rendering before changing the computed cache,
+so candidate Context edge collection remains authoritative.
+One failing callback is retained as the context fault only
 after every later callback in that detached turn has run. Data success/error
 multi-ref publication and event/action callbacks use this same projection
 boundary, while the legacy facade continues through the default context. Data

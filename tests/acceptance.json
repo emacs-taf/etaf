@@ -14,6 +14,116 @@
   "support": [],
   "cases": [
     {
+      "name": "etaf-prepared-batch-hook-error-keeps-accepted-members",
+      "file": "tests/etaf-prepared-batch-tests.el",
+      "purpose": "Postcommit update-hook failure retains accepted mixed members and revision, preserves the original error and does not repeat the hook."
+    },
+    {
+      "name": "etaf-prepared-batch-retry-drains-lifecycle-writes",
+      "file": "tests/etaf-prepared-batch-tests.el",
+      "purpose": "Explicit publication retry drains reactive writes from accepted inline update hooks before returning."
+    },
+    {
+      "name": "etaf-prepared-batch-publishes-mixed-host-inputs-once",
+      "file": "tests/etaf-prepared-batch-tests.el",
+      "purpose": "Repeated geometry, paint, hover and inline batches match fresh mounts with one revision and one owner update."
+    },
+    {
+      "name": "etaf-prepared-batch-rejection-retains-all-members-until-retry",
+      "file": "tests/etaf-prepared-batch-tests.el",
+      "purpose": "A getter failure preserves committed output, properties, revision and lifecycle; written refs survive and retry publishes once."
+    },
+    {
+      "name": "etaf-computed-settlement-retires-before-child-read",
+      "file": "tests/etaf-computed-gating-tests.el",
+      "purpose": "Structural removal precedes a retired descendant computed getter that would now fail."
+    },
+    {
+      "name": "etaf-computed-equality-settles-component-input-and-render",
+      "file": "tests/etaf-computed-gating-tests.el",
+      "purpose": "Equal computed Component input and render dependencies preserve publication revision and lifecycle."
+    },
+    {
+      "name": "etaf-computed-equality-retains-host-geometry-publication",
+      "file": "tests/etaf-computed-gating-tests.el",
+      "purpose": "Equal computed Host geometry retains publication across successive geometry commits."
+    },
+    {
+      "name": "etaf-computed-settlement-preserves-consumer-context",
+      "file": "tests/etaf-computed-gating-tests.el",
+      "purpose": "Lazy getters retain the mounted consumer environment and ordinary Context dependency tracking."
+    },
+    {
+      "name": "etaf-computed-equality-retains-mounted-publication",
+      "file": "tests/etaf-computed-gating-tests.el",
+      "purpose": "Equal computed values retain Root, Component and inline publication revisions and update lifecycle."
+    },
+    {
+      "name": "etaf-computed-equality-retargets-conditional-inputs",
+      "file": "tests/etaf-computed-gating-tests.el",
+      "purpose": "Equal derived results still retarget conditional inputs and observe subsequent selected-source changes."
+    },
+    {
+      "name": "etaf-computed-settlement-preserves-unused-laziness",
+      "file": "tests/etaf-computed-gating-tests.el",
+      "purpose": "Previously read unobserved computed branches remain lazy during mounted publication."
+    },
+    {
+      "name": "etaf-computed-settlement-failure-preserves-retry",
+      "file": "tests/etaf-computed-gating-tests.el",
+      "purpose": "Failed computed getters and comparisons preserve displayed output and allow explicit Runtime retry."
+    },
+    {
+      "name": "etaf-computed-settlement-observes-complete-batch",
+      "file": "tests/etaf-computed-gating-tests.el",
+      "purpose": "Unequal-depth derived inputs settle against the complete batch before mounted publication."
+    },
+    {
+      "name": "etaf-host-geometry-resolves-theme-tokens-across-declaration-changes",
+      "file": "tests/etaf-host-geometry-tests.el",
+      "purpose": "Geometry Theme tokens resolve initially and when introduced after ordinary scalar declarations."
+    },
+    {
+      "name": "etaf-host-geometry-accepts-unit-and-unspecified-transitions",
+      "file": "tests/etaf-host-geometry-tests.el",
+      "purpose": "Valid geometry unit and unspecified transitions match fresh rendering and bounds; invalid units preserve prior output."
+    },
+    {
+      "name": "etaf-batch-defers-observers-until-outer-scope-exits",
+      "file": "tests/etaf-batch-tests.el",
+      "purpose": "Nested batches expose current refs and notify watches with the final related state."
+    },
+    {
+      "name": "etaf-batch-defers-mounted-output-until-outer-scope-exits",
+      "file": "tests/etaf-batch-tests.el",
+      "purpose": "Mounted output retains its committed revision until related writes finish."
+    },
+    {
+      "name": "etaf-batch-body-error-drains-writes-before-resignaling",
+      "file": "tests/etaf-batch-tests.el",
+      "purpose": "Body errors retain written refs and publish pending output before re-signaling."
+    },
+    {
+      "name": "etaf-batch-primary-error-survives-publication-failure",
+      "file": "tests/etaf-batch-tests.el",
+      "purpose": "A publication failure preserves the original body error and supports later repair."
+    },
+    {
+      "name": "etaf-batch-runtime-failure-preserves-other-publications",
+      "file": "tests/etaf-batch-tests.el",
+      "purpose": "Runtime failure keeps its prior display without rolling back another Runtime or application refs."
+    },
+    {
+      "name": "etaf-batch-quit-drains-written-state",
+      "file": "tests/etaf-batch-tests.el",
+      "purpose": "A quit delivers pending notifications for changed refs before escaping."
+    },
+    {
+      "name": "etaf-batch-rejects-invalid-functions-and-render-scopes",
+      "file": "tests/etaf-batch-tests.el",
+      "purpose": "Invalid callback input and render-phase batching are rejected before running the body."
+    },
+    {
       "name": "etaf-component-directives-validate-branch-and-loop-grammar",
       "file": "tests/etaf-component-frontends-tests.el",
       "purpose": "DSL directives reject ambiguous structure during macro expansion."
@@ -904,9 +1014,9 @@
       "purpose": "Filtering or deleting an asynchronously refreshed selection releases its whole detail and permits later loads and reselection."
     },
     {
-      "name": "etaf-drag-publishes-each-motion-through-ebox",
+      "name": "etaf-drag-publishes-motion-bursts-through-ebox",
       "file": "tests/etaf-drag-tests.el",
-      "purpose": "Native Ebox gestures publish reactive motion before release and preserve the Host target."
+      "purpose": "Native motion bursts publish intermediate active output before release, preserve the Host target and accept the exact release endpoint."
     },
     {
       "name": "etaf-drag-cancellation-clears-transient-state-on-disable",
@@ -1067,6 +1177,31 @@
       "name": "etaf-runtime-update-host-geometry-uses-retained-provider-region",
       "file": "tests/etaf-runtime-geometry-tests.el",
       "purpose": "The ETAF incremental Host geometry boundary updates the retained Ebox region while leaving window policy to the caller."
+    },
+    {
+      "name": "etaf-host-geometry-publishes-semantics-and-detached-snapshots",
+      "file": "tests/etaf-host-geometry-tests.el",
+      "purpose": "Repeated reactive geometry changes keep semantic properties, retained interactions and provider geometry coherent while earlier exported snapshots and property results remain unchanged."
+    },
+    {
+      "name": "etaf-host-geometry-recovers-after-invalid-input-and-replacement",
+      "file": "tests/etaf-host-geometry-tests.el",
+      "purpose": "Invalid geometry retains the committed picture and semantic revision; later resize, structural removal, replacement and movement recover with current geometry and interactions."
+    },
+    {
+      "name": "etaf-host-geometry-keeps-component-state-and-property-guards",
+      "file": "tests/etaf-host-geometry-tests.el",
+      "purpose": "Component-owned geometry updates retain local state and handlers while changed visibility follows ordinary publication and restores current position."
+    },
+    {
+      "name": "etaf-host-geometry-rebinds-changed-reactive-dependencies",
+      "file": "tests/etaf-host-geometry-tests.el",
+      "purpose": "A conditional geometry expression follows a newly selected reactive source and later switches back without losing updates."
+    },
+    {
+      "name": "etaf-host-geometry-unsupported-root-recovers-from-invalid-value",
+      "file": "tests/etaf-host-geometry-tests.el",
+      "purpose": "A standalone absolute Host without a containing plane uses ordinary geometry validation, retains committed state on invalid input and accepts a later valid value."
     }
   ]
 }

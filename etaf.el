@@ -93,6 +93,26 @@
 ;; Invalid ETAF Behavior
 ;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
+;; Macro: etaf-batch (&rest body)
+;;;###autoload (autoload 'etaf-batch "etaf" nil nil 'macro)
+;; Evaluate BODY in one reactive batch and return its last value, or nil for
+;; an empty body. Nested batches join the outermost scope. Use for several
+;; related state writes; the function form and failure contract follow below.
+;;
+;; Function: etaf-call-with-batch (function)
+;;;###autoload (autoload 'etaf-call-with-batch "etaf" nil nil)
+;; Call zero-argument FUNCTION and return its result after pending reactive
+;; work finishes. Ref writes are immediately readable; existing observers and
+;; Runtime updates wait for the outermost batch. Events and Actions use this
+;; same boundary, so explicit batches compose with their callbacks.
+;; If FUNCTION errors or quits, pending work still drains before its original
+;; condition is re-signaled. Written refs remain changed; the batch provides
+;; neither rollback nor atomic publication across Runtimes. If only draining
+;; fails, that condition signals. FUNCTION must be callable; use outside
+;; rendering on the main Emacs event loop. This scope is synchronous: later
+;; asynchronous callbacks must establish their own batch. No resource or
+;; Runtime ownership is transferred to the batch.
+;;
 ;; Error: etaf-component-call-error
 ;; Invalid ETAF Component call
 ;; Catch this condition with condition-case; failed calls do not return a value.
@@ -138,7 +158,10 @@
 ;; Create a lazy cached value computed by zero-argument GETTER.
 ;;
 ;; TEST optionally compares old and new values.  NAME optionally labels the
-;; computed value.
+;; computed value. Mounted consumers retain their publication when all their
+;; reactive inputs compare unchanged; getters reading ambient Context use the
+;; ordinary render path to preserve Context tracking. Unobserved computations
+;; stay lazy.
 ;;
 ;; Function: etaf-computed-p (x)
 ;;;###autoload (autoload 'etaf-computed-p "etaf" nil nil)
@@ -978,6 +1001,9 @@
 ;; Function: etaf-runtime-current-generation (runtime)
 ;;;###autoload (autoload 'etaf-runtime-current-generation "etaf" nil nil)
 ;; Return RUNTIME's uniquely authoritative committed generation.
+;; The opaque object may retain identity across prepared scalar updates. Use
+;; `etaf-runtime-generation' or the committed Ebox revision for settlement;
+;; `etaf-runtime-snapshot' exports a detached snapshot.
 ;;
 ;; Error: etaf-runtime-error
 ;; ETAF runtime error
@@ -1018,6 +1044,8 @@
 ;; Function: etaf-runtime-host-props-for (runtime host-ref)
 ;;;###autoload (autoload 'etaf-runtime-host-props-for "etaf" nil nil)
 ;; Return committed semantic Host props for HOST-REF in RUNTIME.
+;; The plist spine is fresh; contained values preserve identity and are
+;; read-only. Later geometry publication does not replace fields in this copy.
 ;;
 ;; Function: etaf-runtime-update-host-geometry (runtime host-ref &rest geometry)
 ;;;###autoload (autoload 'etaf-runtime-update-host-geometry "etaf" nil nil)
@@ -1290,6 +1318,8 @@
 (require 'etaf-render-port)
 (require 'etaf-renderer)
 (require 'etaf-runtime)
+(require 'etaf-host-update)
+(require 'etaf-host-cohort)
 (require 'etaf-behavior)
 (require 'etaf-controlled-behavior)
 (require 'etaf-actions)

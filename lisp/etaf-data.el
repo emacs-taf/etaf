@@ -1008,7 +1008,7 @@ multi-field candidate cannot commit, leaving that marker in place would make a
 controller report `loading' forever.  This fallback bypasses the fault-injected
 candidate installer, atomically writes the observable error/status pair, and
 still lets scheduler containment report any render fault separately."
-  (etaf-reactive-call-with-batch
+  (etaf-call-with-batch
    (lambda ()
      (setf (etaf-value (etaf-data--controller-error controller)) condition
            (etaf-value (etaf-data--controller-status controller)) 'error))))

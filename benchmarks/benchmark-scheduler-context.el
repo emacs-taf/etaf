@@ -35,7 +35,7 @@
 
 (defun etaf-scheduler-benchmark--iteration (sources iteration)
   "Publish ITERATION through all reactive SOURCES once."
-  (etaf-reactive-call-with-batch
+  (etaf-call-with-batch
    (lambda ()
      (cl-loop for source in sources
               for index from 0

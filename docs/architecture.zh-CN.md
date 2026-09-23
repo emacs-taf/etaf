@@ -307,6 +307,12 @@ Runtime 的挂载是事务性的：
 
 更新使用同一条路径。响应式 ref 和 computed 让 render effect 失效；Runtime scheduler 在当前边界同步 flush。渲染阶段写入状态会触发 `etaf-render-write-error`；状态应在事件、Action、Effect 或 watch callback 中改变。
 
+`etaf-batch` 与 `etaf-call-with-batch` 暴露 Event、Action 和 Data 发布共用的
+投影边界。ref 写入立即生效，通知和 Runtime 工作在最外层同步批处理结束时
+执行。执行体报错或退出仍会处理已写入状态，且原始条件优先于通知或发布失败。
+这个边界只在 Emacs 主事件循环中组织工作，不拥有业务状态，不回滚写入，
+不提供跨 Runtime 事务，也不延伸到稍后运行的异步回调。
+
 渲染、lowering 和 Ebox 发布构成回滚边界。如果候选步骤之一失败，上一棵已提交的树仍保持 active。生命周期和 cleanup callback 在 retained state 提升且发布完成后运行；它们的错误会保持可见，但不会假装回滚已经发布的 Ebox tree。
 
 响应式 API 只有一套模型：
@@ -564,6 +570,28 @@ mounted Component、expr、slot、fragment、raw、inline 和 Root owner 都经�
 replacement；不相交 owner 会合并为一次 Ebox publication。只有 Root owner
 可以进入 complete-root adapter。
 
+独立响应式 Host 属性及单表达式 Text Host 使用预备执行路径。View 编译器
+提供属性与 inline 程序；Runtime 在已提交 generation 中首次需要时，只绑定
+受影响程序的语义单元、依赖检查及外层产物失效指令。单个几何 owner 保留直接
+Ebox 操作；混合几何、颜色、背景、hover-content 与 inline text owner 则绑定
+一个 Ebox update cohort。重复的 dirty 集合复用 member/value/index 向量，
+按队列成员匹配而不构造新 key；已接纳更新不重建 View、属性 plist 或结构候选，
+产物失效执行已编译写入，不重新遍历 Component 祖先。
+
+全部 getter 成功后才 stage cohort。一次成对 stage 写入所有变化成员，仅推进
+一次语义 generation/token；rollback 逆序恢复成员。成功的 inline 变化对每个
+词法 Component owner 触发一次 updated；有 hook 的 owner 使用既有 postcommit
+retirement journal，hook 失败不会撤销已发布 cohort。普通发布使旧计划失效。
+新依赖、Context/Theme 参与、不支持属性的变化、多段文本、提供方拒绝的文本尺寸
+及结构更新仍使用普通候选路径。
+
+结构 generation 拥有预备的可变标量单元。Ebox 的成对 stage 同时推进这些单元、
+语义 generation 数字与 authority token；拒绝时恢复旧值及产物有效性。
+实例、资源和路由成员未变化时，其 store version 保持不变。标量发布可以保留
+generation 对象身份，因此完成判断使用公共 generation 数字或 Ebox revision。
+Host 属性查询返回新的 plist 主链，显式 Runtime snapshot 继续脱离内部可变数据。
+结构协调读取当前已提交单元，两条执行路径始终共享一份语义权威。
+
 已提交 semantic generation 的唯一 mutable pointer 由
 `etaf-generation-authority` 持有。handler 与 Host-prop 等公共查询直接读取该
 generation；Runtime 中同名 hash table 只是由 generation 单向重建的兼容 mirror，
@@ -578,7 +606,7 @@ transaction participant 和 final-accept marker；ETAF 通过这些公共契约�
 不引入第二个 publication provider 或兼容路由。mounted 或 in-flight Runtime
 绝不会切换 port。
 
-每个 semantic candidate 同时捕获 expected generation、semantic token，以及
+每个结构 semantic candidate 同时捕获 expected generation、semantic token，以及
 instance/resource/artifact/route store versions。render 路径在 Ebox framework
 stage 中暂存一次 CAS，失败时由同一个 inverse journal 恢复；没有可见 Ebox
 变化的 semantic-only 路径由 ETAF 自己执行同一 CAS，不创建 Ebox publication 或 revision。CAS 后的 mirror 与旧 route 清理属于 postcommit，失败不能反向恢复已提交
@@ -627,7 +655,15 @@ per-context turn budget 会包含跨 context cycle，并留下可复用的 fault
 context B；registry/token/Host 校验会在 fan-out 前过滤 stale Runtime route。
 
 Runtime callback 先作为一个完整 turn detach，因此 lifecycle write 会进入下一个
-turn；某个 callback 失败时，scheduler 会先执行该 detached turn 中剩余 callback，
+turn。Runtime 在分配 candidate 前，先求值 source 通知目标的 computed 输入，
+与 committed output 编译时记录的依赖版本比较。输入相等的目标直接退出队列，
+不渲染或发布；只访问已排队目标的直接依赖路径，不求值无消费需求的分支。
+显式 candidate input、Context 与 retry 工作仍保留。prepared Host 成功发布后
+原位刷新同一依赖版本向量；普通 candidate rollback 保留旧版本。
+排队的结构 owner 先于后代计算处理；owner 已变化时，后代沿用普通生命周期
+顺序。getter 使用消费者的 committed Component 环境；ambient Context
+读取在更改 computed cache 前退回普通渲染，以保留 candidate Context 依赖收集。
+某个 callback 失败时，scheduler 会先执行该 detached turn 中剩余 callback，
 再把首个 condition 记录为 context fault。Data success/error 的 multi-ref
 publication 与 event/action callback 都复用同一个 projection boundary，legacy
 façade 则继续走 default context。Data source failure 会更新 Controller error state；

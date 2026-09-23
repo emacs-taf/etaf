@@ -359,6 +359,17 @@ The small reactive API is:
   (etaf-value double))
 ```
 
+Computed values use the same shallow equality rule as refs; `:test` can supply
+a different comparison, such as `equal` for a derived list. Before mounted
+consumers render, their observed computed inputs settle. If every input keeps
+its previous value, the existing publication and update lifecycle remain
+unchanged. Computations without mounted or active observer demand remain lazy.
+Getters reading ambient Context follow ordinary rendering to preserve Context
+tracking. Capture an injected reactive source during setup and read that source
+inside the getter when the computation only depends on its reactive value.
+A getter or comparison failure preserves the displayed output and pending
+Runtime work; after correcting the cause, `etaf-runtime-flush` retries it.
+
 Use `etaf-set-value` when a function form is clearer than `setf`. To derive a
 replacement from the current value, use `etaf-update-value` with an ordinary
 function. For lists, vectors and records, return a replacement; mutating an
@@ -376,6 +387,38 @@ not mutate the old object or perform external effects. An updater error leaves
 the ref unchanged; a rendering failure after the write keeps the application
 value, as other ref writes do. Use it in events or ordinary application code,
 not during rendering. It uses the same shallow equality and batching rules.
+
+Use `etaf-batch` when ordinary application code changes several related refs.
+Existing watches and mounted Runtimes observe the completed batch; refs are
+immediately readable inside it. Nested batches, including batches inside Event
+or Action callbacks, join the outer scope. `etaf-call-with-batch` accepts a
+zero-argument function for callers that already have a callback. Both return
+the body's result after pending reactive work finishes.
+
+```elisp
+(let ((x (etaf-ref 0))
+      (y (etaf-ref 0))
+      observed)
+  (let ((stop (etaf-watch
+               (lambda () (list (etaf-value x) (etaf-value y)))
+               (lambda (new _old) (setq observed new)))))
+    (unwind-protect
+        (progn
+          (etaf-batch
+            (etaf-set-value x 3)
+            (etaf-set-value y 4))
+          observed)                    ; => (3 4)
+      (funcall stop))))
+```
+
+A batch groups notifications; it does not roll back application writes or
+make publication across Runtimes atomic. If the body signals an error or quit,
+pending reactive work still drains, then the original condition is re-signaled.
+If the body succeeds and draining fails, the drain condition signals. Published
+output follows each Runtime's normal failure and recovery contract. Call from
+synchronous application code on the main Emacs event loop, outside rendering;
+a later timer, process or other asynchronous callback needs its own batch.
+The caller continues to own refs, watches and Runtime lifetimes.
 
 `etaf-watch-effect` is for a reactive side effect and can return a cleanup function:
 
@@ -892,6 +935,28 @@ function returns the current geometry plist and `on-change` receives the next
 detached plist; the Behavior keeps only the transient gesture origin.  This
 avoids mirroring an application's `x/y/width/height` refs while preserving the
 same edge constraints, cancellation and logical-unit delta conversion.
+
+Keep reactive geometry reads in the Host property expressions that use them,
+as in the `movable-panel` example. With stable topology, ETAF automatically
+prepares a supported Host on its first eligible geometry update, then reuses
+that operation. Ordinary publication invalidates old operations without
+preparing unrelated Hosts.
+Related geometry, color, background, hover-content and sole-expression text
+changes can share one prepared publication. Use `etaf-batch` for related writes;
+ordinary refs, computed values and View properties remain the authoring API.
+ETAF manages the reusable execution plans. Unsupported geometry, changed
+dependencies and structural changes retain the ordinary publication path.
+Text may change width inside a fixed allocation admitted by
+[Ebox's prepared-update contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el);
+text or rich-text changes whose allocation and ownership cannot be proved use
+ordinary publication. This also applies to unsupported paint changes, including
+class, border, font-weight and nil foreground. Inline changes preserve Component update hooks,
+which run once per successful publication after all members are visible.
+Semantic Host properties and Ebox geometry commit together, and rejected values
+leave the previous display queryable while application refs keep their writes.
+Use `etaf-runtime-generation` or `etaf-runtime-flush` for committed revision
+checks; the opaque current generation object can retain its identity during
+geometry updates. Explicit `etaf-runtime-snapshot` exports remain detached.
 
 Create these controlled Behaviors once in a retained `:bindings` owner (or in
 another retained owner), and pass the resulting spec through the View.  Do not

@@ -333,6 +333,15 @@ key 保留子组件的状态与焦点，不保留指向旧输入对象的回调�
   (etaf-value double))
 ```
 
+computed 默认使用与 ref 相同的浅比较规则；`:test` 可指定其他比较方式，
+例如对派生列表使用 `equal`。mounted consumer 渲染前会先求值其已订阅的
+computed 输入；若所有输入保持原值，则保留已有发布及 update 生命周期。
+没有 mounted consumer 或活动观察者需求的计算仍保持惰性。读取 ambient
+Context 的 getter 沿用普通渲染，以保留 Context 依赖跟踪；若计算仅依赖注入
+来源的响应式值，可在 setup 注入来源，再在 getter 中读取该来源。getter 或比较
+失败会保留已有显示与待处理 Runtime 工作；修复原因后可通过
+`etaf-runtime-flush` 重试。
+
 如果函数形式更清楚，可以使用 `etaf-set-value`。需要根据当前值生成新值时，
 使用 `etaf-update-value` 和普通函数。列表、向量等采用替换更新；原地修改
 对象不会通知订阅者。只复制需要修改的部分：
@@ -348,6 +357,35 @@ key 保留子组件的状态与焦点，不保留指向旧输入对象的回调�
 副作用。函数报错时 ref 保持原值；写入之后若渲染失败，业务值仍然保留，
 与其他 ref 写入一致。在事件或普通应用代码中使用，不能在渲染中调用。
 它沿用现有浅比较与批处理规则，不引入深层代理或自动复制。
+
+普通应用代码需要同时修改多个相关 ref 时，使用 `etaf-batch`。现有 watch 和
+已挂载 Runtime 在批处理完成后观察更新；批处理中立即读取 ref 会得到新值。
+嵌套批处理，包括 Event 或 Action 回调中的显式批处理，都加入最外层范围。
+已有零参数回调时使用 `etaf-call-with-batch`。两者都在待处理响应式工作完成后
+返回执行体的结果。
+
+```elisp
+(let ((x (etaf-ref 0))
+      (y (etaf-ref 0))
+      observed)
+  (let ((stop (etaf-watch
+               (lambda () (list (etaf-value x) (etaf-value y)))
+               (lambda (new _old) (setq observed new)))))
+    (unwind-protect
+        (progn
+          (etaf-batch
+            (etaf-set-value x 3)
+            (etaf-set-value y 4))
+          observed)                    ; => (3 4)
+      (funcall stop))))
+```
+
+批处理合并通知，不回滚业务写入，也不保证多个 Runtime 原子发布。执行体报错
+或退出时，仍先处理待执行的响应式工作，再重新抛出原始条件；执行体成功而
+通知或发布失败时，抛出后者的条件。显示沿用各 Runtime 的失败与恢复契约。
+在 Emacs 主事件循环的同步应用代码中使用，不能在渲染中调用；稍后运行的
+定时器、进程或其他异步回调需要建立自己的批处理。ref、watch 和 Runtime 的
+生命周期仍由调用者负责。
 
 `etaf-watch-effect` 用于响应式副作用，并且可以返回 cleanup：
 
@@ -803,6 +841,23 @@ press 处理键盘激活，drag 持有主鼠标按钮序列。字段和同一 GU
 函数返回当前几何 plist，`on-change` 接收下一份脱离式 plist；Behavior 只保留当前
 手势的临时起点，不复制应用的 x/y/width/height 状态，同时保留边界、取消和逻辑单位
 位移转换语义。
+
+响应式几何读取应放在使用它的 Host 属性表达式中，如上面的 `movable-panel`。
+拓扑稳定时，ETAF 在 Host 第一次进入合适的几何更新时自动准备提供方支持的操作，
+后续复用该操作；普通发布使旧操作失效，但不准备无关 Host。应用继续
+使用 ref、computed 和普通 View 属性，无须管理执行计划。相关几何、颜色、背景、
+hover-content 与单表达式文本可共享一次预备发布；用 `etaf-batch` 组合相关写入。
+不支持的几何、依赖变化和结构变化保留普通发布路径。Text 可以在
+[Ebox 预备更新契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el)
+获准的固定分配中改变宽度；无法证明分配范围和所有权的文本或富文本变化使用
+普通发布。未支持的绘制变化，包括 class、border、font-weight 和 nil 前景色，
+也沿用普通路径。
+inline 变化保留 Component updated hook，在成功发布全部成员后每个 owner 执行一次。
+Host 语义属性和 Ebox 几何同时
+提交；拒绝无效值时，上一份画面仍可查询，应用 ref 保留已经发生的写入。
+使用 `etaf-runtime-generation` 或 `etaf-runtime-flush` 判断已提交 revision；
+几何更新期间不透明的当前 generation 对象可保留身份。显式
+`etaf-runtime-snapshot` 导出仍与内部可变数据脱离。
 
 这类 controlled Behavior 应该在保留的 `:bindings`（或其他有明确生命周期的持有者）
 中创建一次，再把得到的 spec 传给 View。不要在 `:render` 中重新创建：每次渲染都会产生

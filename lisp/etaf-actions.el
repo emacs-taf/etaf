@@ -115,7 +115,7 @@ RUNTIME ACTION ...)'.  Action functions receive Runtime first."
              (etaf-scheduler-call-with-context
               (etaf-runtime-scheduler-context runtime)
               (lambda ()
-                (etaf-reactive-call-with-batch
+                (etaf-call-with-batch
                  (lambda ()
                    (let ((etaf--current-runtime runtime))
                      (apply (etaf-action-spec-function spec)

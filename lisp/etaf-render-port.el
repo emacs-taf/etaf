@@ -130,7 +130,10 @@
          ebox-framework-spi-operation-result-schema
          ebox-framework-spi-operation-paired-stage-rollback-p
          ebox-framework-spi-initial-observation-reports
-         ebox-surface-buffer-snapshot))
+         ebox-surface-buffer-snapshot
+         ebox-geometry-prepare
+         ebox-geometry-valid-p
+         ebox-geometry-apply))
     (unless (fboundp function)
       (etaf-render-port--bootstrap-error
        'missing-provider-accessor function))))
