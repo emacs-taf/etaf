@@ -937,20 +937,23 @@ avoids mirroring an application's `x/y/width/height` refs while preserving the
 same edge constraints, cancellation and logical-unit delta conversion.
 
 Keep reactive geometry reads in the Host property expressions that use them,
-as in the `movable-panel` example. With stable topology, ETAF automatically
-prepares a supported Host on its first eligible geometry update, then reuses
-that operation. Ordinary publication invalidates old operations without
-preparing unrelated Hosts.
-Related geometry, color, background, hover-content and sole-expression text
-changes can share one prepared publication. Use `etaf-batch` for related writes;
+as in the `movable-panel` example. Mounting and ordinary publication prepare the
+registered reactive primitive bindings before later input; unused computations
+are not evaluated for preparation. Related geometry, color, background,
+hover-content and sole-expression text changes can share one prepared
+publication. Use `etaf-batch` for related writes;
 ordinary refs, computed values and View properties remain the authoring API.
 ETAF manages the reusable execution plans. Unsupported geometry, changed
 dependencies and structural changes retain the ordinary publication path.
 Text may change width inside a fixed allocation admitted by
 [Ebox's prepared-update contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el);
 text or rich-text changes whose allocation and ownership cannot be proved use
-ordinary publication. This also applies to unsupported paint changes, including
-class, border, font-weight and nil foreground. Inline changes preserve Component update hooks,
+ordinary publication. Known finite class values, border-color changes that keep
+the same width/style, and normal/bold changes can participate when Ebox proves
+their selector and measured geometry constraints. New class values and
+unsupported paint changes retain ordinary publication. Class strings, symbols
+and nested lists keep their ordinary meaning and their raw public Host value.
+Inline and reactive native hover-content changes preserve Component update hooks,
 which run once per successful publication after all members are visible.
 Semantic Host properties and Ebox geometry commit together, and rejected values
 leave the previous display queryable while application refs keep their writes.

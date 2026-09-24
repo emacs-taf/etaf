@@ -623,19 +623,41 @@ one Ebox publication. The Root owner is the only complete-root adapter.
 
 Independently reactive Host properties and sole-expression Text Hosts have a
 prepared execution path. The View compiler supplies their property and inline
-programs. On first use in a settled generation, Runtime binds only the affected
-programs to retained semantic cells, dependency guards and enclosing artifact
-invalidations. A single geometry owner keeps its direct Ebox operation. Mixed
-geometry, color, background, hover-content and inline text owners bind one Ebox
-update cohort; repeated dirty sets reuse its member/value/index vectors and
-match queue membership without constructing new keys. No View, property plist
-or structural candidate is rebuilt on an admitted update, and artifact
-invalidation uses the compiled writes rather than walking Component ancestry.
+programs. After mounting or ordinary publication, and before public lifecycle
+callbacks, Runtime visits the live generation once and binds its registered
+reactive primitive programs. Preparation does not evaluate application getters
+or construct unused computed branches. Ebox's preparation report excludes
+unsupported members; the remaining members share one stable cohort and binding
+capability. Unknown members or stale capabilities use ordinary publication,
+whose control boundary rebuilds the bindings. Input dispatch never calls prepare.
+
+The cohort covers geometry, paint, native hover content, sole-expression Text,
+known class variants, fixed-shape border colors and normal/bold changes proved
+by Ebox's measured geometry contract. Class variants are gathered by compiled
+Host program from values present in the generation or previously accepted.
+ETAF normalizes its whitespace/list/symbol grammar to canonical tokens in both
+ordinary lowering and the cold variant table. Warm class writes reuse that
+table and a provider value vector; semantic and public properties retain the
+raw author value. This is a projection, not another source of state.
+
+Warm dispatch maps only dirty effect ids to retained indices, evaluates those
+members, and consumes their captured dependency versions. A newer observer
+write or still-dirty computed remains queued. Geometry uses the same cohort,
+so a singleton move cannot invalidate the focus cohort by rebinding a second
+operation. The existing primitive binding table also proves that a wholly
+primitive queue has no structural ancestor work; settlement then skips parent
+walks and reuses its bound Component environment. No View, property plist or
+structural candidate is rebuilt on an admitted update.
 
 All getters complete before the cohort stages. One paired stage advances every
 changed member and one semantic generation/token; rollback restores members in
 reverse order. Successful inline changes notify each lexical Component owner
-once. Owners with update hooks use the existing postcommit retirement journal;
+once. A Context-free hover-content program uses a Host effect but retains its
+enclosing Component's update participation through indices into the same
+dependency-version vector. Canonical native values bind the private
+`:interactions` spine together with the public flat props. Context-sensitive
+hover content retains, or returns to, the enclosing render owner before a new
+Context-dependent cache is accepted. Owners with update hooks use the existing postcommit retirement journal;
 hook failures do not roll back a published cohort. Ordinary publication retires
 the prepared plans. New dependencies, Context/Theme participation, changing
 unsupported properties, multi-part text, provider-rejected text extents and

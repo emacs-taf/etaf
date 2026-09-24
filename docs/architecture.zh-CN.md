@@ -571,16 +571,32 @@ replacement；不相交 owner 会合并为一次 Ebox publication。只有 Root 
 可以进入 complete-root adapter。
 
 独立响应式 Host 属性及单表达式 Text Host 使用预备执行路径。View 编译器
-提供属性与 inline 程序；Runtime 在已提交 generation 中首次需要时，只绑定
-受影响程序的语义单元、依赖检查及外层产物失效指令。单个几何 owner 保留直接
-Ebox 操作；混合几何、颜色、背景、hover-content 与 inline text owner 则绑定
-一个 Ebox update cohort。重复的 dirty 集合复用 member/value/index 向量，
-按队列成员匹配而不构造新 key；已接纳更新不重建 View、属性 plist 或结构候选，
-产物失效执行已编译写入，不重新遍历 Component 祖先。
+提供属性与 inline 程序；挂载或普通发布后、公共生命周期回调前，Runtime
+遍历当前 live generation 一次，绑定已经登记的响应式 primitive 程序。准备
+不求值应用 getter，也不构造未使用的 computed 分支。Ebox 的准备报告排除
+不支持的成员，其余成员共享稳定 cohort 与 binding capability。未知成员或
+失效 capability 使用普通发布，由其控制面边界重建绑定；输入分发不调用 prepare。
+
+同一 cohort 覆盖几何、绘制、native hover-content、单表达式 Text、已知 class
+变体、固定边框形状的颜色及 Ebox 实际度量证明允许的 normal/bold 变化。class
+变体按编译 Host 程序归集 generation 中已有或过去接受的值；普通 lowering 与
+冷变体表都把 ETAF 的空白字符串/递归列表/symbol 语法转为 canonical token。
+热写入仅查表并使用提供方值向量，语义与 public props 保留原始作者值；这是投影，
+不增加状态权威。
+
+热分发只把 dirty effect id 映射到保留的索引，求值该成员，并消费其求值完成时
+捕获的依赖版本。observer 的较新写入及仍 dirty 的 computed 保留排队。单个
+几何更新也使用同一 cohort，不再通过另一个操作重新绑定并使 focus cohort 失效。
+既有 primitive 绑定表还能证明整批没有结构 owner，此时 settlement 跳过祖先链
+并复用已绑定的 Component 环境。已接纳更新不重建 View、属性 plist 或结构候选。
 
 全部 getter 成功后才 stage cohort。一次成对 stage 写入所有变化成员，仅推进
 一次语义 generation/token；rollback 逆序恢复成员。成功的 inline 变化对每个
-词法 Component owner 触发一次 updated；有 hook 的 owner 使用既有 postcommit
+词法 Component owner 触发一次 updated。没有 Context 依赖的 hover-content
+程序归属 Host effect，但通过同一依赖版本向量的子集索引保留原 Component 的
+update 参与；canonical native 值的私有 `:interactions` 主链与 public flat props
+同时绑定。有 Context 依赖的 hover 保留或退回原 render owner，新的 Context
+计算缓存不会提前生效。有 hook 的 owner 使用既有 postcommit
 retirement journal，hook 失败不会撤销已发布 cohort。普通发布使旧计划失效。
 新依赖、Context/Theme 参与、不支持属性的变化、多段文本、提供方拒绝的文本尺寸
 及结构更新仍使用普通候选路径。

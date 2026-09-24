@@ -843,16 +843,19 @@ press 处理键盘激活，drag 持有主鼠标按钮序列。字段和同一 GU
 位移转换语义。
 
 响应式几何读取应放在使用它的 Host 属性表达式中，如上面的 `movable-panel`。
-拓扑稳定时，ETAF 在 Host 第一次进入合适的几何更新时自动准备提供方支持的操作，
-后续复用该操作；普通发布使旧操作失效，但不准备无关 Host。应用继续
+挂载与普通发布会在后续输入前准备已登记的响应式 primitive 绑定，不为准备而
+求值未使用的计算。应用继续
 使用 ref、computed 和普通 View 属性，无须管理执行计划。相关几何、颜色、背景、
 hover-content 与单表达式文本可共享一次预备发布；用 `etaf-batch` 组合相关写入。
 不支持的几何、依赖变化和结构变化保留普通发布路径。Text 可以在
 [Ebox 预备更新契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el)
 获准的固定分配中改变宽度；无法证明分配范围和所有权的文本或富文本变化使用
-普通发布。未支持的绘制变化，包括 class、border、font-weight 和 nil 前景色，
-也沿用普通路径。
-inline 变化保留 Component updated hook，在成功发布全部成员后每个 owner 执行一次。
+普通发布。已知有限 class 值、保持宽度/样式的边框颜色变化，以及 normal/bold
+变化可在 Ebox 证明选择器与实际度量约束后进入同一批次。新 class 值及不支持的
+绘制变化仍使用普通路径。class 的空白字符串、symbol 与嵌套列表保留原有语义，
+public Host props 保留原始作者值。
+inline 与响应式 native hover-content 变化保留 Component updated hook，
+在成功发布全部成员后每个 owner 执行一次。
 Host 语义属性和 Ebox 几何同时
 提交；拒绝无效值时，上一份画面仍可查询，应用 ref 保留已经发生的写入。
 使用 `etaf-runtime-generation` 或 `etaf-runtime-flush` 判断已提交 revision；

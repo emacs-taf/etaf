@@ -16,6 +16,12 @@
 
 ### Changed
 
+- Mounted reactive primitive bindings are now prepared before input and shared
+  by sparse geometry, focus paint, native hover and text updates. Known class
+  variants, fixed-shape border colors and measured normal/bold changes can use
+  the same publication; observer and lifecycle writes keep their pending work.
+- Box and Text class lowering now consistently normalizes whitespace strings,
+  symbols and nested lists for selectors while preserving public raw Host props.
 - Equal computed inputs retain mounted output and update lifecycle without
   publishing a new revision. Custom `:test` comparisons apply before rendering;
   unused computations stay lazy and failed computation remains retryable.

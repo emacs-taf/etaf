@@ -3,32 +3,26 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;;; Commentary:
-;; Bind an independently reactive geometry hole when its Host first needs a
-;; provider operation in a settled generation.  A ready Host evaluates its
+;; Bind registered reactive Host and inline programs at the settled-generation
+;; control boundary.  A ready Host evaluates its
 ;; existing property programs and publishes through Ebox without reconstructing
 ;; Views, semantic candidates or property plists.  The committed generation
 ;; owns the reusable property cells; this module introduces no display authority.
-;; Ordinary publication invalidates prepared bindings without eagerly compiling
-;; unrelated Hosts or repeatedly preparing their shared containing plane.
+;; Ordinary publication rebuilds the primitive cohort before later input.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'etaf-runtime)
 
-(declare-function ebox-geometry-prepare "ebox"
-                  (buffer-or-name host-ref properties
-                                  &optional stage rollback after-commit))
-(declare-function ebox-geometry-valid-p "ebox" (operation))
-(declare-function ebox-geometry-apply "ebox" (operation values))
-
 (cl-defstruct (etaf--host-update (:constructor etaf--host-update-create))
-  runtime generation semantic inline effect effect-id operation properties getters values
+  runtime generation semantic inline effect effect-id properties getters values
+  provider-values class-projection
   cells old-values guards changed-p dependencies dependency-seen evaluate-function
-  check-dependency queue-node
+  enter-function check-dependency queue-node consumed-versions
   ancestor-readers ancestor-writers ancestor-values artifact-keys artifact-values
   old-generation-id old-token old-composition-version old-inline-version staged-p
-  lifecycle-instance)
+  lifecycle-instance lifecycle-indices lifecycle-p)
 
 (defconst etaf--host-update-geometry-properties
   '(:left :top :width :height :min-width :max-width :min-height :max-height
@@ -37,10 +31,11 @@
 
 (defconst etaf--host-update-properties
   (append etaf--host-update-geometry-properties
-          '(:color :background-color :hover-content))
+          '(:color :background-color :hover-content :class :border :font-weight))
   "Primitive Host properties eligible for retained provider publication.")
 
 (declare-function etaf--host-cohort-try-flush "etaf-host-cohort" (runtime))
+(declare-function etaf--host-cohort-prepare "etaf-host-cohort" (runtime))
 
 (defun etaf--host-update-value-cell (plist property)
   "Return the retained value cell for PROPERTY in PLIST, or nil."
@@ -48,11 +43,28 @@
     (setq plist (cddr plist)))
   (cdr plist))
 
+(defun etaf--host-update-backend-cell (props property)
+  "Return PROPERTY's canonical value cell within backend PROPS."
+  (etaf--host-update-value-cell
+   (if (eq property :hover-content) (plist-get props :interactions) props) property))
+
 (defun etaf--host-update-direct-value-p (property value previous)
   "Return whether VALUE preserves PROPERTY's prepared PREVIOUS value form."
   (cond
    ((memq property '(:color :background-color :hover-content :content))
     (or (null value) (stringp value)))
+   ;; These forms only describe the caller's scalar inputs.  The provider
+   ;; additionally proves finite selector variants, fixed border geometry,
+   ;; and measured normal/bold equivalence before admitting the binding.
+   ((eq property :class)
+    (or (null value) (stringp value) (symbolp value) (proper-list-p value)))
+   ((eq property :font-weight) (memq value '(normal bold)))
+   ((eq property :border)
+    (and (proper-list-p value) (= (length value) 3)
+         (proper-list-p previous) (= (length previous) 3)
+         (equal (car value) (car previous))
+         (eq (cadr value) (cadr previous))
+         (stringp (nth 2 value))))
    ((eq property :z-index) (integerp value))
    (t (if (and (consp previous) (consp (cdr previous))
              (null (cddr previous)) (numberp (cadr previous)))
@@ -67,6 +79,15 @@
               (update (gethash effect-id table))
               ((etaf--host-update-p update)))
     (etaf--host-update-queue-node update)))
+
+(defun etaf--host-update-environment (runtime effect-id)
+  "Return the cold-bound environment entry for RUNTIME EFFECT-ID, if present."
+  (when (eq (etaf-runtime-prepared-host-generation runtime)
+            (etaf-runtime-current-generation runtime))
+    (when-let* ((table (etaf-runtime-prepared-host-updates runtime))
+                (update (gethash effect-id table))
+                ((etaf--host-update-p update)))
+      (etaf--host-update-enter-function update))))
 
 (defun etaf--host-update-write (update values)
   "Write VALUES into UPDATE's already bound committed property cells."
@@ -159,7 +180,8 @@
         (etaf--context-inject-recorder #'etaf--host-update-decline-context)
         (etaf--active-effect nil)
         (etaf--render-phase-p t))
-    (setf (etaf--host-update-changed-p update) nil)
+    (setf (etaf--host-update-changed-p update) nil
+          (etaf--host-update-lifecycle-p update) nil)
     (fillarray (etaf--host-update-dependency-seen update) nil)
     (dotimes (index (length (etaf--host-update-guards update)))
       (let* ((guard (aref (etaf--host-update-guards update) index))
@@ -177,12 +199,39 @@
                (aref (etaf--host-update-properties update) index)
                (aref values index) (aref old index))
         (throw 'etaf-host-update-declined nil))
+      (let ((provider-values (etaf--host-update-provider-values update)))
+        (if (eq (aref (etaf--host-update-properties update) index) :class)
+            (let ((projection (gethash (aref values index)
+                                       (etaf--host-update-class-projection update))))
+              (unless projection (throw 'etaf-host-update-declined nil))
+              (aset provider-values index (cdr projection)))
+          (unless (eq provider-values values)
+            (aset provider-values index (aref values index)))))
       (unless (equal-including-properties (aref old index) (aref values index))
         (setf (etaf--host-update-changed-p update) t)))
+    ;; Native hover content previously belonged to the enclosing Component
+    ;; render.  Preserve that owner's participation when its own inputs
+    ;; changed, even if the resulting native text happens to compare equal.
+    (let* ((effect (etaf--host-update-effect update))
+           (versions (etaf--generation-effect-dependency-versions effect))
+           (indices (etaf--host-update-lifecycle-indices update))
+           (deps (etaf--generation-effect-deps effect)))
+      (dotimes (position (length indices))
+        (let ((index (aref indices position)))
+          (unless (= (aref versions index) (etaf--source-version (nth index deps)))
+            (setf (etaf--host-update-lifecycle-p update) t
+                  (etaf--host-update-changed-p update) t)))))
     (dotimes (index (length (etaf--host-update-dependency-seen update)))
       (unless (aref (etaf--host-update-dependency-seen update) index)
         (throw 'etaf-host-update-declined nil))))
   t)
+
+(defun etaf--host-update-capture-versions (update)
+  "Capture UPDATE's evaluated dependency versions before publication callbacks."
+  (let ((versions (etaf--host-update-consumed-versions update)) (index 0))
+    (dolist (source (etaf--generation-effect-deps (etaf--host-update-effect update)))
+      (aset versions index (etaf--source-version source))
+      (setq index (1+ index)))))
 
 (defun etaf--host-update-evaluate-inline (update)
   "Evaluate UPDATE's sole inline program into retained text publication cells."
@@ -201,6 +250,7 @@
     (aset (etaf--host-update-old-values update) 0 old)
     (setf (etaf--host-update-changed-p update)
           (not (equal-including-properties old output)))
+    (setf (etaf--host-update-lifecycle-p update) (etaf--host-update-changed-p update))
     (aset (etaf--host-update-values update) 0
           (if (etaf--host-update-changed-p update) (copy-sequence output) old))
     (dotimes (index (length (etaf--host-update-dependency-seen update)))
@@ -274,8 +324,10 @@
          (props (and component (etaf--semantic-component-props component)))
          (slots (and component (etaf--semantic-component-slots component)))
          (context (and instance (etaf--component-instance-context instance))))
-    (setf (etaf--host-update-evaluate-function update)
-          (lambda ()
+    (when (> (length (etaf--host-update-lifecycle-indices update)) 0)
+      (setf (etaf--host-update-lifecycle-instance update) instance))
+    (setf (etaf--host-update-enter-function update)
+          (lambda (function argument)
             (let ((etaf--current-runtime runtime)
                   (etaf--render-runtime runtime)
                   (etaf--current-component-instance instance)
@@ -288,9 +340,12 @@
                   (etaf--current-component-slots slots)
                   (etaf--component-phase 'render)
                   (etaf--current-context context))
-              (if (etaf--host-update-inline update)
-                  (etaf--host-update-evaluate-inline update)
-                (etaf--host-update-evaluate update)))))))
+              (funcall function argument))))
+    (let ((enter (etaf--host-update-enter-function update))
+          (evaluate (if (etaf--host-update-inline update)
+                        #'etaf--host-update-evaluate-inline #'etaf--host-update-evaluate)))
+      (setf (etaf--host-update-evaluate-function update)
+            (lambda () (funcall enter evaluate update))))))
 
 (defun etaf--host-update-bind (runtime generation effect semantic)
   "Bind one primitive Host EFFECT on SEMANTIC in RUNTIME GENERATION."
@@ -319,9 +374,9 @@
                     (and (equal base
                                 (plist-get (etaf--semantic-host-resolved-props semantic)
                                            property))
-                         (equal base
-                                (plist-get (etaf--semantic-host-props-signature semantic)
-                                           property)))))
+                         (equal-including-properties
+                          base (car (etaf--host-update-backend-cell
+                                     (etaf--semantic-host-props-signature semantic) property))))))
                 bindings))
       (let* ((host-ref (etaf--semantic-host-host-ref semantic))
              (properties (vconcat (mapcar
@@ -341,6 +396,7 @@
                :cells (make-vector count nil)
                :dependencies dependencies
                :dependency-seen (make-vector (length dependencies) nil)
+               :consumed-versions (make-vector (length dependencies) 0)
                :queue-node (list (etaf--generation-effect-effect-id effect)))))
         ;; Detach only the property spines in this cold preparation.  Getter
         ;; results, callbacks and reactive sources retain their identities.
@@ -350,6 +406,21 @@
               (copy-sequence (etaf--semantic-host-resolved-props semantic))
               (etaf--semantic-host-props-signature semantic)
               (copy-sequence (etaf--semantic-host-props-signature semantic)))
+        (when (cl-position :hover-content properties)
+          (setf (etaf--semantic-host-props-signature semantic)
+                (plist-put
+                 (etaf--semantic-host-props-signature semantic) :interactions
+                 (copy-sequence
+                  (plist-get (etaf--semantic-host-props-signature semantic) :interactions)))))
+        ;; An absent class is equivalent to nil metadata.  Style declarations
+        ;; are different: a nil length/font value must remain omitted, because
+        ;; adding it would change the canonical input's validation semantics.
+        (dotimes (slot count)
+          (let ((property (aref properties slot)))
+            (when (and (eq property :class)
+                       (not (plist-member (etaf--semantic-host-props-signature semantic) property)))
+              (setf (etaf--semantic-host-props-signature semantic)
+                    (plist-put (etaf--semantic-host-props-signature semantic) property nil)))))
         (let* ((index (etaf-generation-indexes generation))
                (props (etaf--generation-index-lookup
                        generation 'host-props host-ref))
@@ -359,7 +430,6 @@
                 (delq nil
                       (list (etaf--semantic-host-base-props semantic)
                             (etaf--semantic-host-resolved-props semantic)
-                            (etaf--semantic-host-props-signature semantic)
                             public mirror))))
           (when props
             (setf (etaf--contribution-index-host-props index)
@@ -371,6 +441,9 @@
             (puthash host-ref mirror (etaf-runtime-host-props runtime)))
           (dotimes (slot count)
             (let ((property (aref properties slot)) targets)
+              (when-let* ((cell (etaf--host-update-backend-cell
+                                (etaf--semantic-host-props-signature semantic) property)))
+                (push cell targets))
               (dolist (source sources)
                 (when-let* ((cell (etaf--host-update-value-cell source property)))
                   (push cell targets)))
@@ -385,6 +458,14 @@
                                (etaf--semantic-host-base-props semantic)
                                (etaf--host-property-binding-property binding))))))
         (etaf--host-update-bind-invalidations update)
+        (setf (etaf--host-update-provider-values update) (etaf--host-update-values update))
+        (let ((deps (etaf--generation-effect-deps effect)) indices)
+          (dolist (binding bindings)
+            (when (eq (etaf--host-property-binding-property binding) :hover-content)
+              (dolist (source (etaf--host-property-binding-dependencies binding))
+                (when-let* ((index (cl-position source deps :test #'eq)))
+                  (cl-pushnew index indices)))))
+          (setf (etaf--host-update-lifecycle-indices update) (vconcat indices)))
         (etaf--host-update-bind-evaluator update)
         (etaf--host-update-bind-dependencies update)
         update))))
@@ -427,44 +508,36 @@
                :getters (vector (etaf--expr-thunk (etaf--generation-effect-target effect)))
                :values (vector nil) :old-values (vector nil)
                :dependencies deps :dependency-seen (make-vector (length deps) nil)
+               :consumed-versions (make-vector (length deps) 0)
                :queue-node (list (etaf--generation-effect-effect-id effect))
                :lifecycle-instance
                (and component
                     (gethash (etaf--semantic-component-resource-key component)
                              (etaf-runtime-resource-registry runtime))))))
         (etaf--host-update-bind-invalidations update)
+        (setf (etaf--host-update-provider-values update) (etaf--host-update-values update))
         (etaf--host-update-bind-evaluator update)
         (etaf--host-update-bind-dependencies update)
         update))))
 
-(defun etaf--host-update-geometry-operation (update)
-  "Return or lazily prepare UPDATE's singleton geometry operation."
-  (let ((operation (etaf--host-update-operation update)))
-    (unless (and operation (ebox-geometry-valid-p operation))
-      (setq operation
-            (and (cl-every
-                  (lambda (property) (memq property etaf--host-update-geometry-properties))
-                  (etaf--host-update-properties update))
-                 (ebox-geometry-prepare
-                  (etaf-runtime-buffer (etaf--host-update-runtime update))
-                  (etaf--semantic-host-host-ref (etaf--host-update-semantic update))
-                  (etaf--host-update-properties update)
-                  (lambda () (etaf--host-update-stage update))
-                  (lambda () (etaf--host-update-rollback update)))))
-      (setf (etaf--host-update-operation update) operation))
-    operation))
-
 (defun etaf--host-update-reset (runtime)
-  "Invalidate RUNTIME's prepared operations after ordinary publication.
-Preparation is demand-driven: unrelated focus, paint or structural work must
-not compile every positioned Host and its complete containing plane."
+  "Prepare RUNTIME's registered primitive programs at a publication boundary.
+This control-plane operation completes before mounted or updated hooks run.
+It never evaluates application getters or creates unused computed branches."
   (if (etaf-runtime-prepared-host-updates runtime)
       (clrhash (etaf-runtime-prepared-host-updates runtime))
     (setf (etaf-runtime-prepared-host-updates runtime)
           (make-hash-table :test #'eql)))
+  (unless (etaf-runtime-prepared-host-variants runtime)
+    (setf (etaf-runtime-prepared-host-variants runtime)
+          (make-hash-table :test #'equal)))
   (setf (etaf-runtime-prepared-host-generation runtime)
         (etaf-runtime-current-generation runtime)
-        (etaf-runtime-prepared-host-cohorts runtime) nil))
+        (etaf-runtime-prepared-host-cohort runtime) nil
+        (etaf-runtime-prepared-host-binding-token runtime) nil
+        (etaf-runtime-prepared-host-rejections runtime)
+        (make-hash-table :test #'eql))
+  (etaf--host-cohort-prepare runtime))
 
 (defun etaf--host-update-for-effect (runtime effect-id)
   "Return or prepare RUNTIME's ready operation for dirty EFFECT-ID only."
@@ -490,55 +563,35 @@ not compile every positioned Host and its complete containing plane."
             (puthash effect-id (or update 'unsupported) table)
             update)))))))
 
-(defun etaf--host-update-consume (update)
-  "Accept UPDATE's evaluated dependencies after successful publication."
-  (let* ((effect (etaf--host-update-effect update))
-         (versions (etaf--generation-effect-dependency-versions effect))
-         (index 0))
-    (dolist (source (etaf--generation-effect-deps effect))
-      (aset versions index (etaf--source-version source))
-      (setq index (1+ index))))
-  (setf (etaf--host-update-staged-p update) nil)
-  (puthash (etaf--host-update-effect-id update) nil
-           (etaf-runtime-dirty-effect-ids (etaf--host-update-runtime update))))
+(defun etaf--host-update-newer-input-p (update)
+  "Whether UPDATE received newer input after its evaluated version snapshot.
+A dirty computed is pending even before its value version advances; leave its
+getter to the next settlement boundary rather than reading during acceptance."
+  (let ((deps (etaf--generation-effect-deps (etaf--host-update-effect update)))
+        (versions (etaf--host-update-consumed-versions update))
+        (index 0) newer)
+    (while (and deps (not newer))
+      (let ((source (pop deps)))
+        (setq newer (or (and (etaf-computed-p source) (etaf-computed-dirty-p source))
+                        (/= (aref versions index) (etaf--source-version source))))
+        (setq index (1+ index))))
+    newer))
 
-(defun etaf--host-update-try-single (runtime)
-  "Publish one ready Host in RUNTIME, returning non-nil when handled.
-Mixed or structural work remains on the ordinary atomic candidate path."
-  (let* ((queue (etaf-runtime-dirty-effect-queue runtime))
-         (update (and queue (null (cdr queue))
-                      (not (etaf-runtime-root-dirty-p runtime))
-                      (etaf--host-update-for-effect runtime (car queue)))))
-    (when (and update
-               (not (etaf-runtime-root-dirty-p runtime))
-               (eq (etaf--host-update-generation update)
-                   (etaf-runtime-current-generation runtime))
-               (etaf--host-update-geometry-operation update))
-      (let ((completed nil))
-        (setf (etaf-runtime-flushing-p runtime) t
-              (etaf--host-update-staged-p update) nil)
-        (unwind-protect
-            (when (catch 'etaf-host-update-declined
-                    (funcall (etaf--host-update-evaluate-function update)))
-              (when (or (not (etaf--host-update-changed-p update))
-                        (ebox-geometry-apply
-                         (etaf--host-update-operation update)
-                         (etaf--host-update-values update)))
-                (etaf--host-update-consume update)
-                (setf (etaf-runtime-dirty-effect-queue runtime) nil
-                      (etaf-runtime-dirty-effect-queue-tail runtime) nil
-                      (etaf-runtime-pending-p runtime) nil
-                      (etaf--host-update-staged-p update) nil)
-                (puthash (etaf--host-update-effect-id update) nil
-                         (etaf-runtime-dirty-effect-ids runtime))
-                (setq completed t)))
-          (setf (etaf-runtime-flushing-p runtime) nil))
-        completed))))
+(defun etaf--host-update-consume (update &optional pending-p)
+  "Accept UPDATE's evaluated dependency snapshot after publication."
+  (let ((versions (etaf--generation-effect-dependency-versions
+                   (etaf--host-update-effect update)))
+        (consumed (etaf--host-update-consumed-versions update)))
+    (dotimes (index (length versions))
+      (aset versions index (aref consumed index))))
+  (setf (etaf--host-update-staged-p update) nil)
+  (unless pending-p
+    (remhash (etaf--host-update-effect-id update)
+             (etaf-runtime-dirty-effect-ids (etaf--host-update-runtime update)))))
 
 (defun etaf--host-update-try-flush (runtime)
-  "Publish ready primitive RUNTIME work through a retained operation."
-  (or (etaf--host-update-try-single runtime)
-      (etaf--host-cohort-try-flush runtime)))
+  "Publish ready primitive RUNTIME work through its existing bound cohort."
+  (etaf--host-cohort-try-flush runtime))
 
 (provide 'etaf-host-update)
 ;;; etaf-host-update.el ends here
