@@ -4,6 +4,10 @@
 
 ### Added
 
+- `etaf-event-target-within-p` reports, from an event callback, whether the
+  pressed Host is a given Host or one of its descendants. Combined with a root
+  `:on-press` and `:on-press-capture` it lets a shell dismiss an open panel
+  when a press lands outside it.
 - `etaf-batch` and `etaf-call-with-batch` group related reactive writes in
   ordinary application code. Nested batches defer observers and Runtime
   updates until the outer scope completes while preserving written refs on

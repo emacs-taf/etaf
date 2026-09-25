@@ -79,6 +79,46 @@
             (should (equal etaf-forward-test--trace '(inner inner)))))
       (etaf-forward-test--dispose buffer))))
 
+(ert-deftest etaf-forward-press-capture-identifies-the-target-panel ()
+  "A root capture callback can tell a press inside a panel from one outside it.
+`etaf-event-target-within-p' answers for the pressed Host in a capture
+callback and for the callback's own Host otherwise; outside an event it fails."
+  (let ((buffer " *etaf-forward-target*")
+        (etaf-forward-test--trace nil))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (etaf-view
+            (column :ref 'root
+                    :on-press
+                    (lambda ()
+                      (etaf-forward-test--record
+                       (list 'root (etaf-event-target-within-p 'panel)
+                             (etaf-event-target-within-p 'root))))
+                    :on-press-capture
+                    (lambda ()
+                      (etaf-forward-test--record
+                       (list 'capture (etaf-event-target-within-p 'panel))))
+              (column :ref 'panel
+                (text :ref 'inside :role 'button :tab-index 0
+                      :on-press (lambda () (etaf-forward-test--record 'inside))
+                      "Inside"))
+              (text :ref 'outside :role 'button :tab-index 0
+                    :on-press (lambda () (etaf-forward-test--record 'outside))
+                    "Outside"))))
+          (let ((runtime (etaf-runtime-for-buffer buffer)))
+            (etaf-dispatch-event runtime 'inside 'press)
+            (etaf-dispatch-event runtime 'outside 'press)
+            (etaf-dispatch-event runtime 'root 'press)
+            (should (equal etaf-forward-test--trace
+                           '(inside (capture t)
+                             outside (capture nil)
+                             (root nil t))))
+            (should-error (etaf-event-target-within-p 'panel)
+                          :type 'etaf-event-error)))
+      (etaf-forward-test--dispose buffer))))
+
 (ert-deftest etaf-forward-business-conversion-precedes-subscriptions ()
   "A consumed change prop remains the business conversion for one press."
   (let ((buffer " *etaf-forward-conversion*")

@@ -64,6 +64,25 @@ Errors and user quit propagate; target invalidation signals a subtype of
         (host-ref (plist-get etaf--current-event :host-ref)))
     (ebox-call-with-input host-ref reader (etaf-runtime-buffer runtime))))
 
+;;;###autoload
+(defun etaf-event-target-within-p (host-ref)
+  "Return non-nil when the current event's target is HOST-REF or inside it.
+Call from an event callback.  In an ancestor `:on-press-capture' callback the
+target is the Host whose press callback ran; in any other callback it is the
+callback's own Host.  HOST-REF is compared with `equal' against the target and
+its committed Host ancestors, so a root shell can tell a press inside an open
+panel from one on the surface around it.  Outside an event callback signal
+`etaf-event-error'."
+  (unless etaf--current-event
+    (signal 'etaf-event-error
+            (list "Event target lookup requires a Host event callback")))
+  (let* ((runtime (plist-get etaf--current-event :runtime))
+         (target (or (plist-get etaf--current-event :target-host-ref)
+                     (plist-get etaf--current-event :host-ref))))
+    (or (equal target host-ref)
+        (and (member host-ref (etaf-runtime-host-ancestor-refs runtime target))
+             t))))
+
 (defun etaf-event-kind (kind)
   "Normalize event KIND to a non-keyword symbol."
   (let ((name (cond

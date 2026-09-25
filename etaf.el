@@ -554,6 +554,16 @@
 ;;   When PAYLOAD-P is non-nil, pass PAYLOAD as the callback's only argument;
 ;; otherwise call the local callback with no arguments.
 ;;
+;; Function: etaf-event-target-within-p (host-ref)
+;;;###autoload (autoload 'etaf-event-target-within-p "etaf" nil nil)
+;; Return non-nil when the current event's target is HOST-REF or inside it.
+;; Call from an event callback.  In an ancestor `:on-press-capture' callback the
+;; target is the Host whose press callback ran; in any other callback it is the
+;; callback's own Host.  HOST-REF is compared with `equal' against the target and
+;; its committed Host ancestors, so a root shell can tell a press inside an open
+;; panel from one on the surface around it.  Outside an event callback signal
+;; `etaf-event-error'.
+;;
 ;; Function: etaf-effect-scope (&key detached name scheduler-context)
 ;;;###autoload (autoload 'etaf-effect-scope "etaf" nil nil)
 ;; Create a Scope named NAME, owned by the current Scope unless DETACHED.

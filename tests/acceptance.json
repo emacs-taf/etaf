@@ -344,6 +344,11 @@
       "purpose": "Outer nil never enables an internally disabled Host; later inputs recover."
     },
     {
+      "name": "etaf-forward-press-capture-identifies-the-target-panel",
+      "file": "tests/etaf-event-forwarding-tests.el",
+      "purpose": "etaf-event-target-within-p tells a root press or capture callback whether the pressed Host lies inside a given panel."
+    },
+    {
       "name": "etaf-forward-business-conversion-precedes-subscriptions",
       "file": "tests/etaf-event-forwarding-tests.el",
       "purpose": "A consumed change prop remains the business conversion for one press."

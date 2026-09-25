@@ -739,7 +739,11 @@ business writes. `:on-press-capture` is an explicit ancestor hook: after a
 target `press` callback succeeds, ETAF invokes capture hooks from the nearest
 committed Host toward the root. It is intended for shell policies such as
 raising a window when a nested control is pressed; ordinary `:on-press`
-callbacks do not bubble implicitly.
+callbacks do not bubble implicitly. Inside a capture callback,
+`(etaf-event-target-within-p 'panel)` tells whether the pressed Host is the
+`panel` Host or one of its descendants, so a shell root can close an open
+panel when the press landed anywhere else. A root `:on-press` covers presses
+on its non-interactive surface; there the target is the root itself.
 
 Wrapper `:use` lists concatenate; duplicate Behavior names fail before any
 installer runs. Non-event Behavior defaults retain first-wins order after Host
