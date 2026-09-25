@@ -22,7 +22,7 @@
   enter-function check-dependency queue-node consumed-versions
   ancestor-readers ancestor-writers ancestor-values artifact-keys artifact-values
   old-generation-id old-token old-composition-version old-inline-version staged-p
-  lifecycle-instance lifecycle-indices lifecycle-p)
+  lifecycle-instance lifecycle-indices lifecycle-p guard-indices)
 
 (defconst etaf--host-update-geometry-properties
   '(:left :top :width :height :min-width :max-width :min-height :max-height
@@ -185,6 +185,19 @@
     (setf (etaf--host-update-changed-p update) nil
           (etaf--host-update-lifecycle-p update) nil)
     (fillarray (etaf--host-update-dependency-seen update) nil)
+    ;; Theme and style sources feed the Host through transforms that no
+    ;; property getter re-runs.  A prepared write is valid only while every
+    ;; such guarded source still holds the version this binding was built on.
+    (let* ((effect (etaf--host-update-effect update))
+           (versions (etaf--generation-effect-dependency-versions effect))
+           (deps (etaf--generation-effect-deps effect))
+           (indices (etaf--host-update-guard-indices update)))
+      (dotimes (position (length indices))
+        (let* ((index (aref indices position))
+               (source (nth index deps)))
+          (when (or (and (etaf-computed-p source) (etaf-computed-dirty-p source))
+                    (/= (aref versions index) (etaf--source-version source)))
+            (throw 'etaf-host-update-declined nil)))))
     (dotimes (index (length (etaf--host-update-guards update)))
       (let* ((guard (aref (etaf--host-update-guards update) index))
              (next (etaf--resolve-property-value (car guard)))
@@ -358,14 +371,24 @@
              (memq (etaf--host-property-binding-property binding)
                    etaf--host-update-properties))
            all-bindings))
-         (dependencies (etaf--semantic-host-property-deps semantic)))
+         (dependencies (etaf--semantic-host-property-deps semantic))
+         (effect-deps (etaf--generation-effect-deps effect))
+         (guard-indices
+          (let ((index -1) indices)
+            (dolist (source effect-deps)
+              (setq index (1+ index))
+              (unless (memq source dependencies) (push index indices)))
+            (vconcat (nreverse indices)))))
     (when (and bindings
                (null (etaf--semantic-host-context-deps semantic))
-               (= (length dependencies)
-                  (length (etaf--semantic-host-deps semantic)))
+               (cl-every (lambda (source) (memq source effect-deps))
+                         dependencies)
+               ;; Extra Host sources are Theme/style transforms.  They are
+               ;; guarded by version at evaluation instead of re-run.
                (cl-every (lambda (source)
-                           (memq source dependencies))
-                         (etaf--semantic-host-deps semantic))
+                           (or (memq source dependencies)
+                               (etaf-ref-p source) (etaf-computed-p source)))
+                         effect-deps)
                ;; A prepared write cannot bypass Theme/default transforms or
                ;; restore several different declarations from one scalar.
                (cl-every
@@ -398,7 +421,8 @@
                :cells (make-vector count nil)
                :dependencies dependencies
                :dependency-seen (make-vector (length dependencies) nil)
-               :consumed-versions (make-vector (length dependencies) 0)
+               :consumed-versions (make-vector (length effect-deps) 0)
+               :guard-indices guard-indices
                :queue-node (list (etaf--generation-effect-effect-id effect)))))
         ;; Detach only the property spines in this cold preparation.  Getter
         ;; results, callbacks and reactive sources retain their identities.

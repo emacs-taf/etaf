@@ -44,6 +44,11 @@
       "purpose": "A publication observer sees accepted output before its newer direct or computed input write is subsequently displayed."
     },
     {
+      "name": "etaf-primitive-bindings-move-themed-host-without-a-new-generation",
+      "file": "tests/etaf-primitive-binding-tests.el",
+      "purpose": "Geometry writes on a Host styled by a reactive Theme publish as prepared updates that keep the committed generation, while a Theme change still repaints."
+    },
+    {
       "name": "etaf-prepared-batch-hook-error-keeps-accepted-members",
       "file": "tests/etaf-prepared-batch-tests.el",
       "purpose": "Postcommit update-hook failure retains accepted mixed members and revision, preserves the original error and does not repeat the hook."

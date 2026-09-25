@@ -307,5 +307,81 @@
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(etaf-define-component etaf-primitive-binding-test--themed-panel (&key left dark)
+  "Provide a reactive Theme and place one themed panel at LEFT."
+  :setup
+  (etaf-theme-provide
+   (etaf-computed
+    (lambda ()
+      (if (etaf-value dark)
+          '(:panel-bg "#111111" :panel-fg "#EEEEEE")
+        '(:panel-bg "#EEEEEE" :panel-fg "#111111")))))
+  :view
+  (box :position 'relative :width '(ch 30) :height '(lh 3)
+    (box :ref 'themed-panel :position 'absolute :z-index 1
+         :left (etaf-value left) :top '(lh 0) :width '(ch 8) :height '(lh 1)
+         :color (etaf-theme-token :panel-fg)
+         :background-color (etaf-theme-token :panel-bg)
+      (text "Panel"))))
+
+(defun etaf-primitive-binding-test--panel-background (buffer)
+  "Return the background painted behind the panel caption in BUFFER."
+  (with-current-buffer buffer
+    (let* ((position (save-excursion (goto-char (point-min))
+                                     (search-forward "Panel")
+                                     (match-beginning 0)))
+           (face (get-text-property position 'face))
+           (faces (if (and (listp face) (not (keywordp (car-safe face))))
+                      face (list face))))
+      (cl-some (lambda (entry)
+                 (cond ((and (listp entry) (keywordp (car-safe entry)))
+                        (plist-get entry :background))
+                       ((symbolp entry)
+                        (cl-some (lambda (spec)
+                                   (and (listp spec) (keywordp (car-safe spec))
+                                        (plist-get spec :background)))
+                                 (cdr (assq entry face-remapping-alist))))))
+               faces))))
+
+(ert-deftest etaf-primitive-bindings-move-themed-host-without-a-new-generation ()
+  "Geometry writes on a Host under a reactive Theme publish as prepared updates.
+The Theme source only guards the binding: moving the panel keeps the
+committed generation identity, and flipping the Theme still repaints."
+  (let ((buffer (generate-new-buffer " *etaf-themed-prepared*"))
+        (left (etaf-ref '(ch 0)))
+        (dark (etaf-ref nil)))
+    (unwind-protect
+        (let* ((runtime
+                (etaf-runtime-for-buffer
+                 (etaf-mount
+                  buffer
+                  (etaf-view (etaf-primitive-binding-test--themed-panel
+                              :left left :dark dark)))))
+               (generation (etaf-runtime-current-generation runtime)))
+          (dolist (column '(2 5 3))
+            (let ((revision (etaf-runtime-flush runtime)))
+              (setf (etaf-value left) (list 'ch column))
+              (should (= (1+ revision) (etaf-runtime-flush runtime)))
+              (should (eq generation (etaf-runtime-current-generation runtime)))
+              (should (equal (list 'ch column)
+                             (plist-get (etaf-runtime-host-props-for
+                                         runtime 'themed-panel)
+                                        :left)))))
+          (should (equal "#EEEEEE"
+                         (etaf-primitive-binding-test--panel-background buffer)))
+          (setf (etaf-value dark) t)
+          (etaf-runtime-flush runtime)
+          (should (equal "#111111"
+                         (etaf-primitive-binding-test--panel-background buffer)))
+          (let ((generation (etaf-runtime-current-generation runtime))
+                (revision (etaf-runtime-flush runtime)))
+            (setf (etaf-value left) '(ch 7))
+            (should (= (1+ revision) (etaf-runtime-flush runtime)))
+            (should (eq generation (etaf-runtime-current-generation runtime)))
+            (should (equal "#111111"
+                           (etaf-primitive-binding-test--panel-background buffer)))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
 (provide 'etaf-primitive-binding-tests)
 ;;; etaf-primitive-binding-tests.el ends here

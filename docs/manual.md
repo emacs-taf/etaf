@@ -945,6 +945,10 @@ text changes can share one prepared publication. Use `etaf-batch` for related wr
 ordinary refs, computed values and View properties remain the authoring API.
 ETAF manages the reusable execution plans. Unsupported geometry, changed
 dependencies and structural changes retain the ordinary publication path.
+A reactive Theme does not block preparation: Theme tokens and component
+style sources guard the binding by version, so a Host styled through
+`etaf-theme-token` keeps its prepared geometry, paint and visibility
+bindings; changing the Theme itself repaints through ordinary publication.
 A Host property expression keeps its prepared binding only while it reads
 the same reactive sources on every evaluation: read every source first, then
 branch on the values, rather than letting `cond` or `and` short-circuit past

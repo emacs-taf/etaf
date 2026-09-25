@@ -5361,7 +5361,11 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
 			 (setf (etaf--host-property-binding-dependencies binding) binding-deps)))
 		     (setq property-deps (copy-sequence deps)
 			   next-base-props (copy-tree host-props))
-		     (let* ((etaf--render-style-owners (etaf--semantic-host-style-identity base))
+		     ;; Theme and style transforms track their reactive sources
+		     ;; through DEPS.  As in the initial render, their Context
+		     ;; reads belong to the enclosing Component, not the Host.
+		     (let* ((etaf--context-inject-recorder nil)
+			    (etaf--render-style-owners (etaf--semantic-host-style-identity base))
 			    (style-result (etaf--host-component-style-properties
 					   nil (etaf--semantic-host-style-root-p base)))
 			    (theme-result (etaf--resolve-host-theme

@@ -33,6 +33,11 @@
 - Related primitive Host paint, hover, `:visibility` and fixed-extent inline
   text changes can join geometry in one retained publication. Existing batch, lifecycle,
   snapshot and rejected-update semantics remain available through ordinary Views.
+- Hosts styled by a reactive Theme (`etaf-theme-provide` with a ref or
+  computed) now keep prepared property bindings. The Theme source guards the
+  binding by version instead of forcing ordinary publication, so moving,
+  resizing or hiding themed Hosts retains the committed generation; a Theme
+  change still repaints through the ordinary path.
 - Retained publication is now owned by Ebox. Update Ebox and ETAF together;
   the integration uses SPI v3 and `ebox-publication/v1`. Publication reports
   use `:publication-*` fields and the `ebox-publication` provider.
