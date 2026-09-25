@@ -383,5 +383,87 @@ committed generation identity, and flipping the Theme still repaints."
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(etaf-define-component etaf-primitive-binding-test--themed-tabs (&key active dark)
+  "Provide a reactive Theme and paint two tabs from ACTIVE with Theme tokens."
+  :setup
+  (etaf-theme-provide
+   (etaf-computed
+    (lambda ()
+      (if (etaf-value dark)
+          '(:tab-on "#FFFFFF" :tab-off "#777777")
+        '(:tab-on "#000000" :tab-off "#999999")))))
+  :view
+  (box :position 'relative :width '(ch 24) :height '(lh 2)
+    (row :position 'absolute :left '(ch 1) :top '(lh 0) :z-index 1
+         :width '(ch 20) :height '(lh 1)
+      (text :ref 'tab-one
+            :color (if (eq (etaf-value active) 'one)
+                       (etaf-theme-token :tab-on) (etaf-theme-token :tab-off))
+        "One")
+      (text :ref 'tab-two
+            :color (if (eq (etaf-value active) 'two)
+                       (etaf-theme-token :tab-on) (etaf-theme-token :tab-off))
+        "Two"))))
+
+(defun etaf-primitive-binding-test--foreground (buffer label)
+  "Return the foreground painted on LABEL in BUFFER."
+  (with-current-buffer buffer
+    (let* ((position (save-excursion (goto-char (point-min))
+                                     (search-forward label)
+                                     (match-beginning 0)))
+           (face (get-text-property position 'face))
+           (faces (if (and (listp face) (not (keywordp (car-safe face))))
+                      face (list face))))
+      (cl-some (lambda (entry)
+                 (cond ((and (listp entry) (keywordp (car-safe entry)))
+                        (plist-get entry :foreground))
+                       ((symbolp entry)
+                        (cl-some (lambda (spec)
+                                   (and (listp spec) (keywordp (car-safe spec))
+                                        (plist-get spec :foreground)))
+                                 (cdr (assq entry face-remapping-alist))))))
+               faces))))
+
+(ert-deftest etaf-primitive-bindings-switch-theme-tokens-without-a-new-generation ()
+  "A paint expression choosing between Theme tokens publishes as a prepared update.
+Once both tokens have been painted, switching keeps the committed generation;
+a Theme change still recolors both tabs."
+  (let ((buffer (generate-new-buffer " *etaf-themed-tokens*"))
+        (active (etaf-ref 'one))
+        (dark (etaf-ref nil)))
+    (unwind-protect
+        (let* ((runtime
+                (etaf-runtime-for-buffer
+                 (etaf-mount
+                  buffer
+                  (etaf-view (etaf-primitive-binding-test--themed-tabs
+                              :active active :dark dark)))))
+               (foreground (lambda (label)
+                             (etaf-primitive-binding-test--foreground buffer label))))
+          (should (equal "#000000" (funcall foreground "One")))
+          (should (equal "#999999" (funcall foreground "Two")))
+          (let ((generation (etaf-runtime-current-generation runtime)))
+            (dolist (next '(two one two))
+              (let ((revision (etaf-runtime-flush runtime)))
+                (setf (etaf-value active) next)
+                (should (= (1+ revision) (etaf-runtime-flush runtime)))
+                (should (eq generation (etaf-runtime-current-generation runtime)))
+                (should (equal "#000000"
+                               (funcall foreground (if (eq next 'one) "One" "Two"))))
+                (should (equal "#999999"
+                               (funcall foreground (if (eq next 'one) "Two" "One")))))))
+          (setf (etaf-value dark) t)
+          (etaf-runtime-flush runtime)
+          (should (equal "#777777" (funcall foreground "One")))
+          (should (equal "#FFFFFF" (funcall foreground "Two")))
+          (let ((generation (etaf-runtime-current-generation runtime)))
+            (setf (etaf-value active) 'one)
+            (etaf-runtime-flush runtime)
+            (should (eq generation (etaf-runtime-current-generation runtime)))
+            (should (equal "#FFFFFF" (funcall foreground "One")))
+            (should (equal "#777777" (funcall foreground "Two")))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
 (provide 'etaf-primitive-binding-tests)
 ;;; etaf-primitive-binding-tests.el ends here

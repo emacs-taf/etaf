@@ -543,6 +543,33 @@ RESOLVED is the current projected paint value."
               (puthash slot spec updates)))
           (plist-get entry :value))))))
 
+(defconst etaf--runtime-missing-paint (list 'etaf--runtime-missing-paint)
+  "Unique result of `etaf--runtime-installed-theme-paint-value' when absent.")
+
+(defun etaf--runtime-installed-theme-paint-value
+    (runtime property token source resolved)
+  "Return RUNTIME's installed paint value for PROPERTY TOKEN from SOURCE.
+RESOLVED is the current projected paint value.  Unlike
+`etaf--runtime-theme-paint-value', this never creates or updates a slot: it
+returns `etaf--runtime-missing-paint' when the value would need a candidate
+publication, so prepared bindings can decline to the ordinary path."
+  (cond
+   ((not (and runtime
+              (not (ecss-declaration-value-tagged-p resolved))
+              (etaf--runtime-theme-paint-property-p property)
+              (or (etaf-ref-p source) (etaf-computed-p source))))
+    resolved)
+   ((eq property :border) etaf--runtime-missing-paint)
+   (t
+    (let* ((slots (gethash source (etaf-runtime-theme-paint-slots runtime)))
+           (entry (and slots (gethash (list property token) slots)))
+           (slot (plist-get entry :slot)))
+      (if (and slot (ebox-paint-slot-installed-p slot)
+               (equal (etaf--theme-paint-face-spec property resolved)
+                      (ebox-paint-slot-spec slot)))
+          (plist-get entry :value)
+        etaf--runtime-missing-paint)))))
+
 (defvar etaf--mount-epoch-counter 0)
 
 (defvar etaf--current-component-identity nil)

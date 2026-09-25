@@ -49,6 +49,11 @@
       "purpose": "Geometry writes on a Host styled by a reactive Theme publish as prepared updates that keep the committed generation, while a Theme change still repaints."
     },
     {
+      "name": "etaf-primitive-bindings-switch-theme-tokens-without-a-new-generation",
+      "file": "tests/etaf-primitive-binding-tests.el",
+      "purpose": "A paint expression that switches between Theme tokens publishes through the tokens' installed paint slots without a new generation, and a Theme change still recolors."
+    },
+    {
       "name": "etaf-prepared-batch-hook-error-keeps-accepted-members",
       "file": "tests/etaf-prepared-batch-tests.el",
       "purpose": "Postcommit update-hook failure retains accepted mixed members and revision, preserves the original error and does not repeat the hook."

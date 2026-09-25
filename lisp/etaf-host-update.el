@@ -52,7 +52,9 @@
 (defun etaf--host-update-direct-value-p (property value previous)
   "Return whether VALUE preserves PROPERTY's prepared PREVIOUS value form."
   (cond
-   ((memq property '(:color :background-color :hover-content :content))
+   ((memq property '(:color :background-color))
+    (or (null value) (stringp value) (ebox-paint-slot-p value)))
+   ((memq property '(:hover-content :content))
     (or (null value) (stringp value)))
    ;; These forms only describe the caller's scalar inputs.  The provider
    ;; additionally proves finite selector variants, fixed border geometry,
@@ -171,6 +173,31 @@
           (etaf--host-update-old-composition-version update)
           (etaf--host-update-staged-p update) nil)))
 
+(defconst etaf--host-update-theme-token-properties '(:color :background-color)
+  "Properties whose expressions may publish a Theme token as its paint slot.")
+
+(defun etaf--host-update-token-binding-p (property base resolved backend)
+  "Whether PROPERTY's Theme-token BASE is prepared through RESOLVED and BACKEND."
+  (and (memq property etaf--host-update-theme-token-properties)
+       (etaf-theme-token-p base)
+       (equal-including-properties resolved backend)))
+
+(defun etaf--host-update-paint-value (update property value)
+  "Return VALUE for PROPERTY as UPDATE publishes it.
+A Theme token lowers to the paint slot that ordinary publication installed
+for it; a token without an installed slot declines to that path."
+  (if (not (etaf-theme-token-p value))
+      value
+    (let* ((etaf--context-inject-recorder nil)
+           (source (etaf--theme-source))
+           (resolved (etaf--theme-token-resolve-from-source value source))
+           (paint (etaf--runtime-installed-theme-paint-value
+                   (etaf--host-update-runtime update) property value source
+                   resolved)))
+      (when (eq paint etaf--runtime-missing-paint)
+        (throw 'etaf-host-update-declined nil))
+      paint)))
+
 (defun etaf--host-update-evaluate (update)
   "Evaluate UPDATE's bound getters into its reusable value vector."
   (let ((getters (etaf--host-update-getters update))
@@ -208,8 +235,10 @@
           (throw 'etaf-host-update-declined nil))))
     (dotimes (index (length getters))
       (aset old index (car (aref (aref cells index) 0)))
-      (aset values index (etaf--resolve-property-value
-                          (aref getters index)))
+      (aset values index
+            (etaf--host-update-paint-value
+             update (aref (etaf--host-update-properties update) index)
+             (etaf--resolve-property-value (aref getters index))))
       (unless (etaf--host-update-direct-value-p
                (aref (etaf--host-update-properties update) index)
                (aref values index) (aref old index))
@@ -391,17 +420,23 @@
                          effect-deps)
                ;; A prepared write cannot bypass Theme/default transforms or
                ;; restore several different declarations from one scalar.
+               ;; A paint Theme token is the one transform evaluation
+               ;; replays, through the token's installed paint slot.
                (cl-every
                 (lambda (binding)
                   (let* ((property (etaf--host-property-binding-property binding))
                          (base (plist-get (etaf--semantic-host-base-props semantic)
-                                          property)))
-                    (and (equal base
-                                (plist-get (etaf--semantic-host-resolved-props semantic)
-                                           property))
-                         (equal-including-properties
-                          base (car (etaf--host-update-backend-cell
-                                     (etaf--semantic-host-props-signature semantic) property))))))
+                                          property))
+                         (resolved (plist-get
+                                    (etaf--semantic-host-resolved-props semantic)
+                                    property))
+                         (backend (car (etaf--host-update-backend-cell
+                                        (etaf--semantic-host-props-signature semantic)
+                                        property))))
+                    (or (and (equal base resolved)
+                             (equal-including-properties base backend))
+                        (etaf--host-update-token-binding-p
+                         property base resolved backend))))
                 bindings))
       (let* ((host-ref (etaf--semantic-host-host-ref semantic))
              (properties (vconcat (mapcar

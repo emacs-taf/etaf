@@ -37,7 +37,11 @@
   computed) now keep prepared property bindings. The Theme source guards the
   binding by version instead of forcing ordinary publication, so moving,
   resizing or hiding themed Hosts retains the committed generation; a Theme
-  change still repaints through the ordinary path.
+  change still repaints through the ordinary path. A `:color` or
+  `:background-color` expression that chooses between `etaf-theme-token`
+  values also stays prepared: it publishes the token's installed paint slot
+  and declines to ordinary publication only for a token painted for the
+  first time. Requires Ebox's paint-slot face binding fix.
 - Retained publication is now owned by Ebox. Update Ebox and ETAF together;
   the integration uses SPI v3 and `ebox-publication/v1`. Publication reports
   use `:publication-*` fields and the `ebox-publication` provider.

@@ -949,6 +949,9 @@ A reactive Theme does not block preparation: Theme tokens and component
 style sources guard the binding by version, so a Host styled through
 `etaf-theme-token` keeps its prepared geometry, paint and visibility
 bindings; changing the Theme itself repaints through ordinary publication.
+A `:color` or `:background-color` expression may return an `etaf-theme-token`
+(for example an active/inactive accent): the prepared write publishes the
+token's paint slot once ordinary publication has painted that token.
 A Host property expression keeps its prepared binding only while it reads
 the same reactive sources on every evaluation: read every source first, then
 branch on the values, rather than letting `cond` or `and` short-circuit past
