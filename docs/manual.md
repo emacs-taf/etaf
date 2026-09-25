@@ -940,11 +940,16 @@ Keep reactive geometry reads in the Host property expressions that use them,
 as in the `movable-panel` example. Mounting and ordinary publication prepare the
 registered reactive primitive bindings before later input; unused computations
 are not evaluated for preparation. Related geometry, color, background,
-hover-content and sole-expression text changes can share one prepared
-publication. Use `etaf-batch` for related writes;
+hover-content, class, border color, font weight, visibility and sole-expression
+text changes can share one prepared publication. Use `etaf-batch` for related writes;
 ordinary refs, computed values and View properties remain the authoring API.
 ETAF manages the reusable execution plans. Unsupported geometry, changed
 dependencies and structural changes retain the ordinary publication path.
+A Host property expression keeps its prepared binding only while it reads
+the same reactive sources on every evaluation: read every source first, then
+branch on the values, rather than letting `cond` or `and` short-circuit past
+a source, because a dependency set that differs from the prepared one
+falls back to ordinary publication.
 Text may change width inside a fixed allocation admitted by
 [Ebox's prepared-update contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el);
 text or rich-text changes whose allocation and ownership cannot be proved use

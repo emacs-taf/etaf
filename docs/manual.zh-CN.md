@@ -846,8 +846,12 @@ press 处理键盘激活，drag 持有主鼠标按钮序列。字段和同一 GU
 挂载与普通发布会在后续输入前准备已登记的响应式 primitive 绑定，不为准备而
 求值未使用的计算。应用继续
 使用 ref、computed 和普通 View 属性，无须管理执行计划。相关几何、颜色、背景、
-hover-content 与单表达式文本可共享一次预备发布；用 `etaf-batch` 组合相关写入。
-不支持的几何、依赖变化和结构变化保留普通发布路径。Text 可以在
+hover-content、class、边框颜色、字重、visibility 与单表达式文本可共享一次预备
+发布；用 `etaf-batch` 组合相关写入。
+不支持的几何、依赖变化和结构变化保留普通发布路径。Host 属性表达式只有在
+每次求值都读取相同的响应式来源时才保持预备绑定：先读取全部来源再按值分支，
+不要让 `cond` 或 `and` 短路跳过某个来源，否则依赖集合与预备时不同会回退到
+普通发布。Text 可以在
 [Ebox 预备更新契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el)
 获准的固定分配中改变宽度；无法证明分配范围和所有权的文本或富文本变化使用
 普通发布。已知有限 class 值、保持宽度/样式的边框颜色变化，以及 normal/bold

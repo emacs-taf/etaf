@@ -30,8 +30,8 @@
   rebuilding the Component tree; unsupported or structural changes keep the
   ordinary update path. Use committed generation numbers or revisions to
   detect updates, since the opaque generation object may retain identity.
-- Related primitive Host paint, hover and fixed-extent inline text changes
-  can join geometry in one retained publication. Existing batch, lifecycle,
+- Related primitive Host paint, hover, `:visibility` and fixed-extent inline
+  text changes can join geometry in one retained publication. Existing batch, lifecycle,
   snapshot and rejected-update semantics remain available through ordinary Views.
 - Retained publication is now owned by Ebox. Update Ebox and ETAF together;
   the integration uses SPI v3 and `ebox-publication/v1`. Publication reports

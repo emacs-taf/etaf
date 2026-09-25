@@ -31,7 +31,8 @@
 
 (defconst etaf--host-update-properties
   (append etaf--host-update-geometry-properties
-          '(:color :background-color :hover-content :class :border :font-weight))
+          '(:color :background-color :hover-content :class :border :font-weight
+            :visibility))
   "Primitive Host properties eligible for retained provider publication.")
 
 (declare-function etaf--host-cohort-try-flush "etaf-host-cohort" (runtime))
@@ -59,6 +60,7 @@
    ((eq property :class)
     (or (null value) (stringp value) (symbolp value) (proper-list-p value)))
    ((eq property :font-weight) (memq value '(normal bold)))
+   ((eq property :visibility) (memq value '(visible hidden)))
    ((eq property :border)
     (and (proper-list-p value) (= (length value) 3)
          (proper-list-p previous) (= (length previous) 3)
