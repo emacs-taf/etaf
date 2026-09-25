@@ -330,6 +330,7 @@ the sequential `etaf--pvec-put' contract."
   handlers
   host-props
   host-geometry-region-ids
+  host-geometry-operations
   theme-paint-slots
   (interaction-keymaps (make-hash-table :test #'equal))
   candidate-theme-paint-updates
@@ -707,6 +708,25 @@ publication, so prepared bindings can decline to the ordinary path."
    (etaf--generation-index-lookup
     (etaf-runtime-current-generation runtime) 'host-props host-ref)))
 
+(defun etaf-runtime--apply-prepared-geometry (runtime entry)
+  "Apply ENTRY's `(HOST-REF REGION-ID GEOMETRY)' through a retained operation.
+Return non-nil after acceptance.  Operations are cached per RUNTIME, Host
+and property set while `ebox-geometry-valid-p' holds; a declined preparation
+or application returns nil before mutation so the caller publishes ordinarily."
+  (let* ((host-ref (nth 0 entry))
+         (geometry (nth 2 entry))
+         (keys (cl-loop for key on geometry by #'cddr collect (car key)))
+         (values (vconcat (mapcar (lambda (key) (plist-get geometry key)) keys)))
+         (operations (etaf-runtime-host-geometry-operations runtime))
+         (key (cons host-ref keys))
+         (operation (gethash key operations)))
+    (unless (and operation (ebox-geometry-valid-p operation))
+      (setq operation (ebox-geometry-prepare (current-buffer) (nth 1 entry) (vconcat keys)))
+      (if operation
+          (puthash key operation operations)
+        (remhash key operations)))
+    (and operation (ebox-geometry-apply operation values))))
+
 ;;;###autoload
 (defun etaf-runtime-update-host-geometries (runtime updates)
   "Incrementally update several HOST-REF geometries in mounted RUNTIME.
@@ -714,7 +734,11 @@ publication, so prepared bindings can decline to the ordinary path."
 This is ETAF's display-side bridge to Ebox's typed geometry operation.  The
 caller's controlled state remains authoritative; this function only changes
 retained Host low-level geometry and layer facts.  UPDATES is an alist of
-`(HOST-REF . GEOMETRY-PLIST)' entries and is committed as one Ebox batch."
+`(HOST-REF . GEOMETRY-PLIST)' entries and is committed as one Ebox batch.
+A single entry first tries RUNTIME's retained `ebox-geometry-prepare'
+operation for that Host, reusing it across calls while it stays valid, so
+repeated moves and fixed-text resizes skip ordinary publication.  Declined
+or multi-Host updates use the ordinary geometry batch."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (unless (and (listp updates)
                (cl-every (lambda (entry)
@@ -740,13 +764,15 @@ retained Host low-level geometry and layer facts.  UPDATES is an alist of
     (when (ebox-transaction-active-p)
       (signal 'etaf-runtime-error
               (list "Cannot update Host geometry inside an active Ebox transaction")))
+    (setq resolved (nreverse resolved))
     (with-current-buffer (etaf-runtime-buffer runtime)
       (condition-case error-data
-          (ebox-call-with-update-batch
-           (lambda ()
-             (dolist (entry (nreverse resolved))
-               (apply #'ebox-region-update-geometry
-                      (nth 1 entry) (nth 2 entry)))))
+          (unless (and (null (cdr resolved))
+                       (etaf-runtime--apply-prepared-geometry runtime (car resolved)))
+            (ebox-call-with-update-batch
+             (lambda ()
+               (dolist (entry resolved)
+                 (apply #'ebox-region-update-geometry (nth 1 entry) (nth 2 entry))))))
         (error
          (signal 'etaf-runtime-error
                  (list "Host geometry update rejected"
@@ -6725,6 +6751,7 @@ Use `etaf-runtime-snapshot' to retain the root's matching source facts."
                      :handlers (make-hash-table :test #'equal)
                      :host-props (make-hash-table :test #'equal)
                      :host-geometry-region-ids (make-hash-table :test #'equal)
+                     :host-geometry-operations (make-hash-table :test #'equal)
                      :theme-paint-slots (make-hash-table :test #'eq)
                      :behaviors (make-hash-table :test #'equal)
                      :behavior-resource-keys (make-hash-table :test #'equal)

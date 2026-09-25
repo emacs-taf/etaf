@@ -4,6 +4,16 @@
 
 ### Added
 
+- `etaf-retained-resize-open` mounts a runnable fixed-text resize example:
+  a controlled `etaf-resizable-controlled` Behavior drives a clipped panel
+  whose `:width`/`:height` bindings publish through Ebox's prepared crop
+  primitive, with Shift-locked drags and Escape restoring the starting size.
+  `benchmarks/performance-scenarios.el` registers matching
+  `retained.resize.*` workloads for ordinary, prepared and Runtime routes.
+- `etaf-runtime-update-host-geometries` reuses a retained
+  `ebox-geometry-prepare` operation per Runtime, Host and property set for
+  single-Host updates, so repeated moves and fixed-text resizes skip ordinary
+  layout; declined or multi-Host updates keep the ordinary geometry batch.
 - `etaf-event-target-within-p` reports, from an event callback, whether the
   pressed Host is a given Host or one of its descendants. Combined with a root
   `:on-press` and `:on-press-capture` it lets a shell dismiss an open panel

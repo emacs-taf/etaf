@@ -1073,7 +1073,11 @@
 ;;;###autoload (autoload 'etaf-runtime-update-host-geometries "etaf" nil nil)
 ;; Apply several HOST-REF/GEOMETRY pairs in one retained Ebox publication.
 ;; UPDATES is an alist whose keys are committed Host references and whose values
-;; are geometry plists.  All targets validate before the batch starts.
+;; are geometry plists.  All targets validate before the batch starts.  A single
+;; entry first reuses RUNTIME's retained `ebox-geometry-prepare' operation for
+;; that Host and property set, so repeated moves and fixed-text resizes publish
+;; without ordinary layout; declined or multi-Host updates use the ordinary
+;; geometry batch with the same result.
 ;;
 ;; Function: etaf-runtime-instances (x)
 ;;;###autoload (autoload 'etaf-runtime-instances "etaf" nil nil)
@@ -1291,6 +1295,16 @@
 ;; effect.  If FUNCTION returns a function, it cleans up the previous run.
 ;;
 
+;; Function: etaf-retained-resize-open (&optional buffer-or-name)
+;;;###autoload (autoload 'etaf-retained-resize-open "etaf" nil t)
+;; Mount a fixed-text resize example, returning BUFFER-OR-NAME (default
+;; *ETAF Retained Resize*). Interactive calls display it. Native drag and
+;; Shift-locked drag resize a clipped panel through controlled state and the
+;; ordinary mounted Runtime; Escape restores its starting dimensions.
+;; This example does not implement catalog window chrome or paragraph reflow.
+;; Reopening replaces its existing mount; unrelated nonempty buffers are refused.
+;; Unmount or kill the buffer to release it.
+;;
 ;; Function: etaf-resource-example-open ()
 ;;;###autoload (autoload 'etaf-resource-example-open "etaf" nil t)
 ;; Mount the asynchronous Resource example in *ETAF Resource Example* and
@@ -1336,6 +1350,7 @@
 (require 'etaf-events)
 (require 'etaf-performance)
 
+(autoload 'etaf-retained-resize-open "examples/etaf-retained-resize" nil t)
 (autoload 'etaf-resource-example-open "examples/etaf-resource-example" nil t)
 (autoload 'etaf-resource-example-close "examples/etaf-resource-example" nil t)
 

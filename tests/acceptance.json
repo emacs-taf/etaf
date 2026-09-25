@@ -13,6 +13,8 @@
   ],
   "support": [],
   "cases": [
+    {"name": "etaf-host-geometry-resizes-fixed-text-through-prepared-publication", "file": "tests/etaf-host-geometry-tests.el", "purpose": "Mounted fixed-text size bindings publish through the prepared provider while preserving semantic snapshots and input targets."},
+    {"name": "etaf-retained-resize-example-controls-size-and-cancellation", "file": "tests/etaf-host-geometry-tests.el", "purpose": "The runnable retained resize example changes controlled size, restores its origin on cancellation and preserves its independent peer."},
     {
       "name": "etaf-primitive-bindings-follow-explicit-component-render",
       "file": "tests/etaf-primitive-binding-tests.el",

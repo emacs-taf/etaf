@@ -11,6 +11,75 @@
 (require 'etaf)
 (require 'ebox)
 
+(defun etaf-host-geometry-test--crop-view (width height on-press)
+  "Build a fixed-text panel with live WIDTH, HEIGHT and ON-PRESS."
+  (etaf-view
+   (box :position 'relative :width '(px 240) :height '(lh 12)
+        :background-color "#EAF0F6"
+     (box :id "crop" :ref 'crop :position 'absolute :left '(px 8) :top '(lh 2)
+          :width (etaf-value width) :height (etaf-value height) :z-index 1
+          :min-width '(px 0) :min-height '(lh 0) :overflow 'hidden :wrap-mode 'none
+          :color "#F1F5F9" :background-color "#243447"
+          :tab-index 0 :on-press on-press
+       (text "Fixed text abcdefghijklmnopqrstuvwxyz\nSecond row\nThird row")))))
+
+(ert-deftest etaf-host-geometry-resizes-fixed-text-through-prepared-publication ()
+  "Mounted size bindings publish directly while snapshots and input remain current."
+  (let ((buffer (generate-new-buffer " *etaf-retained-crop*"))
+        (width (etaf-ref '(px 96) :test #'equal))
+        (height (etaf-ref '(lh 4) :test #'equal)) (pressed 0))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer (etaf-host-geometry-test--crop-view
+                              width height (lambda () (cl-incf pressed))))
+          (let* ((runtime (etaf-runtime-for-buffer buffer))
+                 (snapshot (etaf-runtime-snapshot runtime))
+                 (before (ebox-render (plist-get snapshot :input))))
+            (dolist (size '((160 6) (64 2) (192 7) (96 4)))
+              (let ((revision (ebox-surface-buffer-revision buffer)))
+                (etaf-batch
+                  (etaf-set-value width (list 'px (car size)))
+                  (etaf-set-value height (list 'lh (cadr size))))
+                (etaf-runtime-flush runtime)
+                (should (= (1+ revision) (ebox-surface-buffer-revision buffer)))
+                (should (eq 'prepared-update (plist-get (ebox-buffer-update-report buffer) :projection-kind)))
+                (should (equal (etaf-value width)
+                               (plist-get (etaf-runtime-host-props-for runtime 'crop) :width)))
+                (should (equal (etaf-value height)
+                               (plist-get (etaf-runtime-host-props-for runtime 'crop) :height)))
+                (should (etaf-host-ref-position runtime 'crop))
+                (should (equal (with-current-buffer buffer (buffer-substring-no-properties (point-min) (point-max)))
+                               (substring-no-properties (ebox-render (plist-get (etaf-runtime-snapshot runtime) :input)))))
+                (etaf-dispatch-event runtime 'crop 'press)))
+            (should (= pressed 4))
+            (should (equal-including-properties before (ebox-render (plist-get snapshot :input))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest etaf-retained-resize-example-controls-size-and-cancellation ()
+  "The interactive example preserves controlled sizes, peer input and cleanup."
+  (let ((buffer (generate-new-buffer " *etaf-resize-example-test*")))
+    (unwind-protect
+        (progn
+          (etaf-retained-resize-open buffer)
+          (let ((runtime (etaf-runtime-for-buffer buffer)))
+            (etaf-dispatch-event runtime 'resize-panel 'drag '(:phase start :delta (0 . 0)) t)
+            (etaf-dispatch-event runtime 'resize-panel 'drag '(:phase move :delta (32 . 2)) t)
+            (should (eq 'prepared-update (plist-get (ebox-buffer-update-report buffer) :projection-kind)))
+            (should (equal '(px 352) (plist-get (etaf-runtime-host-props-for runtime 'resize-panel) :width)))
+            (should (equal '(lh 10) (plist-get (etaf-runtime-host-props-for runtime 'resize-panel) :height)))
+            (etaf-dispatch-event runtime 'resize-panel 'drag '(:phase cancel :reason quit :delta (32 . 2)) t)
+            (should (equal '(px 320) (plist-get (etaf-runtime-host-props-for runtime 'resize-panel) :width)))
+            (should (equal '(lh 8) (plist-get (etaf-runtime-host-props-for runtime 'resize-panel) :height)))
+            (should (etaf-host-ref-position runtime 'resize-peer))
+            (etaf-dispatch-event runtime 'resize-panel 'drag '(:phase start :delta (0 . 0)) t)
+            (etaf-dispatch-event runtime 'resize-panel 'drag '(:phase end :delta (16 . 1)) t)
+            (should (equal '(px 336) (plist-get (etaf-runtime-host-props-for runtime 'resize-panel) :width)))
+            (etaf-unmount runtime)
+            (should-not (etaf-runtime-for-buffer buffer))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (etaf-define-component etaf-host-geometry-test--component (&key left shown)
   :bindings ((count (etaf-ref 0)))
   :view
