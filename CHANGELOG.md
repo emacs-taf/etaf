@@ -30,6 +30,9 @@
 
 ### Changed
 
+- A retained child Component whose queued render or input effect settles to
+  equal values is no longer rendered again when a structural ancestor
+  re-renders, so a parent update touches only children whose inputs changed.
 - The idle compilation of a published generation's primitive cohort stops
   when input arrives and is rescheduled, so keyboard or mouse input after a
   structural change no longer waits for that compilation. A primitive update

@@ -45,6 +45,51 @@
         (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
         (kill-buffer buffer)))))
 
+(etaf-define-component etaf-test-derived-child (&key source renders)
+  :render
+  (progn (funcall renders)
+         (etaf-node 'text nil (list (format "%s" (etaf-value source))))))
+
+(etaf-define-component etaf-test-derived-parent (&key source derived renders)
+  :render
+  (etaf-node 'column nil
+             (list (etaf-node 'text nil (list (format "%s" (etaf-value source))))
+                   (etaf-node 'etaf-test-derived-child
+                              (list :source derived :renders renders) nil))))
+
+(ert-deftest etaf-computed-equality-retains-child-under-rerendered-parent ()
+  "A retained child whose derived input settles equal is not rendered again."
+  (let* ((buffer (generate-new-buffer " *derived-child*"))
+         (source (etaf-ref 2))
+         (derived (etaf-computed (lambda () (list (/ (etaf-value source) 2)))
+                                 :test #'equal))
+         (renders 0))
+    (unwind-protect
+        (let* ((mounted
+                (etaf-mount
+                 buffer
+                 (etaf-view
+                  (etaf-test-derived-parent
+                   :source source :derived derived
+                   :renders (lambda () (setq renders (1+ renders)))))))
+               (runtime (etaf-runtime-for-buffer mounted)))
+          (etaf-runtime-flush runtime)
+          (should (= renders 1))
+          (setf (etaf-value source) 3)
+          (etaf-runtime-flush runtime)
+          (should (string-prefix-p "3" (with-current-buffer buffer
+                                         (buffer-substring-no-properties
+                                          (point-min) (point-max)))))
+          (should (= renders 1))
+          (setf (etaf-value source) 4)
+          (etaf-runtime-flush runtime)
+          (should (= renders 2))
+          (should (string-match-p "(2)" (with-current-buffer buffer
+                                          (buffer-substring-no-properties
+                                           (point-min) (point-max))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
 (ert-deftest etaf-computed-equality-retargets-conditional-inputs ()
   "An equal derived result still follows its newly selected dependency."
   (let* ((buffer (generate-new-buffer " *derived-retarget*"))

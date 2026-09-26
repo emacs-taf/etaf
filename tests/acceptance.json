@@ -81,6 +81,11 @@
       "purpose": "Structural removal precedes a retired descendant computed getter that would now fail."
     },
     {
+      "name": "etaf-computed-equality-retains-child-under-rerendered-parent",
+      "file": "tests/etaf-computed-gating-tests.el",
+      "purpose": "A retained child whose computed input settles equal is not rendered again when its parent re-renders."
+    },
+    {
       "name": "etaf-computed-equality-settles-component-input-and-render",
       "file": "tests/etaf-computed-gating-tests.el",
       "purpose": "Equal computed Component input and render dependencies preserve publication revision and lifecycle."

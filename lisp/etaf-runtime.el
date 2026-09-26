@@ -3010,6 +3010,36 @@ subtrees keep their committed resources without being traversed."
   (dolist (hook (reverse hooks))
     (funcall hook)))
 
+(defun etaf--runtime-settle-retained-effects (runtime generation semantic-id)
+  "Drop RUNTIME's queued source work under SEMANTIC-ID whose inputs are equal.
+A parent render reaches the retained Component SEMANTIC-ID with equal
+inputs, so its subtree survives the candidate and reading the queued
+targets' inputs is safe.  `etaf--runtime-settle-source-effects' keeps such
+targets while their structural ancestor is pending; settling them here
+lets the parent reuse unchanged children instead of rendering them again."
+  (let ((ids (etaf-runtime-dirty-effect-ids runtime))
+        (queue (etaf-runtime-dirty-effect-queue runtime))
+        previous)
+    (while queue
+      (let* ((effect-id (car queue))
+             (effect (and (eq (gethash effect-id ids) 'source)
+                          (not (equal effect-id
+                                      (etaf-runtime-root-effect-id runtime)))
+                          (etaf--generation-effect generation effect-id)))
+             (walk (and effect (etaf--generation-effect-semantic-id effect))))
+        (while (and walk (not (eql walk semantic-id)))
+          (setq walk (etaf--generation-parent-id generation walk)))
+        (if (and walk
+                 (not (etaf--runtime-source-effect-changed-p
+                       runtime generation effect)))
+            (progn
+              (remhash effect-id ids)
+              (if previous (setcdr previous (cdr queue))
+                (setf (etaf-runtime-dirty-effect-queue runtime) (cdr queue))))
+          (setq previous queue)))
+      (setq queue (cdr queue)))
+    (setf (etaf-runtime-dirty-effect-queue-tail runtime) previous)))
+
 (defun etaf--runtime-dirty-descendant-p (runtime generation semantic-id)
   "Return non-nil when SEMANTIC-ID contains queued work in GENERATION."
   (cl-some
@@ -3243,7 +3273,8 @@ subtrees keep their committed resources without being traversed."
                           (cl-incf (etaf-runtime-next-semantic-id runtime))))
          (input-props (etaf--component-business-props call))
          (input-attrs (etaf--component-call-attrs call))
-         props attrs defaults input-deps render-deps context-deps slot-retargeted-p)
+         props attrs defaults input-deps render-deps context-deps slot-retargeted-p
+         inputs-equal-p)
     (unless (etaf-context-owner-id (etaf--component-instance-context instance))
       (setf (etaf-context-owner-id (etaf--component-instance-context instance))
             semantic-id))
@@ -3279,6 +3310,22 @@ subtrees keep their committed resources without being traversed."
                (not (etaf--semantic-component-raw-slot-reader-p old)))
       (setq slot-retargeted-p
             (etaf--runtime-retarget-component-slot-ranges runtime old slots)))
+    (setq inputs-equal-p
+          (and old
+               (etaf--runtime-props-equal-p
+                defaults (etaf--semantic-component-defaults old))
+               (etaf--runtime-props-equal-p
+                props (etaf--semantic-component-props old))
+               (equal-including-properties
+                attrs (etaf--semantic-component-attrs old))
+               (or slot-retargeted-p
+                   (equal-including-properties
+                    slots (etaf--semantic-component-slots old)))))
+    (when (and inputs-equal-p
+               (not etaf--runtime-force-full-component-render-p)
+               (not (and slots etaf--rendering-component-effect-p
+                         (not slot-retargeted-p))))
+      (etaf--runtime-settle-retained-effects runtime old-generation semantic-id))
     (if (not (or (null old)
                  etaf--runtime-force-full-component-render-p
                  (gethash input-effect-id
@@ -3287,15 +3334,7 @@ subtrees keep their committed resources without being traversed."
                  (etaf--runtime-dirty-descendant-p runtime old-generation semantic-id)
                  (and slots etaf--rendering-component-effect-p
                       (not slot-retargeted-p))
-                 (not (etaf--runtime-props-equal-p
-                       defaults (etaf--semantic-component-defaults old)))
-                 (not (etaf--runtime-props-equal-p
-                       props (etaf--semantic-component-props old)))
-                 (not (equal-including-properties
-                       attrs (etaf--semantic-component-attrs old)))
-                 (and (not slot-retargeted-p)
-                      (not (equal-including-properties
-                            slots (etaf--semantic-component-slots old))))))
+                 (not inputs-equal-p)))
         (progn
           (when (or (etaf-runtime-candidate-full-rebuild-p runtime)
                     etaf--rendering-range-p)
