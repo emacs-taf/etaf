@@ -30,6 +30,11 @@
 
 ### Changed
 
+- The idle compilation of a published generation's primitive cohort stops
+  when input arrives and is rescheduled, so keyboard or mouse input after a
+  structural change no longer waits for that compilation. A primitive update
+  that needs the cohort before it completes compiles it on demand.
+
 - Structural publications no longer compile the sparse primitive cohort
   synchronously. Members are bound at publication; the Ebox scene compile runs
   from an idle timer or on demand at the first all-primitive flush, so closing

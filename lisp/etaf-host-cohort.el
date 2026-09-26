@@ -226,8 +226,9 @@ compile runs later in `etaf--host-cohort-prepare'."
 
 (defvar etaf--host-cohort-idle-delay 0.15
   "Idle seconds before a published generation compiles its primitive cohort.
-A structural publish that arrives first discards the pending compile, so
-rapid structural interactions never pay for scenes they immediately replace.")
+A structural publish that arrives first discards the pending compile, and
+input during the compile interrupts it, so rapid structural interactions
+never wait for scenes they immediately replace.")
 
 (defun etaf--host-cohort-cancel (runtime)
   "Drop RUNTIME's pending cohort compile and its idle timer."
@@ -253,7 +254,14 @@ rapid structural interactions never pay for scenes they immediately replace.")
                  (etaf-runtime-current-generation runtime)))
     (if (ebox-transaction-active-p)
         (etaf--host-cohort-schedule runtime)
-      (etaf--host-cohort-prepare runtime))))
+      ;; Input arriving during the cold compile interrupts it.  An input that
+      ;; only needs this cohort compiles it on demand; a structural one
+      ;; replaces the generation, so the abandoned work is never repaid.
+      (let ((pending (etaf-runtime-prepared-host-members runtime)))
+        (when (eq t (while-no-input (etaf--host-cohort-prepare runtime)))
+          (setf (etaf-runtime-prepared-host-cohort runtime) nil
+                (etaf-runtime-prepared-host-members runtime) pending)
+          (etaf--host-cohort-schedule runtime))))))
 
 (defun etaf--host-cohort-prepare (runtime)
   "Compile RUNTIME's pending primitive members into one provider cohort.
