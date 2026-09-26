@@ -30,6 +30,9 @@
 
 ### Changed
 
+- A commit reuses the canonical Range input snapshotted when the current
+  generation was published instead of lowering the old output forest again,
+  halving Range normalization in structural updates such as a Desktop close.
 - A retained child Component whose queued render or input effect settles to
   equal values is no longer rendered again when a structural ancestor
   re-renders, so a parent update touches only children whose inputs changed.

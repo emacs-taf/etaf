@@ -6092,6 +6092,22 @@ that list is independently published.  Otherwise use its enclosing owner."
           (setq parent (etaf--semantic-parent-id node))))
       owner)))
 
+(defvar etaf--runtime-range-input-cache
+  (make-hash-table :test #'eq :weakness 'key)
+  "Generation-keyed canonical inputs of published semantic Ranges.
+Generations are immutable, so the input a candidate snapshotted for an owner
+is the committed input when that candidate becomes the next generation.")
+
+(defun etaf--runtime-cached-range-input (runtime generation id range)
+  "Return RANGE's canonical input for semantic ID in immutable GENERATION."
+  (let ((table (or (gethash generation etaf--runtime-range-input-cache)
+                   (puthash generation (make-hash-table :test #'eql)
+                            etaf--runtime-range-input-cache))))
+    (or (gethash id table)
+        (puthash id (etaf--runtime-snapshot-range-input
+                     runtime generation range nil)
+                 table))))
+
 (defun etaf--runtime-normalize-range-changes (runtime generation candidate changes)
   "Compose CHANGES from final CANDIDATE facts over RUNTIME GENERATION.
 Semantic Ranges sharing a physical child list publish through that list's
@@ -6111,8 +6127,10 @@ root operation, without discarding and rerunning application effects."
            (setq absorbed (gethash parent owners)
                  parent (etaf--generation-parent-id generation parent)))
          (unless absorbed
-           (let ((old-input (etaf--runtime-snapshot-range-input runtime generation (car pair) nil))
-                 (next-input (etaf--runtime-snapshot-range-input runtime candidate (cdr pair) nil)))
+           (let ((old-input (etaf--runtime-cached-range-input
+                             runtime generation id (car pair)))
+                 (next-input (etaf--runtime-cached-range-input
+                              runtime candidate id (cdr pair))))
              (unless (ebox-canonical-input-equal-p old-input next-input)
                (push (list (car pair) (cdr pair) old-input next-input nil nil) result))))))
      owners)
