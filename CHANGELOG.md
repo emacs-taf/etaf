@@ -20,6 +20,10 @@
 
 ### Changed
 
+- Structural publications no longer compile the sparse primitive cohort
+  synchronously. Members are bound at publication; the Ebox scene compile runs
+  from an idle timer or on demand at the first all-primitive flush, so closing
+  or rearranging many Hosts costs the structural render alone.
 - Mounted reactive primitive bindings are now prepared before input and shared
   by sparse geometry, focus paint, native hover and text updates. Known class
   variants, fixed-shape border colors and measured normal/bold changes can use

@@ -36,7 +36,8 @@
   "Primitive Host properties eligible for retained provider publication.")
 
 (declare-function etaf--host-cohort-try-flush "etaf-host-cohort" (runtime))
-(declare-function etaf--host-cohort-prepare "etaf-host-cohort" (runtime))
+(declare-function etaf--host-cohort-collect "etaf-host-cohort" (runtime))
+(declare-function etaf--host-cohort-schedule "etaf-host-cohort" (runtime))
 
 (defun etaf--host-update-value-cell (plist property)
   "Return the retained value cell for PROPERTY in PLIST, or nil."
@@ -582,9 +583,13 @@ for it; a token without an installed slot declines to that path."
         update))))
 
 (defun etaf--host-update-reset (runtime)
-  "Prepare RUNTIME's registered primitive programs at a publication boundary.
+  "Rebind RUNTIME's registered primitive programs at a publication boundary.
 This control-plane operation completes before mounted or updated hooks run.
-It never evaluates application getters or creates unused computed branches."
+It never evaluates application getters or creates unused computed branches.
+Binding the semantic members is cheap; compiling them into the provider's
+retained scene is not, so `etaf--host-cohort-collect' only records the member
+pool and `etaf--host-cohort-schedule' compiles it when Emacs is idle or the
+first sparse flush needs it."
   (if (etaf-runtime-prepared-host-updates runtime)
       (clrhash (etaf-runtime-prepared-host-updates runtime))
     (setf (etaf-runtime-prepared-host-updates runtime)
@@ -598,7 +603,8 @@ It never evaluates application getters or creates unused computed branches."
         (etaf-runtime-prepared-host-binding-token runtime) nil
         (etaf-runtime-prepared-host-rejections runtime)
         (make-hash-table :test #'eql))
-  (etaf--host-cohort-prepare runtime))
+  (etaf--host-cohort-collect runtime)
+  (etaf--host-cohort-schedule runtime))
 
 (defun etaf--host-update-for-effect (runtime effect-id)
   "Return or prepare RUNTIME's ready operation for dirty EFFECT-ID only."

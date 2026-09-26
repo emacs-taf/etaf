@@ -572,10 +572,13 @@ replacement；不相交 owner 会合并为一次 Ebox publication。只有 Root 
 
 独立响应式 Host 属性及单表达式 Text Host 使用预备执行路径。View 编译器
 提供属性与 inline 程序；挂载或普通发布后、公共生命周期回调前，Runtime
-遍历当前 live generation 一次，绑定已经登记的响应式 primitive 程序。准备
-不求值应用 getter，也不构造未使用的 computed 分支。Ebox 的准备报告排除
-不支持的成员，其余成员共享稳定 cohort 与 binding capability。未知成员或
-失效 capability 使用普通发布，由其控制面边界重建绑定；输入分发不调用 prepare。
+遍历当前 live generation 一次，把已经登记的响应式 primitive 程序绑定进一个
+待编译成员池。绑定不求值应用 getter，也不构造未使用的 computed 分支。把成员
+池编译进 Ebox 保留场景才是昂贵的一半，因此它由 idle timer 执行，或在该
+generation 第一次全 primitive flush 需要 cohort 时按需执行；先到达的结构性
+发布直接丢弃待编译池。Ebox 的准备报告排除不支持的成员，其余成员共享稳定
+cohort 与 binding capability。未知成员或失效 capability 使用普通发布，由其
+控制面边界重建绑定；输入分发不会为含结构性工作的队列编译 cohort。
 
 同一 cohort 覆盖几何、绘制、native hover-content、单表达式 Text、已知 class
 变体、固定边框形状的颜色及 Ebox 实际度量证明允许的 normal/bold 变化。class

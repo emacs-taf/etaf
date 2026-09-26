@@ -3,9 +3,10 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;;; Commentary:
-;; Prepare the registered primitive Host and text effects when a structural
-;; generation publishes.  Input dispatch only selects known sparse members;
-;; it never prepares a provider operation or discovers a Component subtree.
+;; Bind the registered primitive Host and text effects when a structural
+;; generation publishes, then compile them into the provider's retained scene
+;; once Emacs is idle or the first sparse flush needs them.  Input dispatch
+;; only selects known sparse members; it never discovers a Component subtree.
 
 ;;; Code:
 
@@ -18,6 +19,8 @@
 (declare-function ebox-update-apply "ebox" (operation values changed-indices &optional count))
 (declare-function ebox-update-binding-token "ebox" (buffer-or-name))
 (declare-function ebox-update-prepare-report "ebox" (buffer-or-name))
+(declare-function ebox-transaction-active-p "ebox" ())
+(declare-function etaf--runtime-primitive-queue-p "etaf-runtime" (runtime generation))
 
 (cl-defstruct (etaf--host-cohort (:constructor etaf--host-cohort-create))
   runtime generation members values effect-indices
@@ -195,12 +198,11 @@ flat-token grammar, while semantic/public property cells keep the raw value."
           (etaf--host-cohort-changed-indices cohort) (make-vector count 0))
     (etaf--host-cohort-bind-owners cohort)))
 
-(defun etaf--host-cohort-prepare (runtime)
-  "Compile RUNTIME's registered primitive effects before later input dispatch.
-Unsupported members are removed according to the provider's cold proof report;
-each unsuccessful member-specific pass strictly shrinks the finite pool."
+(defun etaf--host-cohort-collect (runtime)
+  "Bind RUNTIME's registered primitive effects into a pending member pool.
+Members whose semantic cannot bind are rejected immediately; the provider's
+compile runs later in `etaf--host-cohort-prepare'."
   (let* ((generation (etaf-runtime-current-generation runtime))
-         (buffer (etaf-runtime-buffer runtime))
          (rejections (etaf-runtime-prepared-host-rejections runtime))
          members)
     (cl-labels
@@ -219,39 +221,92 @@ each unsuccessful member-specific pass strictly shrinks the finite pool."
                     (puthash effect-id '(:status unsupported :reason semantic-binding) rejections)))))
             (dolist (child (etaf--semantic-child-ids semantic)) (collect child)))))
       (collect (etaf-generation-root-semantic-id generation)))
-    (setq members (nreverse members))
-    (etaf--host-cohort-record-variants runtime members)
-    (let* ((cohort (etaf--host-cohort-create :runtime runtime :generation generation))
-           (stage (lambda () (etaf--host-cohort-stage cohort)))
-           (rollback (lambda () (etaf--host-cohort-rollback cohort)))
-           (after-commit (lambda () (etaf--host-cohort-after-commit cohort)))
-           done)
-      (while (and members (not done))
-        (let* ((vector (vconcat members))
-               (specifications (etaf--host-cohort-specifications runtime vector)))
-          (setf (etaf--host-cohort-members cohort) vector
-                (etaf--host-cohort-operation cohort)
-                (ebox-update-prepare buffer specifications stage rollback after-commit))
-          (if (etaf--host-cohort-operation cohort)
-              (progn
-                (etaf--host-cohort-bind-storage cohort)
-                (setf (etaf-runtime-prepared-host-cohort runtime) cohort)
-                (setq done t))
-            (let* ((report (ebox-update-prepare-report buffer))
-                   (index (plist-get report :member)))
-              (if (and (eq (plist-get report :status) 'unsupported)
-                       (integerp index) (<= 0 index) (< index (length vector)))
-                  (let ((rejected (aref vector index)))
-                    (puthash (etaf--host-update-effect-id rejected) report rejections)
-                    (setq members (delq rejected members)))
-                (puthash 'cohort report rejections)
-                (setq done t))))))
-      (setf (etaf-runtime-prepared-host-binding-token runtime)
-            (ebox-update-binding-token buffer))
-      (etaf-runtime-prepared-host-cohort runtime))))
+    (setf (etaf-runtime-prepared-host-members runtime)
+          (cons generation (nreverse members)))))
+
+(defvar etaf--host-cohort-idle-delay 0.15
+  "Idle seconds before a published generation compiles its primitive cohort.
+A structural publish that arrives first discards the pending compile, so
+rapid structural interactions never pay for scenes they immediately replace.")
+
+(defun etaf--host-cohort-cancel (runtime)
+  "Drop RUNTIME's pending cohort compile and its idle timer."
+  (when-let* ((timer (etaf-runtime-prepared-host-timer runtime)))
+    (cancel-timer timer)
+    (setf (etaf-runtime-prepared-host-timer runtime) nil)))
+
+(defun etaf--host-cohort-schedule (runtime)
+  "Compile RUNTIME's pending cohort once Emacs is idle."
+  (etaf--host-cohort-cancel runtime)
+  (when (cdr (etaf-runtime-prepared-host-members runtime))
+    (setf (etaf-runtime-prepared-host-timer runtime)
+          (run-with-idle-timer etaf--host-cohort-idle-delay nil
+                               #'etaf--host-cohort-idle-prepare runtime))))
+
+(defun etaf--host-cohort-idle-prepare (runtime)
+  "Idle-timer entry: compile RUNTIME's pending cohort when it is still current."
+  (setf (etaf-runtime-prepared-host-timer runtime) nil)
+  (when (and (etaf-runtime-mounted-p runtime)
+             (buffer-live-p (etaf-runtime-buffer runtime))
+             (not (etaf-runtime-flushing-p runtime))
+             (eq (car (etaf-runtime-prepared-host-members runtime))
+                 (etaf-runtime-current-generation runtime)))
+    (if (ebox-transaction-active-p)
+        (etaf--host-cohort-schedule runtime)
+      (etaf--host-cohort-prepare runtime))))
+
+(defun etaf--host-cohort-prepare (runtime)
+  "Compile RUNTIME's pending primitive members into one provider cohort.
+Return the cohort, or nil when the pool is empty, stale or unsupported.
+Unsupported members are removed according to the provider's cold proof report;
+each unsuccessful member-specific pass strictly shrinks the finite pool."
+  (let* ((generation (etaf-runtime-current-generation runtime))
+         (buffer (etaf-runtime-buffer runtime))
+         (rejections (etaf-runtime-prepared-host-rejections runtime))
+         (pending (etaf-runtime-prepared-host-members runtime))
+         (members (and (eq (car pending) generation) (cdr pending))))
+    (etaf--host-cohort-cancel runtime)
+    (setf (etaf-runtime-prepared-host-members runtime) nil)
+    (when members
+      (etaf--host-cohort-record-variants runtime members)
+      (let* ((cohort (etaf--host-cohort-create :runtime runtime :generation generation))
+             (stage (lambda () (etaf--host-cohort-stage cohort)))
+             (rollback (lambda () (etaf--host-cohort-rollback cohort)))
+             (after-commit (lambda () (etaf--host-cohort-after-commit cohort)))
+             done)
+        (while (and members (not done))
+          (let* ((vector (vconcat members))
+                 (specifications (etaf--host-cohort-specifications runtime vector)))
+            (setf (etaf--host-cohort-members cohort) vector
+                  (etaf--host-cohort-operation cohort)
+                  (ebox-update-prepare buffer specifications stage rollback after-commit))
+            (if (etaf--host-cohort-operation cohort)
+                (progn
+                  (etaf--host-cohort-bind-storage cohort)
+                  (setf (etaf-runtime-prepared-host-cohort runtime) cohort)
+                  (setq done t))
+              (let* ((report (ebox-update-prepare-report buffer))
+                     (index (plist-get report :member)))
+                (if (and (eq (plist-get report :status) 'unsupported)
+                         (integerp index) (<= 0 index) (< index (length vector)))
+                    (let ((rejected (aref vector index)))
+                      (puthash (etaf--host-update-effect-id rejected) report rejections)
+                      (setq members (delq rejected members)))
+                  (puthash 'cohort report rejections)
+                  (setq done t))))))
+        (setf (etaf-runtime-prepared-host-binding-token runtime)
+              (ebox-update-binding-token buffer))
+        (etaf-runtime-prepared-host-cohort runtime)))))
 
 (defun etaf--host-cohort-for-queue (runtime)
-  "Select RUNTIME's known sparse work without preparing or discovering owners."
+  "Select RUNTIME's known sparse work without discovering owners.
+A generation whose cohort is still pending compiles it here on demand, but
+only for an all-primitive queue: a structural queue replaces the generation."
+  (let ((generation (etaf-runtime-current-generation runtime)))
+    (when (and (null (etaf-runtime-prepared-host-cohort runtime))
+               (eq (car (etaf-runtime-prepared-host-members runtime)) generation)
+               (etaf--runtime-primitive-queue-p runtime generation))
+      (etaf--host-cohort-prepare runtime)))
   (when-let* ((cohort (etaf-runtime-prepared-host-cohort runtime))
               ((eq (etaf--host-cohort-generation cohort)
                    (etaf-runtime-current-generation runtime)))

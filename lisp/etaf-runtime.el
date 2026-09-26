@@ -51,6 +51,7 @@
 (declare-function etaf--host-update-queue-cell
                   "etaf-host-update" (runtime effect-id))
 (declare-function etaf--host-update-reset "etaf-host-update" (runtime))
+(declare-function etaf--host-cohort-cancel "etaf-host-cohort" (runtime))
 (declare-function etaf--host-update-try-flush "etaf-host-update" (runtime))
 (declare-function etaf--host-update-environment "etaf-host-update" (runtime effect-id))
 (defvar etaf--render-runtime)
@@ -372,6 +373,7 @@ the sequential `etaf--pvec-put' contract."
   dirty-effect-queue-tail
   prepared-host-updates prepared-host-generation prepared-host-cohort
   prepared-host-variants prepared-host-binding-token prepared-host-rejections
+  prepared-host-members prepared-host-timer
   flush-function)
 
 (defcustom etaf-generation-mirror-route 'project
@@ -6854,6 +6856,7 @@ unmount.  Host authority is invalidated before any unbounded cleanup."
       ;; after its route and buffer are dead.
       (setf (etaf-runtime-mounted-p runtime) nil
             (etaf-runtime-pending-p runtime) nil)
+      (etaf--host-cohort-cancel runtime)
       (unwind-protect
           (progn
             (when (buffer-live-p (etaf-runtime-buffer runtime))

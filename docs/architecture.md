@@ -625,11 +625,16 @@ Independently reactive Host properties and sole-expression Text Hosts have a
 prepared execution path. The View compiler supplies their property and inline
 programs. After mounting or ordinary publication, and before public lifecycle
 callbacks, Runtime visits the live generation once and binds its registered
-reactive primitive programs. Preparation does not evaluate application getters
-or construct unused computed branches. Ebox's preparation report excludes
-unsupported members; the remaining members share one stable cohort and binding
-capability. Unknown members or stale capabilities use ordinary publication,
-whose control boundary rebuilds the bindings. Input dispatch never calls prepare.
+reactive primitive programs into a pending member pool. Binding does not
+evaluate application getters or construct unused computed branches. Compiling
+the pool into Ebox's retained scene is the expensive half, so it runs from an
+idle timer, or on demand when the first all-primitive flush of that generation
+needs the cohort; a structural publication that arrives first simply discards
+the pending pool. Ebox's preparation report excludes unsupported members; the
+remaining members share one stable cohort and binding capability. Unknown
+members or stale capabilities use ordinary publication, whose control boundary
+rebuilds the bindings. Input dispatch never compiles a cohort for a queue that
+contains structural work.
 
 The cohort covers geometry, paint, native hover content, sole-expression Text,
 known class variants, fixed-shape border colors and normal/bold changes proved
