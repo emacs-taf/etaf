@@ -620,6 +620,17 @@ Database backends belong to `etaf-db`; SQLite is the only implemented backend. R
 
 ## 11. Retained publication and fixed-point safety
 
+Reactive Theme dependencies are projected to the UA defaults accepted by each
+Host kind and the resolved static tokens used by its declarations and rules.
+These lazy computed projections use value equality and belong to the consuming
+Component's Scope, or the Runtime Scope for root Hosts. Unrelated palette edits
+leave the Host's committed output untouched; default-key additions and removals
+still invalidate its UA projection. The original Theme remains authoritative.
+Context-sensitive transforms retain ordinary evaluation, and dynamic property
+tokens retain a whole-Theme guard because prepared token selection does not
+replace its dependency vector. Paint slots continue to share publication and
+rollback with the ordinary semantic candidate.
+
 Mounted Component, expr, slot, fragment, raw, inline, and Root owners publish
 through one outer reactive dispatch. A local owner evaluates into a candidate
 generation and Ebox logical replacement; disjoint owners are coalesced into

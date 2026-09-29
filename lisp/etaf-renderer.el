@@ -51,6 +51,9 @@
 (declare-function etaf-theme-defaults "etaf-context" (&optional default))
 (declare-function etaf-theme-token-p "etaf-context" (value))
 (declare-function etaf-theme-token-resolve "etaf-context" (value))
+(declare-function etaf-runtime-scope "etaf-runtime" (runtime))
+(declare-function etaf--host-property-binding-property "etaf-runtime" (binding))
+(declare-function etaf--component-instance-scope "etaf-runtime" (instance))
 
 (define-error 'etaf-renderer-error "ETAF rendering error")
 
@@ -252,13 +255,69 @@ SITE-TOKEN replaces PATH as the generated call-site identity when non-nil."
 (defvar etaf--theme-scope-cache (make-hash-table :test #'equal)
   "Bounded cache of immutable UA default scopes.")
 
-(defun etaf--resolve-host-theme (name props identity)
-  "Return resolved PROPS, dependencies and a UA scope for NAME at IDENTITY."
+(defvar etaf--theme-projection-caches (make-hash-table :test #'eq :weakness 'key)
+  "Scope-owned derived Theme sources, keyed by source and consumed value.
+Their effects stop with the consuming Component, or the Runtime for root Hosts.
+The original Theme remains authoritative; these are ordinary lazy computeds.")
+
+(defun etaf--theme-projection (source selector)
+  "Return the retained projection of Theme SOURCE described by SELECTOR.
+SELECTOR is `(defaults NAME)' or `(token TOKEN)'.  A nil result means SOURCE
+is static, its transform requires Context, or there is no mounted Runtime."
+  (when (and etaf--render-runtime
+             (or (etaf-ref-p source) (etaf-computed-p source)))
+    (let* ((scope (if etaf--current-component-instance
+                      (etaf--component-instance-scope etaf--current-component-instance)
+                    (etaf-runtime-scope etaf--render-runtime)))
+           (cache (or (gethash scope etaf--theme-projection-caches)
+                      (let ((etaf--render-phase-p nil)
+                            (etaf--active-scope scope))
+                        (etaf-on-scope-dispose
+                         (lambda () (remhash scope etaf--theme-projection-caches)))
+                        (puthash scope (make-hash-table :test #'eq)
+                                 etaf--theme-projection-caches))))
+           (projections (or (gethash source cache)
+                            (puthash source (make-hash-table :test #'equal) cache))))
+      (let ((entry (gethash selector projections)))
+        (unless entry
+          (setq entry (cons nil nil))
+          (let ((etaf--render-phase-p nil)
+                (etaf--active-scope scope))
+            (setcar
+             entry
+             (etaf-computed
+              (lambda ()
+                (let* ((recorder etaf--context-inject-recorder)
+                       (etaf--context-inject-recorder
+                        (lambda (frame key)
+                          ;; A contextual transform belongs to its consumer,
+                          ;; so it cannot share a source-only cached result.
+                          (setcdr entry t)
+                          (when recorder (funcall recorder frame key))))
+                       (theme (etaf--theme-source-value source nil t)))
+                  (pcase (car selector)
+                    ('defaults (etaf--theme-host-defaults theme (cadr selector)))
+                    ('token (etaf--theme-token-resolve-from-theme
+                             (cadr selector) theme)))))
+              :test #'equal :name 'theme-projection)))
+          (puthash (copy-tree selector) entry projections))
+        (unless (cdr entry) (car entry))))))
+
+(defun etaf--resolve-host-theme (name props identity &optional property-bindings)
+  "Return resolved PROPS, dependencies and a UA scope for NAME at IDENTITY.
+PROPERTY-BINDINGS identify dynamic tokens requiring a whole-Theme guard."
   (let* ((source (etaf--theme-source))
-         (defaults (etaf--theme-source-value source nil nil))
-         (inline (etaf--resolve-theme-property-plist props))
+         (defaults-source (etaf--theme-projection source (list 'defaults name)))
+         (defaults (if defaults-source
+                       (let ((etaf--tracking-enabled-p nil))
+                         (etaf-value defaults-source))
+                     (etaf--theme-host-defaults
+                      (etaf--theme-source-value source nil nil) name)))
+         (inline (etaf--resolve-theme-property-plist
+                  props (mapcar #'etaf--host-property-binding-property
+                                property-bindings)))
          (theme (etaf--resolve-theme-property-plist
-                 (and defaults (etaf--theme-host-defaults defaults name))))
+                 defaults))
          (declarations (cl-loop for (key value) on (car theme) by #'cddr
                                 when value append (list key value)))
          (scope-key (list identity declarations))
@@ -274,22 +333,28 @@ SITE-TOKEN replaces PATH as the generated call-site identity when non-nil."
     (list (car inline)
           (delete-dups (append (nth 1 inline) (nth 1 theme)
                               (and (or (etaf-ref-p source) (etaf-computed-p source))
-                                   (list source)))) scope)))
+                                   (list (or defaults-source source))))) scope)))
 
 (defun etaf--host-theme-properties (props scope)
   "Attach default SCOPE to canonical backend PROPS."
   (if (null scope) props
     (append props (list :ecss-scopes (list scope) :ecss-scope-roots (list scope)))))
 
-(defun etaf--resolve-theme-property-plist (props)
-  "Return resolved PROPS and reactive Theme dependencies."
+(defun etaf--resolve-theme-property-plist (props &optional dynamic-properties)
+  "Return resolved PROPS and reactive Theme dependencies.
+DYNAMIC-PROPERTIES retain their Theme source across prepared token switches."
   (let ((source (etaf--theme-source)) resolved deps)
     (while props
       (let ((property (pop props))
             (value (pop props)))
         (if (etaf-theme-token-p value)
-            (let ((resolved-value
-                   (etaf--theme-token-resolve-from-source value source)))
+            (let* ((projection
+                    (unless (memq property dynamic-properties)
+                      (etaf--theme-projection source (list 'token value))))
+                   (resolved-value
+                    (if projection
+                        (let ((etaf--tracking-enabled-p nil)) (etaf-value projection))
+                      (etaf--theme-token-resolve-from-source value source))))
               (when resolved-value
                 (ebox-style-compile-declarations (list property resolved-value) t))
               (push property resolved)
@@ -300,7 +365,10 @@ SITE-TOKEN replaces PATH as the generated call-site identity when non-nil."
                       resolved-value)
                     resolved)
               (when (or (etaf-ref-p source) (etaf-computed-p source))
-                (cl-pushnew source deps :test #'eq)))
+                ;; A prepared dynamic token can switch without rebuilding its
+                ;; dependency vector.  Retain its whole-source guard until an
+                ;; ordinary publication rebinds the selected token.
+                (cl-pushnew (or projection source) deps :test #'eq)))
           (push property resolved)
           (push value resolved))))
     (list (nreverse resolved) (nreverse deps))))
@@ -745,7 +813,8 @@ multi-root forest; a single material root is returned unchanged."
          (theme-result
           (etaf--resolve-host-theme
            name (etaf--resolve-property-plist (etaf--view-node-props node))
-           (etaf--generated-host-ref base-props path (etaf--view-node-token node))))
+           (etaf--generated-host-ref base-props path (etaf--view-node-token node))
+           property-bindings))
          (raw-props (nth 0 theme-result))
          (theme-deps (nth 1 theme-result))
          (props (etaf--host-theme-properties

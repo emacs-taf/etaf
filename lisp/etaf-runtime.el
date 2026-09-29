@@ -5475,7 +5475,8 @@ RESOURCE-JOURNAL and ROUTE-JOURNAL remain opaque owner-local entries."
 			    (style-result (etaf--host-component-style-properties
 					   nil (etaf--semantic-host-style-root-p base)))
 			    (theme-result (etaf--resolve-host-theme
-					   (etaf--semantic-host-name base) host-props host-ref)))
+					   (etaf--semantic-host-name base) host-props host-ref
+                                           property-bindings)))
 		       (setq style-props (car style-result))
 		       (dolist (source (cadr style-result)) (cl-pushnew source deps :test #'eq))
 		       (setq host-props (nth 0 theme-result)

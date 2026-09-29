@@ -13,6 +13,11 @@
   ],
   "support": [],
   "cases": [
+    {"name": "etaf-theme-contextual-transforms-retain-consumer-context", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "Context-sensitive Theme transforms preserve distinct consuming Context values across source updates."},
+    {"name": "etaf-theme-unused-tokens-retain-publication", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "Unconsumed Theme token edits retain the committed generation while consumed token changes repaint."},
+    {"name": "etaf-theme-dynamic-token-switch-observes-selected-value", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "Prepared dynamic Theme token selection observes later edits of the selected key."},
+    {"name": "etaf-theme-source-replacement-retires-old-provider", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "Replacing a Theme provider observes the new source and retires publication from the old source."},
+    {"name": "etaf-theme-projection-transform-failure-retries-written-state", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "A failed Theme transform preserves committed output and retries the written palette without another write."},
     {"name": "etaf-host-geometry-resizes-fixed-text-through-prepared-publication", "file": "tests/etaf-host-geometry-tests.el", "purpose": "Mounted fixed-text size bindings publish through the prepared provider while preserving semantic snapshots and input targets."},
     {"name": "etaf-retained-resize-example-controls-size-and-cancellation", "file": "tests/etaf-host-geometry-tests.el", "purpose": "The runnable retained resize example changes controlled size, restores its origin on cancellation and preserves its independent peer."},
     {

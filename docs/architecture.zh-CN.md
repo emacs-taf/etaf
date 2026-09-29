@@ -572,6 +572,14 @@ mounted Component、expr、slot、fragment、raw、inline 和 Root owner 都经�
 replacement；不相交 owner 会合并为一次 Ebox publication。只有 Root owner
 可以进入 complete-root adapter。
 
+响应式 Theme 依赖投影为各 Host 类型接受的 UA 默认值，以及声明和规则实际使用的
+静态 token 解析值。这些惰性 computed 投影使用值相等比较，归消费 Component 的
+Scope 所有；根 Host 使用 Runtime Scope。不相关的 palette 修改保留 Host 的已提交
+输出，默认属性的新增和删除仍使 UA 投影失效。原 Theme 保持唯一权威。
+读取 Context 的 transform 保留普通求值；动态属性 token 保留整份 Theme 的版本
+保护，因为预备 token 切换不替换其依赖向量。paint slot 继续与普通语义候选共同
+发布和回滚。
+
 独立响应式 Host 属性及单表达式 Text Host 使用预备执行路径。View 编译器
 提供属性与 inline 程序；挂载或普通发布后、公共生命周期回调前，Runtime
 遍历当前 live generation 一次，把已经登记的响应式 primitive 程序绑定进一个
