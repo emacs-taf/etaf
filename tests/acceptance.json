@@ -1266,6 +1266,7 @@
       "name": "etaf-host-geometry-unsupported-root-recovers-from-invalid-value",
       "file": "tests/etaf-host-geometry-tests.el",
       "purpose": "A standalone absolute Host without a containing plane uses ordinary geometry validation, retains committed state on invalid input and accepts a later valid value."
-    }
+    },
+    {"name": "etaf-conditional-layout-kind-change-keeps-runtime-type-counts", "file": "tests/etaf-conditional-lifecycle-tests.el", "purpose": "A retained conditional arm that switches from a Box layout to a Grid layout keeps runtime type counts exact, so removing the subtree afterwards succeeds instead of decrementing a bucket the node never entered."}
   ]
 }

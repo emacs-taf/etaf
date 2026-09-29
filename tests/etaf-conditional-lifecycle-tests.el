@@ -7,6 +7,10 @@
 (require 'ert)
 (require 'etaf)
 
+(defun etaf-conditional-test-text (buffer)
+  "Return BUFFER's visible text without properties or surrounding blanks."
+  (string-trim (substring-no-properties (with-current-buffer buffer (buffer-string)))))
+
 (etaf-define-component etaf-conditional-test-caption (&key value activate dispose)
   :setup (progn (etaf-on-unmounted dispose) nil)
   :view
@@ -43,6 +47,34 @@
                 (should (equal activated (symbol-name next)))))
             (should (= disposals 3))))
       (when (etaf-runtime-for-buffer buffer) (etaf-unmount (etaf-runtime-for-buffer buffer)))
+      (kill-buffer buffer))))
+
+(ert-deftest etaf-conditional-layout-kind-change-keeps-runtime-type-counts ()
+  "A retained node that changes layout kind must keep runtime type counts exact."
+  (let ((detailed (etaf-ref t))
+        (gridded (etaf-ref t))
+        (buffer (generate-new-buffer " *conditional-layout-kind*"))
+        runtime)
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (etaf-view
+            (column
+             (column :if (etaf-value detailed)
+               (box :if (etaf-value gridded) "Rows")
+               (grid :else t :grid-template-columns '((ch 4)) (box "Grid"))))))
+          (setq runtime (etaf-runtime-for-buffer buffer))
+          ;; The retained arm node moves from a Box layout to a Grid layout.
+          (setf (etaf-value gridded) nil)
+          (etaf-runtime-flush runtime)
+          (should (equal "Grid" (etaf-conditional-test-text buffer)))
+          ;; Removing the same subtree later must not decrement a bucket that
+          ;; never counted this node.
+          (setf (etaf-value detailed) nil)
+          (etaf-runtime-flush runtime)
+          (should (equal "" (etaf-conditional-test-text buffer))))
+      (when runtime (etaf-unmount runtime))
       (kill-buffer buffer))))
 
 (etaf-define-component etaf-conditional-test-panel ()
