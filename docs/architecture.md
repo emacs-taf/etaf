@@ -269,7 +269,11 @@ lowering those ancestors again. A snapshot is composed from the corresponding
 committed or candidate generation only when a publication or composition needs
 that Range's canonical input. An invalidation carries no captured runtime or
 old generation, and follows the same artifact promotion and rollback lifecycle
-as a materialized snapshot. Adjacent semantic
+as a materialized snapshot. Sibling changes share pending ancestor invalidations
+within one candidate. Replacing an ancestor record or observing its composition
+version permits a subsequent invalidation; every walk still visits enclosing
+Ranges so a snapshot composed during the candidate cannot survive a later
+descendant change. Adjacent semantic
 Ranges share a physical Ebox child list, while a Host starts an independent child
 layout. Publication uses Ebox's committed Range addresses, or its root operation
 when no enclosing child Range is published. It composes the final candidate output

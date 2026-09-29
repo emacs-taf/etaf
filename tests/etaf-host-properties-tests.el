@@ -48,5 +48,112 @@
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
+(etaf-define-component etaf-test-host-properties-frame (&key expanded)
+  :view
+  (column
+   (expr (when expanded (etaf-view (text "Expanded"))))
+   (slot)))
+
+(etaf-define-component etaf-test-host-properties-leaf (&key name caption width reject)
+  :view
+  (box :ref name :width (etaf-value width)
+    (text (expr (let ((value (etaf-value caption)))
+                  (when (funcall reject) (error "Rejected caption"))
+                  (concat "Value: " value))))))
+
+(defun etaf-test-host-properties-appearance (text)
+  "Return TEXT's visible characters, faces and geometry."
+  (cl-loop for index below (length text)
+           collect (list (aref text index)
+                         (get-text-property index 'face text)
+                         (get-text-property index 'display text))))
+
+(ert-deftest etaf-host-properties-batches-compose-shared-ancestors-and-retry ()
+  "Sibling updates, enclosing output changes and retries retain final output."
+  (let ((buffer (generate-new-buffer " *etaf-host-shared-ancestors*"))
+        (expanded (etaf-ref nil))
+        (left (etaf-ref "Left 0"))
+        (right (etaf-ref "Right 0"))
+        (width (etaf-ref '(ch 18)))
+        rejected)
+    (unwind-protect
+        (let* ((view
+                (etaf-view
+                 (etaf-test-host-properties-frame :expanded (etaf-value expanded)
+                   (etaf-test-host-properties-frame
+                     (etaf-test-host-properties-leaf
+                      :name 'left :caption left :width width :reject (lambda () nil))
+                     (etaf-test-host-properties-leaf
+                      :name 'right :caption right :width width
+                      :reject (lambda () rejected))))))
+               (runtime (etaf-runtime-for-buffer (etaf-mount buffer view))))
+          (cl-labels
+              ((appearance ()
+                 (etaf-test-host-properties-appearance
+                  (with-current-buffer buffer (buffer-string))))
+               (assert-current ()
+                 (let ((fresh (etaf-test-host-properties-appearance
+                               (ebox-render (etaf-render view)))))
+                   (should (equal fresh (appearance)))
+                   (should
+                    (equal fresh
+                           (etaf-test-host-properties-appearance
+                            (ebox-render
+                             (plist-get (etaf-runtime-snapshot runtime) :input))))))
+                 (dolist (host '(left right))
+                   (should
+                    (equal (etaf-value width)
+                           (plist-get (etaf-runtime-host-props-for runtime host)
+                                      :width))))))
+            (assert-current)
+            (let* ((snapshot (etaf-runtime-snapshot runtime))
+                   (original (etaf-test-host-properties-appearance
+                              (ebox-render (plist-get snapshot :input)))))
+              ;; Recompose both siblings beneath shared Host, Component and
+              ;; slot ancestors, with and without enclosing structural work.
+              (dotimes (index 4)
+                (etaf-batch
+                  (etaf-set-value left (format "Left %d" (1+ index)))
+                  (etaf-set-value right (format "Right %d" (1+ index)))
+                  (etaf-set-value width (list 'ch (+ 19 index)))
+                  (etaf-set-value expanded (cl-oddp index)))
+                (assert-current))
+              (should
+               (equal original
+                      (etaf-test-host-properties-appearance
+                       (ebox-render (plist-get snapshot :input))))))
+            (let ((before (appearance))
+                  (revision (etaf-runtime-generation runtime))
+                  (left-props (etaf-runtime-host-props-for runtime 'left)))
+              (setq rejected t)
+              (should-error
+               (etaf-batch
+                 (etaf-set-value left "Retried left")
+                 (etaf-set-value right "Retried right")
+                 (etaf-set-value width '(ch 25)))
+               :type 'error)
+              (should (equal before (appearance)))
+              (should (= revision (etaf-runtime-generation runtime)))
+              (should (equal left-props
+                             (etaf-runtime-host-props-for runtime 'left)))
+              (should
+               (equal before
+                      (etaf-test-host-properties-appearance
+                       (ebox-render
+                        (plist-get (etaf-runtime-snapshot runtime) :input)))))
+              (setq rejected nil)
+              (should (= (1+ revision) (etaf-runtime-flush runtime)))
+              (assert-current))
+            ;; A subsequent enclosing render must use the accepted descendants,
+            ;; including their retried property and inline output.
+            (etaf-set-value expanded nil)
+            (assert-current)
+            (etaf-batch
+              (etaf-set-value left "Final left")
+              (etaf-set-value right "Final right"))
+            (assert-current)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (provide 'etaf-host-properties-tests)
 ;;; etaf-host-properties-tests.el ends here

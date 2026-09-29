@@ -375,7 +375,10 @@ the sequential `etaf--pvec-put' contract."
   prepared-host-updates prepared-host-generation prepared-host-cohort
   prepared-host-variants prepared-host-binding-token prepared-host-rejections
   prepared-host-members prepared-host-timer
-  flush-function)
+  flush-function
+  ;; Consumers can inline public accessors such as `etaf-runtime-mounted-p'.
+  ;; Append new slots here so upgrading ETAF preserves their compiled offsets.
+  candidate-invalidated-ancestors)
 
 (defcustom etaf-generation-mirror-route 'project
   "Compatibility mirror route used after a committed generation changes.
@@ -1579,6 +1582,12 @@ transaction from deciding whether the value changed."
                   (etaf--semantic-inline-range-output semantic)
                   (etaf--semantic-inline-range-context-deps semantic)))
            (t nil))))
+    ;; Once this version participates in convergence detection, a later
+    ;; descendant change must advance it again.  Until then sibling changes
+    ;; share one pending invalidation of the same candidate record.
+    (when (and semantic-id
+               (etaf-runtime-candidate-invalidated-ancestors runtime))
+      (remhash semantic-id (etaf-runtime-candidate-invalidated-ancestors runtime)))
     (list :effect-id effect-id
           :kind (and effect (etaf--generation-effect-kind effect))
           :semantic-id semantic-id
@@ -4347,6 +4356,7 @@ cleanup after ORDERING-PREFIX instead of running them inline."
         (etaf-runtime-candidate-semantic-nodes runtime) nil
         (etaf-runtime-candidate-component-envs runtime) nil
         (etaf-runtime-candidate-graph-nodes runtime) nil
+        (etaf-runtime-candidate-invalidated-ancestors runtime) nil
         (etaf-runtime-candidate-identity-entries runtime) nil
         (etaf-runtime-candidate-graph-children runtime) nil
         (etaf-runtime-candidate-graph-child-tails runtime) nil
@@ -4461,6 +4471,8 @@ RETIREMENT-JOURNAL owns hooks and Scope disposal after successful publication."
         (etaf-runtime-candidate-component-envs runtime)
         (make-hash-table :test #'eql)
         (etaf-runtime-candidate-graph-nodes runtime)
+        (make-hash-table :test #'eql)
+        (etaf-runtime-candidate-invalidated-ancestors runtime)
         (make-hash-table :test #'eql)
         (etaf-runtime-candidate-identity-entries runtime)
         (make-hash-table :test #'equal)
@@ -6137,44 +6149,54 @@ root operation, without discarding and rerunning application effects."
     (nreverse result)))
 
 (defun etaf--runtime-invalidate-semantic-ancestors (runtime parent-id)
-  "Invalidate RUNTIME artifacts from PARENT-ID through semantic ancestors."
+  "Invalidate RUNTIME artifacts from PARENT-ID through semantic ancestors.
+Sibling changes share an invalidation while the candidate record is unchanged
+and its composition version has not been observed by an effect.  Still visit
+every ancestor: an enclosing Range may have been recomposed since the previous
+walk even when a nearer ancestor retains its invalidation."
   (let* ((generation (etaf-runtime-current-generation runtime))
-         (nodes (etaf-generation-semantic-nodes generation)))
+         (nodes (etaf-generation-semantic-nodes generation))
+         (graph (etaf-runtime-candidate-graph-nodes runtime))
+         (invalidated (etaf-runtime-candidate-invalidated-ancestors runtime))
+         (artifacts (etaf-runtime-candidate-range-artifacts runtime)))
     (while (and parent-id (> parent-id 0))
-      (let ((record (or (gethash parent-id (etaf-runtime-candidate-graph-nodes runtime))
+      (let ((record (or (gethash parent-id graph)
                         (etaf--pvec-get nodes parent-id))))
         (cond
          ((or (etaf--semantic-range-p record) (etaf--semantic-slot-range-p record))
           (unless (and (etaf--semantic-range-p record)
                        (eq (etaf--semantic-range-kind record) 'root))
-            (let* ((candidate (copy-sequence record))
-                   (effect-id (if (etaf--semantic-range-p record)
-                                  (etaf--semantic-range-effect-id record)
-                                (etaf--semantic-slot-range-effect-id record)))
-                   (key (cons (1+ (etaf-runtime-generation runtime)) effect-id)))
-              (if (etaf--semantic-range-p candidate)
-                  (setf (etaf--semantic-range-artifact-key candidate) key)
-                (setf (etaf--semantic-slot-range-artifact-key candidate) key))
-              (puthash parent-id candidate (etaf-runtime-candidate-graph-nodes runtime))
-              (puthash effect-id :invalid (etaf-runtime-candidate-range-artifacts runtime))))
+            (let ((effect-id (if (etaf--semantic-range-p record)
+                                 (etaf--semantic-range-effect-id record)
+                               (etaf--semantic-slot-range-effect-id record))))
+              (unless (and (eq record (gethash parent-id invalidated))
+                           (eq :invalid (gethash effect-id artifacts)))
+                (let ((candidate (copy-sequence record))
+                      (key (cons (1+ (etaf-runtime-generation runtime)) effect-id)))
+                  (if (etaf--semantic-range-p candidate)
+                      (setf (etaf--semantic-range-artifact-key candidate) key)
+                    (setf (etaf--semantic-slot-range-artifact-key candidate) key))
+                  (puthash parent-id candidate graph)
+                  (puthash parent-id candidate invalidated)
+                  (puthash effect-id :invalid artifacts)))))
           (setq parent-id (etaf--semantic-parent-id record)))
          ((etaf--semantic-host-p record)
-          (let ((candidate (copy-sequence record)))
-            (cl-incf (etaf--semantic-host-composition-version candidate))
-            (puthash parent-id candidate
-                     (etaf-runtime-candidate-graph-nodes runtime))
-            (setq parent-id (etaf--semantic-host-parent-id record))))
+          (unless (eq record (gethash parent-id invalidated))
+            (let ((candidate (copy-sequence record)))
+              (cl-incf (etaf--semantic-host-composition-version candidate))
+              (puthash parent-id candidate graph)
+              (puthash parent-id candidate invalidated)))
+          (setq parent-id (etaf--semantic-host-parent-id record)))
          ((etaf--semantic-component-p record)
-          (let ((candidate
-                 (copy-sequence
-                  (or (gethash (etaf--semantic-component-identity record)
-                               (etaf-runtime-candidate-semantic-nodes runtime))
-                      record))))
-            (cl-incf (etaf--semantic-component-composition-version candidate))
-            (puthash (etaf--semantic-component-identity record) candidate
-                     (etaf-runtime-candidate-semantic-nodes runtime))
-            (puthash parent-id candidate
-                     (etaf-runtime-candidate-graph-nodes runtime))
+          (let* ((identity (etaf--semantic-component-identity record))
+                 (components (etaf-runtime-candidate-semantic-nodes runtime))
+                 (base (or (gethash identity components) record)))
+            (unless (eq base (gethash parent-id invalidated))
+              (let ((candidate (copy-sequence base)))
+                (cl-incf (etaf--semantic-component-composition-version candidate))
+                (puthash identity candidate components)
+                (puthash parent-id candidate graph)
+                (puthash parent-id candidate invalidated)))
             (setq parent-id (etaf--semantic-component-parent-id record))))
          (t (setq parent-id nil)))))))
 

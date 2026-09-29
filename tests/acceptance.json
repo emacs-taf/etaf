@@ -1116,6 +1116,11 @@
       "purpose": "Native primary press publishes scoped active paint in its mounted instance and releases before one reactive activation."
     },
     {
+      "name": "etaf-host-properties-batches-compose-shared-ancestors-and-retry",
+      "file": "tests/etaf-host-properties-tests.el",
+      "purpose": "Batched sibling properties and inline text compose through shared slots and Components, preserve committed output on rejection, and remain current through retry and enclosing structural updates."
+    },
+    {
       "name": "etaf-host-properties-compose-with-retained-components",
       "file": "tests/etaf-host-properties-tests.el",
       "purpose": "Reactive parent geometry and interaction changes compose with retained Component state, child content and conditional siblings."
