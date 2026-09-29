@@ -36,7 +36,8 @@
   "Primitive Host properties eligible for retained provider publication.")
 
 (declare-function etaf--host-cohort-try-flush "etaf-host-cohort" (runtime))
-(declare-function etaf--host-cohort-collect "etaf-host-cohort" (runtime))
+(declare-function etaf--host-cohort-cancel "etaf-host-cohort" (runtime))
+(declare-function etaf--host-cohort-register-interactive "etaf-host-cohort" (runtime))
 (declare-function etaf--host-cohort-schedule "etaf-host-cohort" (runtime))
 
 (defun etaf--host-update-value-cell (plist property)
@@ -582,14 +583,12 @@ for it; a token without an installed slot declines to that path."
         (etaf--host-update-bind-dependencies update)
         update))))
 
-(defun etaf--host-update-reset (runtime)
-  "Rebind RUNTIME's registered primitive programs at a publication boundary.
-This control-plane operation completes before mounted or updated hooks run.
-It never evaluates application getters or creates unused computed branches.
-Binding the semantic members is cheap; compiling them into the provider's
-retained scene is not, so `etaf--host-cohort-collect' only records the member
-pool and `etaf--host-cohort-schedule' compiles it when Emacs is idle or the
-first sparse flush needs it."
+(defun etaf--host-update-reset (runtime &optional publication-p)
+  "Discard RUNTIME's generation-bound primitive operations.
+PUBLICATION-P also refreshes interactive effect IDs from the accepted
+candidate and schedules their preparation.  Pure text remains demand-driven;
+no application getter or semantic-root traversal runs here."
+  (etaf--host-cohort-cancel runtime)
   (if (etaf-runtime-prepared-host-updates runtime)
       (clrhash (etaf-runtime-prepared-host-updates runtime))
     (setf (etaf-runtime-prepared-host-updates runtime)
@@ -600,14 +599,21 @@ first sparse flush needs it."
   (setf (etaf-runtime-prepared-host-generation runtime)
         (etaf-runtime-current-generation runtime)
         (etaf-runtime-prepared-host-cohort runtime) nil
+        (etaf-runtime-prepared-host-members runtime) nil
         (etaf-runtime-prepared-host-binding-token runtime) nil
         (etaf-runtime-prepared-host-rejections runtime)
+        (make-hash-table :test #'eql)
+        (etaf-runtime-prepared-text-cohort runtime) nil
+        (etaf-runtime-prepared-text-members runtime) nil
+        (etaf-runtime-prepared-text-rejections runtime)
         (make-hash-table :test #'eql))
-  (etaf--host-cohort-collect runtime)
-  (etaf--host-cohort-schedule runtime))
+  (when publication-p
+    (etaf--host-cohort-register-interactive runtime)
+    (etaf--host-cohort-schedule runtime)))
 
-(defun etaf--host-update-for-effect (runtime effect-id)
-  "Return or prepare RUNTIME's ready operation for dirty EFFECT-ID only."
+(defun etaf--host-update-for-effect (runtime effect-id &optional fresh-p)
+  "Return or bind RUNTIME's primitive EFFECT-ID.
+FRESH-P creates invocation storage owned by a new cohort."
   (let* ((generation (etaf-runtime-current-generation runtime))
          (effect (etaf--generation-effect generation effect-id)))
     (when (and effect
@@ -615,7 +621,7 @@ first sparse flush needs it."
       (unless (eq generation (etaf-runtime-prepared-host-generation runtime))
         (etaf--host-update-reset runtime))
       (let* ((table (etaf-runtime-prepared-host-updates runtime))
-             (cached (gethash effect-id table)))
+             (cached (and (not fresh-p) (gethash effect-id table))))
         (cond
          ((eq cached 'unsupported) nil)
          (cached cached)

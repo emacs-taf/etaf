@@ -13,6 +13,8 @@
   ],
   "support": [],
   "cases": [
+    {"name": "etaf-prepared-batch-couples-computed-paint-and-status", "file": "tests/etaf-prepared-batch-tests.el", "purpose": "Paint and status computed from one reactive source publish atomically, recover from a rejected status getter, and alternate with independent clock updates without stale state."},
+    {"name": "etaf-prepared-batch-expands-demand-and-rebinds-after-structure", "file": "tests/etaf-prepared-batch-tests.el", "purpose": "Separately requested geometry, inline and paint programs preserve atomic mixed updates, rejected-input retry, alternating text and interaction cohorts, and first updates after structural publication or viewport changes."},
     {"name": "etaf-theme-contextual-transforms-retain-consumer-context", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "Context-sensitive Theme transforms preserve distinct consuming Context values across source updates."},
     {"name": "etaf-theme-unused-tokens-retain-publication", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "Unconsumed Theme token edits retain the committed generation while consumed token changes repaint."},
     {"name": "etaf-theme-dynamic-token-switch-observes-selected-value", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "Prepared dynamic Theme token selection observes later edits of the selected key."},

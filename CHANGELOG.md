@@ -30,21 +30,22 @@
 
 ### Changed
 
+- Theme dependencies follow the defaults and static token values each Host
+  consumes. Unchanged Theme projections avoid unrelated property updates.
+- Batched sibling updates share pending ancestor invalidations while preserving
+  convergence tracking, detached snapshots and rejected-publication recovery.
 - A commit reuses the canonical Range input snapshotted when the current
   generation was published instead of lowering the old output forest again,
   halving Range normalization in structural updates such as a Desktop close.
 - A retained child Component whose queued render or input effect settles to
   equal values is no longer rendered again when a structural ancestor
   re-renders, so a parent update touches only children whose inputs changed.
-- The idle compilation of a published generation's primitive cohort stops
-  when input arrives and is rescheduled, so keyboard or mouse input after a
-  structural change no longer waits for that compilation. A primitive update
-  that needs the cohort before it completes compiles it on demand.
-
-- Structural publications no longer compile the sparse primitive cohort
-  synchronously. Members are bound at publication; the Ebox scene compile runs
-  from an idle timer or on demand at the first all-primitive flush, so closing
-  or rearranging many Hosts costs the structural render alone.
+- Idle preparation follows interactive properties and text sharing their
+  reactive source roots. Independent text prepares on demand in a separate
+  cohort, so periodic data does not recompile the interactive member set.
+  Accepted effect deltas maintain the preparation hints across structural
+  changes. Interrupted preparation discards partially rebound members; source
+  writes still publish atomically and remain retryable after rejection.
 - Mounted reactive primitive bindings are now prepared before input and shared
   by sparse geometry, focus paint, native hover and text updates. Known class
   variants, fixed-shape border colors and measured normal/bold changes can use

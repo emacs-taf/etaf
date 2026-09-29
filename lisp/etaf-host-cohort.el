@@ -198,83 +198,209 @@ flat-token grammar, while semantic/public property cells keep the raw value."
           (etaf--host-cohort-changed-indices cohort) (make-vector count 0))
     (etaf--host-cohort-bind-owners cohort)))
 
-(defun etaf--host-cohort-collect (runtime)
-  "Bind RUNTIME's registered primitive effects into a pending member pool.
-Members whose semantic cannot bind are rejected immediately; the provider's
-compile runs later in `etaf--host-cohort-prepare'."
+(defun etaf--host-cohort-interactive-effect-p (generation effect)
+  "Whether GENERATION's EFFECT owns a non-text primitive property."
+  (and effect (eq (etaf--generation-effect-kind effect) 'host-properties)
+       (etaf--generation-effect-deps effect)
+       (let ((semantic (etaf--generation-effect-semantic
+                        generation (etaf--generation-effect-effect-id effect))))
+         (and (etaf--semantic-host-p semantic)
+              (cl-some
+               (lambda (binding)
+                 (let ((property (etaf--host-property-binding-property binding)))
+                   (and (memq property etaf--host-update-properties)
+                        (not (memq property '(:content :hover-content))))))
+               (etaf--semantic-host-property-bindings semantic))))))
+
+(defun etaf--host-cohort-text-effect-p (generation effect)
+  "Whether GENERATION's EFFECT is a reactive pure-text primitive."
+  (and effect (etaf--generation-effect-deps effect)
+       (or (eq (etaf--generation-effect-kind effect) 'inline)
+           (and (eq (etaf--generation-effect-kind effect) 'host-properties)
+                (not (etaf--host-cohort-interactive-effect-p generation effect))
+                (let ((semantic (etaf--generation-effect-semantic
+                                 generation (etaf--generation-effect-effect-id effect))))
+                  (and (etaf--semantic-host-p semantic)
+                       (cl-some (lambda (binding)
+                                  (memq (etaf--host-property-binding-property binding)
+                                        '(:content :hover-content)))
+                                (etaf--semantic-host-property-bindings semantic))))))))
+
+(defun etaf--host-cohort-register-interactive (runtime)
+  "Update RUNTIME's interactive and text IDs from the accepted effect delta."
   (let* ((generation (etaf-runtime-current-generation runtime))
-         (rejections (etaf-runtime-prepared-host-rejections runtime))
-         members)
+         (ids (or (etaf-runtime-prepared-interactive-effect-ids runtime)
+                  (setf (etaf-runtime-prepared-interactive-effect-ids runtime)
+                        (make-hash-table :test #'eql))))
+         (text-ids (or (etaf-runtime-prepared-text-effect-ids runtime)
+                       (setf (etaf-runtime-prepared-text-effect-ids runtime)
+                             (make-hash-table :test #'eql)))))
+    ;; Retained IDs are only discovery hints; the current generation owns
+    ;; membership, dependency edges and every eventual provider binding.
+    (maphash
+     (lambda (id _)
+       (unless (etaf--host-cohort-interactive-effect-p
+                generation (etaf--generation-effect generation id))
+         (remhash id ids)))
+     ids)
+    (maphash
+     (lambda (id _)
+       (unless (etaf--host-cohort-text-effect-p
+                generation (etaf--generation-effect generation id))
+         (remhash id text-ids)))
+     text-ids)
+    (maphash
+     (lambda (id _)
+       (let ((effect (etaf--generation-effect generation id)))
+         (cond ((etaf--host-cohort-interactive-effect-p generation effect)
+                (puthash id t ids))
+               ((etaf--host-cohort-text-effect-p generation effect)
+                (puthash id t text-ids)))))
+     (etaf-runtime-candidate-effects runtime))
+    (setf (etaf-runtime-prepared-related-text-effect-ids runtime) nil)))
+
+(defun etaf--host-cohort-interaction-members (runtime generation)
+  "Return interactive IDs and source-coupled text IDs in RUNTIME GENERATION.
+Read only the existing dependency graph.  Lazy or cyclic computed branches
+without known ref roots are not evaluated to discover hypothetical work."
+  (let ((roots (make-hash-table :test #'eq))
+        (seen (make-hash-table :test #'eq))
+        (memo (make-hash-table :test #'eq))
+        (related (make-hash-table :test #'eql))
+        (ids (hash-table-keys (etaf-runtime-prepared-interactive-effect-ids runtime))))
     (cl-labels
-        ((collect
-          (id)
-          (when-let* ((semantic (etaf--pvec-get (etaf-generation-semantic-nodes generation) id)))
-            (let* ((effect-id
-                    (cond ((etaf--semantic-host-p semantic)
-                           (etaf--semantic-host-effect-id semantic))
-                          ((etaf--semantic-inline-range-p semantic)
-                           (etaf--semantic-inline-range-effect-id semantic))))
-                   (effect (and effect-id (etaf--generation-effect generation effect-id))))
-              (when (and effect (etaf--generation-effect-deps effect))
-                (let ((member (etaf--host-update-for-effect runtime effect-id)))
-                  (if member (push member members)
-                    (puthash effect-id '(:status unsupported :reason semantic-binding) rejections)))))
-            (dolist (child (etaf--semantic-child-ids semantic)) (collect child)))))
-      (collect (etaf-generation-root-semantic-id generation)))
-    (setf (etaf-runtime-prepared-host-members runtime)
-          (cons generation (nreverse members)))))
+        ((collect (source)
+           (unless (gethash source seen)
+             (puthash source t seen)
+             (cond ((etaf-ref-p source) (puthash source t roots))
+                   ((etaf-computed-p source)
+                    (when-let* ((effect (etaf-computed-effect source)))
+                      (mapc #'collect (etaf-effect-deps effect)))))))
+         (connected (source)
+           (let ((known (gethash source memo)))
+             (if known (eq known 'connected)
+               ;; Mark before descending so a malformed cycle cannot recurse.
+               (puthash source 'disconnected memo)
+               (when (or (and (etaf-ref-p source) (gethash source roots))
+                         (and (etaf-computed-p source)
+                              (etaf-computed-effect source)
+                              (cl-some #'connected
+                                       (etaf-effect-deps (etaf-computed-effect source)))))
+                 (puthash source 'connected memo)
+                 t)))))
+      (dolist (id ids)
+        (mapc #'collect (etaf--generation-effect-deps (etaf--generation-effect generation id))))
+      (maphash
+       (lambda (id _)
+         (when (cl-some #'connected
+                        (etaf--generation-effect-deps (etaf--generation-effect generation id)))
+           (puthash id t related)
+           (push id ids)))
+       (etaf-runtime-prepared-text-effect-ids runtime)))
+    (setf (etaf-runtime-prepared-related-text-effect-ids runtime) related)
+    ids))
 
 (defvar etaf--host-cohort-idle-delay 0.15
-  "Idle seconds before a published generation compiles its primitive cohort.
-A structural publish that arrives first discards the pending compile, and
-input during the compile interrupts it, so rapid structural interactions
-never wait for scenes they immediately replace.")
+  "Idle seconds before current interactive primitive bindings prepare.
+Text sharing their reactive roots joins the same cohort; independent text
+prepares only on real demand.")
 
 (defun etaf--host-cohort-cancel (runtime)
-  "Drop RUNTIME's pending cohort compile and its idle timer."
+  "Cancel RUNTIME's pending interactive preparation."
   (when-let* ((timer (etaf-runtime-prepared-host-timer runtime)))
     (cancel-timer timer)
     (setf (etaf-runtime-prepared-host-timer runtime) nil)))
 
 (defun etaf--host-cohort-schedule (runtime)
-  "Compile RUNTIME's pending cohort once Emacs is idle."
+  "Prepare RUNTIME's registered interactive programs at the normal idle boundary."
   (etaf--host-cohort-cancel runtime)
-  (when (cdr (etaf-runtime-prepared-host-members runtime))
+  (when-let* ((ids (etaf-runtime-prepared-interactive-effect-ids runtime))
+              ((> (hash-table-count ids) 0)))
     (setf (etaf-runtime-prepared-host-timer runtime)
           (run-with-idle-timer etaf--host-cohort-idle-delay nil
-                               #'etaf--host-cohort-idle-prepare runtime))))
+                              #'etaf--host-cohort-idle-prepare runtime
+                              (etaf-runtime-current-generation runtime)))))
 
-(defun etaf--host-cohort-idle-prepare (runtime)
-  "Idle-timer entry: compile RUNTIME's pending cohort when it is still current."
+(defun etaf--host-cohort-refresh-binding (runtime)
+  "Refresh RUNTIME's two cohort caches against the current public binding token."
+  (let ((generation (etaf-runtime-current-generation runtime))
+        (token (ebox-update-binding-token (etaf-runtime-buffer runtime))))
+    (unless (and (eq generation (etaf-runtime-prepared-host-generation runtime))
+                 (eq token (etaf-runtime-prepared-host-binding-token runtime)))
+      (etaf--host-update-reset runtime)
+      (setf (etaf-runtime-prepared-host-binding-token runtime) token))))
+
+(defun etaf--host-cohort-idle-prepare (runtime generation)
+  "Prepare only RUNTIME's interactive IDs while GENERATION remains current."
   (setf (etaf-runtime-prepared-host-timer runtime) nil)
   (when (and (etaf-runtime-mounted-p runtime)
              (buffer-live-p (etaf-runtime-buffer runtime))
-             (not (etaf-runtime-flushing-p runtime))
-             (eq (car (etaf-runtime-prepared-host-members runtime))
-                 (etaf-runtime-current-generation runtime)))
-    (if (ebox-transaction-active-p)
+             (eq generation (etaf-runtime-current-generation runtime)))
+    (if (or (etaf-runtime-flushing-p runtime) (ebox-transaction-active-p))
         (etaf--host-cohort-schedule runtime)
-      ;; Input arriving during the cold compile interrupts it.  An input that
-      ;; only needs this cohort compiles it on demand; a structural one
-      ;; replaces the generation, so the abandoned work is never repaid.
-      (let ((pending (etaf-runtime-prepared-host-members runtime)))
-        (when (eq t (while-no-input (etaf--host-cohort-prepare runtime)))
-          (setf (etaf-runtime-prepared-host-cohort runtime) nil
-                (etaf-runtime-prepared-host-members runtime) pending)
-          (etaf--host-cohort-schedule runtime))))))
+      (when
+          (eq t
+              (while-no-input
+                (etaf--host-cohort-refresh-binding runtime)
+                (let* ((cohort (etaf-runtime-prepared-host-cohort runtime))
+                       (mapping (and cohort (etaf--host-cohort-effect-indices cohort)))
+                       (ids (etaf--host-cohort-interaction-members runtime generation)))
+                  (unless (and cohort (ebox-update-valid-p (etaf--host-cohort-operation cohort))
+                               (cl-every (lambda (id) (gethash id mapping)) ids))
+                    ;; Prepare only the interaction dependency group.  Text
+                    ;; driven by an independent source stays demand-driven.
+                    (setf (etaf-runtime-prepared-host-cohort runtime) nil
+                          (etaf-runtime-prepared-host-members runtime) nil)
+                    (let (members)
+                      (dolist (id ids)
+                        (unless (gethash id (etaf-runtime-prepared-host-rejections runtime))
+                          (etaf--host-cohort-retire-overlap runtime id nil)
+                          (when-let* ((member (etaf--host-update-for-effect runtime id t)))
+                            (push member members))))
+                      (setf (etaf-runtime-prepared-host-members runtime) members)
+                      (etaf--host-cohort-prepare runtime members nil t))))))
+        (setf (etaf-runtime-prepared-host-cohort runtime) nil
+              (etaf-runtime-prepared-host-members runtime) nil)
+        (etaf--host-cohort-schedule runtime)))))
 
-(defun etaf--host-cohort-prepare (runtime)
-  "Compile RUNTIME's pending primitive members into one provider cohort.
-Return the cohort, or nil when the pool is empty, stale or unsupported.
+(defun etaf--host-cohort-text-queue-p (runtime generation)
+  "Whether RUNTIME's queued GENERATION effects are independent text work."
+  (let ((related (etaf-runtime-prepared-related-text-effect-ids runtime)))
+    (cl-every
+     (lambda (id)
+       (and (not (and related (gethash id related)))
+            (etaf--host-cohort-text-effect-p
+             generation (etaf--generation-effect generation id))))
+     (etaf-runtime-dirty-effect-queue runtime))))
+
+(defun etaf--host-cohort-retire-overlap (runtime effect-id text-p)
+  "Retire the other RUNTIME cache before rebinding EFFECT-ID for TEXT-P.
+A fresh binding may replace authoritative property spines; provider validity
+alone does not establish that the old ETAF member still owns those cells."
+  (let ((other (if text-p (etaf-runtime-prepared-host-members runtime)
+                 (etaf-runtime-prepared-text-members runtime))))
+    (when (cl-find effect-id other :key #'etaf--host-update-effect-id :test #'eql)
+      (if text-p
+          (setf (etaf-runtime-prepared-host-cohort runtime) nil
+                (etaf-runtime-prepared-host-members runtime) nil)
+        (setf (etaf-runtime-prepared-text-cohort runtime) nil
+              (etaf-runtime-prepared-text-members runtime) nil)))))
+
+(defun etaf--host-cohort-prepare (runtime members &optional text-p interactive-p)
+  "Compile RUNTIME's MEMBERS into the interactive or TEXT-P demand cohort.
+INTERACTIVE-P requires a non-text member to remain after provider rejections;
+idle preparation must not compile an otherwise unused text-only remainder.
+Return the cohort, or nil when the demanded set is empty or unsupported.
 Unsupported members are removed according to the provider's cold proof report;
 each unsuccessful member-specific pass strictly shrinks the finite pool."
   (let* ((generation (etaf-runtime-current-generation runtime))
          (buffer (etaf-runtime-buffer runtime))
-         (rejections (etaf-runtime-prepared-host-rejections runtime))
-         (pending (etaf-runtime-prepared-host-members runtime))
-         (members (and (eq (car pending) generation) (cdr pending))))
-    (etaf--host-cohort-cancel runtime)
-    (setf (etaf-runtime-prepared-host-members runtime) nil)
+         (rejections (if text-p (etaf-runtime-prepared-text-rejections runtime)
+                       (etaf-runtime-prepared-host-rejections runtime))))
+    ;; New source bindings may invalidate the previous operation, so no
+    ;; failure or non-local exit may leave that operation available to apply.
+    (if text-p (setf (etaf-runtime-prepared-text-cohort runtime) nil)
+      (setf (etaf-runtime-prepared-host-cohort runtime) nil))
     (when members
       (etaf--host-cohort-record-variants runtime members)
       (let* ((cohort (etaf--host-cohort-create :runtime runtime :generation generation))
@@ -282,7 +408,12 @@ each unsuccessful member-specific pass strictly shrinks the finite pool."
              (rollback (lambda () (etaf--host-cohort-rollback cohort)))
              (after-commit (lambda () (etaf--host-cohort-after-commit cohort)))
              done)
-        (while (and members (not done))
+        (while (and members (not done)
+                    (or (not interactive-p)
+                        (cl-some (lambda (member)
+                                   (etaf--host-cohort-interactive-effect-p
+                                    generation (etaf--host-update-effect member)))
+                                 members)))
           (let* ((vector (vconcat members))
                  (specifications (etaf--host-cohort-specifications runtime vector)))
             (setf (etaf--host-cohort-members cohort) vector
@@ -291,7 +422,8 @@ each unsuccessful member-specific pass strictly shrinks the finite pool."
             (if (etaf--host-cohort-operation cohort)
                 (progn
                   (etaf--host-cohort-bind-storage cohort)
-                  (setf (etaf-runtime-prepared-host-cohort runtime) cohort)
+                  (if text-p (setf (etaf-runtime-prepared-text-cohort runtime) cohort)
+                    (setf (etaf-runtime-prepared-host-cohort runtime) cohort))
                   (setq done t))
               (let* ((report (ebox-update-prepare-report buffer))
                      (index (plist-get report :member)))
@@ -304,38 +436,66 @@ each unsuccessful member-specific pass strictly shrinks the finite pool."
                   (setq done t))))))
         (setf (etaf-runtime-prepared-host-binding-token runtime)
               (ebox-update-binding-token buffer))
-        (etaf-runtime-prepared-host-cohort runtime)))))
+        (if text-p
+            (setf (etaf-runtime-prepared-text-members runtime) members)
+          (setf (etaf-runtime-prepared-host-members runtime) members))
+        (if text-p (etaf-runtime-prepared-text-cohort runtime)
+          (etaf-runtime-prepared-host-cohort runtime))))))
 
 (defun etaf--host-cohort-for-queue (runtime)
-  "Select RUNTIME's known sparse work without discovering owners.
-A generation whose cohort is still pending compiles it here on demand, but
-only for an all-primitive queue: a structural queue replaces the generation."
+  "Select RUNTIME's interactive/mixed or separate pure-text demand cohort.
+Pure text never compiles the interactive member set.  Mixed source batches
+still evaluate and publish through one cohort and one atomic provider call."
   (let ((generation (etaf-runtime-current-generation runtime)))
-    (when (and (null (etaf-runtime-prepared-host-cohort runtime))
-               (eq (car (etaf-runtime-prepared-host-members runtime)) generation)
-               (etaf--runtime-primitive-queue-p runtime generation))
-      (etaf--host-cohort-prepare runtime)))
-  (when-let* ((cohort (etaf-runtime-prepared-host-cohort runtime))
-              ((eq (etaf--host-cohort-generation cohort)
-                   (etaf-runtime-current-generation runtime)))
-              ((eq (etaf-runtime-prepared-host-binding-token runtime)
-                   (ebox-update-binding-token (etaf-runtime-buffer runtime))))
-              ((ebox-update-valid-p (etaf--host-cohort-operation cohort))))
-    (let ((queue (etaf-runtime-dirty-effect-queue runtime))
-          (mapping (etaf--host-cohort-effect-indices cohort))
-          (indices (etaf--host-cohort-dirty-indices cohort))
-          (epochs (etaf--host-cohort-dirty-epochs cohort))
-          (epoch (cl-incf (etaf--host-cohort-epoch cohort)))
-          (count 0) (valid t))
-      (while (and queue valid)
-        (let ((index (gethash (pop queue) mapping)))
-          (if (null index) (setq valid nil)
-            (aset indices count index)
-            (aset epochs index epoch)
-            (setq count (1+ count)))))
-      (when valid
-        (setf (etaf--host-cohort-dirty-count cohort) count)
-        cohort))))
+    (when (etaf--runtime-primitive-queue-p runtime generation)
+      (etaf--host-cohort-refresh-binding runtime)
+      (let* ((text-p (etaf--host-cohort-text-queue-p runtime generation))
+             (cohort (if text-p (etaf-runtime-prepared-text-cohort runtime)
+                       (etaf-runtime-prepared-host-cohort runtime)))
+             (mapping (and cohort (etaf--host-cohort-effect-indices cohort)))
+             (rejections (if text-p (etaf-runtime-prepared-text-rejections runtime)
+                           (etaf-runtime-prepared-host-rejections runtime)))
+             (members (if text-p (etaf-runtime-prepared-text-members runtime)
+                        (etaf-runtime-prepared-host-members runtime)))
+             (queue (etaf-runtime-dirty-effect-queue runtime))
+             added (valid (not (gethash 'cohort rejections))))
+        (while (and queue valid)
+          (let* ((id (pop queue))
+                 (index (and mapping (gethash id mapping)))
+                 (member (or (and index (aref (etaf--host-cohort-members cohort) index))
+                             (cl-find id members :key #'etaf--host-update-effect-id :test #'eql))))
+            (unless member
+              (unless (gethash id rejections)
+                (etaf--host-cohort-retire-overlap runtime id text-p)
+                (setq member (etaf--host-update-for-effect runtime id t)))
+              (when member (push member members) (setq added t)))
+            (unless member (setq valid nil))))
+        (if text-p (setf (etaf-runtime-prepared-text-members runtime) members)
+          (setf (etaf-runtime-prepared-host-members runtime) members))
+        (when valid
+          (when (or added (null cohort)
+                    (not (ebox-update-valid-p (etaf--host-cohort-operation cohort))))
+            (setq cohort (etaf--host-cohort-prepare runtime members text-p)))
+          (when (and cohort
+                     (eq (etaf--host-cohort-generation cohort) generation)
+                     (eq (etaf-runtime-prepared-host-binding-token runtime)
+                         (ebox-update-binding-token (etaf-runtime-buffer runtime)))
+                     (ebox-update-valid-p (etaf--host-cohort-operation cohort)))
+            (let ((queue (etaf-runtime-dirty-effect-queue runtime))
+                  (mapping (etaf--host-cohort-effect-indices cohort))
+                  (indices (etaf--host-cohort-dirty-indices cohort))
+                  (epochs (etaf--host-cohort-dirty-epochs cohort))
+                  (epoch (cl-incf (etaf--host-cohort-epoch cohort)))
+                  (count 0))
+              (while (and queue valid)
+                (let ((index (gethash (pop queue) mapping)))
+                  (if (null index) (setq valid nil)
+                    (aset indices count index)
+                    (aset epochs index epoch)
+                    (setq count (1+ count)))))
+              (when valid
+                (setf (etaf--host-cohort-dirty-count cohort) count)
+                cohort))))))))
 
 (defun etaf--host-cohort-evaluate (cohort)
   "Evaluate only COHORT's captured dirty members using retained storage."

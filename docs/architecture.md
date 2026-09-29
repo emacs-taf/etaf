@@ -638,23 +638,37 @@ one Ebox publication. The Root owner is the only complete-root adapter.
 
 Independently reactive Host properties and sole-expression Text Hosts have a
 prepared execution path. The View compiler supplies their property and inline
-programs. After mounting or ordinary publication, and before public lifecycle
-callbacks, Runtime visits the live generation once and binds its registered
-reactive primitive programs into a pending member pool. Binding does not
-evaluate application getters or construct unused computed branches. Compiling
-the pool into Ebox's retained scene is the expensive half, so it runs from an
-idle timer, or on demand when the first all-primitive flush of that generation
-needs the cohort; a structural publication that arrives first simply discards
-the pending pool. Ebox's preparation report excludes unsupported members; the
-remaining members share one stable cohort and binding capability. Unknown
-members or stale capabilities use ordinary publication, whose control boundary
-rebuilds the bindings. Input dispatch never compiles a cohort for a queue that
-contains structural work.
+programs. Successful publication maintains an interactive effect-ID set from
+the accepted candidate delta and checks retained IDs against the current
+generation. It does not traverse the semantic root or retain old provider
+handles. Geometry, paint and other non-text primitive bindings prepare at the
+0.15-second idle boundary without evaluating application getters. Inline text
+and content/hover-content programs join that group when their recorded
+computed dependencies lead to a ref also used by an interactive member.
+The accepted effect delta maintains the text-ID inventory too; root discovery
+reads existing dependency edges without forcing lazy computations. Independent
+text sources keep their separate demand cohort. If provider admission removes
+all non-text members, idle preparation leaves the remaining related text for
+real demand instead of compiling an unused text-only scene.
+
+Interactive/mixed work and pure text use separate cohorts and rejection
+caches. A real text queue prepares only its text members, never recompiling the
+interactive set. A batch containing both kinds still uses one mixed cohort and
+one atomic Ebox publication. Cohorts own separate mutable invocation storage;
+rebinding an overlapping effect retires the other cohort before replacing its
+property cells. Each cohort reuses its own member index for subsequent subsets.
+The first real text update includes any cold scene preparation it needs.
+
+An ordinary publication or changed binding token discards both operation
+caches. Unsupported members follow Ebox's preparation report; framework code
+has no portal or application-specific admission rules. Failed preparation or
+evaluation retains ordinary publication and retry behavior. A structural queue
+never starts primitive preparation during its dispatch.
 
 The cohort covers geometry, paint, native hover content, sole-expression Text,
 known class variants, fixed-shape border colors and normal/bold changes proved
 by Ebox's measured geometry contract. Class variants are gathered by compiled
-Host program from values present in the generation or previously accepted.
+Host program from prepared members' committed values and retained history.
 ETAF normalizes its whitespace/list/symbol grammar to canonical tokens in both
 ordinary lowering and the cold variant table. Warm class writes reuse that
 table and a provider value vector; semantic and public properties retain the
@@ -664,9 +678,9 @@ Warm dispatch maps only dirty effect ids to retained indices, evaluates those
 members, and consumes their captured dependency versions. A newer observer
 write or still-dirty computed remains queued. Geometry uses the same cohort,
 so a singleton move cannot invalidate the focus cohort by rebinding a second
-operation. The existing primitive binding table also proves that a wholly
+operation. Queued effect records prove that a wholly
 primitive queue has no structural ancestor work; settlement then skips parent
-walks and reuses its bound Component environment. No View, property plist or
+walks and reuses a bound Component environment when available. No View, property plist or
 structural candidate is rebuilt on an admitted update.
 
 All getters complete before the cohort stages. One paired stage advances every

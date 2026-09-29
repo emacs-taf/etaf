@@ -50,7 +50,7 @@
 (declare-function ebox-transaction-active-p "ebox" ())
 (declare-function etaf--host-update-queue-cell
                   "etaf-host-update" (runtime effect-id))
-(declare-function etaf--host-update-reset "etaf-host-update" (runtime))
+(declare-function etaf--host-update-reset "etaf-host-update" (runtime &optional publication-p))
 (declare-function etaf--host-cohort-cancel "etaf-host-cohort" (runtime))
 (declare-function etaf--host-update-try-flush "etaf-host-update" (runtime))
 (declare-function etaf--host-update-environment "etaf-host-update" (runtime effect-id))
@@ -374,11 +374,15 @@ the sequential `etaf--pvec-put' contract."
   dirty-effect-queue-tail
   prepared-host-updates prepared-host-generation prepared-host-cohort
   prepared-host-variants prepared-host-binding-token prepared-host-rejections
-  prepared-host-members prepared-host-timer
+  prepared-host-members
+  prepared-host-timer
   flush-function
   ;; Consumers can inline public accessors such as `etaf-runtime-mounted-p'.
   ;; Append new slots here so upgrading ETAF preserves their compiled offsets.
-  candidate-invalidated-ancestors)
+  candidate-invalidated-ancestors
+  prepared-text-cohort prepared-text-members prepared-text-rejections
+  prepared-interactive-effect-ids
+  prepared-text-effect-ids prepared-related-text-effect-ids)
 
 (defcustom etaf-generation-mirror-route 'project
   "Compatibility mirror route used after a committed generation changes.
@@ -1425,16 +1429,17 @@ Retain failed work for retry and preserve every explicit candidate request."
                          (etaf-runtime-dirty-effect-queue runtime)))))))
 
 (defun etaf--runtime-primitive-queue-p (runtime generation)
-  "Whether all queued owners are GENERATION's already classified primitives.
-The existing binding table also records unsupported primitive owners.  Neither
-kind can retire descendants, so no Component ancestry lookup is necessary."
-  (when (eq generation (etaf-runtime-prepared-host-generation runtime))
-    (let ((table (etaf-runtime-prepared-host-updates runtime))
-          (queue (etaf-runtime-dirty-effect-queue runtime))
-          (primitive-p t))
-      (while (and queue primitive-p)
-        (unless (gethash (pop queue) table) (setq primitive-p nil)))
-      primitive-p)))
+  "Whether all queued GENERATION owners are primitive Host or inline effects.
+Classify only queued effect records.  These owners cannot retire descendants;
+classification never binds programs or evaluates their application getters."
+  (let ((queue (etaf-runtime-dirty-effect-queue runtime))
+        (primitive-p t))
+    (while (and queue primitive-p)
+      (let ((effect (etaf--generation-effect generation (pop queue))))
+        (unless (and effect (memq (etaf--generation-effect-kind effect)
+                                  '(host-properties inline)))
+          (setq primitive-p nil))))
+    primitive-p))
 
 (defun etaf--runtime-source-effect-shadowed-p
     (runtime generation effect ids single-p)
@@ -6542,7 +6547,7 @@ walk even when a nearer ancestor retains its invalidation."
                         (nreverse updated))
                   retirement)))
               (run-step 'primitive-preparation
-                        (lambda () (etaf--host-update-reset runtime)))
+                        (lambda () (etaf--host-update-reset runtime t)))
               (setq public-condition
                     (etaf--runtime-drain-retirement runtime retirement t))
               (when-let* ((condition (or first-condition public-condition)))
@@ -6672,7 +6677,7 @@ walk even when a nearer ancestor retains its invalidation."
                  (etaf--runtime-promote-behaviors runtime retirement)
                  (etaf--runtime-run-lifecycle runtime groups retirement)))
               (run-step 'primitive-preparation
-                        (lambda () (etaf--host-update-reset runtime)))
+                        (lambda () (etaf--host-update-reset runtime t)))
               (setq public-condition
                     (etaf--runtime-drain-retirement runtime retirement t))
               (when-let* ((condition (or first-condition public-condition)))

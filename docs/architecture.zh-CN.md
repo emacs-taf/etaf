@@ -581,18 +581,26 @@ Scope 所有；根 Host 使用 Runtime Scope。不相关的 palette 修改保留
 发布和回滚。
 
 独立响应式 Host 属性及单表达式 Text Host 使用预备执行路径。View 编译器
-提供属性与 inline 程序；挂载或普通发布后、公共生命周期回调前，Runtime
-遍历当前 live generation 一次，把已经登记的响应式 primitive 程序绑定进一个
-待编译成员池。绑定不求值应用 getter，也不构造未使用的 computed 分支。把成员
-池编译进 Ebox 保留场景才是昂贵的一半，因此它由 idle timer 执行，或在该
-generation 第一次全 primitive flush 需要 cohort 时按需执行；先到达的结构性
-发布直接丢弃待编译池。Ebox 的准备报告排除不支持的成员，其余成员共享稳定
-cohort 与 binding capability。未知成员或失效 capability 使用普通发布，由其
-控制面边界重建绑定；输入分发不会为含结构性工作的队列编译 cohort。
+提供属性与 inline 程序。成功发布后，Runtime 从已接纳的 candidate effect 增量维护
+交互 effect-ID 集合，并用当前 generation 检查保留 ID；不遍历语义根或保留旧提供方
+handle。几何、绘制等非纯文字 primitive 在 0.15 秒 idle 边界准备，不求值应用
+getter。inline text 和 content/hover-content 程序在已有 computed 依赖边最终连接到
+交互成员同用的 ref 时加入该组。文字 ID 清单同样由已接纳的 effect 增量维护；
+根来源发现只读已有依赖边，不强制求值惰性计算。独立文字来源继续使用按需 cohort。若提供方准入排除了全部非文字成员，idle 准备
+便将剩余配套文字留给真实需求，不为未使用的纯文字余集编译场景。
+
+交互／混合工作与纯文字使用独立 cohort 和拒绝缓存。真实文字队列只准备自身成员，
+不会重新编译交互集合；同时包含两类变化的 batch 仍通过一个混合 cohort 原子发布。
+各 cohort 独占可变调用存储；重绑重叠 effect 前先废弃另一 cohort，避免其持有旧
+属性单元。后续子集复用各自成员索引。首次真实文字更新仍包含其必需的场景冷准备。
+
+普通发布或 binding token 变化丢弃两类操作缓存。不支持的成员由 Ebox 准备报告
+决定，框架没有 portal 或应用特定的准入规则。准备或求值失败保留普通发布与重试
+行为。结构队列不会在分发期间启动 primitive 准备。
 
 同一 cohort 覆盖几何、绘制、native hover-content、单表达式 Text、已知 class
 变体、固定边框形状的颜色及 Ebox 实际度量证明允许的 normal/bold 变化。class
-变体按编译 Host 程序归集 generation 中已有或过去接受的值；普通 lowering 与
+变体按编译 Host 程序归集准备成员的已提交值及保留历史；普通 lowering 与
 冷变体表都把 ETAF 的空白字符串/递归列表/symbol 语法转为 canonical token。
 热写入仅查表并使用提供方值向量，语义与 public props 保留原始作者值；这是投影，
 不增加状态权威。
@@ -600,8 +608,8 @@ cohort 与 binding capability。未知成员或失效 capability 使用普通发
 热分发只把 dirty effect id 映射到保留的索引，求值该成员，并消费其求值完成时
 捕获的依赖版本。observer 的较新写入及仍 dirty 的 computed 保留排队。单个
 几何更新也使用同一 cohort，不再通过另一个操作重新绑定并使 focus cohort 失效。
-既有 primitive 绑定表还能证明整批没有结构 owner，此时 settlement 跳过祖先链
-并复用已绑定的 Component 环境。已接纳更新不重建 View、属性 plist 或结构候选。
+队列中的 effect 记录证明整批没有结构 owner，此时 settlement 跳过祖先链，
+并在已有绑定时复用 Component 环境。已接纳更新不重建 View、属性 plist 或结构候选。
 
 全部 getter 成功后才 stage cohort。一次成对 stage 写入所有变化成员，仅推进
 一次语义 generation/token；rollback 逆序恢复成员。成功的 inline 变化对每个

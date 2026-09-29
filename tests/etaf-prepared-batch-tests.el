@@ -269,5 +269,157 @@ LEFT, COLOR, HOVER, CAPTION and REJECT are the mounted View's input handles."
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(ert-deftest etaf-prepared-batch-expands-demand-and-rebinds-after-structure ()
+  "New primitive sources join atomic updates and refresh after structural work."
+  (let ((buffer (generate-new-buffer " *etaf-demanded-cohort*"))
+        (left (etaf-ref '(ch 0))) (color (etaf-ref "#112233"))
+        (hover (etaf-ref "Hover")) (caption (etaf-ref "Value00"))
+        (extra (etaf-ref nil)) rejected)
+    (unwind-protect
+        (let ((runtime
+               (etaf-runtime-for-buffer
+                (etaf-mount
+                 buffer
+                 (etaf-view
+                  (box :position 'relative :width '(ch 24) :height '(lh 4)
+                    (etaf-prepared-batch-test--panel
+                     :left left :color color :hover hover :caption caption :z-index 1
+                     :reject (lambda () rejected) :report #'ignore)
+                    (expr (when (etaf-value extra) (etaf-view (box :position 'absolute :left '(ch 0) :top '(lh 3)
+                                                       :width '(vw 10) :height '(lh 1) :z-index 0
+                                                   (text "Extra")))))))))))
+          (cl-labels
+              ((assert-current ()
+                 (should (equal (etaf-value left)
+                                (plist-get (etaf-runtime-host-props-for runtime 'prepared-panel)
+                                           :left)))
+                 (should (equal (etaf-value color)
+                                (plist-get (etaf-runtime-host-props-for runtime 'prepared-caption)
+                                           :color)))
+                 (with-current-buffer buffer
+                   (should (string-match-p (regexp-quote (etaf-value caption))
+                                           (buffer-substring-no-properties (point-min) (point-max)))))
+                 (should
+                  (equal
+                   (etaf-prepared-batch-test--appearance
+                    (with-current-buffer buffer (buffer-string)))
+                   (etaf-prepared-batch-test--appearance
+                    (ebox-render (plist-get (etaf-runtime-snapshot runtime) :input))))))
+               (accept (function)
+                 (let ((revision (etaf-runtime-generation runtime)))
+                   (funcall function)
+                   (should (= (1+ revision) (etaf-runtime-generation runtime)))
+                   (ert-info ((format "Inputs %S; preparation %S"
+                                      (list (etaf-value left) (etaf-value caption) (etaf-value color))
+                                      (ebox-update-prepare-report buffer)))
+                     (should (eq 'prepared-update
+                                 (plist-get (ebox-buffer-update-report buffer) :projection-kind))))
+                   (assert-current))))
+            ;; Request one owner first, then introduce a new inline owner whose
+            ;; first evaluation fails.  The written ref survives for retry.
+            (accept (lambda () (etaf-set-value left '(ch 1))))
+            (let ((before (with-current-buffer buffer (buffer-string)))
+                  (revision (etaf-runtime-generation runtime)))
+              (setq rejected t)
+              (should-error (etaf-set-value caption "Value01"))
+              (should (= revision (etaf-runtime-generation runtime)))
+              (should (equal-including-properties before
+                                                 (with-current-buffer buffer (buffer-string))))
+              (setq rejected nil)
+              (accept (lambda () (etaf-runtime-flush runtime))))
+            ;; A second program on the same Text Host joins later; previously
+            ;; demanded geometry and inline sources remain authoritative.
+            (accept (lambda () (etaf-set-value color "#445566")))
+            (accept (lambda ()
+                      (etaf-batch
+                        (etaf-set-value left '(ch 2))
+                        (etaf-set-value color "#667788")
+                        (etaf-set-value caption "Value02"))))
+            (accept (lambda () (etaf-set-value caption "Value03")))
+            (let ((token (ebox-update-binding-token buffer)))
+              (etaf-set-value extra t)
+              (should-not (eq token (ebox-update-binding-token buffer)))
+              (with-current-buffer buffer
+                (should (string-match-p "Extra"
+                                        (buffer-substring-no-properties (point-min) (point-max))))))
+            ;; The first real source notification after ordinary publication
+            ;; prepares its current generation and publishes immediately.
+            (accept (lambda () (etaf-set-value caption "Value04")))
+            (accept (lambda ()
+                      (etaf-batch
+                        (etaf-set-value left '(ch 3))
+                        (etaf-set-value color "#8899AA")
+                        (etaf-set-value caption "Value05"))))
+            ;; Separate text and interactive cohorts may alternate after a
+            ;; mixed batch.  Each must retain current public source cells.
+            (dotimes (index 3)
+              (accept (lambda () (etaf-set-value caption (format "Separate%d" index))))
+              (accept (lambda () (etaf-set-value left (list 'ch (+ 4 index))))))
+            (let ((token (ebox-update-binding-token buffer)))
+              (ebox-surface-update-buffer-viewport buffer 320 12)
+              (should-not (eq token (ebox-update-binding-token buffer))))
+            (let ((ebox-viewport-width 320) (ebox-viewport-height 12))
+              (accept (lambda () (etaf-set-value caption "After viewport")))
+              (accept (lambda ()
+                        (etaf-batch
+                          (etaf-set-value color "#AABBCC")
+                          (etaf-set-value caption "Mixed viewport")))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest etaf-prepared-batch-couples-computed-paint-and-status ()
+  "Computed sibling inputs share atomic updates while an independent clock stays live."
+  (let* ((buffer (generate-new-buffer " *etaf-coupled-status*"))
+         (selection (etaf-ref 0)) (clock (etaf-ref "12:00:00"))
+         (paint (etaf-computed (lambda () (if (cl-oddp (etaf-value selection))
+                                            "#AA2233" "#334455"))))
+         (status (etaf-computed (lambda () (format "Selected %d" (etaf-value selection)))))
+         rejected)
+    (unwind-protect
+        (let ((runtime
+               (etaf-runtime-for-buffer
+                (etaf-mount
+                 buffer
+                 (etaf-view
+                  (box :position 'relative :width '(ch 32) :height '(lh 3)
+                    (box :ref 'panel :position 'absolute :left '(ch 0) :top '(lh 0)
+                         :z-index 1 :width '(ch 24) :height '(lh 2) :color (etaf-value paint)
+                      (text (expr (let ((value (etaf-value status)))
+                                    (when rejected (error "Rejected status"))
+                                    value)))
+                      (text (expr (etaf-value clock))))))))))
+          (cl-labels ((accept (function)
+                        (let ((revision (etaf-runtime-generation runtime)))
+                          (funcall function)
+                          (should (= (1+ revision) (etaf-runtime-generation runtime)))
+                          (should (eq 'prepared-update
+                                      (plist-get (ebox-buffer-update-report buffer) :projection-kind)))
+                          (should (equal (etaf-value paint)
+                                         (plist-get (etaf-runtime-host-props-for runtime 'panel) :color)))
+                          (with-current-buffer buffer
+                            (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+                              (ert-info ((format "Live %s; snapshot %s"
+                                                 text
+                                                 (substring-no-properties
+                                                  (ebox-render (plist-get (etaf-runtime-snapshot runtime) :input)))))
+                                (should (string-match-p (regexp-quote (etaf-value status)) text)))
+                              (should (string-match-p (regexp-quote (etaf-value clock)) text)))))))
+            (accept (lambda () (etaf-set-value selection 1)))
+            (accept (lambda () (etaf-set-value clock "12:00:01")))
+            (accept (lambda () (etaf-set-value selection 2)))
+            (let ((before (with-current-buffer buffer (buffer-string)))
+                  (revision (etaf-runtime-generation runtime)))
+              (setq rejected t)
+              (should-error (etaf-set-value selection 3))
+              (should (= revision (etaf-runtime-generation runtime)))
+              (should (equal-including-properties before
+                                                 (with-current-buffer buffer (buffer-string))))
+              (setq rejected nil)
+              (accept (lambda () (etaf-runtime-flush runtime))))
+            (accept (lambda () (etaf-set-value clock "12:00:02")))
+            (accept (lambda () (etaf-set-value selection 4)))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (provide 'etaf-prepared-batch-tests)
 ;;; etaf-prepared-batch-tests.el ends here
