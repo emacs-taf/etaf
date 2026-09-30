@@ -1458,6 +1458,11 @@ Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, 
 - Keep writes out of rendering; use an event, Action, watch callback, or Effect.
 - Use `etaf-ui` Components for product controls; core Hosts are the structural foundation.
 - Stop a Data Controller and unmount a Runtime when their owner is no longer needed.
+- Centre a row's contents by justifying the row with those items as its direct
+  children.  A nested Flex child fills the row's main axis, leaving the parent's
+  `:justify-content` no free space to distribute, so a row that centres a bare
+  box does not centre the same boxes wrapped in an extra `(flex ...)`; justify
+  that wrapper instead, or drop it.
 
 Ordinary applications define and mount Components from lexical-binding `.el`
 files. The optional Playground uses inert `.etaf` structure plus an explicitly
