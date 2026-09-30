@@ -48,6 +48,7 @@ clean:
 .PHONY: structure-check setup-hooks
 structure-check:
 	python3 scripts/check-repository.py
+	python3 scripts/check-agents-map.py
 setup-hooks:
 	git config --local core.hooksPath .githooks
 
