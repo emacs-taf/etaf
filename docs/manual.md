@@ -1581,7 +1581,13 @@ ETAF_GUI_CAPTURE_PID=12345 scripts/capture-emacs-window.sh -x /tmp/app-checkpoin
 ```
 
 Keep the target frame open and non-minimized. Validate a known content change in
-before/after pixels to establish fresh background rendering. Hidden, minimized,
+before/after pixels to establish fresh background rendering. Measure an
+application's painted canvas width from the screenshot itself: scan one row for
+the background-colour boundary and divide that pixel column by the frame's
+character width. The longest buffer line is not that measurement: trailing
+padding is not always written into the buffer, so a short line can sit inside a
+full-width viewport and a line-length reading looks like a shrunken render.
+Hidden, minimized,
 off-Space and locked-session behavior is not covered by this procedure. Background
 Lisp callbacks and runtime timing do not require application activation; report
 them as background measurements, separately from foreground input-to-display
