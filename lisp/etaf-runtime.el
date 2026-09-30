@@ -791,6 +791,61 @@ or multi-Host updates use the ordinary geometry batch."
   (etaf-runtime-update-host-geometries
    runtime (list (cons host-ref geometry))))
 
+;;;###autoload
+(defun etaf-runtime-update-host-content (runtime host-ref content)
+  "Replace HOST-REF's published text with CONTENT in mounted RUNTIME.
+
+This is the text half of ETAF's retained Host display boundary, next to
+`etaf-runtime-update-host-geometry'.  CONTENT must be a string.  The update
+replaces only the addressed Host's text and publishes once through Ebox, so a
+caller whose controlled state changed one string does not pay for an ordinary
+ETAF publication.  The caller's state stays authoritative: the next ordinary
+publication must render the same text, or the retained Host is reconciled to
+that publication.  Unknown Hosts, unmounted Runtimes, non-string CONTENT and
+Hosts whose retained node cannot hold text signal `etaf-runtime-error' without
+a partial update."
+  (etaf-runtime-update-host-contents runtime (list (cons host-ref content))))
+
+;;;###autoload
+(defun etaf-runtime-update-host-contents (runtime updates)
+  "Replace several HOST-REF texts in mounted RUNTIME.
+
+UPDATES is an alist of `(HOST-REF . STRING)' entries.  Every target validates
+before the first replacement, and the whole batch commits as one retained Ebox
+publication, so a caller that keeps several small texts live (a clock and a
+meter, say) publishes once per change instead of once per node.  Failures
+signal `etaf-runtime-error' without a partial update."
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (unless (and (listp updates)
+               (cl-every (lambda (entry)
+                           (and (consp entry) (stringp (cdr entry))))
+                         updates))
+    (signal 'etaf-runtime-error
+            (list "Invalid Host content updates" updates)))
+  (when (ebox-transaction-active-p)
+    (signal 'etaf-runtime-error
+            (list "Cannot update Host content inside an active Ebox transaction")))
+  (let (resolved)
+    (dolist (entry updates)
+      (let* ((host-ref (car entry))
+             (props (gethash host-ref (etaf-runtime-host-props runtime))))
+        (unless props
+          (signal 'etaf-runtime-error
+                  (list "Unknown committed Host" host-ref)))
+        (push (cons (or (plist-get props :id) host-ref) (cdr entry))
+              resolved)))
+    (setq resolved (nreverse resolved))
+    (with-current-buffer (etaf-runtime-buffer runtime)
+      (condition-case error-data
+          (ebox-call-with-update-batch
+           (lambda ()
+             (dolist (entry resolved)
+               (ebox-region-update (car entry) :content (cdr entry)))))
+        (error
+         (signal 'etaf-runtime-error
+                 (list "Host content update rejected"
+                       (mapcar #'car resolved) error-data)))))))
+
 (defun etaf-runtime-host-props-entries (runtime)
   "Return committed Host contribution entries for RUNTIME."
   (copy-tree (etaf--generation-index-entries

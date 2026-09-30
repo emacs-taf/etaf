@@ -1057,6 +1057,28 @@
 ;; The plist spine is fresh; contained values preserve identity and are
 ;; read-only. Later geometry publication does not replace fields in this copy.
 ;;
+;; Function: etaf-runtime-update-host-content (runtime host-ref content)
+;;;###autoload (autoload 'etaf-runtime-update-host-content "etaf" nil nil)
+;; Replace HOST-REF's published text with CONTENT in mounted RUNTIME.
+;;
+;; This is the text half of the retained Host display boundary, next to
+;; `etaf-runtime-update-host-geometry'.  CONTENT must be a string.  The update
+;; replaces only the addressed Host and publishes once through Ebox, so a
+;; caller whose controlled state changed one string skips an ordinary ETAF
+;; publication.  The next ordinary publication must render the same text, or
+;; the retained Host is reconciled to it.  Unknown Hosts, unmounted Runtimes,
+;; non-string CONTENT and Hosts whose retained node cannot hold text signal
+;; `etaf-runtime-error' without a partial update.
+;;
+;; Function: etaf-runtime-update-host-contents (runtime updates)
+;;;###autoload (autoload 'etaf-runtime-update-host-contents "etaf" nil nil)
+;; Replace several HOST-REF texts in one retained Ebox publication.
+;;
+;; UPDATES is an alist of committed Host references to replacement strings.
+;; Every target validates before the first replacement, so a caller keeping
+;; several small texts live publishes once per change instead of once per node.
+;; Failures signal `etaf-runtime-error' without a partial update.
+;;
 ;; Function: etaf-runtime-update-host-geometry (runtime host-ref &rest geometry)
 ;;;###autoload (autoload 'etaf-runtime-update-host-geometry "etaf" nil nil)
 ;; Apply Ebox's typed incremental geometry update to HOST-REF in mounted RUNTIME.

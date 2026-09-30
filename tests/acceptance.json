@@ -1243,6 +1243,16 @@
       "purpose": "The ETAF incremental Host geometry boundary updates the retained Ebox region while leaving window policy to the caller."
     },
     {
+      "name": "etaf-runtime-update-host-content-replaces-retained-text",
+      "file": "tests/etaf-runtime-content-tests.el",
+      "purpose": "The ETAF incremental Host content boundary replaces one retained text without an ordinary publication, and the next ordinary publication keeps the caller's state authoritative."
+    },
+    {
+      "name": "etaf-runtime-update-host-content-rejects-invalid-targets",
+      "file": "tests/etaf-runtime-content-tests.el",
+      "purpose": "Invalid Host content targets signal an ETAF runtime error before any replacement, so a rejected batch leaves the committed text untouched."
+    },
+    {
       "name": "etaf-host-geometry-publishes-semantics-and-detached-snapshots",
       "file": "tests/etaf-host-geometry-tests.el",
       "purpose": "Repeated reactive geometry changes keep semantic properties, retained interactions and provider geometry coherent while earlier exported snapshots and property results remain unchanged."
