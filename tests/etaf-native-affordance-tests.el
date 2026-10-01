@@ -109,7 +109,7 @@ boundary keeps the plain arrow."
                                                  :disabled t "Off"))))
                    "Off")))
     (should (eq (car default) 'hand))
-    (should (eq (car slider) 'hdrag))
+    (should (eq (car slider) 'hand))
     (should (null (car explicit)))
     (should (null (car disabled)))))
 
