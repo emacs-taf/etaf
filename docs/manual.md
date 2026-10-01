@@ -1002,6 +1002,10 @@ caller's normal state publication path; invalid geometry signals
 `etaf-runtime-error` without a partial update.
 Use `etaf-runtime-update-host-geometries` with an alist when several Hosts,
 such as the old and new focused windows, must change in one Ebox publication.
+A single-Host update uses Ebox's retained prepared geometry and is the fast
+path for repeated moves; it resolves the Host's Ebox region by the `:id`
+string the caller published, so name it (`:id` mirrors `:ref`).  Multi-Host
+updates fall back to the ordinary geometry batch.
 
 ```elisp
 (etaf-runtime-update-host-geometry
