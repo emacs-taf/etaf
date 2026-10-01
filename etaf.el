@@ -917,8 +917,10 @@
 ;; width, so the result matches what the renderer itself uses after a resize.
 ;; Return (WIDTH . HEIGHT) in pixels and lines, or nil when there is no mounted
 ;; Runtime or live window, which makes a call from a window-change hook a safe
-;; no-op.  Call it after mounting before the window manager settled the frame,
-;; or after a window was resized while its buffer was not displayed.
+;; no-op.  The framework already refits every mounted Runtime once a window
+;; resize settles (see `etaf-runtime-viewport'), so call this only for windows
+;; the resize notification does not cover, such as a buffer mounted before the
+;; window manager displayed it.
 ;;
 ;; Function: etaf-render (view)
 ;;;###autoload (autoload 'etaf-render "etaf" nil nil)
@@ -1130,6 +1132,15 @@
 ;; it like any other publication.  Return non-nil when the renderer refitted a
 ;; mounted surface; RUNTIME defaults to the Runtime in the current buffer, and
 ;; a non-mounted Runtime signals `etaf-runtime-error'.
+;;
+;; Function: etaf-runtime-viewport (&optional runtime)
+;;;###autoload (autoload 'etaf-runtime-viewport "etaf" nil nil)
+;; Return mounted RUNTIME's canvas viewport as (WIDTH . HEIGHT).
+;; WIDTH is pixels and HEIGHT is lines; the value matches the renderer's
+;; display-safe window size and follows `etaf-runtime-refit', including the
+;; automatic refit after a window size change.  RUNTIME defaults to the Runtime
+;; in the current buffer, and a non-mounted Runtime signals
+;; `etaf-runtime-error'.
 ;;
 ;; Function: etaf-runtime-root-node (runtime)
 ;;;###autoload (autoload 'etaf-runtime-root-node "etaf" nil nil)

@@ -1076,5 +1076,53 @@
           (should-not (etaf-refit)))
       (kill-buffer buffer))))
 
+(ert-deftest etaf-runtime-viewport-reports-and-follows-refits ()
+  "The viewport reader reports mount and refit sizes, and unmount signals."
+  (let ((buffer-name " *etaf-test-viewport*"))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name (etaf-view (text "Viewport"))
+                      '(:viewport-width 640 :viewport-height 24))
+          (let ((runtime (etaf-runtime-for-buffer buffer-name)))
+            (should (equal (etaf-runtime-viewport runtime) '(640 . 24)))
+            (should (etaf-runtime-refit runtime 320 12))
+            (should (equal (etaf-runtime-viewport runtime) '(320 . 12)))
+            (etaf-unmount runtime)
+            (should-error (etaf-runtime-viewport runtime)
+                          :type 'etaf-runtime-error)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-runtime-refits-after-a-window-size-change ()
+  "A settled window size change refits the mounted Runtime automatically."
+  (let ((buffer-name " *etaf-test-auto-refit*")
+        (original (get-buffer "*scratch*")))
+    (unwind-protect
+        (progn
+          (set-window-buffer (selected-window) (get-buffer-create buffer-name))
+          (etaf-mount buffer-name (etaf-view (text "Auto refit")))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (window (get-buffer-window buffer-name t))
+                 (before (etaf-runtime-viewport runtime)))
+            (should (consp before))
+            (set-frame-size (selected-frame) 100 30)
+            ;; Batch Emacs has no window manager; notify the framework the way
+            ;; a resized frame would.
+            (run-hook-with-args 'window-size-change-functions (selected-frame))
+            (sleep-for 0.4)
+            (let ((after (etaf-runtime-viewport runtime)))
+              (should (equal (cdr after) (window-body-height window)))
+              (should-not (equal after before)))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer))
+      (when-let* ((window (selected-window)))
+        (when (buffer-live-p original)
+          (set-window-buffer window original)))
+      (set-frame-size (selected-frame) 80 25))))
+
 (provide 'etaf-tests)
 ;;; etaf-tests.el ends here

@@ -6894,10 +6894,12 @@ non-mounted Runtime signals `etaf-runtime-error'."
                (not (and (numberp viewport-height) (> viewport-height 0))))
       (signal 'wrong-type-argument (list 'numberp viewport-height)))
     (etaf--assert-not-rendering 'runtime-refit)
-    (ebox-call-with-render-burst
-     (lambda ()
-       (etaf-render-port-refit (etaf-runtime-buffer runtime)
-                               viewport-width viewport-height)))))
+    (prog1 (ebox-call-with-render-burst
+            (lambda ()
+              (etaf-render-port-refit (etaf-runtime-buffer runtime)
+                                      viewport-width viewport-height)))
+      (puthash runtime (cons viewport-width viewport-height)
+               etaf--runtime-viewports))))
 
 ;;;###autoload
 (defun etaf-refit (&optional runtime window)
@@ -6907,8 +6909,9 @@ showing that buffer.  The width is the renderer's display-safe window width, so
 the result matches what the renderer itself uses after a resize.  Return
 \(WIDTH . HEIGHT) in pixels and lines, or nil when there is no mounted Runtime
 or live window, which makes a call from a window-change hook a safe no-op.
-Call this after mounting before the window manager settled the frame, or after
-a window was resized while its buffer was not displayed."
+The framework already refits every mounted Runtime once a window resize
+settles, so call this only for windows the resize notification does not cover,
+such as a buffer mounted before the window manager displayed it."
   (let* ((runtime (or runtime (etaf-runtime-for-buffer (current-buffer))))
          (buffer (and (etaf-runtime-p runtime) (etaf-runtime-buffer runtime)))
          (window (or window
@@ -6922,6 +6925,112 @@ a window was resized while its buffer was not displayed."
         (when (and width (> width 0))
           (etaf-runtime-refit runtime width height)
           (cons width height))))))
+
+(defvar etaf--runtime-viewports (make-hash-table :test #'eq)
+  "Canvas viewport of each live mounted Runtime, keyed by Runtime.
+The value is (WIDTH . HEIGHT) in pixels and lines; `etaf-runtime-viewport'
+reports it and the window-change handler compares against it.")
+
+(defvar etaf--runtime-refit-delay 0.12
+  "Seconds of quiet after the last window size change before refitting.
+A window manager delivers a resize as a burst of events, and the final size is
+the one that matters; refitting once the burst settles keeps a drag from
+repainting every intermediate frame.")
+
+(defvar etaf--runtime-refit-timer nil
+  "Pending trailing task that refits runtimes after a window resize.")
+
+(defvar etaf--runtime-refit-frames nil
+  "Frames whose window sizes changed since the last settled refit.")
+
+(defun etaf--runtime-display-window (runtime)
+  "Return the window that displays RUNTIME's buffer, or nil."
+  (let ((buffer (etaf-runtime-buffer runtime)))
+    (and (buffer-live-p buffer) (get-buffer-window buffer t))))
+
+(defun etaf--runtime-window-viewport (window)
+  "Return the display-safe (WIDTH . HEIGHT) of live WINDOW, or nil.
+WIDTH is pixels and HEIGHT is lines, matching what the renderer itself uses
+as the canvas."
+  (when (window-live-p window)
+    (let ((width (or (ebox-viewport-window-width window)
+                     (window-body-width window t)))
+          (height (window-body-height window)))
+      (when (and (numberp width) (> width 0)
+                 (numberp height) (> height 0))
+        (cons width height)))))
+
+(defun etaf--runtime-record-mount-viewport (runtime width height)
+  "Record RUNTIME's mounted canvas from WIDTH/HEIGHT or its display window.
+Explicit WIDTH or HEIGHT win over the window's own size, because mount options
+override the renderer's default.  Return the recorded (WIDTH . HEIGHT), or nil
+when neither source is usable."
+  (let* ((from-window (and (etaf--runtime-display-window runtime)
+                           (etaf--runtime-window-viewport
+                            (etaf--runtime-display-window runtime))))
+         (viewport (cons (or width (car-safe from-window))
+                         (or height (cdr-safe from-window)))))
+    (when (and (car viewport) (cdr viewport))
+      (puthash runtime viewport etaf--runtime-viewports))
+    viewport))
+
+(defun etaf--runtime-record-viewport (runtime viewport)
+  "Record VIEWPORT as RUNTIME's current canvas and return it."
+  (when viewport
+    (puthash runtime viewport etaf--runtime-viewports))
+  viewport)
+
+(defun etaf--runtime-window-size-change (frame)
+  "Record FRAME's size change and refit its runtimes once it settles."
+  (when (frame-live-p frame)
+    (cl-pushnew frame etaf--runtime-refit-frames)
+    (when etaf--runtime-refit-timer
+      (cancel-timer etaf--runtime-refit-timer))
+    (setq etaf--runtime-refit-timer
+          (run-at-time etaf--runtime-refit-delay nil
+                       #'etaf--runtime-refit-settled))))
+
+(defun etaf--runtime-refit-settled ()
+  "Refit every mounted Runtime whose display window changed size.
+This runs after the resize settles, so a Runtime that re-laid out its view for
+the new window is painted at the matching canvas even when the renderer's own
+resize notification arrived before the final size was known."
+  (setq etaf--runtime-refit-timer nil)
+  (let ((frames (prog1 (nreverse etaf--runtime-refit-frames)
+                  (setq etaf--runtime-refit-frames nil))))
+    (dolist (frame frames)
+      (when (frame-live-p frame)
+        (dolist (window (window-list frame 'no-minibuf))
+          (let* ((buffer (window-buffer window))
+                 (runtime (and (buffer-live-p buffer)
+                               (etaf-runtime-for-buffer buffer))))
+            (when (and runtime (etaf-runtime-mounted-p runtime))
+              (let ((viewport (and (eq window
+                                       (etaf--runtime-display-window runtime))
+                                   (etaf--runtime-window-viewport window))))
+                (when (and viewport
+                           (not (equal viewport
+                                       (gethash runtime etaf--runtime-viewports))))
+                  (condition-case nil
+                      (etaf-runtime-refit runtime (car viewport) (cdr viewport))
+                    (error nil))
+                  (etaf--runtime-record-viewport runtime viewport))))))))))
+
+(when (boundp 'window-size-change-functions)
+  (add-hook 'window-size-change-functions #'etaf--runtime-window-size-change))
+
+;;;###autoload
+(defun etaf-runtime-viewport (&optional runtime)
+  "Return mounted RUNTIME's canvas viewport as (WIDTH . HEIGHT).
+WIDTH is pixels and HEIGHT is lines; the value matches the renderer's
+display-safe window size and follows `etaf-runtime-refit', including the
+automatic refit after a window size change.  RUNTIME defaults to the Runtime
+in the current buffer, and a non-mounted Runtime signals `etaf-runtime-error'."
+  (let* ((runtime (etaf-runtime-require-mounted runtime))
+         (recorded (gethash runtime etaf--runtime-viewports)))
+    (or recorded
+        (when-let* ((window (etaf--runtime-display-window runtime)))
+          (etaf--runtime-window-viewport window)))))
 
 ;;;###autoload
 (defun etaf-runtime-snapshot (&optional runtime)
@@ -7093,10 +7202,14 @@ explicit dispatch isolation.  The observer is installed before publication."
   (let ((ebox-viewport-width (plist-get options :viewport-width))
         (ebox-viewport-height (plist-get options :viewport-height)))
     (ebox-call-with-render-burst
-     #'etaf--runtime-mount-now buffer-or-name view
-     (plist-get options :observer)
-     (or (plist-get options :scheduler-context)
-         etaf-scheduler-default-context))))
+     (lambda ()
+       (prog1 (etaf--runtime-mount-now buffer-or-name view
+                                       (plist-get options :observer)
+                                       (or (plist-get options :scheduler-context)
+                                           etaf-scheduler-default-context))
+         (when-let* ((runtime (etaf-runtime-for-buffer buffer-or-name)))
+           (etaf--runtime-record-mount-viewport
+            runtime ebox-viewport-width ebox-viewport-height)))))))
 
 (defun etaf--runtime-unmount-now (runtime &optional cause)
   "Unmount RUNTIME idempotently and retire its Component scopes.
@@ -7144,6 +7257,7 @@ unmount.  Host authority is invalidated before any unbounded cleanup."
                    :policy 'retryable-idempotent
                    :max-attempts 2))))
             (remhash (etaf-runtime-buffer runtime) etaf--runtime-table)
+            (remhash runtime etaf--runtime-viewports)
             (remhash (etaf-runtime-mount-epoch runtime)
                      etaf--runtime-route-registry)
             (maphash
