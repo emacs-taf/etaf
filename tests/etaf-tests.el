@@ -1035,5 +1035,46 @@
       (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
+(ert-deftest etaf-runtime-refit-reapplies-the-viewport ()
+  "Refit a mounted Runtime to an explicit viewport size."
+  (let ((buffer-name " *etaf-test-runtime-refit*"))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer-name (etaf-view (text "Runtime refit"))
+                      '(:viewport-width 640 :viewport-height 24))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (window (display-buffer (get-buffer buffer-name))))
+            (should (etaf-runtime-refit runtime 320 12))
+            (should (eq (plist-get (ebox-surface-update-buffer-viewport
+                                    (get-buffer buffer-name) 320 12)
+                                   :strategy)
+                        'no-op))
+            ;; The convenience entry uses the display window's safe width and
+            ;; stops being a refit once the Runtime is unmounted.
+            (let ((viewport (etaf-refit runtime window)))
+              (should (consp viewport))
+              (should (> (car viewport) 0))
+              (should (eq (plist-get (ebox-surface-update-buffer-viewport
+                                      (get-buffer buffer-name)
+                                      (car viewport) (cdr viewport))
+                                     :strategy)
+                          'no-op)))
+            (etaf-unmount runtime)
+            (should-error (etaf-runtime-refit runtime 320 12)
+                          :type 'etaf-runtime-error)
+            (should-not (etaf-refit runtime window))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
+(ert-deftest etaf-refit-without-a-mounted-runtime-is-a-no-op ()
+  "Refitting a buffer without a mounted Runtime returns nil."
+  (let ((buffer (generate-new-buffer " *etaf-test-no-runtime-refit*")))
+    (unwind-protect
+        (with-current-buffer buffer
+          (should-not (etaf-refit)))
+      (kill-buffer buffer))))
+
 (provide 'etaf-tests)
 ;;; etaf-tests.el ends here

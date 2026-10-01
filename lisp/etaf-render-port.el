@@ -346,6 +346,17 @@ FRAMEWORK-STAGE and FRAMEWORK-ROLLBACK are one required callback pair."
   "Release the retained Ebox surface owned by mounted BUFFER."
   (ebox-unmount-buffer (get-buffer buffer)))
 
+(defun etaf-render-port-refit (buffer viewport-width &optional viewport-height)
+  "Refit mounted BUFFER's renderer to VIEWPORT-WIDTH and VIEWPORT-HEIGHT.
+VIEWPORT-WIDTH is pixels; optional VIEWPORT-HEIGHT is lines.  Return non-nil
+when a mounted surface was refitted, and nil when BUFFER has no live mounted
+surface, so a refit of an already-unmounted buffer stays a safe no-op for
+window-change hooks."
+  (let ((buffer (get-buffer buffer)))
+    (when (and (buffer-live-p buffer) (ebox-surface-buffer-mounted-p buffer))
+      (ebox-rerender-buffer-with-context buffer viewport-width viewport-height)
+      t)))
+
 (defun etaf-render-port-mounted-p (buffer)
   "Return non-nil when BUFFER owns a live retained Ebox surface."
   (ebox-surface-buffer-mounted-p buffer))

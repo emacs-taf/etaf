@@ -6880,6 +6880,50 @@ Use `etaf-runtime-snapshot' for an explicit snapshot."
     (etaf-render-port-revision (etaf-runtime-buffer runtime))))
 
 ;;;###autoload
+(defun etaf-runtime-refit (runtime viewport-width &optional viewport-height)
+  "Refit mounted RUNTIME to VIEWPORT-WIDTH pixels and VIEWPORT-HEIGHT lines.
+The call re-resolves viewport units and viewport-dependent layout through the
+selected renderer port, so the framework's publication accounting sees it like
+any other publication.  Return non-nil when the renderer refitted a mounted
+surface; RUNTIME defaults to the Runtime in the current buffer, and a
+non-mounted Runtime signals `etaf-runtime-error'."
+  (let ((runtime (etaf-runtime-require-mounted runtime)))
+    (unless (and (numberp viewport-width) (> viewport-width 0))
+      (signal 'wrong-type-argument (list 'numberp viewport-width)))
+    (when (and viewport-height
+               (not (and (numberp viewport-height) (> viewport-height 0))))
+      (signal 'wrong-type-argument (list 'numberp viewport-height)))
+    (etaf--assert-not-rendering 'runtime-refit)
+    (ebox-call-with-render-burst
+     (lambda ()
+       (etaf-render-port-refit (etaf-runtime-buffer runtime)
+                               viewport-width viewport-height)))))
+
+;;;###autoload
+(defun etaf-refit (&optional runtime window)
+  "Refit a mounted Runtime to the display window's current viewport size.
+RUNTIME defaults to the Runtime of the current buffer, and WINDOW to the window
+showing that buffer.  The width is the renderer's display-safe window width, so
+the result matches what the renderer itself uses after a resize.  Return
+\(WIDTH . HEIGHT) in pixels and lines, or nil when there is no mounted Runtime
+or live window, which makes a call from a window-change hook a safe no-op.
+Call this after mounting before the window manager settled the frame, or after
+a window was resized while its buffer was not displayed."
+  (let* ((runtime (or runtime (etaf-runtime-for-buffer (current-buffer))))
+         (buffer (and (etaf-runtime-p runtime) (etaf-runtime-buffer runtime)))
+         (window (or window
+                     (and (buffer-live-p buffer) (get-buffer-window buffer t)))))
+    (when (and (etaf-runtime-p runtime)
+               (etaf-runtime-mounted-p runtime)
+               (window-live-p window))
+      (let ((width (or (ebox-viewport-window-width window)
+                       (window-body-width window t)))
+            (height (window-body-height window)))
+        (when (and width (> width 0))
+          (etaf-runtime-refit runtime width height)
+          (cons width height))))))
+
+;;;###autoload
 (defun etaf-runtime-snapshot (&optional runtime)
   "Export mounted RUNTIME's currently committed Ebox snapshot.
 Return a plist with `:input' (a canonical Ebox input), `:revision', and

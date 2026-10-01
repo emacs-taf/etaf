@@ -1280,6 +1280,8 @@
       "file": "tests/etaf-host-geometry-tests.el",
       "purpose": "A standalone absolute Host without a containing plane uses ordinary geometry validation, retains committed state on invalid input and accepts a later valid value."
     },
-    {"name": "etaf-conditional-layout-kind-change-keeps-runtime-type-counts", "file": "tests/etaf-conditional-lifecycle-tests.el", "purpose": "A retained conditional arm that switches from a Box layout to a Grid layout keeps runtime type counts exact, so removing the subtree afterwards succeeds instead of decrementing a bucket the node never entered."}
+    {"name": "etaf-conditional-layout-kind-change-keeps-runtime-type-counts", "file": "tests/etaf-conditional-lifecycle-tests.el", "purpose": "A retained conditional arm that switches from a Box layout to a Grid layout keeps runtime type counts exact, so removing the subtree afterwards succeeds instead of decrementing a bucket the node never entered."},
+    {"name": "etaf-runtime-refit-reapplies-the-viewport", "file": "tests/etaf-tests.el", "purpose": "A mounted Runtime refits to an explicit viewport, the convenience entry uses the display window's safe width, and both become safe no-ops once the Runtime is unmounted."},
+    {"name": "etaf-refit-without-a-mounted-runtime-is-a-no-op", "file": "tests/etaf-tests.el", "purpose": "Refitting a buffer that has no mounted Runtime returns nil instead of signaling, so a window-change hook can call it unconditionally."}
   ]
 }

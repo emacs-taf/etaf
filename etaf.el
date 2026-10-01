@@ -909,6 +909,17 @@
 ;;;###autoload (autoload 'etaf-ref-p "etaf" nil nil)
 ;;
 ;;
+;; Function: etaf-refit (&optional runtime window)
+;;;###autoload (autoload 'etaf-refit "etaf" nil nil)
+;; Refit a mounted Runtime to the display window's current viewport size.
+;; RUNTIME defaults to the Runtime of the current buffer, and WINDOW to the
+;; window showing that buffer.  The width is the renderer's display-safe window
+;; width, so the result matches what the renderer itself uses after a resize.
+;; Return (WIDTH . HEIGHT) in pixels and lines, or nil when there is no mounted
+;; Runtime or live window, which makes a call from a window-change hook a safe
+;; no-op.  Call it after mounting before the window manager settled the frame,
+;; or after a window was resized while its buffer was not displayed.
+;;
 ;; Function: etaf-render (view)
 ;;;###autoload (autoload 'etaf-render "etaf" nil nil)
 ;; Lower normalized VIEW to one atomic canonical Ebox input.
@@ -1110,6 +1121,15 @@
 ;;;###autoload (autoload 'etaf-runtime-mounted-p "etaf" nil nil)
 ;; Access slot "mounted-p" of `etaf-runtime' struct X.
 ;;
+;;
+;; Function: etaf-runtime-refit (runtime viewport-width &optional viewport-height)
+;;;###autoload (autoload 'etaf-runtime-refit "etaf" nil nil)
+;; Refit mounted RUNTIME to VIEWPORT-WIDTH pixels and VIEWPORT-HEIGHT lines.
+;; The call re-resolves viewport units and viewport-dependent layout through
+;; the selected renderer port, so the framework's publication accounting sees
+;; it like any other publication.  Return non-nil when the renderer refitted a
+;; mounted surface; RUNTIME defaults to the Runtime in the current buffer, and
+;; a non-mounted Runtime signals `etaf-runtime-error'.
 ;;
 ;; Function: etaf-runtime-root-node (runtime)
 ;;;###autoload (autoload 'etaf-runtime-root-node "etaf" nil nil)
