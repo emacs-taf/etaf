@@ -487,6 +487,8 @@ HOST-REF preserves an already allocated identity during retained updates."
       (let* ((runtime (or runtime etaf--render-runtime))
              (press (functionp (plist-get source-props :on-press)))
              (drag (functionp (plist-get source-props :on-drag)))
+             (role (let ((role (plist-get source-props :role)))
+                     (if (symbolp role) role (and role (intern role)))))
              (map (and runtime (or press drag) (not (plist-get source-props :disabled))
                        (etaf--runtime-interaction-keymap
                         runtime (plist-get ebox-props :source-identity) press drag
@@ -494,8 +496,19 @@ HOST-REF preserves an already allocated identity during retained updates."
         (setq ebox-props
               (etaf--merge-property
                ebox-props :interactions
-               (list :keymap map :tab-index (plist-get source-props :tab-index)
-                     :disabled (and (plist-get source-props :disabled) t))))))
+               (append
+                (list :keymap map :tab-index (plist-get source-props :tab-index)
+                      :disabled (and (plist-get source-props :disabled) t))
+                ;; A clickable Host advertises itself: press and drag boundaries
+                ;; carry the hand pointer, a horizontal slider the horizontal
+                ;; drag pointer.  An explicit :pointer, including an explicit
+                ;; nil, always wins.
+                (when (and (not (plist-get source-props :disabled))
+                           (not (plist-member source-props :pointer)))
+                  (cond ((and drag (eq role 'slider))
+                         (list :pointer 'hdrag))
+                        ((or press drag)
+                         (list :pointer 'hand)))))))))
     ;; Native affordances belong to Ebox even on ordinary, non-activating text.
     ;; Preserve explicit nil so a child can stop its parent's inherited paint
     ;; or help without creating an activation boundary.

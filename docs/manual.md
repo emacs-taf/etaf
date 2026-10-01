@@ -825,6 +825,9 @@ position coincides with a nested child.
 Hosts and Component root attributes also accept Ebox `:help-echo`, `:pointer`
 and `:hover-style`. For example, add `:pointer 'hand :help-echo "Save changes"
 :hover-style '(:text-decoration-line underline)` to a Button or Host.
+A Host with a press or drag callback already defaults to the hand pointer, and
+a `slider` with `:on-drag` to the horizontal drag pointer, so `:pointer` is only
+needed to choose another shape or to request an explicit nil.
 Help may be a native `(window object position)` function, which Emacs calls
 when requesting help. Hover accepts Ebox color and text-decoration paint;
 geometry remains ordinary style. Omitted capabilities inherit, while explicit

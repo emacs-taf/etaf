@@ -4,6 +4,12 @@
 
 ### Added
 
+- Interactive Hosts advertise themselves: a Host with an `:on-press` or
+  `:on-drag` callback publishes the hand pointer by default, and a `slider`
+  with `:on-drag` the horizontal drag pointer. Applications no longer declare
+  `:pointer 'hand` per element; an explicit `:pointer`, including an explicit
+  nil, still keeps its own shape, and a disabled boundary stays with the plain
+  arrow.
 - `etaf-retained-resize-open` mounts a runnable fixed-text resize example:
   a controlled `etaf-resizable-controlled` Behavior drives a clipped panel
   whose `:width`/`:height` bindings publish through Ebox's prepared crop

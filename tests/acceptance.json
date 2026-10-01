@@ -13,18 +13,66 @@
   ],
   "support": [],
   "cases": [
-    {"name": "etaf-component-output-publishes-flattened-single-root-child", "file": "tests/etaf-component-output-tests.el", "purpose": "A changed single-root loop child publishes through its stable Host address without republishing its parent or sibling, and matches fresh rendering."},
-    {"name": "etaf-component-output-keeps-range-membership-and-order", "file": "tests/etaf-component-output-tests.el", "purpose": "Two child ranges publish cardinality changes independently, while adding, removing or reordering their anchors still replaces the parent and matches fresh rendering."},
-    {"name": "etaf-component-output-publishes-only-changed-child-ranges", "file": "tests/etaf-component-output-tests.el", "purpose": "Parent rerenders publish only a changed nested child, retain parent publication for own content changes, and match fresh rendering."},
-    {"name": "etaf-prepared-batch-couples-computed-paint-and-status", "file": "tests/etaf-prepared-batch-tests.el", "purpose": "Paint and status computed from one reactive source publish atomically, recover from a rejected status getter, and alternate with independent clock updates without stale state."},
-    {"name": "etaf-prepared-batch-expands-demand-and-rebinds-after-structure", "file": "tests/etaf-prepared-batch-tests.el", "purpose": "Separately requested geometry, inline and paint programs preserve atomic mixed updates, rejected-input retry, alternating text and interaction cohorts, and first updates after structural publication or viewport changes."},
-    {"name": "etaf-theme-contextual-transforms-retain-consumer-context", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "Context-sensitive Theme transforms preserve distinct consuming Context values across source updates."},
-    {"name": "etaf-theme-unused-tokens-retain-publication", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "Unconsumed Theme token edits retain the committed generation while consumed token changes repaint."},
-    {"name": "etaf-theme-dynamic-token-switch-observes-selected-value", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "Prepared dynamic Theme token selection observes later edits of the selected key."},
-    {"name": "etaf-theme-source-replacement-retires-old-provider", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "Replacing a Theme provider observes the new source and retires publication from the old source."},
-    {"name": "etaf-theme-projection-transform-failure-retries-written-state", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "A failed Theme transform preserves committed output and retries the written palette without another write."},
-    {"name": "etaf-host-geometry-resizes-fixed-text-through-prepared-publication", "file": "tests/etaf-host-geometry-tests.el", "purpose": "Mounted fixed-text size bindings publish through the prepared provider while preserving semantic snapshots and input targets."},
-    {"name": "etaf-retained-resize-example-controls-size-and-cancellation", "file": "tests/etaf-host-geometry-tests.el", "purpose": "The runnable retained resize example changes controlled size, restores its origin on cancellation and preserves its independent peer."},
+    {
+      "name": "etaf-component-output-publishes-flattened-single-root-child",
+      "file": "tests/etaf-component-output-tests.el",
+      "purpose": "A changed single-root loop child publishes through its stable Host address without republishing its parent or sibling, and matches fresh rendering."
+    },
+    {
+      "name": "etaf-component-output-keeps-range-membership-and-order",
+      "file": "tests/etaf-component-output-tests.el",
+      "purpose": "Two child ranges publish cardinality changes independently, while adding, removing or reordering their anchors still replaces the parent and matches fresh rendering."
+    },
+    {
+      "name": "etaf-component-output-publishes-only-changed-child-ranges",
+      "file": "tests/etaf-component-output-tests.el",
+      "purpose": "Parent rerenders publish only a changed nested child, retain parent publication for own content changes, and match fresh rendering."
+    },
+    {
+      "name": "etaf-prepared-batch-couples-computed-paint-and-status",
+      "file": "tests/etaf-prepared-batch-tests.el",
+      "purpose": "Paint and status computed from one reactive source publish atomically, recover from a rejected status getter, and alternate with independent clock updates without stale state."
+    },
+    {
+      "name": "etaf-prepared-batch-expands-demand-and-rebinds-after-structure",
+      "file": "tests/etaf-prepared-batch-tests.el",
+      "purpose": "Separately requested geometry, inline and paint programs preserve atomic mixed updates, rejected-input retry, alternating text and interaction cohorts, and first updates after structural publication or viewport changes."
+    },
+    {
+      "name": "etaf-theme-contextual-transforms-retain-consumer-context",
+      "file": "tests/etaf-theme-cascade-tests.el",
+      "purpose": "Context-sensitive Theme transforms preserve distinct consuming Context values across source updates."
+    },
+    {
+      "name": "etaf-theme-unused-tokens-retain-publication",
+      "file": "tests/etaf-theme-cascade-tests.el",
+      "purpose": "Unconsumed Theme token edits retain the committed generation while consumed token changes repaint."
+    },
+    {
+      "name": "etaf-theme-dynamic-token-switch-observes-selected-value",
+      "file": "tests/etaf-theme-cascade-tests.el",
+      "purpose": "Prepared dynamic Theme token selection observes later edits of the selected key."
+    },
+    {
+      "name": "etaf-theme-source-replacement-retires-old-provider",
+      "file": "tests/etaf-theme-cascade-tests.el",
+      "purpose": "Replacing a Theme provider observes the new source and retires publication from the old source."
+    },
+    {
+      "name": "etaf-theme-projection-transform-failure-retries-written-state",
+      "file": "tests/etaf-theme-cascade-tests.el",
+      "purpose": "A failed Theme transform preserves committed output and retries the written palette without another write."
+    },
+    {
+      "name": "etaf-host-geometry-resizes-fixed-text-through-prepared-publication",
+      "file": "tests/etaf-host-geometry-tests.el",
+      "purpose": "Mounted fixed-text size bindings publish through the prepared provider while preserving semantic snapshots and input targets."
+    },
+    {
+      "name": "etaf-retained-resize-example-controls-size-and-cancellation",
+      "file": "tests/etaf-host-geometry-tests.el",
+      "purpose": "The runnable retained resize example changes controlled size, restores its origin on cancellation and preserves its independent peer."
+    },
     {
       "name": "etaf-primitive-bindings-follow-explicit-component-render",
       "file": "tests/etaf-primitive-binding-tests.el",
@@ -1280,10 +1328,35 @@
       "file": "tests/etaf-host-geometry-tests.el",
       "purpose": "A standalone absolute Host without a containing plane uses ordinary geometry validation, retains committed state on invalid input and accepts a later valid value."
     },
-    {"name": "etaf-conditional-layout-kind-change-keeps-runtime-type-counts", "file": "tests/etaf-conditional-lifecycle-tests.el", "purpose": "A retained conditional arm that switches from a Box layout to a Grid layout keeps runtime type counts exact, so removing the subtree afterwards succeeds instead of decrementing a bucket the node never entered."},
-    {"name": "etaf-runtime-refit-reapplies-the-viewport", "file": "tests/etaf-tests.el", "purpose": "A mounted Runtime refits to an explicit viewport, the convenience entry uses the display window's safe width, and both become safe no-ops once the Runtime is unmounted."},
-    {"name": "etaf-refit-without-a-mounted-runtime-is-a-no-op", "file": "tests/etaf-tests.el", "purpose": "Refitting a buffer that has no mounted Runtime returns nil instead of signaling, so a window-change hook can call it unconditionally."},
-    {"name": "etaf-runtime-viewport-reports-and-follows-refits", "file": "tests/etaf-tests.el", "purpose": "The viewport reader reports the mounted canvas and follows refits, and an unmounted Runtime signals."},
-    {"name": "etaf-runtime-refits-after-a-window-size-change", "file": "tests/etaf-tests.el", "purpose": "A settled window size change refits the mounted Runtime to the window's new display-safe size automatically."}
+    {
+      "name": "etaf-conditional-layout-kind-change-keeps-runtime-type-counts",
+      "file": "tests/etaf-conditional-lifecycle-tests.el",
+      "purpose": "A retained conditional arm that switches from a Box layout to a Grid layout keeps runtime type counts exact, so removing the subtree afterwards succeeds instead of decrementing a bucket the node never entered."
+    },
+    {
+      "name": "etaf-runtime-refit-reapplies-the-viewport",
+      "file": "tests/etaf-tests.el",
+      "purpose": "A mounted Runtime refits to an explicit viewport, the convenience entry uses the display window's safe width, and both become safe no-ops once the Runtime is unmounted."
+    },
+    {
+      "name": "etaf-refit-without-a-mounted-runtime-is-a-no-op",
+      "file": "tests/etaf-tests.el",
+      "purpose": "Refitting a buffer that has no mounted Runtime returns nil instead of signaling, so a window-change hook can call it unconditionally."
+    },
+    {
+      "name": "etaf-runtime-viewport-reports-and-follows-refits",
+      "file": "tests/etaf-tests.el",
+      "purpose": "The viewport reader reports the mounted canvas and follows refits, and an unmounted Runtime signals."
+    },
+    {
+      "name": "etaf-runtime-refits-after-a-window-size-change",
+      "file": "tests/etaf-tests.el",
+      "purpose": "A settled window size change refits the mounted Runtime to the window's new display-safe size automatically."
+    },
+    {
+      "name": "etaf-native-interactive-hosts-default-the-pointer",
+      "file": "tests/etaf-native-affordance-tests.el",
+      "purpose": "A press or drag boundary publishes the hand or horizontal drag pointer by default, while an explicit :pointer (including nil) and a disabled boundary keep their own shape."
+    }
   ]
 }

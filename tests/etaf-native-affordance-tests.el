@@ -86,5 +86,32 @@
         (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(ert-deftest etaf-native-interactive-hosts-default-the-pointer ()
+  "Press and drag boundaries carry a pointer without any declaration.
+An explicit :pointer, including an explicit nil, still wins, and a disabled
+boundary keeps the plain arrow."
+  (let ((default (etaf-native-affordance-test--properties
+                  (ebox-render
+                   (etaf-render (etaf-view (row :role 'button :on-press (lambda ()) "Press"))))
+                  "Press"))
+        (slider (etaf-native-affordance-test--properties
+                 (ebox-render
+                  (etaf-render (etaf-view (row :role 'slider :on-drag (lambda (_value) nil) "Slide"))))
+                 "Slide"))
+        (explicit (etaf-native-affordance-test--properties
+                   (ebox-render
+                    (etaf-render (etaf-view (row :role 'button :on-press (lambda ())
+                                                 :pointer nil "Quiet"))))
+                   "Quiet"))
+        (disabled (etaf-native-affordance-test--properties
+                   (ebox-render
+                    (etaf-render (etaf-view (row :role 'button :on-press (lambda ())
+                                                 :disabled t "Off"))))
+                   "Off")))
+    (should (eq (car default) 'hand))
+    (should (eq (car slider) 'hdrag))
+    (should (null (car explicit)))
+    (should (null (car disabled)))))
+
 (provide 'etaf-native-affordance-tests)
 ;;; etaf-native-affordance-tests.el ends here
