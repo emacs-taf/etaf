@@ -1514,6 +1514,17 @@ frame for this workflow. Preserve application focus so the user can keep working
 in other apps. The `emacsclient-render-capture` skill supplies buffer selection
 without activation and before/after target guards.
 
+When verifying icon-heavy layouts or changing fonts, remember that the Runtime
+viewport is reported in lines: `etaf-runtime-viewport` HEIGHT is the window line
+count, so applications lay out by rows.  A row's pixel height is instead the
+largest font box among its glyphs.  Missing glyphs can fall back from PragmataPro
+16px through LXGW WenKai 16px to Sarasa Mono SC 18px or Arial Unicode MS 19px;
+bold symbols can select Sarasa Bold at 18px, and `line-height` can only increase
+that height.  A few tall rows make canvas pixels exceed the window and clip the
+bottom, such as a status bar.  Keep rows within `frame-char-height`: prefer CJK
+glyph icons, leave symbols unbolded, avoid inline `:font-size`, and check a real
+frame with `line-pixel-height`.
+
 This directory also owns reusable verification mechanisms; application
 scenarios live in their respective example repositories:
 
