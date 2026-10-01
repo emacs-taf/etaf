@@ -14,7 +14,7 @@ grouped by the theme you are chasing:
 | --- | --- |
 | View grammar, Hosts, structural normalization | `etaf-view`, `etaf-compiler` |
 | Component definition, props, slots, retained instances | `etaf-component` |
-| Mounted lifetime, commit, effect settlement, fixed point | `etaf-runtime`, `etaf-generation`, `etaf-retirement` |
+| Mounted lifetime, commit, effect settlement, fixed point | `etaf-runtime`, `etaf-generation`, `etaf-retirement`, `etaf-cell-fit` |
 | Host attach/detach, prepared property and geometry publication, cohorts | `etaf-host`, `etaf-host-update`, `etaf-host-cohort` |
 | Reactive state, derived values, batches, dispatch queues | `etaf-reactive`, `etaf-scheduler` |
 | Events, activation, focus, input identity | `etaf-events` |

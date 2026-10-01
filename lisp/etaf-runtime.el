@@ -21,6 +21,7 @@
 (require 'etaf-host)
 (require 'etaf-retirement)
 (require 'etaf-render-port)
+(require 'etaf-cell-fit)
 (require 'etaf-renderer)
 (require 'etaf-context)
 (require 'etaf-behavior)
@@ -1794,8 +1795,11 @@ effect-to-source edges.  It is intentionally immutable and suitable as an
   "Return the dynamically active Runtime, or nil outside a Runtime."
   etaf--current-runtime)
 
-(defun etaf--runtime-forward-ebox-report (_buffer report)
-  "Forward Ebox publication or renderer REPORT into the active operation."
+(defun etaf--runtime-forward-ebox-report (buffer report)
+  "Forward Ebox publication or renderer REPORT into the active operation.
+A completed publication is also the moment the canvas can be checked against
+the grid: fitting runs here so it covers Ebox's own repaints too."
+  (etaf-cell-fit-schedule buffer)
   (etaf-observer-emit report))
 
 (defun etaf--runtime-record-observer-diagnostic (runtime diagnostic)
@@ -2078,7 +2082,7 @@ operation is rejected so the operation keeps one stable sink."
       (error "ETAF observer cannot change during an active operation"))
     (ebox-buffer-set-observer
      (etaf-runtime-buffer runtime)
-     (and observer-or-nil #'etaf--runtime-forward-ebox-report))
+     #'etaf--runtime-forward-ebox-report)
     (setf (etaf-runtime-observer runtime) observer-or-nil))
   observer-or-nil)
 
@@ -6606,6 +6610,9 @@ walk even when a nearer ancestor retains its invalidation."
         runtime retry-effect-ids)
        (signal (car err) (cdr err))))
     (etaf--runtime-participant-commit participant)
+    ;; A published canvas must stay within the rows the viewport reported: fit
+    ;; the rows whose content changed back into one grid cell.
+    (etaf-cell-fit-apply (etaf-runtime-buffer runtime))
     (let ((retirement
            (etaf--runtime-new-retirement-journal
             runtime (etaf-semantic-candidate-candidate-id semantic-candidate)))
@@ -6732,8 +6739,9 @@ walk even when a nearer ancestor retains its invalidation."
                (lambda (_report)
                  (etaf-host-authority-rollback-attach host-authority)
                  (etaf--runtime-participant-rollback participant))
-               (and (etaf-runtime-observer runtime)
-                    #'etaf--runtime-forward-ebox-report))
+               ;; Always install the bridge: it keeps the canvas within the
+               ;; grid rows and forwards to the application observer, if any.
+               #'etaf--runtime-forward-ebox-report)
               (etaf-host-authority-finish-attach host-authority))))
       ((error quit)
        (when semantic-candidate
@@ -6753,6 +6761,8 @@ walk even when a nearer ancestor retains its invalidation."
        (etaf--runtime-clear-candidate runtime)
        (signal (car err) (cdr err))))
     (etaf--runtime-participant-commit participant)
+    ;; A published canvas must stay within the rows the viewport reported.
+    (etaf-cell-fit-apply (etaf-runtime-buffer runtime))
     ;; Publication has completed.  Lifecycle and cleanup callbacks run after
     ;; the retained state is promoted; their errors remain visible without
     ;; incorrectly rolling back an already published Ebox tree.
@@ -7139,6 +7149,11 @@ Use `etaf-runtime-snapshot' to retain the root's matching source facts."
             (when (etaf-runtime-pending-p runtime)
               (setf (etaf-runtime-pending-p runtime) nil)
               (etaf--runtime-request-flush runtime))
+            ;; Keep one publication bridge installed for the buffer's
+            ;; lifetime: fitting the canvas back into the grid (and forwarding
+            ;; to an application observer) must see every completed Ebox
+            ;; publication, not only the framework's own commits.
+            (ebox-buffer-set-observer buffer #'etaf--runtime-forward-ebox-report)
             buffer)
         ((error quit)
          ;; Postaccept lifecycle errors leave an attached Runtime queryable.
