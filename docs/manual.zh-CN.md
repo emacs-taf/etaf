@@ -1358,6 +1358,11 @@ Playground 使用 inert `.etaf` 结构与显式注册的 `.el` companion；core 
 `foreground_latency` 仍为 `not-certified`。检查失败检查点和实际截图，
 不要用回调耗时或截图替代前台性能验收。
 
+行高亦属于功能验收：Emacs 给一行取该行全部字形的最大字体框，符号回退到
+更高字体（包括 U+FE0E 变体选择符）会让画布像素高超过窗口、裁掉底部内容。
+场景用 `etaf-gui-verifier-line-height-assertions` 断言行高，用
+`etaf-gui-verifier-canvas-filled-p` 等待画布与窗口一致的 resize 收尾。
+
 截图要求一个可见图形 frame、一个选中的目标 window，且没有活动 minibuffer。
 工具保持应用焦点，截图期间目标变化会失败。`make check` 包含可移植的
 `make tool-check` 场景与证据契约检查；macOS 上另运行 `make gui-tool-check`，

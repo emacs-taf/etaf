@@ -1518,16 +1518,18 @@ Load the checkout and call the example entry point in an explicit buffer, show
 that buffer in the existing graphical frame, and capture only that owned
 window. Preserve the user's font and chrome. Do not start another daemon or
 frame for this workflow. Preserve application focus so the user can keep working
-in other apps. The `emacsclient-render-capture` skill supplies buffer selection
-without activation and before/after target guards.
+in other apps. The `emacs-agent-control` skill supplies buffer selection and
+window-only captures without taking application focus; the engine's own
+checkpoints keep the before/after target-buffer guards.
 
 When verifying icon-heavy layouts or changing fonts, remember that `etaf-runtime-viewport` reports HEIGHT as the window line count, so applications lay out by rows.
 A row's pixel height is the largest font box among its glyphs.
 Missing glyphs can fall back from PragmataPro 16px through LXGW WenKai 16px to Sarasa Mono SC 18px or Arial Unicode MS 19px.
+A text-style variation selector (U+FE0E) can pick a still taller fallback such as HanaMinA.
 A bold symbol can select Sarasa Bold at 18px, and `line-height` can only increase that height.
 A few tall rows make canvas pixels exceed the window and clip bottom content, such as a status bar.
 Keep rows within `frame-char-height`: prefer CJK glyph icons (locally 16px in normal and bold), leave symbols unbolded, and avoid inline `:font-size`.
-Check a real frame with `line-pixel-height`.
+Check a real frame with `line-pixel-height`; scenarios assert it mechanically with `etaf-gui-verifier-line-height-assertions` and settle a resize with `etaf-gui-verifier-canvas-filled-p`.
 
 This directory also owns reusable verification mechanisms; application
 scenarios live in their respective example repositories:

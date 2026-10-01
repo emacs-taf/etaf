@@ -32,6 +32,11 @@
   lifecycle callbacks and optional logical-unit delta conversion.
 - Controlled variants accept aggregate geometry through `read`/`on-change`
   callbacks without creating a second persistent geometry store.
+- `etaf-gui-verifier-line-height-assertions`, `etaf-gui-verifier-canvas-filled-p`
+  and `etaf-gui-verifier-canvas-assertion` expose the row-height budget and the
+  full-window canvas as reusable scenario checks, so an application scenario
+  fails when a glyph falls back to a taller font or a resize leaves the canvas
+  taller than the window.
 
 ### Changed
 

@@ -7,6 +7,11 @@
 ;; completion, and evidence lifecycle.  It does not know ETAF Runtime, Ebox,
 ;; Playground, or any concrete example; adapters supply those facts through
 ;; callbacks and opaque context data.
+;;
+;; It also ships reusable buffer checks: `etaf-gui-verifier-line-height-assertions'
+;; guards the row-height budget that keeps a canvas from clipping, and
+;; `etaf-gui-verifier-canvas-filled-p' / `etaf-gui-verifier-canvas-assertion'
+;; keep a repaint settled on the window size.
 
 ;;; Code:
 
@@ -254,6 +259,67 @@ input-to-presentation latency."
   "Return one normalized assertion NAME for PASSED and optional DETAIL."
   (append (list (cons 'name name) (cons 'passed (and passed t)))
           (when detail (list (cons 'detail detail)))))
+
+(defun etaf-gui-verifier-line-height-assertions (&optional buffer)
+  "Return assertions that every line of BUFFER fits the frame line height.
+BUFFER defaults to the current buffer and must be displayed in a window,
+because only a displayed buffer reports a true `line-pixel-height'.  Emacs
+gives a row the pixel height of the tallest font box among its glyphs, so one
+symbol that falls back to another font, such as a text-style variation
+selector, silently pushes the canvas past the window and clips its bottom
+rows.  The assertion detail names every offending line with its height and
+text, and a buffer that is not displayed yields no assertions."
+  (let ((buffer (or buffer (current-buffer))))
+    (when (get-buffer-window buffer)
+      (with-current-buffer buffer
+        (let ((limit (frame-char-height))
+              offending)
+          (save-excursion
+            (goto-char (point-min))
+            (while (not (eobp))
+              (let ((height (line-pixel-height)))
+                (when (> height limit)
+                  (push (format "line %d is %dpx: %s"
+                                (line-number-at-pos) height
+                                (buffer-substring-no-properties
+                                 (line-beginning-position)
+                                 (line-end-position)))
+                        offending)))
+              (forward-line 1)))
+          (list (etaf-gui-verifier-assert
+                 "no line exceeds the frame line height"
+                 (null offending)
+                 (when offending
+                   (mapconcat #'identity (nreverse offending) "; ")))))))))
+
+(defun etaf-gui-verifier-canvas-filled-p (&optional buffer)
+  "Return non-nil when BUFFER's painted canvas fills its window exactly.
+The canvas is `window-text-pixel-size' for the whole buffer.  A canvas taller
+than the window body hides the bottom rows and a shorter one leaves empty
+space; a layout that budgets `(vh 100)' matches exactly once its repaint for
+the current size has finished.  A resize action can therefore use this as its
+settle predicate.  Return nil when BUFFER is not displayed in a window."
+  (let ((buffer (or buffer (current-buffer))))
+    (when-let* ((window (get-buffer-window buffer)))
+      (with-current-buffer buffer
+        (= (cdr (window-text-pixel-size window))
+           (window-body-height window t))))))
+
+(defun etaf-gui-verifier-canvas-assertion (&optional buffer)
+  "Return an assertion that BUFFER's painted canvas fills its window.
+Use it beside `etaf-gui-verifier-canvas-filled-p', which the same scenario
+repeats as its settle predicate.  The detail reports both pixel heights so a
+failure names the mismatch."
+  (let ((buffer (or buffer (current-buffer))))
+    (if-let* ((window (get-buffer-window buffer)))
+        (with-current-buffer buffer
+          (let ((canvas (cdr (window-text-pixel-size window)))
+                (body (window-body-height window t)))
+            (etaf-gui-verifier-assert
+             "canvas height fits the window" (= canvas body)
+             (format "canvas %s vs window %s" canvas body))))
+      (etaf-gui-verifier-assert "canvas height fits the window" nil
+                                "target buffer is not displayed"))))
 
 (defun etaf-gui-verifier--target-assertions (context)
   "Return generic selected-target assertions for CONTEXT."
