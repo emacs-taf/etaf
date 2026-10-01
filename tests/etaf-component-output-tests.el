@@ -120,5 +120,163 @@
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(etaf-define-component etaf-test-output-local-child (&key value tag)
+  :render
+  (etaf-node 'column (list :key (or tag 'child) :id (or tag "child"))
+             (list (etaf-node 'text nil (list (etaf-value value))))))
+
+(etaf-define-component etaf-test-output-local-parent (&key tick title value)
+  :render
+  (progn
+    (ignore tick)
+    (etaf-node
+     'column '(:key parent :id "parent")
+     (list (etaf-node 'text nil (list title))
+           (etaf-node 'box nil
+                      (list (etaf-node 'etaf-test-output-local-child
+                                       (list :value value) nil)))))))
+
+(ert-deftest etaf-component-output-publishes-only-changed-child-ranges ()
+  "A rerendered parent retains its own nodes unless their content changes."
+  (let ((tick (etaf-ref 0)) (title (etaf-ref "Title"))
+        (value (etaf-ref "A"))
+        (buffer (generate-new-buffer " *component-local-output*")))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (etaf-view (etaf-test-output-local-parent
+                      :tick (etaf-value tick) :title (etaf-value title) :value value)))
+          (let ((runtime (etaf-runtime-for-buffer buffer)))
+            (dolist (own-change '(nil t nil))
+              (etaf-batch
+                (cl-incf (etaf-value tick))
+                (setf (etaf-value value)
+                      (if (equal (etaf-value value) "A") "B" "A"))
+                (when own-change (setf (etaf-value title) "Changed")))
+              (etaf-runtime-flush runtime)
+              (let ((report (ebox-buffer-update-report buffer)))
+                (should
+                 (equal (plist-get report :rendered-owner-ids)
+                        (mapcar (lambda (match) (plist-get match :node-id))
+                                (ebox-select-all
+                                 buffer (if own-change "#parent" "#child")))))
+                (unless own-change
+                  (should (= 1 (plist-get (plist-get report :range-metrics)
+                                         :replacement-count)))))
+              (should
+               (equal
+                (etaf-test-output-presentation
+                 (with-current-buffer buffer (buffer-string)))
+                (etaf-test-output-presentation
+                 (ebox-render
+                  (etaf-render
+                   (etaf-node 'etaf-test-output-local-parent
+                              (list :tick (etaf-value tick)
+                                    :title (etaf-value title) :value value) nil)))))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
+(etaf-define-component etaf-test-output-forest-child (&key tag values)
+  :render
+  (etaf-node
+   'fragment nil
+   (cl-loop for value in (etaf-value values)
+            for index from 0
+            collect (etaf-node 'text (list :key (format "%s-%d" tag index))
+                               (list value)))))
+
+(etaf-define-component etaf-test-output-forest-parent (&key tick order values)
+  :render
+  (progn
+    (ignore tick)
+    (etaf-node
+     'column '(:id "parent")
+     (cons (etaf-node 'text nil '("Title"))
+           (mapcar (lambda (tag)
+                     (etaf-node 'etaf-test-output-forest-child
+                                (list :key tag :tag tag :values values) nil))
+                   order)))))
+
+(ert-deftest etaf-component-output-keeps-range-membership-and-order ()
+  "Sibling ranges can change size; adding, removing or moving them replaces parent."
+  (let ((tick (etaf-ref 0)) (order (etaf-ref '(a b)))
+        (values (etaf-ref '("A")))
+        (buffer (generate-new-buffer " *component-forest-output*")))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (etaf-view (etaf-test-output-forest-parent
+                      :tick (etaf-value tick) :order (etaf-value order) :values values)))
+          (let ((runtime (etaf-runtime-for-buffer buffer)))
+            (dolist (step '(((a b) nil 2) ((a b) ("A" "B") 2)
+                            ((b a) ("C") nil) ((b a c) ("D") nil)
+                            ((a c) ("E") nil) ((a c) nil 2)
+                            ((a c) ("F") 2)))
+              (etaf-batch
+                (cl-incf (etaf-value tick))
+                (setf (etaf-value order) (nth 0 step)
+                      (etaf-value values) (nth 1 step)))
+              (etaf-runtime-flush runtime)
+              (let* ((report (ebox-buffer-update-report buffer))
+                     (count (plist-get (plist-get report :range-metrics)
+                                       :replacement-count)))
+                (if (nth 2 step)
+                    (should (eql (nth 2 step) count))
+                  (should-not count)))
+              (should
+               (equal
+                (etaf-test-output-presentation
+                 (with-current-buffer buffer (buffer-string)))
+                (etaf-test-output-presentation
+                 (ebox-render
+                  (etaf-render
+                   (etaf-node 'etaf-test-output-forest-parent
+                              (list :tick (etaf-value tick)
+                                    :order (etaf-value order) :values values) nil)))))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
+(etaf-define-component etaf-test-output-loop-parent (&key tick entries)
+  :render
+  (progn
+    (ignore tick)
+    (etaf-view
+     (column :id "parent"
+       (text "Title")
+       (etaf-test-output-local-child :for (entry entries) :key (car entry)
+                                    :tag (car entry) :value (cdr entry))))))
+
+(ert-deftest etaf-component-output-publishes-flattened-single-root-child ()
+  "A loop child with one stable root publishes through that Host alone."
+  (let* ((tick (etaf-ref 0)) (value (etaf-ref "A"))
+         (entries (list (cons "first" value) (cons "second" (etaf-ref "B"))))
+         (buffer (generate-new-buffer " *component-loop-output*")))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (etaf-view (etaf-test-output-loop-parent
+                      :tick (etaf-value tick) :entries entries)))
+          (etaf-batch
+            (cl-incf (etaf-value tick))
+            (setf (etaf-value value) "C"))
+          (etaf-runtime-flush (etaf-runtime-for-buffer buffer))
+          (should
+           (equal (plist-get (ebox-buffer-update-report buffer) :rendered-owner-ids)
+                  (mapcar (lambda (match) (plist-get match :node-id))
+                          (ebox-select-all buffer "#first"))))
+          (should
+           (equal
+            (etaf-test-output-presentation (with-current-buffer buffer (buffer-string)))
+            (etaf-test-output-presentation
+             (ebox-render
+              (etaf-render
+               (etaf-node 'etaf-test-output-loop-parent
+                          (list :tick (etaf-value tick) :entries entries) nil)))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
 (provide 'etaf-component-output-tests)
 ;;; etaf-component-output-tests.el ends here

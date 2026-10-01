@@ -6181,31 +6181,84 @@ is the committed input when that candidate becomes the next generation.")
                      runtime generation range nil)
                  table))))
 
+(defun etaf--runtime-single-output-host-ref (old-input next-input)
+  "Return the stable single Host address shared by OLD-INPUT and NEXT-INPUT."
+  (let ((old-roots (ebox-canonical-input-roots old-input))
+        (next-roots (ebox-canonical-input-roots next-input)))
+    (when (and (= (length old-roots) 1) (= (length next-roots) 1)
+               (eq (ebox-node-kind (car old-roots))
+                   (ebox-node-kind (car next-roots))))
+      (let ((old-ref (ebox-canonical-input-root-host-ref old-input))
+            (next-ref (ebox-canonical-input-root-host-ref next-input)))
+        (and (equal-including-properties old-ref next-ref) old-ref)))))
+
 (defun etaf--runtime-normalize-range-changes (runtime generation candidate changes)
   "Compose CHANGES from final CANDIDATE facts over RUNTIME GENERATION.
 Semantic Ranges sharing a physical child list publish through that list's
-owner.  Hosts keep independent child lists.  The semantic root uses Ebox's
+owner, unless a Component output has one stable Host address.  Hosts keep
+independent child lists.  The semantic root uses Ebox's
 root operation, without discarding and rerunning application effects."
-  (let ((owners (make-hash-table :test #'eql)) result)
+  (let ((owners (make-hash-table :test #'eql))
+        (host-owners (make-hash-table :test #'eql))
+        entries refs host-refs result)
     (dolist (change changes)
       (when-let* ((range (car change))
                   (owner (etaf--runtime-publication-range runtime generation range))
                   (id (etaf--semantic-backend-range-semantic-id owner))
                   (next (etaf--pvec-get (etaf-generation-semantic-nodes candidate) id)))
+        ;; A flattened Component output has no child anchor, but a stable
+        ;; single root is exactly addressable by the public Host replacement.
+        ;; Zero/multiple roots and changed identities keep the physical owner.
+        (when (and (etaf--semantic-range-p range)
+                   (eq (etaf--semantic-range-kind range) 'component-output)
+                   (/= id (etaf--semantic-backend-range-semantic-id range)))
+          (let* ((range-id (etaf--semantic-backend-range-semantic-id range))
+                 (next-range (etaf--pvec-get
+                              (etaf-generation-semantic-nodes candidate) range-id)))
+            (when next-range
+              (when-let* ((host-ref
+                           (etaf--runtime-single-output-host-ref
+                            (etaf--runtime-cached-range-input
+                             runtime generation range-id range)
+                            (etaf--runtime-cached-range-input
+                             runtime candidate range-id next-range))))
+                (setq id range-id owner range next next-range)
+                (puthash id host-ref host-owners)))))
         (puthash id (cons owner next) owners)))
+    ;; Compare every final owner before absorbing descendants.  A rendered
+    ;; Component can differ only because its retained child anchors changed.
     (maphash
      (lambda (id pair)
+       (let ((old-input (etaf--runtime-cached-range-input
+                         runtime generation id (car pair)))
+             (next-input (etaf--runtime-cached-range-input
+                          runtime candidate id (cdr pair))))
+         (unless (ebox-canonical-input-equal-p old-input next-input)
+           (let ((host-ref (gethash id host-owners)))
+             (push (cons id (list (car pair) (cdr pair)
+                                 old-input next-input host-ref nil)) entries)
+             (if host-ref
+                 (push host-ref host-refs)
+               (push (etaf--semantic-backend-range-ref (car pair)) refs))))))
+     owners)
+    (clrhash owners)
+    (dolist (entry (nreverse entries))
+      (let ((change (cdr entry)))
+        (unless (ebox-canonical-input-equal-outside-ranges-p
+                 (nth 2 change) (nth 3 change)
+                 (remove (etaf--semantic-backend-range-ref (car change)) refs)
+                 (remove (nth 4 change) host-refs))
+          (puthash (car entry) change owners))))
+    ;; Removed owners are proven compositions of this batch's descendants.
+    ;; Keep those descendants unless a remaining ancestor needs replacement.
+    (maphash
+     (lambda (id change)
        (let ((parent (etaf--generation-parent-id generation id)) absorbed)
          (while (and parent (not absorbed))
            (setq absorbed (gethash parent owners)
                  parent (etaf--generation-parent-id generation parent)))
          (unless absorbed
-           (let ((old-input (etaf--runtime-cached-range-input
-                             runtime generation id (car pair)))
-                 (next-input (etaf--runtime-cached-range-input
-                              runtime candidate id (cdr pair))))
-             (unless (ebox-canonical-input-equal-p old-input next-input)
-               (push (list (car pair) (cdr pair) old-input next-input nil nil) result))))))
+           (push change result))))
      owners)
     (nreverse result)))
 
@@ -6517,12 +6570,17 @@ walk even when a nearer ancestor retains its invalidation."
                    (ebox-candidate-begin (etaf-runtime-buffer runtime))))
               (dolist (change range-changes)
                 (let ((range (car change)))
-                  (if (and (etaf--semantic-range-p range)
-                           (eq (etaf--semantic-range-kind range) 'root))
-                      (ebox-candidate-replace-root candidate (nth 3 change))
+                  (cond
+                   ((nth 4 change)
+                    (ebox-candidate-replace-host-ref
+                     candidate (nth 4 change) (nth 3 change)))
+                   ((and (etaf--semantic-range-p range)
+                         (eq (etaf--semantic-range-kind range) 'root))
+                    (ebox-candidate-replace-root candidate (nth 3 change)))
+                   (t
                     (ebox-candidate-replace-range-ref
                      candidate (etaf--semantic-backend-range-ref range)
-                     (nth 3 change)))))
+                     (nth 3 change))))))
               (dolist (change inline-changes)
                 (ebox-candidate-replace-host-ref
                  candidate (etaf--semantic-host-host-ref (car change))

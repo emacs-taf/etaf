@@ -30,6 +30,10 @@
 
 ### Changed
 
+- Parent rerenders retain unchanged surrounding output and publish only changed
+  descendant ranges. Flattened single-root Component outputs can use their
+  retained Host address; structural and source-fact differences keep the
+  enclosing replacement. Ebox retains authority over layout propagation.
 - Theme dependencies follow the defaults and static token values each Host
   consumes. Unchanged Theme projections avoid unrelated property updates.
 - Batched sibling updates share pending ancestor invalidations while preserving

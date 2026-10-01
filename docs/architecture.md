@@ -279,6 +279,16 @@ layout. Publication uses Ebox's committed Range addresses, or its root operation
 when no enclosing child Range is published. It composes the final candidate output
 without rerunning application effects or adding another Component artifact store.
 
+Publication compares final canonical inputs before absorbing descendant changes.
+An ancestor is omitted only when its nodes, source facts and anchor order agree
+outside descendant outputs replaced in the same candidate. Child anchor offsets
+may shift with those outputs; adding, removing or reordering anchors still
+replaces the ancestor. A Component flattened into another Range can publish
+through its Host address when both outputs contain one root with the same
+source identity and node kind. Other flattened outputs retain their physical
+Range owner. Ebox still decides how far layout and buffer publication propagate;
+a smaller framework change set does not guarantee a local rendering strategy.
+
 Authored slot expressions retain their author's props, state, and Context across
 the entire projected subtree. A Component created in that subtree owns its own
 props, state, styles, and Scope, inheriting Context from the slot author. The

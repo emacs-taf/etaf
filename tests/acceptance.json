@@ -13,6 +13,9 @@
   ],
   "support": [],
   "cases": [
+    {"name": "etaf-component-output-publishes-flattened-single-root-child", "file": "tests/etaf-component-output-tests.el", "purpose": "A changed single-root loop child publishes through its stable Host address without republishing its parent or sibling, and matches fresh rendering."},
+    {"name": "etaf-component-output-keeps-range-membership-and-order", "file": "tests/etaf-component-output-tests.el", "purpose": "Two child ranges publish cardinality changes independently, while adding, removing or reordering their anchors still replaces the parent and matches fresh rendering."},
+    {"name": "etaf-component-output-publishes-only-changed-child-ranges", "file": "tests/etaf-component-output-tests.el", "purpose": "Parent rerenders publish only a changed nested child, retain parent publication for own content changes, and match fresh rendering."},
     {"name": "etaf-prepared-batch-couples-computed-paint-and-status", "file": "tests/etaf-prepared-batch-tests.el", "purpose": "Paint and status computed from one reactive source publish atomically, recover from a rejected status getter, and alternate with independent clock updates without stale state."},
     {"name": "etaf-prepared-batch-expands-demand-and-rebinds-after-structure", "file": "tests/etaf-prepared-batch-tests.el", "purpose": "Separately requested geometry, inline and paint programs preserve atomic mixed updates, rejected-input retry, alternating text and interaction cohorts, and first updates after structural publication or viewport changes."},
     {"name": "etaf-theme-contextual-transforms-retain-consumer-context", "file": "tests/etaf-theme-cascade-tests.el", "purpose": "Context-sensitive Theme transforms preserve distinct consuming Context values across source updates."},
