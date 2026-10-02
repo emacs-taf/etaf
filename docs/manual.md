@@ -963,6 +963,27 @@ text changes can share one prepared publication. Use `etaf-batch` for related wr
 ordinary refs, computed values and View properties remain the authoring API.
 ETAF manages the reusable execution plans. Unsupported geometry, changed
 dependencies and structural changes retain the ordinary publication path.
+A prepared Host binding publishes only when Ebox can address the Host in a
+retained scene.  That scene is anchored at an absolutely positioned Host with
+inline `left`/`top`/`z-index`; the changed Host must sit at or below the
+anchor in the Ebox tree, and the chain between them must not pass another
+absolutely positioned Host, because the first absolute ancestor is chosen as
+the anchor.  A screen whose controls or rows should update in place therefore
+belongs in a relative stage with absolutely positioned panels, and each fast
+Host inside one of those panels; ordinary flex and box nesting below the
+panel is fine, including a Component subtree.  The rendering Component must
+not read the reactive source itself: pass the ref or computed object down as
+a property and read it inside the Host expression.  A source read during the
+Component render subscribes the render, so the write repaints the view and the
+prepared binding is never reached.  Keep display-only state in separate
+sources next to the aggregate state that drives structure.  The first
+publication that needs a panel's scene builds it (tens of milliseconds); each
+later change in the same scene publishes prepared bindings, and an ordinary
+publication of that buffer invalidates the scene, so a control that should
+stay fast must not also write state the view renders.  A prepared publication
+advances the committed generation without rebuilding a semantic candidate,
+which is what an application benchmark can measure to tell it apart from the
+fallback.
 A reactive Theme does not block preparation: Theme tokens and component
 style sources guard the binding by version, so a Host styled through
 `etaf-theme-token` keeps its prepared geometry, paint and visibility
