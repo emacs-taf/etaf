@@ -976,7 +976,11 @@ not read the reactive source itself: pass the ref or computed object down as
 a property and read it inside the Host expression.  A source read during the
 Component render subscribes the render, so the write repaints the view and the
 prepared binding is never reached.  Keep display-only state in separate
-sources next to the aggregate state that drives structure.  The first
+sources next to the aggregate state that drives structure.  A prepared
+binding also needs a value whose declaration already exists in the published
+source: an absent paint or visibility declaration (a background the Host
+never set, say) cannot acquire a slot, so give the Host a concrete default
+when it must switch between two values.  The first
 publication that needs a panel's scene builds it (tens of milliseconds); each
 later change in the same scene publishes prepared bindings, and an ordinary
 publication of that buffer invalidates the scene, so a control that should
