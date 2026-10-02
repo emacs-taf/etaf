@@ -1397,6 +1397,26 @@
       "name": "etaf-list-cache-touch-marks-a-not-modified-reply",
       "file": "tests/etaf-list-cache-tests.el",
       "purpose": "A version token is stored per entry and a not-modified answer refreshes only the check time and the token."
+    },
+    {
+      "name": "etaf-image-test-placeholder-grid-has-exact-cell-size",
+      "file": "tests/etaf-image-tests.el",
+      "purpose": "A placeholder image occupies exactly its columns by rows character cells."
+    },
+    {
+      "name": "etaf-image-test-missing-file-falls-back-to-placeholder",
+      "file": "tests/etaf-image-tests.el",
+      "purpose": "An unreadable image source becomes a placeholder instead of failing the render."
+    },
+    {
+      "name": "etaf-image-test-inside-layout-keeps-its-grid",
+      "file": "tests/etaf-image-tests.el",
+      "purpose": "An image inside a Row keeps its own cell size next to ordinary text."
+    },
+    {
+      "name": "etaf-image-test-rejects-invalid-input",
+      "file": "tests/etaf-image-tests.el",
+      "purpose": "Invalid source, size, adapter and children are reported before publication."
     }
   ]
 }

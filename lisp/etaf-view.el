@@ -72,11 +72,13 @@
   captured-p content style-owners)
 
 (defconst etaf--host-names
-  '(text box fragment row column flex grid)
+  '(text box fragment row column flex grid image)
   "Minimal unstyled Hosts implemented by ETAF core.
 
 Product Components such as Button belong to `etaf-ui'; they are not added to
-this list merely to make a demo convenient.")
+this list merely to make a demo convenient.  `image' renders one fixed-size
+local media block through the Ebox image protocol; see the `etaf--image-node'
+lowering for its :src, :columns, :rows and :adapter properties.")
 
 (defconst etaf--host-marker 'etaf--host
   "Value stored in the View registry for a built-in Host.")

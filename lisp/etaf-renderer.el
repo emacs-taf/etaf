@@ -792,6 +792,45 @@ multi-root forest; a single material root is returned unchanged."
                (signal 'etaf-renderer-error
                        (list (format "Unresolved View item: %S" item))))))))
 
+(defun etaf--image-node (props)
+  "Return one canonical Ebox media node for resolved image PROPS.
+PROPS must contain :src, :columns and :rows; :adapter optionally selects the
+Ebox image adapter.  The image owns its fixed cell size, clipping and no
+wrapping, so the caller chooses the grid and wraps it in ordinary Boxes for
+spacing and paint.  The cold preparation step owns all decoding and I/O and is
+cached by Ebox for identical source/grid/adapter requests."
+  (let ((src (plist-get props :src))
+        (columns (plist-get props :columns))
+        (rows (plist-get props :rows))
+        (adapter (or (plist-get props :adapter) 'auto)))
+    (unless (stringp src)
+      (signal 'etaf-renderer-error
+              (list (format "Image :src must be a file path string: %S" src))))
+    (dolist (pair (list (cons :columns columns) (cons :rows rows)))
+      (unless (and (integerp (cdr pair)) (> (cdr pair) 0))
+        (signal 'etaf-renderer-error
+                (list (format "Image %s must be a positive integer: %S"
+                              (car pair) (cdr pair))))))
+    (unless (memq adapter '(auto text placeholder))
+      (signal 'etaf-renderer-error
+              (list (format "Image :adapter must be auto, text or placeholder: %S"
+                            adapter))))
+    (unless (ebox-source-builder-p etaf--ebox-source-builder)
+      (signal 'etaf-renderer-error
+              (list "ETAF Image lowering requires one source builder")))
+    (ebox-image-create
+     (ebox-image-prepare src columns rows :adapter adapter)
+     etaf--ebox-source-builder
+     :identity (plist-get props :source-identity)
+     :key (plist-get props :key)
+     :id (plist-get props :id)
+     :class (etaf--class-tokens (plist-get props :class))
+     :selector-attributes (plist-get props :selector-attributes)
+     :ecss-scopes (plist-get props :ecss-scopes)
+     :ecss-scope-roots (plist-get props :ecss-scope-roots)
+     :interactions (plist-get props :interactions)
+     :provenance '(:adapter etaf-renderer :tag image))))
+
 (defun etaf--render-node (node path)
   "Render normalized Host NODE at structural PATH."
   (let* ((node (let ((copy (copy-sequence node)))
@@ -863,6 +902,20 @@ multi-root forest; a single material root is returned unchanged."
              (list (etaf--ebox-text-node (cdr inline) props))
            (signal 'etaf-renderer-error
                    (list "Text payload must resolve to one string")))))
+      ('image
+       (when children
+         (signal 'etaf-renderer-error
+                 (list "Image Host takes no children")))
+       (let ((semantic-id
+              (and etaf--render-runtime
+                   (etaf--runtime-register-semantic-host
+                    etaf--render-runtime name raw-props props path
+                    theme-deps property-bindings
+                    property-deps property-context-deps base-props
+                    (etaf--view-node-token node) style-root-p))))
+         (when semantic-id
+           (etaf--runtime-finish-semantic-host etaf--render-runtime semantic-id))
+         (list (etaf--image-node props))))
       ('fragment
        (etaf--render-value-list children (append path (list :fragment))))
       ((or 'box 'row 'column 'flex 'grid)
@@ -953,10 +1006,15 @@ RANGE-CHILD-P preserves the direct material Range parent."
        (signal 'etaf-renderer-error
                (list "Text cannot contain material child nodes")))
      (etaf--ebox-text-node content props))
+    ('image
+     (when children
+       (signal 'etaf-renderer-error
+               (list "Image Host takes no children")))
+     (etaf--image-node props))
     ((or 'box 'row 'column 'flex 'grid)
      (etaf--layout-node name props children range-child-p))
     (_ (signal 'etaf-renderer-error
-               (list (format "Expected text, box, row, column, flex, or grid Host; received %S"
+               (list (format "Expected text, image, box, row, column, flex, or grid Host; received %S"
                              name))))))
 
 ;;;###autoload

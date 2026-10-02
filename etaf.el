@@ -1329,6 +1329,14 @@
 ;; returns nil, strings, typed Views, or proper sequences of those values.
 ;; Inside a `text' Host, an expression must return one string.
 ;;
+;; The core Hosts are `text', `box', `row', `column', `flex', `grid' and
+;; `image'.  `image' renders one local media file as a fixed cell grid and
+;; takes :src (a file path), :columns and :rows (positive integers) plus an
+;; optional :adapter (`auto', `text' or `placeholder').  Unreadable or
+;; undecodable sources become a placeholder instead of failing the render, and
+;; the image owns its size, clipping and wrapping; wrap it in ordinary Boxes
+;; for spacing, paint and interaction.
+;;
 ;; Error: etaf-view-error
 ;; Invalid ETAF View
 ;; Catch this condition with condition-case; failed calls do not return a value.
