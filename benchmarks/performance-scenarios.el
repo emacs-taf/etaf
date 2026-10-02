@@ -197,8 +197,20 @@
 ;; A fixed-height row whose paint and weight change is the smallest possible
 ;; update; it must cost about the same in a 30-row and a 400-row scene.  The
 ;; scenario is the regression gate for the incremental commit: today the
-;; layout phase walks the whole scene, so the larger sizes report above their
-;; budget until the framework scopes it to the dirty owners.
+;; update still costs O(scene), so the larger sizes report above their budget
+;; until the framework scopes the render to the dirty owners.
+;;
+;; Diagnosis (2026-10-02, before the fix): the update commits with
+;; `:strategy native-frame', `:render-scope dirty-owners', `:dirty-count 2'
+;; and `:reconciled-objects 0', yet the wall time scales 7/15/54ms at
+;; 30/120/400 rows.  A CPU profile at 400 rows puts ~39% of samples in
+;; `ebox-native--module-render-session-frame', with the rest of the top in
+;; `ebox-native-reflow--fragment-template-from-flat' / `json-serialize' and
+;; `ebox-native--module-fork-confirmed': the native commit rebuilds and
+;; serializes a whole frame session per update instead of reusing the
+;; retained session for the dirty fragment spans.  The fix belongs to the
+;; native commit/reflow path; this benchmark turns green when that path
+;; becomes fragment-scoped.
 
 (etaf-define-component etaf-row-update-benchmark--probe (&key rows marked)
   "Render ROWS fixed-height rows; row 1's paint follows MARKED."
