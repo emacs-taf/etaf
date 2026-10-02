@@ -68,6 +68,16 @@ Headless host 或已经知道最终布局上下文的调用方，可以通过可
 
 View 含有状态型 Component、响应式数据、事件或生命周期时，使用 `etaf-mount`。
 
+### 原生应用窗口
+
+原生文本应用独占其打开所在的窗口。调用 `etaf-mount` 后，在
+`pop-to-buffer` 外绑定 `display-buffer-overriding-action` 为
+`((display-buffer-same-window))`；不要让用户的 `display-buffer` 规则把 frame
+分割成 playground 式侧栏。
+
+根 View 顶部保留一行空白。页面与行数预算常量把这行 padding 计入 chrome；
+窗口过矮时少显示内容行，不要裁掉第一行。
+
 需要显式请求处理待办更新时，调用 `(etaf-runtime-flush runtime)`。
 它现在返回 **Ebox 已提交 revision 整数**，不再返回旧版的 Ebox 节点。
 Runtime 忙碌或仍处于批处理时，更新可能继续等待；返回值标识此刻读者可见的

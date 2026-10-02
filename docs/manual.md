@@ -68,6 +68,17 @@ that viewport directly instead of immediately rerendering:
 
 Use `etaf-mount` whenever a View contains a stateful Component, reactive data, events, or lifecycle.
 
+### Native application windows
+
+A native text application owns the window from which it opens.  After
+`etaf-mount`, bind `display-buffer-overriding-action` to
+`((display-buffer-same-window))` around `pop-to-buffer`; do not let a user's
+`display-buffer` rules split the frame into a playground-style side pane.
+
+Reserve one clear line at the top of the root View.  Count this padding as
+chrome in page and row-budget constants; on a short window render fewer content
+rows rather than clipping the first line.
+
 To request pending work explicitly, call `(etaf-runtime-flush runtime)`.
 Its return value is now the **integer committed Ebox revision**, replacing the
 previous Ebox-node return type. Busy or batched work may remain pending; the
