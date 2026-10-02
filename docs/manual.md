@@ -987,7 +987,11 @@ publication of that buffer invalidates the scene, so a control that should
 stay fast must not also write state the view renders.  A prepared publication
 advances the committed generation without rebuilding a semantic candidate,
 which is what an application benchmark can measure to tell it apart from the
-fallback.
+fallback.  Hang the retained panels directly on the root plane, or on a plane
+whose composition the ledger records: a canvas is prepared from those planes,
+and an anchor below an intermediate flow plane that the ledger does not
+record cannot be prepared once another canvas has published.  Keep the
+anchors' flow ancestors as simple as the screen allows.
 A reactive Theme does not block preparation: Theme tokens and component
 style sources guard the binding by version, so a Host styled through
 `etaf-theme-token` keeps its prepared geometry, paint and visibility
