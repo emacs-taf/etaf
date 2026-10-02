@@ -196,21 +196,9 @@
 
 ;; A fixed-height row whose paint and weight change is the smallest possible
 ;; update; it must cost about the same in a 30-row and a 400-row scene.  The
-;; scenario is the regression gate for the incremental commit: today the
-;; update still costs O(scene), so the larger sizes report above their budget
-;; until the framework scopes the render to the dirty owners.
-;;
-;; Diagnosis (2026-10-02, before the fix): the update commits with
-;; `:strategy native-frame', `:render-scope dirty-owners', `:dirty-count 2'
-;; and `:reconciled-objects 0', yet the wall time scales 7/15/54ms at
-;; 30/120/400 rows.  A CPU profile at 400 rows puts ~39% of samples in
-;; `ebox-native--module-render-session-frame', with the rest of the top in
-;; `ebox-native-reflow--fragment-template-from-flat' / `json-serialize' and
-;; `ebox-native--module-fork-confirmed': the native commit rebuilds and
-;; serializes a whole frame session per update instead of reusing the
-;; retained session for the dirty fragment spans.  The fix belongs to the
-;; native commit/reflow path; this benchmark turns green when that path
-;; becomes fragment-scoped.
+;; scenario gates the complete incremental commit, not just native layout.
+;; Unchanged layout and publication metadata must remain retained: expanding
+;; or validating the whole frame can dominate even a dirty-owner layout.
 
 (etaf-define-component etaf-row-update-benchmark--probe (&key rows marked)
   "Render ROWS fixed-height rows; row 1's paint follows MARKED."
@@ -256,6 +244,25 @@ The runtime stays mounted until the driver calls the returned `:cleanup'."
            (if (eq bold (not (null (etaf-value marked)))) t
              (format "Row 1 bold=%s while marked=%s"
                      bold (etaf-value marked))))))
+     :observe
+     (lambda (sink)
+       (etaf-performance-start runtime)
+       (let ((before (mapcar (lambda (operation)
+                              (cons (plist-get operation :runtime-id)
+                                    (plist-get operation :id)))
+                            (plist-get (etaf-performance-report-data) :operations))))
+         (lambda ()
+           (etaf-performance-stop runtime)
+           (dolist (operation (plist-get (etaf-performance-report-data) :operations))
+             (when (and (equal (plist-get operation :buffer-name) (buffer-name buffer))
+                        (not (member (cons (plist-get operation :runtime-id)
+                                           (plist-get operation :id)) before)))
+               (dolist (stage (plist-get operation :stages))
+                 (funcall sink
+                          (append (list :provider (plist-get stage :provider)
+                                        :stage (plist-get stage :stage)
+                                        :duration-ms (plist-get stage :duration-ms))
+                                  (plist-get stage :metadata)))))))))
      :cleanup
      (lambda ()
        (when (buffer-live-p buffer)
