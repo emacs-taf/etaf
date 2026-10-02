@@ -23,13 +23,15 @@ ordinary publication keeps the caller's state authoritative."
                        (text (expr (etaf-value meter))))
                   (box :id "title" :ref 'title (text "song")))))
           (let ((runtime (etaf-runtime-for-buffer buffer-name)))
-            (etaf-runtime-update-host-content runtime 'clock "0:01")
+            (should (eq t
+                        (etaf-runtime-update-host-content runtime 'clock "0:01")))
             (with-current-buffer buffer-name
               (should (string-match-p "0:01" (buffer-string)))
               (should-not (string-match-p "0:00" (buffer-string)))
               (should (string-match-p "0/10" (buffer-string))))
-            (etaf-runtime-update-host-contents
-             runtime '((clock . "0:02") (meter . "2/10")))
+            (should (eq t
+                        (etaf-runtime-update-host-contents
+                         runtime '((clock . "0:02") (meter . "2/10")))))
             (with-current-buffer buffer-name
               (should (string-match-p "0:02" (buffer-string)))
               (should (string-match-p "2/10" (buffer-string))))

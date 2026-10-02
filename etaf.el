@@ -1079,9 +1079,10 @@
 ;; replaces only the addressed Host and publishes once through Ebox, so a
 ;; caller whose controlled state changed one string skips an ordinary ETAF
 ;; publication.  The next ordinary publication must render the same text, or
-;; the retained Host is reconciled to it.  Unknown Hosts, unmounted Runtimes,
-;; non-string CONTENT and Hosts whose retained node cannot hold text signal
-;; `etaf-runtime-error' without a partial update.
+;; the retained Host is reconciled to it.  A committed update returns t.
+;; Unknown Hosts, unmounted Runtimes, non-string CONTENT and Hosts whose
+;; retained node cannot hold text signal `etaf-runtime-error' without a partial
+;; update.
 ;;
 ;; Function: etaf-runtime-update-host-contents (runtime updates)
 ;;;###autoload (autoload 'etaf-runtime-update-host-contents "etaf" nil nil)
@@ -1090,7 +1091,9 @@
 ;; UPDATES is an alist of committed Host references to replacement strings.
 ;; Every target validates before the first replacement, so a caller keeping
 ;; several small texts live publishes once per change instead of once per node.
-;; Failures signal `etaf-runtime-error' without a partial update.
+;; A committed update returns t.  Invalid targets or updates, unmounted
+;; Runtimes, active Ebox transactions, and rejected content signal
+;; `etaf-runtime-error' without a partial update.
 ;;
 ;; Function: etaf-runtime-update-host-geometry (runtime host-ref &rest geometry)
 ;;;###autoload (autoload 'etaf-runtime-update-host-geometry "etaf" nil nil)
@@ -1100,9 +1103,9 @@
 ;; caller's already-updated controlled state: it does not change Component
 ;; props or implement window policy.  The next ordinary ETAF publication must
 ;; provide the same values, or the retained Host will be reconciled to that
-;; publication.  Unknown Hosts, unmounted Runtimes and invalid geometry signal
-;; `etaf-runtime-error' or the provider's typed geometry error without a
-;; partial update.
+;; publication.  A committed update returns t.  Invalid targets or geometry,
+;; unmounted Runtimes, active Ebox transactions, and rejected geometry signal
+;; `etaf-runtime-error' without a partial update.
 ;;
 ;; Function: etaf-runtime-update-host-geometries (runtime updates)
 ;;;###autoload (autoload 'etaf-runtime-update-host-geometries "etaf" nil nil)
@@ -1112,7 +1115,9 @@
 ;; entry first reuses RUNTIME's retained `ebox-geometry-prepare' operation for
 ;; that Host and property set, so repeated moves and fixed-text resizes publish
 ;; without ordinary layout; declined or multi-Host updates use the ordinary
-;; geometry batch with the same result.
+;; geometry batch with the same result.  A committed update returns t.  Invalid
+;; targets or updates, unmounted Runtimes, active Ebox transactions, and
+;; rejected geometry signal `etaf-runtime-error' without a partial update.
 ;;
 ;; Function: etaf-runtime-instances (x)
 ;;;###autoload (autoload 'etaf-runtime-instances "etaf" nil nil)

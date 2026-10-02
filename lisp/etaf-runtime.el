@@ -746,7 +746,9 @@ retained Host low-level geometry and layer facts.  UPDATES is an alist of
 A single entry first tries RUNTIME's retained `ebox-geometry-prepare'
 operation for that Host, reusing it across calls while it stays valid, so
 repeated moves and fixed-text resizes skip ordinary publication.  Declined
-or multi-Host updates use the ordinary geometry batch."
+or multi-Host updates use the ordinary geometry batch.  A committed update
+returns t.  Invalid targets or updates, unmounted Runtimes, active Ebox
+transactions, and rejected geometry signal `etaf-runtime-error'."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (unless (and (listp updates)
                (cl-every (lambda (entry)
@@ -784,11 +786,16 @@ or multi-Host updates use the ordinary geometry batch."
         (error
          (signal 'etaf-runtime-error
                  (list "Host geometry update rejected"
-                       (mapcar #'car resolved) error-data)))))))
+                       (mapcar #'car resolved) error-data))))
+      t)))
 
 ;;;###autoload
 (defun etaf-runtime-update-host-geometry (runtime host-ref &rest geometry)
-  "Incrementally update HOST-REF geometry in mounted RUNTIME."
+  "Incrementally update HOST-REF geometry in mounted RUNTIME.
+
+Return t after the geometry commits.  Invalid targets or geometry, unmounted
+Runtimes, active Ebox transactions, and rejected geometry signal
+`etaf-runtime-error'."
   (etaf-runtime-update-host-geometries
    runtime (list (cons host-ref geometry))))
 
@@ -802,9 +809,9 @@ replaces only the addressed Host's text and publishes once through Ebox, so a
 caller whose controlled state changed one string does not pay for an ordinary
 ETAF publication.  The caller's state stays authoritative: the next ordinary
 publication must render the same text, or the retained Host is reconciled to
-that publication.  Unknown Hosts, unmounted Runtimes, non-string CONTENT and
-Hosts whose retained node cannot hold text signal `etaf-runtime-error' without
-a partial update."
+that publication.  A committed update returns t.  Unknown Hosts, unmounted
+Runtimes, non-string CONTENT, and Hosts whose retained node cannot hold text
+signal `etaf-runtime-error' without a partial update."
   (etaf-runtime-update-host-contents runtime (list (cons host-ref content))))
 
 ;;;###autoload
@@ -814,8 +821,10 @@ a partial update."
 UPDATES is an alist of `(HOST-REF . STRING)' entries.  Every target validates
 before the first replacement, and the whole batch commits as one retained Ebox
 publication, so a caller that keeps several small texts live (a clock and a
-meter, say) publishes once per change instead of once per node.  Failures
-signal `etaf-runtime-error' without a partial update."
+meter, say) publishes once per change instead of once per node.  A committed
+update returns t.  Invalid targets or updates, unmounted Runtimes, active Ebox
+transactions, and rejected content signal `etaf-runtime-error' without a
+partial update."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (unless (and (listp updates)
                (cl-every (lambda (entry)
@@ -845,7 +854,8 @@ signal `etaf-runtime-error' without a partial update."
         (error
          (signal 'etaf-runtime-error
                  (list "Host content update rejected"
-                       (mapcar #'car resolved) error-data)))))))
+                       (mapcar #'car resolved) error-data))))
+      t)))
 
 (defun etaf-runtime-host-props-entries (runtime)
   "Return committed Host contribution entries for RUNTIME."
