@@ -8,7 +8,10 @@
   changing lists: each list is cached under a key with its arrival time, an
   application shows it at once and compares a fresh reply in the background,
   and `etaf-list-cache-next` picks the stalest or never-loaded list, one at a
-  time, for a timer armed while the session is mounted.
+  time, for a timer armed while the session is mounted.  Failed refreshes back
+  off and a failure that needs a human pauses them until a load succeeds, and
+  an optional version token lets a conditional backend refresh an entry
+  without a repaint.
 
 - Interactive Hosts advertise themselves: a Host with an `:on-press` or
   `:on-drag` callback publishes the hand pointer by default. Applications no

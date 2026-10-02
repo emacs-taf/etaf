@@ -110,5 +110,56 @@
     (etaf-list-cache-disarm cache)
     (should-not (etaf-list-cache-next cache keys (+ (float-time) 1000)))))
 
+(ert-deftest etaf-list-cache-backs-off-after-a-failure ()
+  "A failed refresh waits longer before the next attempt, and success clears it."
+  (let* ((cache (etaf-list-cache-create :interval 10 :grace 0))
+         (keys '(:shelf)))
+    (etaf-list-cache-start cache)
+    (etaf-list-cache-put cache :shelf '(1) 1)
+    (etaf-list-cache-note-failure cache "external")
+    (let ((first (etaf-list-cache-retry-at cache)))
+      (should first)
+      ;; Inside the backoff nothing is due, however stale the entry is.
+      (should-not (etaf-list-cache-next cache keys (- first 1) 0))
+      (should (eq :shelf (etaf-list-cache-next cache keys (+ first 1) 0)))
+      (etaf-list-cache-note-failure cache "external")
+      (let ((second (etaf-list-cache-retry-at cache)))
+        ;; The second failure waits twice as long as the first.
+        (should (> second first))
+        (should (eq :shelf (etaf-list-cache-next cache keys (+ second 1) 0)))))
+    (etaf-list-cache-note-success cache)
+    (should-not (etaf-list-cache-retry-at cache))
+    (should (eq :shelf (etaf-list-cache-next cache keys (+ (float-time) 500) 0)))))
+
+(ert-deftest etaf-list-cache-pauses-on-a-stop-code ()
+  "A failure that needs a human pauses refreshes until a load succeeds."
+  (let* ((cache (etaf-list-cache-create :interval 10 :grace 0))
+         (keys '(:shelf)))
+    (etaf-list-cache-start cache)
+    (etaf-list-cache-put cache :shelf '(1) 1)
+    (etaf-list-cache-note-failure cache "external")
+    (should-not (etaf-list-cache-blocked-p cache))
+    (etaf-list-cache-note-failure cache "auth")
+    (should (etaf-list-cache-blocked-p cache))
+    ;; No background refresh starts again, however long the caller waits.
+    (should-not (etaf-list-cache-next cache keys (+ (float-time) 100000) 0))
+    (etaf-list-cache-note-success cache)
+    (should-not (etaf-list-cache-blocked-p cache))
+    (should (etaf-list-cache-next cache keys (+ (float-time) 100) 0))))
+
+(ert-deftest etaf-list-cache-touch-marks-a-not-modified-reply ()
+  "A version token is stored and a not-modified answer only refreshes the time."
+  (let* ((cache (etaf-list-cache-create :interval 100 :grace 0))
+         (now (float-time)))
+    (etaf-list-cache-put cache :shelf '(1 2) 2 :version "v1")
+    (should (equal "v1" (etaf-list-cache-version cache :shelf)))
+    (should (etaf-list-cache-stale-p cache :shelf (+ now 200) 100))
+    (etaf-list-cache-touch cache :shelf "v2")
+    (should (equal "v2" (etaf-list-cache-version cache :shelf)))
+    (should (equal '(1 2) (etaf-list-cache-rows cache :shelf)))
+    (should-not (etaf-list-cache-stale-p cache :shelf (+ (float-time) 10) 100))
+    ;; Touching a key that was never loaded does nothing.
+    (should-not (etaf-list-cache-touch cache :reading "v9"))))
+
 (provide 'etaf-list-cache-tests)
 ;;; etaf-list-cache-tests.el ends here

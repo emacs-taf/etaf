@@ -1374,20 +1374,53 @@
 ;;;###autoload (autoload 'etaf-resource-example-close "etaf" nil t)
 ;; Unmount and kill *ETAF Resource Example*. Repeated closing is harmless.
 ;;
-;; Function: etaf-list-cache-create (&key interval grace)
+;; Function: etaf-list-cache-create (&key interval grace max-backoff stop-codes)
 ;;;###autoload (autoload 'etaf-list-cache-create "etaf" nil nil)
 ;; Return a list cache with INTERVAL seconds of freshness and GRACE seconds.
 ;; A session keeps one cache and stores each list under its own key together
 ;; with the time it arrived, so a list can be shown at once and compared with a
 ;; fresh reply in the background (stale-while-revalidate).  INTERVAL defaults
 ;; to 120 and GRACE to 3: no background refresh starts in the first GRACE
-;; seconds after the cache is started or armed.
+;; seconds after the cache is started or armed.  Failed refreshes back off
+;; (doubling up to MAX-BACKOFF seconds, default 1800) and one that fails with
+;; a STOP-CODE (auth and blocked by default) pauses them until a load
+;; succeeds.
 ;;
-;; Function: etaf-list-cache-put (cache key rows total)
+;; Function: etaf-list-cache-put (cache key rows total &key version)
 ;;;###autoload (autoload 'etaf-list-cache-put "etaf" nil nil)
 ;; Cache ROWS and TOTAL under KEY and return the stored entry.
 ;; The entry records its arrival time, which is what the staleness rule and the
 ;; background refresh order read; the backend reply stays the source of truth.
+;; VERSION, when the backend offers a version token, is stored so a caller can
+;; send it with the next request.
+;;
+;; Function: etaf-list-cache-version (cache key)
+;;;###autoload (autoload 'etaf-list-cache-version "etaf" nil nil)
+;; Return KEY's stored version token, or nil.
+;;
+;; Function: etaf-list-cache-touch (cache key &optional version)
+;;;###autoload (autoload 'etaf-list-cache-touch "etaf" nil nil)
+;; Mark KEY's entry as just checked without replacing its rows.
+;; A backend that answers that nothing changed for a conditional request
+;; reports it here, so the entry is fresh again and no repaint happens.
+;;
+;; Function: etaf-list-cache-note-success (cache)
+;;;###autoload (autoload 'etaf-list-cache-note-success "etaf" nil nil)
+;; Record that a load succeeded: clear the failure backoff and any pause.
+;;
+;; Function: etaf-list-cache-note-failure (cache &optional code)
+;;;###autoload (autoload 'etaf-list-cache-note-failure "etaf" nil nil)
+;; Record that a load failed with error CODE and throttle the retries.
+;; An unknown CODE backs the next attempt off; a stop-code (auth, blocked)
+;; pauses background refreshes until a load succeeds.
+;;
+;; Function: etaf-list-cache-blocked-p (cache)
+;;;###autoload (autoload 'etaf-list-cache-blocked-p "etaf" nil nil)
+;; Return non-nil when CACHE paused background refreshes until a load succeeds.
+;;
+;; Function: etaf-list-cache-retry-at (cache)
+;;;###autoload (autoload 'etaf-list-cache-retry-at "etaf" nil nil)
+;; Return the time before which CACHE starts no background refresh, or nil.
 ;;
 ;; Function: etaf-list-cache-entry (cache key)
 ;;;###autoload (autoload 'etaf-list-cache-entry "etaf" nil nil)

@@ -1106,6 +1106,13 @@ SQLite 后端使用 Emacs 内置 SQLite 能力。数据库后端提供既有的
 `etaf-list-cache-next` 一次返回一个列表（最旧的过期项优先，其次是从未加载过的），
 arm 之后的宽限期内保持安静；新鲜度属于应用配置时，传入显式的 INTERVAL。
 
+每次加载都回报给缓存：成功调 `etaf-list-cache-note-success`，失败调
+`etaf-list-cache-note-failure` 并带上后端的错误码。失败会退避（先等一个 INTERVAL，
+然后翻倍，封顶到缓存的 `max-backoff`）；需要人介入的错误码（`auth`、`blocked`）
+会暂停后台刷新，直到某次加载成功。后端提供版本令牌时，用
+`(etaf-list-cache-put cache key rows total :version token)` 存下、在下一次条件请求里带上，
+收到「没变化」的回复就用 `etaf-list-cache-touch`：刷新条目但不重绘。
+
 ## 11. Resource 与 raw Ebox
 
 Resource 管理 Scope 所有的值及可选 cleanup。同步 loader 的用法如下：

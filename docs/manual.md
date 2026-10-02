@@ -1243,6 +1243,16 @@ the stalest list, or one that was never loaded, one at a time, and stays quiet
 inside the grace period after arming; pass an explicit INTERVAL when the
 freshness belongs to the application's own configuration.
 
+Report every load through the cache: `etaf-list-cache-note-success` after a
+reply and `etaf-list-cache-note-failure` with the backend's error code after a
+failure.  Failures then back off (the interval, then double, capped at the
+cache's `max-backoff`) and a code that needs a human (`auth`, `blocked`) pauses
+background refreshes until a load succeeds again.  When the backend offers a
+version token, keep it with `(etaf-list-cache-put cache key rows total
+:version token)`, send it with the next conditional request and answer a
+not-modified reply with `etaf-list-cache-touch`, which refreshes the entry
+without a repaint.
+
 ## 11. Resource and raw Ebox
 
 Use a Resource for a Scope-owned value and optional cleanup. A synchronous loader remains simple:

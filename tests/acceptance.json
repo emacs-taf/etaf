@@ -1382,6 +1382,21 @@
       "name": "etaf-list-cache-arm-runs-and-disarm-stops",
       "file": "tests/etaf-list-cache-tests.el",
       "purpose": "Arming runs the refresh function on a timer, arming again replaces the timer, and disarming stops background work for good."
+    },
+    {
+      "name": "etaf-list-cache-backs-off-after-a-failure",
+      "file": "tests/etaf-list-cache-tests.el",
+      "purpose": "A failed background refresh waits longer before the next attempt (doubling), and a success clears the backoff."
+    },
+    {
+      "name": "etaf-list-cache-pauses-on-a-stop-code",
+      "file": "tests/etaf-list-cache-tests.el",
+      "purpose": "A failure whose code needs a human (auth/blocked) pauses background refreshes until a load succeeds again."
+    },
+    {
+      "name": "etaf-list-cache-touch-marks-a-not-modified-reply",
+      "file": "tests/etaf-list-cache-tests.el",
+      "purpose": "A version token is stored per entry and a not-modified answer refreshes only the check time and the token."
     }
   ]
 }

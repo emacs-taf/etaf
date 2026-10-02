@@ -31,7 +31,8 @@
 (cl-defstruct (etaf-list-cache
                 (:conc-name etaf-list-cache--)
                 (:constructor etaf-list-cache--create
-                              (&key entries interval grace started-at timer busy)))
+                              (&key entries interval grace started-at timer busy
+                                    failures retry-at blocked max-backoff stop-codes)))
   "Per-session list cache and background refresh policy.
 ENTRIES maps a key to its (:rows :total :at) entry.  INTERVAL is the
 freshness of an entry in seconds, GRACE the quiet period after starting
@@ -43,22 +44,88 @@ flight."
   (grace 3)
   started-at
   timer
-  busy)
+  busy
+  (failures 0)
+  retry-at
+  blocked
+  (max-backoff 1800)
+  (stop-codes '("auth" "blocked")))
 
-(cl-defun etaf-list-cache-create (&key interval grace)
+(cl-defun etaf-list-cache-create
+    (&key interval grace max-backoff stop-codes)
   "Return a list cache with INTERVAL seconds of freshness and GRACE seconds.
 INTERVAL defaults to 120 and GRACE to 3.  A background refresh never starts in
 the GRACE seconds after `etaf-list-cache-arm' or `etaf-list-cache-start', so a
-newly opened reader is not competing with a prefetch."
-  (etaf-list-cache--create :interval (or interval 120)
-                           :grace (or grace 3)))
+newly opened reader is not competing with a prefetch.
 
-(defun etaf-list-cache-put (cache key rows total)
+A failed background load is retried with exponential backoff (INTERVAL, then
+double, capped at MAX-BACKOFF seconds) until a load succeeds; a load that fails
+with one of STOP-CODES (auth and blocked by default, which mean a human
+must act) pauses background refreshes until a load succeeds again."
+  (etaf-list-cache--create :interval (or interval 120)
+                           :grace (or grace 3)
+                           :max-backoff (or max-backoff 1800)
+                           :stop-codes (or stop-codes '("auth" "blocked"))))
+
+(cl-defun etaf-list-cache-put (cache key rows total &key version)
   "Cache ROWS and TOTAL under KEY in CACHE and return the stored entry.
 The entry records the time it arrived, which is what the staleness rule and
-the background refresh order read."
-  (puthash key (list :rows rows :total total :at (float-time))
+the background refresh order read.  VERSION, when the backend offers a version
+token, is stored for `etaf-list-cache-version' so a caller can send it with the
+next request and answer a not-modified reply with `etaf-list-cache-touch'."
+  (puthash key (list :rows rows :total total :at (float-time) :version version)
            (etaf-list-cache--entries cache)))
+
+(defun etaf-list-cache-version (cache key)
+  "Return KEY's stored version token, or nil.
+The token is whatever the caller passed to `etaf-list-cache-put'; the cache
+never interprets it."
+  (plist-get (etaf-list-cache-entry cache key) :version))
+
+(defun etaf-list-cache-touch (cache key &optional version)
+  "Mark KEY's entry as just checked, without replacing its rows.
+A backend that answers that nothing changed for a conditional request reports
+it through this function, so the entry becomes fresh again and no repaint is
+needed.  VERSION replaces the stored token when the reply carries a new one."
+
+  (when-let* ((entry (etaf-list-cache-entry cache key)))
+    (plist-put entry :at (float-time))
+    (when version (plist-put entry :version version))
+    (gethash key (etaf-list-cache--entries cache))))
+
+(defun etaf-list-cache-note-success (cache)
+  "Record that a load succeeded: clear the failure backoff and any pause.
+Call it from every load path, foreground or background."
+  (setf (etaf-list-cache--failures cache) 0
+        (etaf-list-cache--retry-at cache) nil
+        (etaf-list-cache--blocked cache) nil)
+  cache)
+
+(defun etaf-list-cache-note-failure (cache &optional code)
+  "Record that a load failed with error CODE and throttle the retries.
+CODE nil or anything unknown backs the next attempt off (the interval, then
+double, capped at the cache's max backoff).  A CODE listed in the cache's
+stop codes means a human must act (a login expired, a flow is blocked): the
+cache then pauses background refreshes until some load succeeds again."
+  (cl-incf (etaf-list-cache--failures cache))
+  (if (and code (member code (etaf-list-cache--stop-codes cache)))
+      (progn
+        (setf (etaf-list-cache--blocked cache) t)
+        (setf (etaf-list-cache--retry-at cache) nil))
+    (let* ((failures (etaf-list-cache--failures cache))
+           (delay (min (etaf-list-cache--max-backoff cache)
+                       (* (etaf-list-cache--interval cache)
+                          (expt 2 (1- failures))))))
+      (setf (etaf-list-cache--retry-at cache) (+ (float-time) delay))))
+  cache)
+
+(defun etaf-list-cache-blocked-p (cache)
+  "Return non-nil when CACHE paused background refreshes until a load succeeds."
+  (and (etaf-list-cache--blocked cache) t))
+
+(defun etaf-list-cache-retry-at (cache)
+  "Return the time before which CACHE starts no background refresh, or nil."
+  (etaf-list-cache--retry-at cache))
 
 (defun etaf-list-cache-entry (cache key)
   "Return KEY's cached entry (:rows :total :at), or nil."
@@ -98,6 +165,9 @@ is warmed so its section can paint from the cache later.  Nil while the cache
 is busy, inside its grace period, or when every KEY is fresh and cached."
   (when-let* ((started (etaf-list-cache--started-at cache))
               ((not (etaf-list-cache--busy cache)))
+              ((not (etaf-list-cache--blocked cache)))
+              ((or (null (etaf-list-cache--retry-at cache))
+                   (>= (or now (float-time)) (etaf-list-cache--retry-at cache))))
               ((>= (- (or now (float-time)) started)
                    (etaf-list-cache--grace cache))))
     (let (stale missing)

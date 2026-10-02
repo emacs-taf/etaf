@@ -513,7 +513,7 @@ Data 是 ETAF core 能力，不是需要用户额外学习的第二套框架。D
 
 `:load` 必选，接收 `QUERY`、`PAGE` 和 `PAGE-SIZE`，返回带 `:items` 的 plist，可选 `:total`、`:page` 和 `:page-size`。`:mutate` 和 `:dispose` 可选。加载和变更回调可直接返回同步结果，或返回 `etaf-async` 描述的原生异步操作。Data 与 Resource 共用请求的启动、单次完成、失效、取消和超时机制；Data 仍独占集合、分页、选择和写入后刷新。外部结果未知时不推断回滚，已提交写入的刷新重试只调用读取。
 
-`etaf-list-cache` 用 stale-while-revalidate 的方式服务变化很慢的列表：一个 key 对应它的 rows、total 与到达时间，模块掌管新鲜度间隔与候选顺序（最旧的过期项优先，其次是从未加载过的 key，一次一个），并运行会话挂载期间 arm 的定时器。应用自己保留请求与重绘逻辑；与缓存相等的回复不需要重绘，这正是切换分节瞬时完成的原因。
+`etaf-list-cache` 用 stale-while-revalidate 的方式服务变化很慢的列表：一个 key 对应它的 rows、total 与到达时间，模块掌管新鲜度间隔与候选顺序（最旧的过期项优先，其次是从未加载过的 key，一次一个），并运行会话挂载期间 arm 的定时器。应用自己保留请求与重绘逻辑；与缓存相等的回复不需要重绘，这正是切换分节瞬时完成的原因。同一个模块还掌管失败策略——未知错误指数退避，后端要求人介入（登录过期）时暂停，直到某次加载成功——以及可选的版本令牌：支持条件请求的后端返回「没变化」时用 `touch` 刷新时间而不动内容。阅读器是否在屏幕上由应用判断：两个消费者都在自己缓冲区不可见时暂停预热。
 
 `etaf-data-controller` 负责 query、分页、items、total、status、error、selection、request generation 和释放。`etaf-data-memory-source` 是示例和测试使用的内存 source。存储包只是具体 source；SQLite 不是 core 前提，ORM 也保持在 ETAF 数据模型之外。
 
