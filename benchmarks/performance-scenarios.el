@@ -190,4 +190,76 @@
                     "Mounted resize example through native press, movement and release")
      :setup (lambda (_mode) (etaf-resize-benchmark--native-fixture selected)))))
 
+;;; ---------------------------------------------------------------------------
+;;; One row's update must not scale with the scene
+;;; ---------------------------------------------------------------------------
+
+;; A fixed-height row whose paint and weight change is the smallest possible
+;; update; it must cost about the same in a 30-row and a 400-row scene.  The
+;; scenario is the regression gate for the incremental commit: today the
+;; layout phase walks the whole scene, so the larger sizes report above their
+;; budget until the framework scopes it to the dirty owners.
+
+(etaf-define-component etaf-row-update-benchmark--probe (&key rows marked)
+  "Render ROWS fixed-height rows; row 1's paint follows MARKED."
+  :view
+  (column :width 'stretch :item-gap '(lh 0)
+    (box :for (row (number-sequence 1 rows)) :key row
+         :height '(lh 1) :overflow 'hidden
+         :bgcolor (if (and (equal row 1) (etaf-value marked))
+                      "#1A2436" "#223344")
+         :font-weight (if (and (equal row 1) (etaf-value marked)) 'bold 'normal)
+         (text (expr (format "row %04d 汉字 ABC abcdefghijklmnopqrstuvwxyz" row))))))
+
+(defun etaf-row-update-benchmark--bold-p (face)
+  "Return non-nil when FACE carries a bold weight."
+  (let ((faces (if (and (consp face) (keywordp (car face))) (list face) face)))
+    (cl-some (lambda (entry) (eq (plist-get entry :weight) 'bold))
+             (if (listp faces) faces nil))))
+
+(defun etaf-row-update-benchmark--fixture (rows _mode)
+  "Mount ROWS fixed-height rows and toggle one row's style per sample.
+The runtime stays mounted until the driver calls the returned `:cleanup'."
+  (let* ((buffer (generate-new-buffer (format " *TAF row update %s*" rows)))
+         (marked (etaf-ref t :name 'etaf-row-update-marked))
+         (runtime nil))
+    (with-current-buffer buffer (setq-local truncate-lines t))
+    (etaf-mount buffer
+                (etaf-view (etaf-row-update-benchmark--probe
+                            :rows rows :marked marked))
+                (list :viewport-width 1200 :viewport-height 40))
+    (setq runtime (etaf-runtime-for-buffer buffer))
+    (etaf-runtime-flush runtime)
+    (list
+     :buffer buffer
+     :invoke (lambda (_sample)
+               (etaf-set-value marked (not (etaf-value marked)))
+               (etaf-runtime-flush runtime))
+     :verify
+     (lambda ()
+       (with-current-buffer buffer
+         (let* ((position (+ (point-min) (string-match "row 0001" (buffer-string))))
+                (bold (etaf-row-update-benchmark--bold-p
+                       (get-text-property position 'face))))
+           (if (eq bold (not (null (etaf-value marked)))) t
+             (format "Row 1 bold=%s while marked=%s"
+                     bold (etaf-value marked))))))
+     :cleanup
+     (lambda ()
+       (when (buffer-live-p buffer)
+         (when (etaf-runtime-for-buffer buffer) (etaf-unmount runtime))
+         (kill-buffer buffer))))))
+
+(dolist (rows '(30 120 400))
+  (let ((count rows))
+    (taf-benchmark-register
+     (format "row-update.%s" count)
+     :version 1 :modes '(batch) :isolation 'series
+     :required-providers '(etaf ebox)
+     :impact 'local :budget-ms 10
+     :description
+     (format "One row's paint and weight toggle in a %d-row fixed-height scene; the cost must not scale with the scene"
+             count)
+     :setup (lambda (_mode) (etaf-row-update-benchmark--fixture count nil)))))
+
 ;;; performance-scenarios.el ends here
