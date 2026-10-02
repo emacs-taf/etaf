@@ -4,6 +4,11 @@
 
 ### Added
 
+- 新增 `etaf-list-cache`：给变化很慢的列表提供 stale-while-revalidate 策略。
+  每个列表按 key 缓存并记录到达时间，应用先展示缓存、在后台与最新回复对比；
+  `etaf-list-cache-next` 一次挑一个列表（最旧的过期项优先，其次是从未加载过的），
+  交给会话挂载期间 arm 的定时器。
+
 - 新增 `etaf-draggable` 与 `etaf-resizable` Behavior，将 Ebox 拖拽手势转换为调用方
   持有的响应式几何 ref，支持轴/边选择、边界、生命周期回调和逻辑单位位移转换。
 - 新增受控变体，通过 `read`/`on-change` 适配聚合几何状态，不创建第二份持久几何存储。

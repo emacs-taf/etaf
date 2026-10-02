@@ -569,6 +569,8 @@ Data is a core ETAF capability, not a second framework package. A Data Source is
 
 `:load` is required and receives `QUERY`, `PAGE`, and `PAGE-SIZE`; it returns a plist with `:items` and optional `:total`, `:page`, and `:page-size`. `:mutate` and `:dispose` are optional. Load and mutation callbacks return ordinary synchronous results or an `etaf-async` descriptor. Data and Resource share request start, single completion, invalidation, cancellation and timeout. Data continues to own collections, paging, selection and read-side reconciliation. Unknown external outcomes never imply rollback; retrying a committed mutation refreshes without repeating the write.
 
+`etaf-list-cache` serves slowly changing lists in the stale-while-revalidate style: a key maps to its rows, total and arrival time, the module owns the freshness interval and the candidate order (stalest entry first, then a key that was never loaded, one at a time), and it runs the timer an application arms while its session is mounted.  Applications keep their own requests and repainting; a reply equal to the cache needs no repaint, which is what keeps a section switch instant.
+
 `etaf-data-controller` owns query, pagination, items, total, status, error, selection, request generation, and disposal. `etaf-data-memory-source` is the built-in source used for examples and tests. Storage packages are concrete sources; SQLite is not a core assumption and an ORM, when used, remains outside ETAF's data model.
 
 ### 9.3 Resource and error boundary

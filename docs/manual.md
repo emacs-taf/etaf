@@ -1218,6 +1218,31 @@ produce the existing `etaf-data-source` capabilities; ETAF DB does not add a
 second controller or ORM. See the [ETAF DB manual](https://gitea.gklazycat.heiyu.space/geekinney/etaf-db/src/branch/main/docs/manual.md)
 for its supported storage workflow.
 
+A list that changes slowly is better shown from a cache and revalidated in the
+background.  `etaf-list-cache` owns that policy, so every application refreshes
+the same way:
+
+```elisp
+(setq cache (etaf-list-cache-create :interval 120))
+(etaf-list-cache-put cache :shelf rows total)
+(etaf-list-cache-entry cache :shelf)       ; (:rows ROWS :total TOTAL :at TIME)
+(etaf-list-cache-stale-p cache :shelf)     ; fresh for INTERVAL seconds
+(etaf-list-cache-unchanged-p cache :shelf rows total)
+(etaf-list-cache-arm cache
+                     (lambda ()
+                       (when-let* ((ready (etaf-list-cache-next cache '(:shelf :reading))))
+                         (etaf-list-cache-set-busy cache t)
+                         (load-list ready)))
+                     :interval 15)
+(etaf-list-cache-disarm cache)             ; when the session is disposed
+```
+
+Show the cached rows first, then compare a fresh reply and repaint only when
+`etaf-list-cache-unchanged-p` says it differs.  `etaf-list-cache-next` returns
+the stalest list, or one that was never loaded, one at a time, and stays quiet
+inside the grace period after arming; pass an explicit INTERVAL when the
+freshness belongs to the application's own configuration.
+
 ## 11. Resource and raw Ebox
 
 Use a Resource for a Scope-owned value and optional cleanup. A synchronous loader remains simple:

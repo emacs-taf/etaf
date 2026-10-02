@@ -1374,6 +1374,84 @@
 ;;;###autoload (autoload 'etaf-resource-example-close "etaf" nil t)
 ;; Unmount and kill *ETAF Resource Example*. Repeated closing is harmless.
 ;;
+;; Function: etaf-list-cache-create (&key interval grace)
+;;;###autoload (autoload 'etaf-list-cache-create "etaf" nil nil)
+;; Return a list cache with INTERVAL seconds of freshness and GRACE seconds.
+;; A session keeps one cache and stores each list under its own key together
+;; with the time it arrived, so a list can be shown at once and compared with a
+;; fresh reply in the background (stale-while-revalidate).  INTERVAL defaults
+;; to 120 and GRACE to 3: no background refresh starts in the first GRACE
+;; seconds after the cache is started or armed.
+;;
+;; Function: etaf-list-cache-put (cache key rows total)
+;;;###autoload (autoload 'etaf-list-cache-put "etaf" nil nil)
+;; Cache ROWS and TOTAL under KEY and return the stored entry.
+;; The entry records its arrival time, which is what the staleness rule and the
+;; background refresh order read; the backend reply stays the source of truth.
+;;
+;; Function: etaf-list-cache-entry (cache key)
+;;;###autoload (autoload 'etaf-list-cache-entry "etaf" nil nil)
+;; Return KEY's cached entry (:rows :total :at), or nil.
+;;
+;; Function: etaf-list-cache-rows (cache key)
+;;;###autoload (autoload 'etaf-list-cache-rows "etaf" nil nil)
+;; Return KEY's cached rows, or nil.
+;;
+;; Function: etaf-list-cache-total (cache key)
+;;;###autoload (autoload 'etaf-list-cache-total "etaf" nil nil)
+;; Return KEY's cached total, or 0.
+;;
+;; Function: etaf-list-cache-stale-p (cache key &optional now interval)
+;;;###autoload (autoload 'etaf-list-cache-stale-p "etaf" nil nil)
+;; Return non-nil when KEY's entry is older than INTERVAL seconds.
+;; NOW defaults to the current time and INTERVAL to the cache's own interval;
+;; a key without an entry is missing rather than stale.
+;;
+;; Function: etaf-list-cache-unchanged-p (cache key rows total)
+;;;###autoload (autoload 'etaf-list-cache-unchanged-p "etaf" nil nil)
+;; Return non-nil when ROWS and TOTAL equal what KEY already holds.
+;; A caller uses this to leave the page untouched when a background reply did
+;; not change anything.
+;;
+;; Function: etaf-list-cache-next (cache keys &optional now interval)
+;;;###autoload (autoload 'etaf-list-cache-next "etaf" nil nil)
+;; Return the KEY that a background refresh should load next, or nil.
+;; KEYS is the caller's ordered list of candidates; the stalest stale entry
+;; comes first, and when every entry is fresh the first KEY without an entry is
+;; warmed.  Nil while the cache is busy, inside its grace period, or when every
+;; KEY is fresh and cached, so one refresh runs at a time.
+;;
+;; Function: etaf-list-cache-start (cache)
+;;;###autoload (autoload 'etaf-list-cache-start "etaf" nil nil)
+;; Start CACHE: begin its grace period and allow background refreshes.
+;; A caller that already runs its own timer starts the cache once and then asks
+;; `etaf-list-cache-next' what to load.
+;;
+;; Function: etaf-list-cache-arm (cache function &key interval)
+;;;###autoload (autoload 'etaf-list-cache-arm "etaf" nil nil)
+;; Arm CACHE to call FUNCTION every INTERVAL seconds until disarmed.
+;; Uses INTERVAL, or the cache's own interval.  Arming again replaces the
+;; previous timer and restarts the grace period; FUNCTION takes no arguments
+;; and usually loads the key `etaf-list-cache-next' returns.
+;;
+;; Function: etaf-list-cache-armed-p (cache)
+;;;###autoload (autoload 'etaf-list-cache-armed-p "etaf" nil nil)
+;; Return non-nil when CACHE has a background refresh timer armed.
+;;
+;; Function: etaf-list-cache-busy-p (cache)
+;;;###autoload (autoload 'etaf-list-cache-busy-p "etaf" nil nil)
+;; Return non-nil when CACHE has a background refresh in flight.
+;;
+;; Function: etaf-list-cache-set-busy (cache busy)
+;;;###autoload (autoload 'etaf-list-cache-set-busy "etaf" nil nil)
+;; Record that CACHE has, or has not, a background refresh in flight.
+;;
+;; Function: etaf-list-cache-disarm (cache)
+;;;###autoload (autoload 'etaf-list-cache-disarm "etaf" nil nil)
+;; Stop CACHE's background refresh and clear its busy marker.
+;; Call it when the owning session is disposed; a disarmed cache reports no
+;; background work even after its entries grow old.
+;;
 ;;; Code:
 
 ;;;###autoload
@@ -1405,6 +1483,7 @@
 (require 'etaf-behavior)
 (require 'etaf-controlled-behavior)
 (require 'etaf-actions)
+(require 'etaf-list-cache)
 (require 'etaf-events)
 (require 'etaf-performance)
 

@@ -4,6 +4,12 @@
 
 ### Added
 
+- `etaf-list-cache` provides the stale-while-revalidate policy for slowly
+  changing lists: each list is cached under a key with its arrival time, an
+  application shows it at once and compares a fresh reply in the background,
+  and `etaf-list-cache-next` picks the stalest or never-loaded list, one at a
+  time, for a timer armed while the session is mounted.
+
 - Interactive Hosts advertise themselves: a Host with an `:on-press` or
   `:on-drag` callback publishes the hand pointer by default. Applications no
   longer declare `:pointer 'hand` per element; an explicit `:pointer`,

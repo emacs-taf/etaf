@@ -21,6 +21,7 @@ grouped by the theme you are chasing:
 | Behaviors and named Actions | `etaf-behavior`, `etaf-controlled-behavior`, `etaf-actions` |
 | Inherited Context and Theme resolution | `etaf-context` |
 | Data controllers, Resources, shared async completion | `etaf-data`, `etaf-resource`, `etaf-async` |
+| Cached lists with background revalidation | `etaf-list-cache` |
 | The single Ebox boundary and its SPI port | `etaf-renderer`, `etaf-render-port` |
 | Optional observation and recording | `etaf-observer`, `etaf-performance` |
 

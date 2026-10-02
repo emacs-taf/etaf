@@ -1085,6 +1085,27 @@ SQLite 后端使用 Emacs 内置 SQLite 能力。数据库后端提供既有的
 `etaf-data-source` capability；ETAF DB 不增加第二套 Controller 或 ORM。
 支持的存储流程见 [ETAF DB 手册](https://gitea.gklazycat.heiyu.space/geekinney/etaf-db/src/branch/main/docs/manual.zh-CN.md)。
 
+变化很慢的列表适合先用缓存展示、在后台再验证。`etaf-list-cache` 掌管这套策略，让每个应用用同一种方式刷新：
+
+```elisp
+(setq cache (etaf-list-cache-create :interval 120))
+(etaf-list-cache-put cache :shelf rows total)
+(etaf-list-cache-entry cache :shelf)       ; (:rows ROWS :total TOTAL :at TIME)
+(etaf-list-cache-stale-p cache :shelf)     ; INTERVAL 秒内算新鲜
+(etaf-list-cache-unchanged-p cache :shelf rows total)
+(etaf-list-cache-arm cache
+                     (lambda ()
+                       (when-let* ((ready (etaf-list-cache-next cache '(:shelf :reading))))
+                         (etaf-list-cache-set-busy cache t)
+                         (load-list ready)))
+                     :interval 15)
+(etaf-list-cache-disarm cache)             ; 会话释放时
+```
+
+先展示缓存行，再拿最新回复对比，只有 `etaf-list-cache-unchanged-p` 判为不同才重绘。
+`etaf-list-cache-next` 一次返回一个列表（最旧的过期项优先，其次是从未加载过的），
+arm 之后的宽限期内保持安静；新鲜度属于应用配置时，传入显式的 INTERVAL。
+
 ## 11. Resource 与 raw Ebox
 
 Resource 管理 Scope 所有的值及可选 cleanup。同步 loader 的用法如下：

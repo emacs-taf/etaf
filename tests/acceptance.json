@@ -1357,6 +1357,31 @@
       "name": "etaf-native-interactive-hosts-default-the-pointer",
       "file": "tests/etaf-native-affordance-tests.el",
       "purpose": "A press or drag boundary publishes the hand or horizontal drag pointer by default, while an explicit :pointer (including nil) and a disabled boundary keep their own shape."
+    },
+    {
+      "name": "etaf-list-cache-stores-rows-total-and-time",
+      "file": "tests/etaf-list-cache-tests.el",
+      "purpose": "Putting a list stores its rows, total and arrival time, and reads back per key."
+    },
+    {
+      "name": "etaf-list-cache-staleness-follows-the-interval",
+      "file": "tests/etaf-list-cache-tests.el",
+      "purpose": "An entry is fresh inside the interval, stale beyond it, and a missing entry is neither."
+    },
+    {
+      "name": "etaf-list-cache-detects-an-unchanged-reply",
+      "file": "tests/etaf-list-cache-tests.el",
+      "purpose": "A reply equal to the cached rows and total counts as unchanged; anything else does not."
+    },
+    {
+      "name": "etaf-list-cache-next-prefers-stale-then-missing",
+      "file": "tests/etaf-list-cache-tests.el",
+      "purpose": "Background work picks the stalest list first, warms the first unloaded list otherwise, and stays quiet while busy."
+    },
+    {
+      "name": "etaf-list-cache-arm-runs-and-disarm-stops",
+      "file": "tests/etaf-list-cache-tests.el",
+      "purpose": "Arming runs the refresh function on a timer, arming again replaces the timer, and disarming stops background work for good."
     }
   ]
 }
