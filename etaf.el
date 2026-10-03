@@ -1413,13 +1413,15 @@
 ;; a STOP-CODE (auth and blocked by default) pauses them until a load
 ;; succeeds.
 ;;
-;; Function: etaf-list-cache-put (cache key rows total &key version)
+;; Function: etaf-list-cache-put (cache key rows total &key version at)
 ;;;###autoload (autoload 'etaf-list-cache-put "etaf" nil nil)
 ;; Cache ROWS and TOTAL under KEY and return the stored entry.
 ;; The entry records its arrival time, which is what the staleness rule and the
 ;; background refresh order read; the backend reply stays the source of truth.
 ;; VERSION, when the backend offers a version token, is stored so a caller can
-;; send it with the next request.
+;; send it with the next request. AT optionally supplies a persisted observation
+;; time (nonnegative seconds since epoch); future times are clamped to now.
+;; Omitting AT records the current time. Invalid AT leaves the cache unchanged.
 ;;
 ;; Function: etaf-list-cache-version (cache key)
 ;;;###autoload (autoload 'etaf-list-cache-version "etaf" nil nil)

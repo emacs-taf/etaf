@@ -29,7 +29,15 @@
       (should (numberp (plist-get entry :at))))
     (should (equal '(1 2 3) (etaf-list-cache-rows cache '(:shelf))))
     (should (equal 7 (etaf-list-cache-total cache '(:shelf))))
-    (should (equal 0 (etaf-list-cache-total cache '(:reading))))))
+    (should (equal 0 (etaf-list-cache-total cache '(:reading))))
+    (etaf-list-cache-put cache :restored '(4) 1 :at 0)
+    (should (= 0 (plist-get (etaf-list-cache-entry cache :restored) :at)))
+    (should (etaf-list-cache-stale-p cache :restored))
+    (should-error (etaf-list-cache-put cache :restored '(5) 1 :at -1)
+                  :type 'wrong-type-argument)
+    (should (equal '(4) (etaf-list-cache-rows cache :restored)))
+    (etaf-list-cache-put cache :future nil 0 :at (+ (float-time) 1000))
+    (should (<= (plist-get (etaf-list-cache-entry cache :future) :at) (float-time)))))
 
 (ert-deftest etaf-list-cache-staleness-follows-the-interval ()
   "An entry is fresh inside the interval, stale beyond it, and missing is neither."

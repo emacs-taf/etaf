@@ -67,13 +67,18 @@ must act) pauses background refreshes until a load succeeds again."
                            :max-backoff (or max-backoff 1800)
                            :stop-codes (or stop-codes '("auth" "blocked"))))
 
-(cl-defun etaf-list-cache-put (cache key rows total &key version)
+(cl-defun etaf-list-cache-put (cache key rows total &key version at)
   "Cache ROWS and TOTAL under KEY in CACHE and return the stored entry.
 The entry records the time it arrived, which is what the staleness rule and
 the background refresh order read.  VERSION, when the backend offers a version
 token, is stored for `etaf-list-cache-version' so a caller can send it with the
-next request and answer a not-modified reply with `etaf-list-cache-touch'."
-  (puthash key (list :rows rows :total total :at (float-time) :version version)
+next request and answer a not-modified reply with `etaf-list-cache-touch'.
+AT optionally preserves a snapshot's observation time (seconds since epoch).
+It must be a nonnegative number; a future time is clamped to now."
+  (when (and at (not (and (numberp at) (>= at 0))))
+    (signal 'wrong-type-argument (list 'nonnegative-number-p at)))
+  (puthash key (list :rows rows :total total
+                     :at (if at (min at (float-time)) (float-time)) :version version)
            (etaf-list-cache--entries cache)))
 
 (defun etaf-list-cache-version (cache key)

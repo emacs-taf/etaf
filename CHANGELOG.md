@@ -4,6 +4,9 @@
 
 ### Added
 
+- `etaf-list-cache-put` accepts an observation time with `:at`, so restored
+  snapshots retain their age and background revalidation can prioritize them.
+
 - `etaf-data-mutate-many` applies a non-empty list of `(OPERATION PAYLOAD)`
   pairs and reconciles the Controller once, so bulk writes no longer pay one
   reload per row.  A source may expose the optional `:mutate-batch' capability
