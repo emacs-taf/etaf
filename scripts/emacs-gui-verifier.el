@@ -92,7 +92,6 @@ Visual review and latency certification remain separate from assertions."
                  (alist-get 'target_selected facts)
                  (equal (alist-get 'frame_visible facts) "visible")
                  (= (length (cl-remove-if-not #'display-graphic-p (frame-list))) 1)
-                 (= (length (window-list nil 'no-minibuf)) 1)
                  (not (active-minibuffer-window)))
       (error "Capture requires one visible graphical frame and its selected target"))
     (make-directory (file-name-directory path) t)
@@ -122,7 +121,9 @@ Visual review and latency certification remain separate from assertions."
          (selected-buffer (window-buffer window))
          (focus (frame-focus-state frame)))
     (cons
-     (list frame window target selected-buffer)
+     (list frame window target selected-buffer
+           (mapcar (lambda (pane) (list pane (window-buffer pane) (window-pixel-edges pane)))
+                   (window-list frame 'no-minibuf)))
      `((graphic . ,(and (display-graphic-p frame) t))
        (focus . ,(cond ((eq focus t) "foreground")
                       ((null focus) "background")
@@ -139,6 +140,12 @@ Visual review and latency certification remain separate from assertions."
        (frame_width_px . ,(frame-pixel-width frame))
        (frame_height_px . ,(frame-pixel-height frame))
        (window_edges_px . ,(vconcat (window-pixel-edges window)))
+       (window_layout . ,(vconcat
+                          (mapcar (lambda (pane)
+                                    `((buffer . ,(buffer-name (window-buffer pane)))
+                                      (edges_px . ,(vconcat (window-pixel-edges pane)))
+                                      (selected . ,(eq pane window))))
+                                  (window-list frame 'no-minibuf))))
        (inhibit_quit . ,(and inhibit-quit t))
        (inhibit_redisplay . ,(and inhibit-redisplay t))
        (noninteractive . ,(and noninteractive t))))))

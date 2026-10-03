@@ -1667,9 +1667,11 @@ adapter from their checkout, then schedule the adapter's entry on a timer;
 this lets the client request return while the scenario yields between actions.
 Poll the fresh directory's `result.json` for `running`, `passed` or `failed`,
 then inspect failed checkpoints and the saved images. Screenshot actions require
-one visible graphical frame and one selected target window, with no active
-minibuffer. They preserve application focus and reject a target change during
-capture. `make tool-check` runs the portable scenario/evidence contracts and is
+one visible graphical frame with its target window selected and no active
+minibuffer. The frame may contain multiple native panes, for example a transcript
+and an editable composer. Evidence records every pane's buffer, pixel edges and
+selection state. Capture preserves application focus and rejects any change to
+the target, pane identities, buffers or geometry during capture. `make tool-check` runs the portable scenario/evidence contracts and is
 included in `make check`. On macOS, `make gui-tool-check` additionally checks
 the window capture and recorder commands using the system Swift SDK.
 

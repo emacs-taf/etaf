@@ -64,6 +64,18 @@ class ScenarioTests(unittest.TestCase):
         self.assertFalse(report['measurements'][0]['presentation_measured'])
         self.assertTrue(records[-1]['completed'])
 
+    def test_native_split_panes_have_layout_evidence(self):
+        result, _, report, *_ = self.run_scenario(
+            execute='(set-window-buffer (split-window-below) (get-buffer-create "*input*"))')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        measurement = report['measurements'][0]
+        self.assertEqual(len(measurement['before']['window_layout']), 1)
+        panes = measurement['after']['window_layout']
+        self.assertEqual(len(panes), 2)
+        self.assertEqual({p['buffer'] for p in panes}, {'*fixture*', '*input*'})
+        self.assertEqual(sum(bool(p['selected']) for p in panes), 1)
+        self.assertNotEqual(panes[0]['edges_px'], panes[1]['edges_px'])
+
     def test_false_assertion_is_a_failed_run_with_boolean_evidence(self):
         result, records, report, *_ = self.run_scenario(assertion='nil')
         self.assertEqual(result.returncode, 1)

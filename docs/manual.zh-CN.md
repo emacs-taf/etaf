@@ -1417,8 +1417,9 @@ Playground 使用 inert `.etaf` 结构与显式注册的 `.el` companion；core 
 场景用 `etaf-gui-verifier-line-height-assertions` 断言行高，用
 `etaf-gui-verifier-canvas-filled-p` 等待画布与窗口一致的 resize 收尾。
 
-截图要求一个可见图形 frame、一个选中的目标 window，且没有活动 minibuffer。
-工具保持应用焦点，截图期间目标变化会失败。`make check` 包含可移植的
+截图要求一个可见图形 frame、目标 window 被选中，且没有活动 minibuffer。
+同一 frame 可以包含多个原生窗格，例如对话区与编辑区；证据记录各窗格的 buffer、
+像素边界与选中状态。工具保持应用焦点，截图期间目标、窗格身份、buffer 或几何变化都会失败。`make check` 包含可移植的
 `make tool-check` 场景与证据契约检查；macOS 上另运行 `make gui-tool-check`，
 使用系统 Swift SDK 检查截图和录制命令。完整测量边界见[英文 GUI 指南](manual.md#measuring-an-existing-gui-action)。
 
