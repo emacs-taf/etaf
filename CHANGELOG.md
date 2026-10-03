@@ -4,6 +4,13 @@
 
 ### Added
 
+- `etaf-data-mutate-many` applies a non-empty list of `(OPERATION PAYLOAD)`
+  pairs and reconciles the Controller once, so bulk writes no longer pay one
+  reload per row.  A source may expose the optional `:mutate-batch' capability
+  to receive the whole list in one call; a transactional backend applies it
+  atomically.  A signaled operation stops the batch and keeps the completed
+  prefix observable under the `external-unknown' outcome.
+
 - `etaf-list-cache` provides the stale-while-revalidate policy for slowly
   changing lists: each list is cached under a key with its arrival time, an
   application shows it at once and compares a fresh reply in the background,

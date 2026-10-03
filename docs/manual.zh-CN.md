@@ -1029,7 +1029,7 @@ Component 发出 next value；ref 由调用方拥有，并在下一次 render �
 另一个所有者。保留提供方的 dispose 回调，不要为原始源和适配源分别创建 Controller。
 保持 v1/v2 写入结果契约；只有具备证据的提供方才能声明写入已回滚。
 
-Controller 通过 `etaf-data-items`、`etaf-data-status`、`etaf-data-error`、`etaf-data-total`、`etaf-data-query`、`etaf-data-page`、`etaf-data-page-size` 和 `etaf-data-selection` 暴露响应式 ref。操作使用 `etaf-data-load`、`etaf-data-reload`、`etaf-data-mutate`、`etaf-data-set-query`、`etaf-data-next-page`、`etaf-data-previous-page`、`etaf-data-select`（追加式多选）、`etaf-data-select-one`（互斥单选）、`etaf-data-selected-item` 和 `etaf-data-stop`。当 Controller 的 `:auto-load` 为 nil 时，命令式的 next/previous 也会自动 reload；`:auto-load t` 时仍由 reactive effect 负责 reload，避免重复请求。
+Controller 通过 `etaf-data-items`、`etaf-data-status`、`etaf-data-error`、`etaf-data-total`、`etaf-data-query`、`etaf-data-page`、`etaf-data-page-size` 和 `etaf-data-selection` 暴露响应式 ref。操作使用 `etaf-data-load`、`etaf-data-reload`、`etaf-data-mutate`、`etaf-data-mutate-many`、`etaf-data-set-query`、`etaf-data-next-page`、`etaf-data-previous-page`、`etaf-data-select`（追加式多选）、`etaf-data-select-one`（互斥单选）、`etaf-data-selected-item` 和 `etaf-data-stop`。当 Controller 的 `:auto-load` 为 nil 时，命令式的 next/previous 也会自动 reload；`:auto-load t` 时仍由 reactive effect 负责 reload，避免重复请求。
 
 `etaf-data-selected-ref` 会为某个 row identity 返回稳定的 boolean ref；只有该
 identity 进入或离开主 selection 时它才会变化，应用直接写
@@ -1043,6 +1043,22 @@ setup 中创建时，它的内部 effect Scope 会自动归当前 Component Scop
 需要接入其他显式 owner，可以传入 `:owner-scope`。`etaf-data-mutate` 会在 reload
 成功后返回 source 的变更结果，因此存储适配器可以直接暴露插入 id 或 changes，
 不需要应用层再维护一条专用通道。
+
+`etaf-data-mutate-many` 接收一个非空的 `(OPERATION PAYLOAD)` 对列表，只做一次
+reconcile，批量写入因此不再为每一行付出一次重载。source 可以提供可选的
+`:mutate-batch` 能力一次接收整个列表；像 ETAF DB 的 SQLite 这样的具备事务的
+后端会把它当成一次原子写入。成功时返回
+`(:operation mutate-many :results RESULTS :changes TOTAL)`。操作必须同步完成，
+异步结果会以 `etaf-data-error` 拒绝。某个操作报错时批量就此停止，失败结果的
+certainty 保持 `external-unknown`，已完成的前缀放在 `:results` 里：具备事务的
+批量源不会留下任何写入，而循环执行的源可能已经提交了前几个操作。
+
+```elisp
+(etaf-data-mutate-many
+ controller
+ '((upsert (:id "ch-1" :text "…"))
+   (upsert (:id "ch-2" :text "…"))))
+```
 
 官方 DataGrid 是普通 Component：
 

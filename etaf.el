@@ -271,13 +271,27 @@
 ;; write is rejected while the first write is pending.  Cancellation, timeout or
 ;; an unclassified external failure never implies that the write was rolled back.
 ;;
+;; Function: etaf-data-mutate-many (controller operations)
+;;;###autoload (autoload 'etaf-data-mutate-many "etaf" nil nil)
+;; Apply OPERATIONS to CONTROLLER's source and reconcile once.
+;; OPERATIONS is a non-empty list of (OPERATION PAYLOAD) pairs applied in order.
+;; A source with the optional `:mutate-batch' capability applies the whole list
+;; atomically; any other source runs the v1 `:mutate' callback for each pair.
+;; The committed result is a plist whose `:operation' is `mutate-many' with
+;; `:results' in order and `:changes' when the results report it.  Signals
+;; `etaf-data-error' for an empty or malformed list or an asynchronous source
+;; result.  A signaled operation stops the batch, publishes an external-unknown
+;; failure outcome carrying the completed results under `:results', and is
+;; re-signaled after publication.
+;;
 ;; Function: etaf-data-mutation-outcome (controller)
 ;;;###autoload (autoload 'etaf-data-mutation-outcome "etaf" nil nil)
 ;; Return a copy of CONTROLLER's latest mutation outcome envelope.
 ;;
 ;; The envelope contains `:certainty' (`committed', `rolled-back', or
 ;; `external-unknown'), the raw mutation result, and an opaque reconciliation
-;; token.  While an asynchronous write is outstanding, :pending-p is non-nil and
+;; token.  A batch failure additionally carries the completed prefix under
+;; `:results'.  While an asynchronous write is outstanding, :pending-p is non-nil and
 ;; certainty is external-unknown.  After completion :pending-p is nil or absent.
 ;; The reader tracks mutation changes in reactive Views and effects; callers
 ;; do not write its state.  Treat the token as opaque.  No outcome means
@@ -384,7 +398,11 @@
 ;; `:total', `:page', and `:page-size'.  `:mutate' is optional and receives
 ;; OPERATION and PAYLOAD.  An optional `:mutate-v2' capability has the same
 ;; arguments but may return a tagged commit-certainty outcome; it is additive and
-;; never changes the v1 callback.  `:dispose' is optional and runs when the owning
+;; never changes the v1 callback.  An optional `:mutate-batch' capability
+;; receives a list of (OPERATION PAYLOAD) pairs and returns one result per pair;
+;; a transactional backend turns the list into one atomic write and
+;; `etaf-data-mutate-many' reconciles the Controller once for the batch.
+;; `:dispose' is optional and runs when the owning
 ;; controller stops.  `:item-key' optionally returns stable selection identity
 ;; for one item.  `:provider' may name the source in observation reports and
 ;; defaults to `data'.
@@ -399,7 +417,8 @@
 ;; Function: etaf-data-source-capabilities (source)
 ;;;###autoload (autoload 'etaf-data-source-capabilities "etaf" nil nil)
 ;; Return a fresh plist of SOURCE's supported :load, :mutate, :mutate-v2,
-;; :dispose, :item-key, :provider and :name entries when present. Callbacks
+;; :mutate-batch, :dispose, :item-key, :provider and :name entries when present.
+;; Callbacks
 ;; and metadata retain identity; replacing entries leaves SOURCE unchanged.
 ;; Use to compose an adapter with etaf-data-source without inspecting private
 ;; representation. Preserve callback inputs/results and forward disposal.

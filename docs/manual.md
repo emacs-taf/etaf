@@ -1187,7 +1187,7 @@ another store or a second owner. Keep the provider's disposal callback and do
 not give the original and adapted source separate Controllers. Preserve v1/v2
 mutation results; only a provider with evidence may declare a write rolled back.
 
-The controller exposes reactive refs through `etaf-data-items`, `etaf-data-status`, `etaf-data-error`, `etaf-data-total`, `etaf-data-query`, `etaf-data-page`, `etaf-data-page-size`, and `etaf-data-selection`. Use `etaf-data-load`, `etaf-data-reload`, `etaf-data-mutate`, `etaf-data-set-query`, `etaf-data-next-page`, `etaf-data-previous-page`, `etaf-data-select` (additive multi-select), `etaf-data-select-one` (exclusive single-select), `etaf-data-selected-item`, and `etaf-data-stop` for operations. The imperative next/previous commands also reload a Controller whose `:auto-load` is nil; `:auto-load t` keeps reload ownership with the reactive effect.
+The controller exposes reactive refs through `etaf-data-items`, `etaf-data-status`, `etaf-data-error`, `etaf-data-total`, `etaf-data-query`, `etaf-data-page`, `etaf-data-page-size`, and `etaf-data-selection`. Use `etaf-data-load`, `etaf-data-reload`, `etaf-data-mutate`, `etaf-data-mutate-many`, `etaf-data-set-query`, `etaf-data-next-page`, `etaf-data-previous-page`, `etaf-data-select` (additive multi-select), `etaf-data-select-one` (exclusive single-select), `etaf-data-selected-item`, and `etaf-data-stop` for operations. The imperative next/previous commands also reload a Controller whose `:auto-load` is nil; `:auto-load t` keeps reload ownership with the reactive effect.
 
 `etaf-data-selected-ref` returns one stable boolean ref for a row identity.  It
 updates only when that identity enters or leaves the main selection, including
@@ -1204,6 +1204,25 @@ current Component Scope automatically; pass `:owner-scope` when integrating a
 controller with another explicit owner. `etaf-data-mutate` returns the source
 mutation result after the reload succeeds, so a storage adapter can expose an
 inserted id or change count without another application-specific channel.
+
+`etaf-data-mutate-many` applies a non-empty list of `(OPERATION PAYLOAD)` pairs
+and reconciles the Controller once, which keeps bulk writes out of the
+per-mutation reload loop.  A source may expose the optional `:mutate-batch'
+capability to receive the whole list in one call; a transactional backend such
+as ETAF DB's SQLite source then applies it atomically.  The committed result is
+`(:operation mutate-many :results RESULTS :changes TOTAL)`.  Operations must
+complete synchronously; an `etaf-async' result is rejected with
+`etaf-data-error'.  When one operation signals, the batch stops and the failure
+outcome stays `external-unknown` with the completed prefix under `:results': a
+transactional batch leaves nothing applied, while a looping source may already
+have committed the earlier operations.
+
+```elisp
+(etaf-data-mutate-many
+ controller
+ '((upsert (:id "ch-1" :text "…"))
+   (upsert (:id "ch-2" :text "…"))))
+```
 
 The official DataGrid is a normal Component:
 

@@ -309,6 +309,26 @@
       "purpose": "Apply source mutations through the controller boundary."
     },
     {
+      "name": "etaf-data-mutate-many-reconciles-once-and-keeps-order",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "A batch writes every operation in order and reloads the Controller once."
+    },
+    {
+      "name": "etaf-data-mutate-many-uses-batch-capability-once",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "A batch-capable source receives the whole operation list exactly once."
+    },
+    {
+      "name": "etaf-data-mutate-many-reports-partial-failure",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "A signaled operation stops the batch and completed results stay visible."
+    },
+    {
+      "name": "etaf-data-mutate-many-rejects-asynchronous-batches",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Reject an asynchronous batch result instead of publishing it as a value."
+    },
+    {
       "name": "etaf-data-memory-source-supports-keyword-alist-records",
       "file": "tests/etaf-data-tests.el",
       "purpose": "Query and mutate memory records represented as keyword alists."

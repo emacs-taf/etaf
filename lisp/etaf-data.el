@@ -143,7 +143,11 @@ PAGE-SIZE.  It must return a plist containing at least `:items', and may return
 `:total', `:page', and `:page-size'.  `:mutate' is optional and receives
 OPERATION and PAYLOAD.  An optional `:mutate-v2' capability has the same
 arguments but may return a tagged commit-certainty outcome; it is additive and
-never changes the v1 callback.  `:dispose' is optional and runs when the owning
+never changes the v1 callback.  An optional `:mutate-batch' capability
+receives a list of (OPERATION PAYLOAD) pairs and returns one result per pair;
+a transactional backend turns the list into one atomic write, and
+`etaf-data-mutate-many' reconciles the Controller once for the batch.
+`:dispose' is optional and runs when the owning
 controller stops.  `:item-key' optionally returns stable selection identity
 for one item.  `:provider' may name the source in observation reports and
 defaults to `data'.
@@ -157,6 +161,7 @@ independent Controllers."
   (let ((load (plist-get capabilities :load))
         (mutate (plist-get capabilities :mutate))
         (mutate-v2 (plist-get capabilities :mutate-v2))
+        (mutate-batch (plist-get capabilities :mutate-batch))
         (mutation-outcome (plist-get capabilities :mutation-outcome))
         (dispose (plist-get capabilities :dispose))
         (provider (plist-get capabilities :provider)))
@@ -164,6 +169,7 @@ independent Controllers."
       (signal 'wrong-type-argument (list 'functionp load)))
     (dolist (entry `((:mutate . ,mutate)
                     (:mutate-v2 . ,mutate-v2)
+                    (:mutate-batch . ,mutate-batch)
                     (:mutation-outcome . ,mutation-outcome)
                     (:dispose . ,dispose)
                     (:item-key . ,(plist-get capabilities :item-key))))
@@ -191,7 +197,7 @@ forward disposal to the underlying source.  The adapted source must have
 one owning Controller; do not also mount the original source elsewhere."
   (unless (etaf-data-source-p source)
     (signal 'wrong-type-argument (list 'etaf-data-source-p source)))
-  (cl-loop for key in '(:load :mutate :mutate-v2 :dispose :item-key :provider :name)
+  (cl-loop for key in '(:load :mutate :mutate-v2 :mutate-batch :dispose :item-key :provider :name)
            when (plist-member source key)
            append (list key (plist-get source key))))
 
@@ -243,6 +249,14 @@ become a second public Data API."
       ;; term before `:mutate-v2' was standardized.  Both capabilities are
       ;; still invoked with exactly (OPERATION PAYLOAD).
       (plist-get source :mutation-outcome)))
+
+(defun etaf-data--source-mutate-batch (source operations)
+  "Invoke SOURCE's optional batch mutation capability with OPERATIONS."
+  (etaf-observer-with-stage
+      ((etaf-data--source-provider source) 'mutate :operation 'mutate-many
+       :capability 'batch)
+    (funcall (etaf-data--source-function source :mutate-batch t)
+             operations)))
 
 (defun etaf-data--token-put (token key value)
   "Set KEY to VALUE in opaque reconciliation TOKEN and return TOKEN."
@@ -1538,7 +1552,7 @@ external certainty; it does not imply rollback."
 (defun etaf-data--finish-mutation
     (controller operation operation-id request-id v2-p raw error-condition)
   "Publish one mutation completion and reconcile only a known committed write."
-  (let (outcome token normalization-call normalization-condition)
+  (let (outcome normalization-call normalization-condition)
     ;; Normalize inside the same compatibility boundary as the source call.
     ;; A malformed v2 envelope is itself an uncertain external operation: the
     ;; adapter was invoked exactly once, but Data cannot safely infer whether
@@ -1569,25 +1583,34 @@ external certainty; it does not imply rollback."
                           (plist-get normalization-call :value)
                         (etaf-data--normalize-mutation-outcome raw nil))
                       (list :operation operation :operation-id operation-id)))))
-    (setq token
-          (etaf-data--make-reconciliation-token
-           controller operation-id (plist-get outcome :certainty)
-           (or (plist-get outcome :mutation-result)
-               (plist-get outcome :result))
-           (plist-get outcome :reconciliation-token)))
+    (etaf-data--publish-mutation-outcome
+     controller operation-id request-id outcome)))
+
+(defun etaf-data--publish-mutation-outcome
+    (controller operation-id request-id outcome)
+  "Create OUTCOME's reconciliation token and publish it once.
+
+A committed outcome reconciles through exactly one load.  Every other
+certainty publishes the failure without a reconciliation load: a v1 signal or
+an explicitly uncertain v2 result cannot be replayed."
+  (let* ((operation (plist-get outcome :operation))
+         (certainty (plist-get outcome :certainty))
+         (token (etaf-data--make-reconciliation-token
+                 controller operation-id certainty
+                 (or (plist-get outcome :mutation-result)
+                     (plist-get outcome :result))
+                 (plist-get outcome :reconciliation-token))))
     (setq outcome (plist-put outcome :reconciliation-token token))
     (setf (etaf-data--controller-reconciliation-token controller) token)
     (cond
      ;; A v1 signal or an explicitly uncertain v2 result cannot be replayed.
-     ((or error-condition normalization-condition
-          (eq (plist-get outcome :certainty) 'external-unknown)
-          (eq (plist-get outcome :certainty) 'rolled-back))
-      (let* ((failure (or error-condition normalization-condition
-                          (plist-get outcome :error)
+     ((or (plist-get outcome :error)
+          (eq certainty 'external-unknown)
+          (eq certainty 'rolled-back))
+      (let* ((failure (or (plist-get outcome :error)
                           (list 'etaf-data-error
                                 (format "ETAF Data mutation %S was %s"
-                                        operation
-                                        (plist-get outcome :certainty)))))
+                                        operation certainty))))
              (published
              (etaf-data--capture-condition
               (lambda ()
@@ -1615,8 +1638,8 @@ external certainty; it does not imply rollback."
         (list :condition public-failure :source-condition failure
               :projection-condition projection-condition)))
      (t
-      ;; Exactly one source mutation has happened.  Reconciliation may issue a
-      ;; load, but it never invokes the mutation callback again.
+      ;; Exactly one reconciliation may issue a load; it never invokes the
+      ;; mutation callback again.
       (let ((request (etaf-data--load-request controller outcome token)))
         (plist-put request :result (plist-get outcome :mutation-result)))))))
 
@@ -1664,6 +1687,159 @@ an unclassified external failure never implies that the write was rolled back."
                                   (if v2-p
                                       (etaf-data--source-mutate-v2 source operation payload)
                                     (etaf-data--source-mutate source operation payload)))))
+          ((error quit)
+           (etaf--load-abort task)
+           (when (plist-get (etaf-data--mutation-outcome controller) :pending-p)
+             (let ((outcome (copy-sequence (etaf-data--mutation-outcome controller)))
+                   (certainty (if invoked 'external-unknown 'rolled-back)))
+               (setf (etaf-data--mutation-outcome controller)
+                     (plist-put
+                      (plist-put
+                       (plist-put (plist-put outcome :pending-p nil) :certainty certainty)
+                       :external-commit-certainty certainty)
+                      :error err))))
+           (signal (car err) (cdr err))))
+      (setq synchronous-p nil))
+    (etaf-data--signal-condition condition)
+    result))
+
+(defun etaf-data--normalize-mutation-operations (operations)
+  "Return OPERATIONS as validated (OPERATION PAYLOAD) pairs."
+  (unless (and (listp operations) operations)
+    (signal 'etaf-data-error
+            (list "ETAF Data mutate-many needs a non-empty operation list")))
+  (mapcar
+   (lambda (entry)
+     (unless (and (proper-list-p entry) (= 2 (length entry)) (car entry))
+       (signal 'etaf-data-error
+               (list (format "ETAF Data mutation entry must be (OPERATION PAYLOAD): %S"
+                             entry))))
+     (list (car entry) (cadr entry)))
+   operations))
+
+(defun etaf-data--mutation-changes (results)
+  "Return the total `:changes' in RESULTS when every value reports one."
+  (let ((changes (delq nil (mapcar (lambda (result)
+                                     (and (listp result)
+                                          (plist-get result :changes)))
+                                   results))))
+    (when (and changes (cl-every #'integerp changes))
+      (apply #'+ changes))))
+
+(defun etaf-data--finish-mutation-many
+    (controller operation-id request-id results error-condition)
+  "Publish one batch mutation completion and reconcile once.
+
+RESULTS holds the source results on success and the completed prefix on
+failure.  A non-nil ERROR-CONDITION selects the uncertain external outcome."
+  (let* ((committed (null error-condition))
+         (result (and committed
+                      (append (list :operation 'mutate-many :results results)
+                              (let ((changes
+                                     (etaf-data--mutation-changes results)))
+                                (and changes (list :changes changes))))))
+         (outcome (if committed
+                      (list :certainty 'committed
+                            :external-commit-certainty 'committed
+                            :result result :mutation-result result
+                            :operation 'mutate-many
+                            :operation-id operation-id)
+                    (list :certainty 'external-unknown
+                          :external-commit-certainty 'external-unknown
+                          :result nil :mutation-result nil
+                          :error error-condition
+                          :results results
+                          :operation 'mutate-many
+                          :operation-id operation-id))))
+    (etaf-data--publish-mutation-outcome
+     controller operation-id request-id outcome)))
+
+;;;###autoload
+(defun etaf-data-mutate-many (controller operations)
+  "Apply OPERATIONS to CONTROLLER's source and reconcile once.
+
+OPERATIONS is a non-empty list of (OPERATION PAYLOAD) pairs applied in order.
+A source exposing the optional `:mutate-batch' capability receives the whole
+list in one call, so a transactional backend can write it atomically; any
+other source runs every pair through the v1 `:mutate' callback in order.
+Batch operations must complete synchronously; an `etaf-async' result from the
+batch or from one operation is rejected with `etaf-data-error'.  A second
+write is rejected while the batch is pending.
+
+The Controller reconciles with exactly one load after the source operations
+finish, and the committed mutation result is
+
+  (:operation mutate-many :results RESULTS :changes TOTAL)
+
+with RESULTS keeping every source result in order and TOTAL present when the
+results report `:changes'.  When one operation signals, the batch stops: a
+transactional batch source leaves nothing applied, while a looping source may
+already have committed the earlier operations.  The failure outcome stays
+`external-unknown' and carries the completed prefix under `:results'; the
+source condition is re-signaled after the failure is published."
+  (etaf-data--require-controller controller)
+  (let* ((operations (etaf-data--normalize-mutation-operations operations))
+         (source (etaf-data--controller-source controller))
+         (batch-function (plist-get source :mutate-batch))
+         (operation-id (cl-incf etaf-data--operation-id-counter))
+         (request-id (etaf-data--begin-request controller 'mutate))
+         (synchronous-p t)
+         completed result condition task invoked)
+    (setf (etaf-data--controller-reconciliation-token controller) nil)
+    (cl-labels
+        ((finish (raw source-condition)
+           (when (and (not (etaf-data--controller-stopped-p controller))
+                      (= request-id (etaf-data--controller-request-id controller)))
+             (let ((completion
+                    (etaf-data--finish-mutation-many
+                     controller operation-id request-id
+                     (if source-condition (nreverse completed) raw)
+                     source-condition)))
+               (setq result (plist-get completion :result)
+                     condition (plist-get completion :condition))
+               (etaf-data--report-completion completion synchronous-p)))))
+      (setq task (etaf--load-task-create
+                  :scope (etaf-data--controller-scope controller)
+                  :timeout (etaf-data--controller-timeout controller)
+                  :success (lambda (raw) (finish raw nil))
+                  :failure (lambda (error-data) (finish nil error-data)))))
+    (setf (etaf-data--controller-request controller) task)
+    (unwind-protect
+        (condition-case err
+            (progn
+              (etaf-data--apply-load-loading
+               controller request-id
+               (list :certainty 'external-unknown
+                     :external-commit-certainty 'external-unknown
+                     :pending-p t :operation 'mutate-many :operation-id operation-id))
+              (etaf--load-start
+               task
+               (lambda ()
+                 (setq invoked t)
+                 (if (functionp batch-function)
+                     (let ((results
+                            (etaf-data--source-mutate-batch source operations)))
+                       (when (etaf--async-p results)
+                         (signal 'etaf-data-error
+                                 (list "ETAF Data :mutate-batch must complete synchronously")))
+                       (unless (and (proper-list-p results)
+                                    (= (length results) (length operations)))
+                         (signal 'etaf-data-error
+                                 (list (format "ETAF Data :mutate-batch returned %S results for %S operations"
+                                               (safe-length results)
+                                               (length operations)))))
+                       (when (cl-some #'etaf--async-p results)
+                         (signal 'etaf-data-error
+                                 (list "ETAF Data :mutate-batch must complete synchronously")))
+                       results)
+                   (dolist (operation operations)
+                     (let ((raw (etaf-data--source-mutate
+                                 source (car operation) (cadr operation))))
+                       (when (etaf--async-p raw)
+                         (signal 'etaf-data-error
+                                 (list "ETAF Data mutate-many requires synchronous :mutate results")))
+                       (push raw completed)))
+                   (nreverse completed)))))
           ((error quit)
            (etaf--load-abort task)
            (when (plist-get (etaf-data--mutation-outcome controller) :pending-p)

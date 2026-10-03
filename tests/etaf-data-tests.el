@@ -372,5 +372,109 @@
                      :load (lambda (&rest _args) (list :items nil)))
    :type 'wrong-type-argument))
 
+(ert-deftest etaf-data-mutate-many-reconciles-once-and-keeps-order ()
+  "A batch writes every operation in order and reloads the Controller once."
+  (let* ((base (etaf-data-memory-source etaf-data-test-records :id-key :id))
+         (capabilities (etaf-data-source-capabilities base))
+         (load (plist-get capabilities :load))
+         (loads 0)
+         (source (apply #'etaf-data-source
+                        (plist-put capabilities :load
+                                   (lambda (&rest args)
+                                     (cl-incf loads)
+                                     (apply load args)))))
+         (controller (etaf-data-controller source :page-size 10 :auto-load t)))
+    (unwind-protect
+        (progn
+          (should (= 1 loads))
+          (let ((result (etaf-data-mutate-many
+                         controller
+                         '((insert (:id 5 :name "Edsger" :group "systems"))
+                           (replace (:id 2 :name "Grace Hopper" :group "navy"))
+                           (delete 1)))))
+            (should (= 2 loads))
+            (should (eq 'mutate-many (plist-get result :operation)))
+            (should (= 3 (length (plist-get result :results))))
+            (should (equal "Grace Hopper"
+                           (plist-get (car (etaf-value
+                                            (etaf-data-items controller)))
+                                      :name)))
+            (should (equal '(2 3 4 5) (etaf-data-test--ids controller))))
+          (should (eq 'committed
+                      (plist-get (etaf-data-mutation-outcome controller)
+                                 :certainty))))
+      (etaf-data-stop controller))))
+
+(ert-deftest etaf-data-mutate-many-uses-batch-capability-once ()
+  "A batch-capable source receives the whole operation list exactly once."
+  (let* ((base (etaf-data-memory-source etaf-data-test-records :id-key :id))
+         (capabilities (etaf-data-source-capabilities base))
+         (mutation (plist-get capabilities :mutate))
+         (batches nil)
+         (source (apply #'etaf-data-source
+                        (plist-put capabilities :mutate-batch
+                                   (lambda (operations)
+                                     (push (length operations) batches)
+                                     (mapcar
+                                      (lambda (operation)
+                                        (apply mutation operation)
+                                        (list :operation (car operation)
+                                              :changes 1))
+                                      operations)))))
+         (controller (etaf-data-controller source :page-size 10 :auto-load t)))
+    (unwind-protect
+        (progn
+          (let ((result (etaf-data-mutate-many
+                         controller
+                         '((insert (:id 5 :name "Edsger"))
+                           (insert (:id 6 :name "Barbara"))))))
+            (should (equal '(2) batches))
+            (should (= 2 (plist-get result :changes)))
+            (should (equal '(1 2 3 4 5 6)
+                           (etaf-data-test--ids controller)))))
+      (etaf-data-stop controller))))
+
+(ert-deftest etaf-data-mutate-many-reports-partial-failure ()
+  "A signaled operation stops the batch and completed results stay visible."
+  (let* ((source (etaf-data-source
+                  :load (lambda (_query page page-size)
+                          (list :items '((:id 1)) :total 1
+                                :page page :page-size page-size))
+                  :mutate (lambda (operation _payload)
+                            (if (eq operation 'boom)
+                                (error "batch boom")
+                              (list :operation operation :changes 1)))))
+         (controller (etaf-data-controller source :page-size 10 :auto-load t)))
+    (unwind-protect
+        (progn
+          (should-error
+           (etaf-data-mutate-many
+            controller '((insert (:id 2)) (boom (:id 3)) (insert (:id 4))))
+           :type 'error)
+          (let ((outcome (etaf-data-mutation-outcome controller)))
+            (should (eq 'external-unknown (plist-get outcome :certainty)))
+            (should (= 1 (length (plist-get outcome :results))))
+            (should (eq 'insert
+                        (plist-get (car (plist-get outcome :results))
+                                   :operation)))))
+      (etaf-data-stop controller))))
+
+(ert-deftest etaf-data-mutate-many-rejects-asynchronous-batches ()
+  "Reject an asynchronous batch result instead of publishing it as a value."
+  (let* ((source (etaf-data-source
+                  :load (lambda (_query page page-size)
+                          (list :items nil :total 0
+                                :page page :page-size page-size))
+                  :mutate-batch
+                  (lambda (_operations)
+                    (etaf-async (lambda (resolve _reject)
+                                  (funcall resolve 'committed)
+                                  nil)))))
+         (controller (etaf-data-controller source :page-size 10 :auto-load t)))
+    (unwind-protect
+        (should-error (etaf-data-mutate-many controller '((insert (:id 1))))
+                      :type 'etaf-data-error)
+      (etaf-data-stop controller))))
+
 (provide 'etaf-data-tests)
 ;;; etaf-data-tests.el ends here
