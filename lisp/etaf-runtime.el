@@ -814,6 +814,40 @@ signal `etaf-runtime-error' without a partial update."
   (etaf-runtime-update-host-contents runtime (list (cons host-ref content))))
 
 ;;;###autoload
+(defvar-local etaf--retained-content-cohort nil
+  "Last content cohort for this mounted buffer: refs, binding token, operation.
+A nil operation records unsupported admission until an outside publication.")
+
+(defun etaf--publish-retained-host-contents (buffer updates)
+  "Publish resolved content UPDATES in BUFFER, reusing a proved fixed canvas.
+Unsupported layouts retain the ordinary atomic route. No app opts into a
+backend-specific API, and changed bindings always require cold admission."
+  (let* ((refs (mapcar #'car updates))
+         (token (ebox-update-binding-token buffer))
+         (cache etaf--retained-content-cohort)
+         (unique (= (length refs) (length (delete-dups (copy-sequence refs)))))
+         (reusable (and cache (equal refs (aref cache 0)) (eq token (aref cache 1))))
+         (operation
+          (if reusable (aref cache 2)
+            (when (and refs unique)
+              (ebox-update-prepare
+               buffer (vconcat (mapcar (lambda (ref) (vector ref [:content])) refs)))))))
+    (if (and operation
+             (ebox-update-valid-p operation)
+             (ebox-update-apply operation
+                                (vconcat (mapcar (lambda (entry) (vector (cdr entry))) updates))
+                                (vconcat (number-sequence 0 (1- (length updates))))))
+        (setq etaf--retained-content-cohort (vector refs token operation))
+      (ebox-call-with-update-batch
+       (lambda ()
+         (dolist (entry updates) (ebox-region-update (car entry) :content (cdr entry)))))
+      ;; Our own fallback need not repeat a declined proof for every delta.
+      ;; Any external layout/style/source publication changes this token and
+      ;; permits a new admission attempt, including a resize or remount.
+      (setq etaf--retained-content-cohort
+            (vector refs (ebox-update-binding-token buffer) nil)))
+    t))
+
 (defun etaf-runtime-update-host-contents (runtime updates)
   "Replace several HOST-REF texts in mounted RUNTIME.
 
@@ -846,10 +880,7 @@ partial update."
     (setq resolved (nreverse resolved))
     (with-current-buffer (etaf-runtime-buffer runtime)
       (condition-case error-data
-          (ebox-call-with-update-batch
-           (lambda ()
-             (dolist (entry resolved)
-               (ebox-region-update (car entry) :content (cdr entry)))))
+          (etaf--publish-retained-host-contents (etaf-runtime-buffer runtime) resolved)
         (error
          (signal 'etaf-runtime-error
                  (list "Host content update rejected"
@@ -7356,6 +7387,8 @@ unmount.  Host authority is invalidated before any unbounded cleanup."
     (unwind-protect
         (etaf--runtime-with-operation (runtime 'unmount "unmount")
           (etaf--runtime-unmount-now runtime))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (setq etaf--retained-content-cohort nil)))
       (when observer
         (condition-case condition
             (when (buffer-live-p buffer)
