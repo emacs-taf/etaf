@@ -60,5 +60,35 @@
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(ert-deftest etaf-layout-visible-publication-preserves-typography ()
+  "Showing a canvas must not change the typography used to lay it out."
+  (let ((hidden (generate-new-buffer " *etaf-hidden-typography*"))
+        (visible (generate-new-buffer " *etaf-visible-typography*"))
+        (view (etaf-view
+               (column
+                 (box :font-size 32 "Heading ✅")
+                 (grid :width '(px 300)
+                       :grid-template-columns '((fr 1) (fr 1))
+                   (box :border-right '((px 1) solid "red") "✅")
+                   (box "aligned"))))))
+    (unwind-protect
+        (save-window-excursion
+          (let ((options (list :viewport-width (window-body-width nil t)
+                               :viewport-height (window-body-height))))
+            (etaf-mount hidden view options)
+            (switch-to-buffer visible)
+            (etaf-mount visible view options))
+          ;; Include deferred publication work, not just the synchronous mount.
+          (sleep-for 0.1)
+          (should
+           (equal (etaf-layout-test-appearance
+                   (with-current-buffer hidden (buffer-string)))
+                  (etaf-layout-test-appearance
+                   (with-current-buffer visible (buffer-string))))))
+      (dolist (buffer (list hidden visible))
+        (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
+          (etaf-unmount runtime))
+        (kill-buffer buffer)))))
+
 (provide 'etaf-cascade-layout-tests)
 ;;; etaf-cascade-layout-tests.el ends here

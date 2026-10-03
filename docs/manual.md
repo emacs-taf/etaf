@@ -1622,7 +1622,12 @@ Missing glyphs can fall back from PragmataPro 16px through LXGW WenKai 16px to S
 A text-style variation selector (U+FE0E) can pick a still taller fallback such as HanaMinA.
 A bold symbol can select Sarasa Bold at 18px, and `line-height` can only increase that height.
 A few tall rows make canvas pixels exceed the window and clip bottom content, such as a status bar.
-Keep rows within `frame-char-height`: prefer CJK glyph icons (locally 16px in normal and bold), leave symbols unbolded, and avoid inline `:font-size`.
+For fixed-row controls, keep rows within `frame-char-height`: use the catalog's
+fixed-size icons, leave symbols unbolded, and avoid oversized inline fonts.
+Document views may use larger headings and natural glyph heights. ETAF preserves
+the typography published by the layout engine; it does not shrink glyphs after
+layout, since that would change their advance widths without moving column
+boundaries. Validate fixed-row metrics in the component, before publication.
 Check a real frame with `line-pixel-height`; scenarios assert it mechanically with `etaf-gui-verifier-line-height-assertions` and settle a resize with `etaf-gui-verifier-canvas-filled-p`.
 
 This directory also owns reusable verification mechanisms; application

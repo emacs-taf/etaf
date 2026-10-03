@@ -14,6 +14,11 @@
   "support": [],
   "cases": [
     {
+      "name": "etaf-layout-visible-publication-preserves-typography",
+      "file": "tests/etaf-cascade-layout-tests.el",
+      "purpose": "A visible mount preserves the same font and display properties as a hidden mount, including after deferred publication work."
+    },
+    {
       "name": "etaf-component-output-publishes-flattened-single-root-child",
       "file": "tests/etaf-component-output-tests.el",
       "purpose": "A changed single-root loop child publishes through its stable Host address without republishing its parent or sibling, and matches fresh rendering."

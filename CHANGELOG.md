@@ -117,6 +117,11 @@
 
 ### Fixed
 
+- Visible canvases preserve layout typography instead of shrinking tall glyphs
+  after publication. Emoji no longer shift later table columns, and large
+  headings keep their declared size. Fixed-row controls must use suitably sized
+  fonts or catalog icons rather than relying on post-layout shrinking.
+
 - Semantic palettes use application-owned token plists and
   `etaf-theme-resolve-palette`. The palette adapter and replacement registry
   are removed; replace named palette bindings with direct light/dark token pairs.

@@ -21,7 +21,6 @@
 (require 'etaf-host)
 (require 'etaf-retirement)
 (require 'etaf-render-port)
-(require 'etaf-cell-fit)
 (require 'etaf-renderer)
 (require 'etaf-context)
 (require 'etaf-behavior)
@@ -1805,11 +1804,8 @@ effect-to-source edges.  It is intentionally immutable and suitable as an
   "Return the dynamically active Runtime, or nil outside a Runtime."
   etaf--current-runtime)
 
-(defun etaf--runtime-forward-ebox-report (buffer report)
-  "Forward Ebox publication or renderer REPORT into the active operation.
-A completed publication is also the moment the canvas can be checked against
-the grid: fitting runs here so it covers Ebox's own repaints too."
-  (etaf-cell-fit-schedule buffer)
+(defun etaf--runtime-forward-ebox-report (_buffer report)
+  "Forward Ebox publication or renderer REPORT into the active operation."
   (etaf-observer-emit report))
 
 (defun etaf--runtime-record-observer-diagnostic (runtime diagnostic)
@@ -6620,9 +6616,6 @@ walk even when a nearer ancestor retains its invalidation."
         runtime retry-effect-ids)
        (signal (car err) (cdr err))))
     (etaf--runtime-participant-commit participant)
-    ;; A published canvas must stay within the rows the viewport reported: fit
-    ;; the rows whose content changed back into one grid cell.
-    (etaf-cell-fit-apply (etaf-runtime-buffer runtime))
     (let ((retirement
            (etaf--runtime-new-retirement-journal
             runtime (etaf-semantic-candidate-candidate-id semantic-candidate)))
@@ -6771,8 +6764,6 @@ walk even when a nearer ancestor retains its invalidation."
        (etaf--runtime-clear-candidate runtime)
        (signal (car err) (cdr err))))
     (etaf--runtime-participant-commit participant)
-    ;; A published canvas must stay within the rows the viewport reported.
-    (etaf-cell-fit-apply (etaf-runtime-buffer runtime))
     ;; Publication has completed.  Lifecycle and cleanup callbacks run after
     ;; the retained state is promoted; their errors remain visible without
     ;; incorrectly rolling back an already published Ebox tree.
