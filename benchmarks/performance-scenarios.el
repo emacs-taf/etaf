@@ -282,3 +282,84 @@ The runtime stays mounted until the driver calls the returned `:cleanup'."
      :setup (lambda (_mode) (etaf-row-update-benchmark--fixture count nil)))))
 
 ;;; performance-scenarios.el ends here
+
+;;; ---------------------------------------------------------------------------
+;;; Retained Host content frames
+;;; ---------------------------------------------------------------------------
+
+(defconst etaf-video-frame-benchmark--ramp " .:-=+*#%@"
+  "Density ramp used by the ASCII video application.")
+
+(defun etaf-video-frame-benchmark--frame (columns rows index)
+  "Return a deterministic video-like frame of COLUMNS by ROWS ramp cells.
+INDEX moves the pattern so consecutive invocations publish different text."
+  (let ((ramp etaf-video-frame-benchmark--ramp)
+        (last (1- (length etaf-video-frame-benchmark--ramp)))
+        (lines nil))
+    (dotimes (row rows)
+      (let ((line (make-string columns ?\s)))
+        (dotimes (column columns)
+          (let* ((phase (mod (+ (* 3 column) (* 7 index) (* 13 row)) 256))
+                 (level (max 0 (min last (/ (+ (* phase last) 127) 255)))))
+            (aset line column (aref ramp level))))
+        (push line lines)))
+    (mapconcat #'identity (nreverse lines) "\n")))
+
+(defun etaf-video-frame-benchmark--fixture (columns rows _mode)
+  "Mount a fixed COLUMNS by ROWS canvas and publish frame texts.
+The fixture is steady state: one retained Host text update per sample, and no
+layout, style or interaction change."
+  (let* ((buffer (generate-new-buffer
+                  (format " *TAF video frame %dx%d*" columns rows)))
+         (frames (cl-loop for index below 32
+                          collect (etaf-video-frame-benchmark--frame columns rows index)))
+         (index 0)
+         (expected nil)
+         runtime)
+    (with-current-buffer buffer (setq-local truncate-lines t))
+    (etaf-mount buffer
+                (etaf-view
+                 (flex :flex-direction 'column :width (list 'ch columns)
+                       (box :width (list 'ch columns) :height (list 'lh rows)
+                            :wrap-mode 'none :overflow 'hidden
+                            (text :id "grid" :ref 'grid " "))
+                       (box :height '(lh 1)
+                            (text :id "hud" :ref 'hud "hud"))))
+                (list :viewport-width 1200 :viewport-height (+ rows 4)))
+    (setq runtime (etaf-runtime-for-buffer buffer))
+    (etaf-runtime-flush runtime)
+    (list
+     :buffer buffer
+     :environment (lambda ()
+                    (list :columns columns :rows rows :chars (* columns rows)
+                          :frames (length frames)))
+     :invoke (lambda (_sample)
+               (setq expected (nth (% index (length frames)) frames)
+                     index (1+ index))
+               (etaf-runtime-update-host-contents
+                runtime (list (cons 'grid expected))))
+     :verify
+     (lambda ()
+       (with-current-buffer buffer
+         (let* ((actual (substring-no-properties (buffer-string)))
+                (first (car (split-string expected "\n"))))
+           (if (string-prefix-p first actual) t
+             (format "Published first row differs for frame %d" (1- index))))))
+     :cleanup
+     (lambda ()
+       (when (buffer-live-p buffer)
+         (when (etaf-runtime-for-buffer buffer) (etaf-unmount runtime))
+         (kill-buffer buffer))))))
+
+(dolist (size '((160 . 45) (96 . 27)))
+  (let ((columns (car size))
+        (rows (cdr size)))
+    (taf-benchmark-register
+     (format "host-content.video-frame.%dx%d" columns rows)
+     :version 1 :modes '(batch gui) :isolation 'series
+     :required-providers '(etaf ebox)
+     :impact 'local :budget-ms 33
+     :description
+     (format "One video-like frame (%d ramp cells) as a retained Host text update; the cost must fit a 30 fps frame budget"
+             (* columns rows))
+     :setup (lambda (_mode) (etaf-video-frame-benchmark--fixture columns rows nil)))))
