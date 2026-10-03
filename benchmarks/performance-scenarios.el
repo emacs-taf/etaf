@@ -345,6 +345,8 @@ layout, style or interaction change."
                 (first (car (split-string expected "\n"))))
            (if (string-prefix-p first actual) t
              (format "Published first row differs for frame %d" (1- index))))))
+     :observe (lambda (sink) (ebox-buffer-set-observer buffer sink)
+                (lambda () (ebox-buffer-set-observer buffer nil)))
      :cleanup
      (lambda ()
        (when (buffer-live-p buffer)
@@ -357,7 +359,7 @@ layout, style or interaction change."
     (taf-benchmark-register
      (format "host-content.video-frame.%dx%d" columns rows)
      :version 1 :modes '(batch gui) :isolation 'series
-     :required-providers '(etaf ebox)
+     :required-providers '(ebox)
      :impact 'local :budget-ms 33
      :description
      (format "One video-like frame (%d ramp cells) as a retained Host text update; the cost must fit a 30 fps frame budget"
