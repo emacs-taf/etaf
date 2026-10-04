@@ -7077,10 +7077,10 @@ when neither source is usable."
   "Whether FRAME borrows VIEWPORT's height for UI over RECORDED.
 An active minibuffer or completion popup, and a message in the echo area,
 shrink a display window without a user resize; the committed canvas must keep
-its size until that UI releases the space.  A width change, height growth or
-a missing RECORDED stays ordinary geometry."
+its size until that UI releases the space, even when the borrowed window also
+reports a different content width.  Height growth, a missing RECORDED and a
+frame change stay ordinary geometry."
   (and (consp recorded)
-       (equal (car viewport) (car recorded))
        (< (cdr viewport) (cdr recorded))
        (or (let ((minibuffer (active-minibuffer-window)))
              (and minibuffer

@@ -1147,6 +1147,11 @@
                     ;; active.  Batch Emacs has no active minibuffer; present
                     ;; it the way the window hook sees completion.
                     (window-resize popup 2)
+                    ;; The borrowed window also reports a different content
+                    ;; width; that must not defeat the borrowed-height guard.
+                    (set-window-margins window 3 3)
+                    (should-not (equal (ebox-viewport-window-width window)
+                                       (car before)))
                     (cl-letf (((symbol-function 'active-minibuffer-window)
                                (lambda ()
                                  (minibuffer-window (selected-frame)))))
@@ -1157,6 +1162,7 @@
                       (should (equal (etaf-runtime-viewport runtime) before))
                       ;; A frame resize is user geometry even while that UI is
                       ;; present, so the canvas follows the new window.
+                      (set-window-margins window 0 0)
                       (set-frame-size (selected-frame) 80 21)
                       (run-hook-with-args 'window-size-change-functions
                                           (selected-frame))
