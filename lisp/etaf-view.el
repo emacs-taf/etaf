@@ -804,7 +804,7 @@ SLOT-MODE distinguishes Component-owned projections from call-site inputs."
                           ,(and token `',token)))))))
 
 ;;;###autoload
-(defmacro etaf-view (form)
+(defmacro etaf-view (form &optional _environment)
   "Construct a normalized ETAF View from structural FORM.
 
 FORM uses one grammar for Hosts and Component calls:
@@ -814,7 +814,10 @@ FORM uses one grammar for Hosts and Component calls:
 Properties must come first and children must come last.  Property values are
 ordinary Elisp expressions.  In structural child positions, `(expr FORM)'
 returns nil, strings, typed Views, or proper sequences of those values.
-Inside a `text' Host, an expression must return one string."
+Inside a `text' Host, an expression must return one string.
+
+The optional ENVIRONMENT is ignored; Emacs 31 passes the macro environment
+when it eagerly expands top-level forms, and the macro must accept it."
   (declare (indent 1) (debug (form)))
   (if (fboundp 'etaf-compiler-expand-view)
       (etaf-compiler-expand-view form :projection)

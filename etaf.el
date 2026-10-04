@@ -1432,7 +1432,7 @@
 ;; Variable: etaf-video-ffprobe-program
 ;; Name or absolute path of the ffprobe executable used for metadata.
 ;;
-;; Macro: etaf-view (form)
+;; Macro: etaf-view (form &optional _environment)
 ;;;###autoload (autoload 'etaf-view "etaf" nil nil 'macro)
 ;; Construct a normalized ETAF View from structural FORM.
 ;;
