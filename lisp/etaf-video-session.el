@@ -118,6 +118,10 @@ so a dropped display frame still advances the clock."
               (etaf-video--session-playing session) nil)
         (etaf-video--session-stop-source session)
         (etaf-video--session-stop-audio session)
+        ;; The producer was closed deliberately by the step, so its closed
+        ;; process is not the end of the video; the finish check below must
+        ;; only see a producer that ran out on its own.
+        (setq source nil)
         (etaf-video--session-notify session)))
     (when (and (or (etaf-video--session-ended session)
                    (and source (etaf-video--source-ended source)))

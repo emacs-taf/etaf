@@ -252,10 +252,12 @@ next producer starts with the documented seek, rate and read-rate arguments."
               (etaf-video-step handle)
               (should (etaf-video-tests--wait
                        (lambda () (> (etaf-video-tests--presented handle) presented))))
-              (should-not (plist-get (etaf-video-tests--state handle) :playing)))
+              (should-not (plist-get (etaf-video-tests--state handle) :playing))
+              ;; A step closes its producer deliberately; that is not the end.
+              (should-not (plist-get (etaf-video-tests--state handle) :ended)))
             (etaf-video-seek handle 1.0)
             (should (= 1.0 (plist-get (etaf-video-tests--state handle) :position)))
-            (etaf-video-play handle)
+            (etaf-video-toggle-playback handle)
             (should (plist-get (etaf-video-tests--state handle) :playing))
             (should (etaf-video-tests--wait
                      (lambda ()
