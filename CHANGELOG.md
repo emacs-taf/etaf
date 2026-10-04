@@ -15,6 +15,12 @@
   mounting anything.  `image' frames decode at the display's device pixel
   ratio so Retina screens stay sharp, `ascii' and `color' cover terminal and
   graphical frames, and an optional ffplay sidecar plays a source's audio.
+  The Component stays a canvas: it renders frames and exposes state and handle
+  controls, while buttons, progress bars and hover chrome are composed by
+  callers from ordinary Hosts.  Image frames are capped to the displayed
+  canvas size and the previous frame is flushed as the next one commits, so a
+  long video neither overflows Ebox's accepted content nor grows the Emacs
+  image cache without bound.
 
 - `etaf-list-cache-put` accepts an observation time with `:at`, so restored
   snapshots retain their age and background revalidation can prioritize them.

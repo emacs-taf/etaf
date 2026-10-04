@@ -1499,6 +1499,11 @@
       "purpose": "A metadata plist from etaf-video-source-info mounts with its values and without another ffprobe call."
     },
     {
+      "name": "etaf-video-tests-embeds-in-a-layout-and-drives-by-interaction",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "A video sits in a layout as one fixed box next to ordinary siblings, and the consumer's on-press gesture toggles playback through the handle."
+    },
+    {
       "name": "etaf-video-tests-unmount-releases-runtime-and-handle",
       "file": "tests/etaf-video-tests.el",
       "purpose": "Unmounting stops producer processes and makes the released handle unaddressable."

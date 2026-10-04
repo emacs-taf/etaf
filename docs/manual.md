@@ -1572,6 +1572,37 @@ Changing `:src', `:columns', `:rows', `:mode', `:ramp' or
 `etaf-video-source-info' returns a source's size, duration, rate and audio
 presence without mounting anything.
 
+The Component is deliberately only a canvas: it decodes, maps and publishes
+frames, and exposes plain-data state plus handle controls.  Buttons, progress
+bars, hover affordances and window chrome belong to callers, so a layout can
+style and place them freely.  A click-to-play embedding with its own buttons
+looks like this:
+
+```elisp
+(etaf-view
+ (column
+  (text "Desk")
+  (etaf-video :src "/path/clip.mp4" :columns 60 :rows 20
+              :handle 'clip :autoplay nil
+              :on-press (lambda () (etaf-video-toggle-playback 'clip)))
+  (row
+   (box :on-press (lambda ()
+                    (etaf-video-seek
+                     'clip
+                     (max 0 (- (plist-get (etaf-video-state 'clip) :position) 5))))
+        (text "«"))
+   (box :on-press (lambda () (etaf-video-toggle-playback 'clip)) (text "▶"))
+   (box :on-press (lambda ()
+                    (etaf-video-seek
+                     'clip
+                     (+ (plist-get (etaf-video-state 'clip) :position) 5)))
+        (text "»")))))
+```
+
+A drag callback receives `:phase' (`start', `move', `end', `cancel'), `:start',
+`:position' and `:delta' in window pixels; mapping the horizontal delta to
+seconds and calling `etaf-video-seek' on `end' implements scrubbing.
+
 ## 15. Public API map
 
 | API family | Main entry points | Use it when |

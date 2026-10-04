@@ -460,6 +460,38 @@ once can resize or restart its video without repeating the metadata call."
       (ignore-errors (delete-file log))
       (ignore-errors (delete-file probe-log)))))
 
+(ert-deftest etaf-video-tests-embeds-in-a-layout-and-drives-by-interaction ()
+  "A video sits in a layout as one box and drives from its own gestures.
+The canvas keeps its fixed cell size next to ordinary siblings, and the
+consumer's `:on-press' turns a click into a handle control."
+  (let ((name " *etaf-video-embed*")
+        (log (etaf-video-tests--log)))
+    (unwind-protect
+        (etaf-video-tests--with-fixture
+            log '("FAKE_FFMPEG_FRAMES=200" "FAKE_FFMPEG_INTERVAL=0.02"
+                  "FAKE_FFPROBE_DURATION=4.0" "FAKE_FFPROBE_FPS=50/1")
+          (etaf-mount
+           name
+           (etaf-view
+            (column
+             (text "desk")
+             (etaf-video :src etaf-video-tests--input :mode 'ascii
+                         :columns 12 :rows 3 :autoplay nil
+                         :handle 'embedded :ref 'embedded-video
+                         :on-press (lambda () (etaf-video-toggle-playback 'embedded)))
+             (text "footer"))))
+          (should (etaf-video-tests--wait
+                   (lambda () (>= (plist-get (etaf-video-state 'embedded) :presented) 1))))
+          (should-not (plist-get (etaf-video-state 'embedded) :playing))
+          (with-current-buffer name
+            (should (string-match-p "desk" (buffer-string)))
+            (should (string-match-p "footer" (buffer-string))))
+          (etaf-dispatch-event (etaf-runtime-for-buffer name) 'embedded-video 'press)
+          (should (plist-get (etaf-video-state 'embedded) :playing))
+          (etaf-video-pause 'embedded))
+      (etaf-video-tests--cleanup name)
+      (ignore-errors (delete-file log)))))
+
 (ert-deftest etaf-video-tests-rejects-invalid-inputs ()
   "Invalid props and unknown handles are reported before publication.
 A Component call error names the offending property and no video is left
