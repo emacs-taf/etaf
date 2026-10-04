@@ -138,6 +138,12 @@
 
 ### Fixed
 
+- A settled window size change no longer refits a mounted Runtime when an
+  active minibuffer, a completion popup, or a message in the echo area borrowed
+  the display window's height.  A frame resize still refits, and
+  `minibuffer-exit-hook` reconciles the canvas once the borrowed space is
+  released.
+
 - Visible canvases preserve layout typography instead of shrinking tall glyphs
   after publication. Emoji no longer shift later table columns, and large
   headings keep their declared size. Fixed-row controls must use suitably sized

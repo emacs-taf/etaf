@@ -22,6 +22,12 @@
   性能报告通过 `:publication-transaction-id` 将 `ebox-publication` stage 与
   Ebox 渲染关联。
 
+### 修复
+
+- 当有活动的 minibuffer、补全弹窗或 echo area 消息占用显示窗口高度时，窗口
+  尺寸结算不再把这段借用高度当成 resize 去重排已挂载的 Runtime。frame 自身
+  尺寸变化仍会重排，借用的空间释放后由 `minibuffer-exit-hook` 对账补回。
+
 ## 迁移到 ETAF 0.2
 
 ETAF 0.2.1 要求 Ebox 3.0.0。请先升级 Ebox，再升级 ETAF。
