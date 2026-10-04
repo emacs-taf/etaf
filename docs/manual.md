@@ -1074,6 +1074,43 @@ cannot run while rendering; no Runtime lookup, manual focus flag or second
 input registry is needed. UI TextInput, NumberInput and Select use this path.
 See the [Ebox native interaction contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction).
 
+Native in-place editing uses an input session instead of a reader in another
+window. `etaf-input-begin`, `etaf-input-text`, `etaf-input-end` and
+`etaf-input-active-p` wrap an Ebox session over one mounted Host. Start it from
+an event callback or command. While the session is active, ETAF keeps this
+Runtime's publications pending, without publishing or failing, and Ebox
+refuses to publish that buffer, so the user's keystrokes, point, selection and
+undo stay native in the real buffer. The framework stores no application
+value: mirror the accepted edits into application state through the
+component's own change callback, call `etaf-input-end` when the interaction
+finishes, update state with the returned text and publish it with
+`etaf-runtime-flush`. Visible changes made meanwhile remain pending and are
+published after the session ends. A missing Host, an unmounted Runtime and a
+second session on the same buffer are errors.
+
+```elisp
+(etaf-define-component editable-title ()
+  :bindings ((title (etaf-ref "draft"))
+             (session (etaf-ref nil)))
+  :view
+  (column
+   (row
+    (text :ref 'edit :tab-index 0
+          :on-press (lambda ()
+                      (setf (etaf-value session)
+                            (etaf-input-begin (etaf-current-runtime) 'title)))
+          "Edit")
+    (text :ref 'accept :tab-index 0
+          :on-press (lambda ()
+                      (when-let* ((active (etaf-value session)))
+                        (setf (etaf-value title) (etaf-input-text active))
+                        (etaf-input-end active)
+                        (setf (etaf-value session) nil)
+                        (etaf-runtime-flush)))
+          "Accept"))
+   (text :ref 'title (expr (etaf-value title)))))
+```
+
 ## 9. Context / Provide / Inject
 
 Use Context for a dependency shared across component depth, not for ordinary props:

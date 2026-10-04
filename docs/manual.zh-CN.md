@@ -919,6 +919,38 @@ reader 管理原生编辑，调用返回后再应用结果。错误与 quit 继�
 不能在渲染时调用。UI TextInput、NumberInput 和 Select 共用此路径。详细所有权
 见 [Ebox 原生交互契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction)。
 
+原生原地编辑使用输入会话，而不是切到另一个窗口的 reader。`etaf-input-begin`、
+`etaf-input-text`、`etaf-input-end` 与 `etaf-input-active-p` 在已挂载 Host 上
+包装 Ebox 会话。应从事件回调或命令中开始。会话期间 ETAF 让该 Runtime 的更新
+保持待处理，不发布也不报错，Ebox 拒绝发布该 buffer，用户的按键、point、选区和
+撤销都保留在真实 buffer 中。框架不保存应用值：应用通过组件自己的变更回调把接受
+的编辑同步进状态，交互结束时调用 `etaf-input-end`，再用返回的文本更新状态并
+调用 `etaf-runtime-flush` 发布。会话期间可见的更新保持待处理，在会话结束后发布。
+Host 缺失、Runtime 未挂载以及同一 buffer 上的第二个会话都是错误。
+
+```elisp
+(etaf-define-component editable-title ()
+  :bindings ((title (etaf-ref "draft"))
+             (session (etaf-ref nil)))
+  :view
+  (column
+   (row
+    (text :ref 'edit :tab-index 0
+          :on-press (lambda ()
+                      (setf (etaf-value session)
+                            (etaf-input-begin (etaf-current-runtime) 'title)))
+          "编辑")
+    (text :ref 'accept :tab-index 0
+          :on-press (lambda ()
+                      (when-let* ((active (etaf-value session)))
+                        (setf (etaf-value title) (etaf-input-text active))
+                        (etaf-input-end active)
+                        (setf (etaf-value session) nil)
+                        (etaf-runtime-flush)))
+          "接受"))
+   (text :ref 'title (expr (etaf-value title)))))
+```
+
 ## 9. Context / Provide / Inject
 
 Context 适合跨多层共享依赖，不适合普通 label：
