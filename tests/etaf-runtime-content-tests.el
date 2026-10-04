@@ -110,5 +110,32 @@ A rejected batch leaves the committed text untouched."
       (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
+(ert-deftest etaf-runtime-update-host-content-publishes-image-cells ()
+  "An image object is published as a Host content cell.
+The retained update keeps the caller's display specification in the buffer,
+so a fixed-size Host can show a new frame per update, and a value that is
+neither a string nor an image still signals `etaf-runtime-error'."
+  (let ((buffer-name " *etaf-runtime-content-image*"))
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer-name
+           (etaf-view
+            (flex :flex-direction 'column
+                  (box :id "canvas" :ref 'canvas :width '(ch 16) :height '(lh 4)
+                       :overflow 'hidden
+                       (text " ")))))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (image (create-image "fake-frame-data" 'png t)))
+            (should (eq t (etaf-runtime-update-host-content runtime 'canvas image)))
+            (with-current-buffer buffer-name
+              (should (equal image (get-text-property 0 'display (buffer-string)))))
+            (should-error (etaf-runtime-update-host-content runtime 'canvas 5)
+                          :type 'etaf-runtime-error)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer)))))
+
 (provide 'etaf-runtime-content-tests)
 ;;; etaf-runtime-content-tests.el ends here

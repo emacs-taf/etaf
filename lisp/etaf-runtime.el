@@ -800,17 +800,19 @@ Runtimes, active Ebox transactions, and rejected geometry signal
 
 ;;;###autoload
 (defun etaf-runtime-update-host-content (runtime host-ref content)
-  "Replace HOST-REF's published text with CONTENT in mounted RUNTIME.
+  "Replace HOST-REF's published content with CONTENT in mounted RUNTIME.
 
-This is the text half of ETAF's retained Host display boundary, next to
-`etaf-runtime-update-host-geometry'.  CONTENT must be a string.  The update
-replaces only the addressed Host's text and publishes once through Ebox, so a
-caller whose controlled state changed one string does not pay for an ordinary
-ETAF publication.  The caller's state stays authoritative: the next ordinary
-publication must render the same text, or the retained Host is reconciled to
-that publication.  A committed update returns t.  Unknown Hosts, unmounted
-Runtimes, non-string CONTENT, and Hosts whose retained node cannot hold text
-signal `etaf-runtime-error' without a partial update."
+This is the content half of ETAF's retained Host display boundary, next to
+`etaf-runtime-update-host-geometry'.  CONTENT is a string, published as the
+Host's text, or an image object as returned by `create-image', published as a
+single image cell.  The update replaces only the addressed Host and publishes
+once through Ebox, so a caller whose controlled state changed one value does
+not pay for an ordinary ETAF publication.  The caller's state stays
+authoritative: the next ordinary publication must render the same content, or
+the retained Host is reconciled to that publication.  A committed update
+returns t.  Unknown Hosts, unmounted Runtimes, CONTENT that is neither a
+string nor an image, and Hosts whose retained node cannot hold content signal
+`etaf-runtime-error' without a partial update."
   (etaf-runtime-update-host-contents runtime (list (cons host-ref content))))
 
 ;;;###autoload
@@ -820,18 +822,28 @@ A nil operation records unsupported admission until an outside publication.")
 
 (defun etaf--publish-retained-host-contents (buffer updates)
   "Publish resolved content UPDATES in BUFFER, reusing a proved fixed canvas.
-Unsupported layouts retain the ordinary atomic route. No app opts into a
+Unsupported layouts retain the ordinary atomic route.  Content that carries
+its own `display' properties (image cells) always uses the ordinary scoped
+route, because the prepared-cohort route re-projects text properties from the
+source and would drop the caller's display specification.  No app opts into a
 backend-specific API, and changed bindings always require cold admission."
   (let* ((refs (mapcar #'car updates))
+         (media (cl-some (lambda (entry)
+                           (let ((content (cdr entry)))
+                             (and (stringp content)
+                                  (text-property-not-all
+                                   0 (length content) 'display nil content))))
+                         updates))
          (token (ebox-update-binding-token buffer))
          (cache etaf--retained-content-cohort)
          (unique (= (length refs) (length (delete-dups (copy-sequence refs)))))
          (reusable (and cache (equal refs (aref cache 0)) (eq token (aref cache 1))))
          (operation
-          (if reusable (aref cache 2)
-            (when (and refs unique)
-              (ebox-update-prepare
-               buffer (vconcat (mapcar (lambda (ref) (vector ref [:content])) refs)))))))
+          (unless media
+            (if reusable (aref cache 2)
+              (when (and refs unique)
+                (ebox-update-prepare
+                 buffer (vconcat (mapcar (lambda (ref) (vector ref [:content])) refs))))))))
     (if (and operation
              (ebox-update-valid-p operation)
              (ebox-update-apply operation
@@ -849,19 +861,22 @@ backend-specific API, and changed bindings always require cold admission."
     t))
 
 (defun etaf-runtime-update-host-contents (runtime updates)
-  "Replace several HOST-REF texts in mounted RUNTIME.
+  "Replace several HOST-REF contents in mounted RUNTIME.
 
-UPDATES is an alist of `(HOST-REF . STRING)' entries.  Every target validates
+UPDATES is an alist of `(HOST-REF . CONTENT)' entries where CONTENT is a
+string or an image object as returned by `create-image'; an image publishes
+as one image cell showing that image at its own size.  Every target validates
 before the first replacement, and the whole batch commits as one retained Ebox
-publication, so a caller that keeps several small texts live (a clock and a
-meter, say) publishes once per change instead of once per node.  A committed
-update returns t.  Invalid targets or updates, unmounted Runtimes, active Ebox
-transactions, and rejected content signal `etaf-runtime-error' without a
-partial update."
+publication, so a caller that keeps several small contents live publishes
+once per change instead of once per node.  A committed update returns t.
+Invalid targets or updates, unmounted Runtimes, active Ebox transactions, and
+rejected content signal `etaf-runtime-error' without a partial update."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (unless (and (listp updates)
                (cl-every (lambda (entry)
-                           (and (consp entry) (stringp (cdr entry))))
+                           (and (consp entry)
+                                (or (stringp (cdr entry))
+                                    (imagep (cdr entry)))))
                          updates))
     (signal 'etaf-runtime-error
             (list "Invalid Host content updates" updates)))
@@ -875,7 +890,11 @@ partial update."
         (unless props
           (signal 'etaf-runtime-error
                   (list "Unknown committed Host" host-ref)))
-        (push (cons (or (plist-get props :id) host-ref) (cdr entry))
+        (push (cons (or (plist-get props :id) host-ref)
+                    (let ((content (cdr entry)))
+                      (if (imagep content)
+                          (propertize " " 'display content)
+                        content)))
               resolved)))
     (setq resolved (nreverse resolved))
     (with-current-buffer (etaf-runtime-buffer runtime)

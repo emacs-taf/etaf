@@ -1091,28 +1091,32 @@
 ;;
 ;; Function: etaf-runtime-update-host-content (runtime host-ref content)
 ;;;###autoload (autoload 'etaf-runtime-update-host-content "etaf" nil nil)
-;; Replace HOST-REF's published text with CONTENT in mounted RUNTIME.
+;; Replace HOST-REF's published content with CONTENT in mounted RUNTIME.
 ;;
-;; This is the text half of the retained Host display boundary, next to
-;; `etaf-runtime-update-host-geometry'.  CONTENT must be a string.  The update
-;; replaces only the addressed Host and publishes once through Ebox, so a
-;; caller whose controlled state changed one string skips an ordinary ETAF
-;; publication.  The next ordinary publication must render the same text, or
-;; the retained Host is reconciled to it.  A committed update returns t.
-;; Unknown Hosts, unmounted Runtimes, non-string CONTENT and Hosts whose
-;; retained node cannot hold text signal `etaf-runtime-error' without a partial
-;; update.
+;; This is the content half of the retained Host display boundary, next to
+;; `etaf-runtime-update-host-geometry'.  CONTENT is a string, published as the
+;; Host's text, or an image object as returned by `create-image', published as
+;; one image cell showing that image at its own size; a caller that keeps a
+;; fixed-size Host live with per-frame images (video, charts, captures) passes
+;; a new image object per update.  The update replaces only the addressed Host
+;; and publishes once through Ebox, so a caller whose controlled state changed
+;; one value skips an ordinary ETAF publication.  The next ordinary publication
+;; must render the same content, or the retained Host is reconciled to it.  A
+;; committed update returns t.  Unknown Hosts, unmounted Runtimes, CONTENT that
+;; is neither a string nor an image, and Hosts whose retained node cannot hold
+;; content signal `etaf-runtime-error' without a partial update.
 ;;
 ;; Function: etaf-runtime-update-host-contents (runtime updates)
 ;;;###autoload (autoload 'etaf-runtime-update-host-contents "etaf" nil nil)
-;; Replace several HOST-REF texts in one retained Ebox publication.
+;; Replace several HOST-REF contents in one retained Ebox publication.
 ;;
-;; UPDATES is an alist of committed Host references to replacement strings.
-;; Every target validates before the first replacement, so a caller keeping
-;; several small texts live publishes once per change instead of once per node.
-;; A committed update returns t.  Invalid targets or updates, unmounted
-;; Runtimes, active Ebox transactions, and rejected content signal
-;; `etaf-runtime-error' without a partial update.
+;; UPDATES is an alist of committed Host references to replacement strings or
+;; image objects.  Every target validates before the first replacement, so a
+;; caller keeping several small contents live (text and frames together)
+;; publishes once per change instead of once per node.  A committed update
+;; returns t.  Invalid targets or updates, unmounted Runtimes, active Ebox
+;; transactions, and rejected content signal `etaf-runtime-error' without a
+;; partial update.
 ;;
 ;; Function: etaf-runtime-update-host-geometry (runtime host-ref &rest geometry)
 ;;;###autoload (autoload 'etaf-runtime-update-host-geometry "etaf" nil nil)

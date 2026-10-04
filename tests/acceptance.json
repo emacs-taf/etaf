@@ -1324,6 +1324,11 @@
       "purpose": "Fixed content updates preserve rich text, reject invalid batches atomically and rebind after a resize."
     },
     {
+      "name": "etaf-runtime-update-host-content-publishes-image-cells",
+      "file": "tests/etaf-runtime-content-tests.el",
+      "purpose": "An image object is published as a Host content cell that keeps the caller's display specification, while a value that is neither a string nor an image signals an error."
+    },
+    {
       "name": "etaf-runtime-update-host-content-replaces-retained-text",
       "file": "tests/etaf-runtime-content-tests.el",
       "purpose": "The ETAF incremental Host content boundary replaces one retained text without an ordinary publication, and the next ordinary publication keeps the caller's state authoritative."
