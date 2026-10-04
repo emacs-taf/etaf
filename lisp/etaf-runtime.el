@@ -6940,6 +6940,22 @@ Use `etaf-runtime-snapshot' for an explicit snapshot."
     (etaf-scheduler-call-with-projection (etaf-runtime-flush-function runtime))
     (etaf-render-port-revision (etaf-runtime-buffer runtime))))
 
+(defvar etaf--runtime-refit-frame-sizes (make-hash-table :test #'eq)
+  "Last frame size seen by the settled refit, keyed by frame.
+A frame resize stays a user resize even while transient UI borrows window
+space; only a window-configuration change inside an unchanged frame is
+borrowed.")
+
+(defun etaf--runtime-frame-size (frame)
+  "Return FRAME's size in character rows and columns, or nil."
+  (when (frame-live-p frame)
+    (cons (frame-width frame) (frame-height frame))))
+
+(defun etaf--runtime-record-frame-size (frame)
+  "Record FRAME's current character size for the settled refit guard."
+  (when-let* ((size (etaf--runtime-frame-size frame)))
+    (puthash frame size etaf--runtime-refit-frame-sizes)))
+
 ;;;###autoload
 (defun etaf-runtime-refit (runtime viewport-width &optional viewport-height)
   "Refit mounted RUNTIME to VIEWPORT-WIDTH pixels and VIEWPORT-HEIGHT lines.
@@ -6960,7 +6976,9 @@ non-mounted Runtime signals `etaf-runtime-error'."
               (etaf-render-port-refit (etaf-runtime-buffer runtime)
                                       viewport-width viewport-height)))
       (puthash runtime (cons viewport-width viewport-height)
-               etaf--runtime-viewports))))
+               etaf--runtime-viewports)
+      (when-let* ((window (etaf--runtime-display-window runtime)))
+        (etaf--runtime-record-frame-size (window-frame window))))))
 
 ;;;###autoload
 (defun etaf-refit (&optional runtime window)
@@ -7032,13 +7050,17 @@ when neither source is usable."
          (viewport (cons (or width (car-safe from-window))
                          (or height (cdr-safe from-window)))))
     (when (and (car viewport) (cdr viewport))
-      (puthash runtime viewport etaf--runtime-viewports))
+      (puthash runtime viewport etaf--runtime-viewports)
+      (when-let* ((window (etaf--runtime-display-window runtime)))
+        (etaf--runtime-record-frame-size (window-frame window))))
     viewport))
 
 (defun etaf--runtime-record-viewport (runtime viewport)
   "Record VIEWPORT as RUNTIME's current canvas and return it."
   (when viewport
-    (puthash runtime viewport etaf--runtime-viewports))
+    (puthash runtime viewport etaf--runtime-viewports)
+    (when-let* ((window (etaf--runtime-display-window runtime)))
+      (etaf--runtime-record-frame-size (window-frame window))))
   viewport)
 
 (defun etaf--runtime-window-size-change (frame)
@@ -7077,23 +7099,30 @@ resize; `minibuffer-exit-hook' reconciles once that UI releases the space."
                   (setq etaf--runtime-refit-frames nil))))
     (dolist (frame frames)
       (when (frame-live-p frame)
-        (dolist (window (window-list frame 'no-minibuf))
-          (let* ((buffer (window-buffer window))
-                 (runtime (and (buffer-live-p buffer)
-                               (etaf-runtime-for-buffer buffer))))
-            (when (and runtime (etaf-runtime-mounted-p runtime))
-              (let ((viewport (and (eq window
-                                       (etaf--runtime-display-window runtime))
-                                   (etaf--runtime-window-viewport window)))
-                    (recorded (gethash runtime etaf--runtime-viewports)))
-                (when (and viewport
-                           (not (equal viewport recorded))
-                           (not (etaf--runtime-transient-height-borrow-p
-                                 frame viewport recorded)))
-                  (condition-case nil
-                      (etaf-runtime-refit runtime (car viewport) (cdr viewport))
-                    (error nil))
-                  (etaf--runtime-record-viewport runtime viewport))))))))))
+        (let ((frame-size (etaf--runtime-frame-size frame))
+              (frame-changed
+               (not (equal (etaf--runtime-frame-size frame)
+                           (gethash frame etaf--runtime-refit-frame-sizes)))))
+          (dolist (window (window-list frame 'no-minibuf))
+            (let* ((buffer (window-buffer window))
+                   (runtime (and (buffer-live-p buffer)
+                                 (etaf-runtime-for-buffer buffer))))
+              (when (and runtime (etaf-runtime-mounted-p runtime))
+                (let ((viewport (and (eq window
+                                         (etaf--runtime-display-window runtime))
+                                     (etaf--runtime-window-viewport window)))
+                      (recorded (gethash runtime etaf--runtime-viewports)))
+                  (when (and viewport
+                             (not (equal viewport recorded))
+                             (not (and (not frame-changed)
+                                       (etaf--runtime-transient-height-borrow-p
+                                        frame viewport recorded))))
+                    (condition-case nil
+                        (etaf-runtime-refit runtime (car viewport) (cdr viewport))
+                      (error nil))
+                    (etaf--runtime-record-viewport runtime viewport))))))
+          (when frame-size
+            (puthash frame frame-size etaf--runtime-refit-frame-sizes)))))))
 
 (defun etaf--runtime-minibuffer-exit ()
   "Reconcile mounted runtimes once the minibuffer releases borrowed space.
