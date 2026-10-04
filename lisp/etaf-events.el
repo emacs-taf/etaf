@@ -170,6 +170,39 @@ otherwise call the local callback with no arguments."
       (ebox-call-with-render-burst run))))
 
 ;;;###autoload
+(defun etaf-input-begin (runtime host-ref)
+  "Begin native editing of HOST-REF's published text in mounted RUNTIME.
+Return a session for `etaf-input-text' and `etaf-input-end'.  While it is
+active ETAF defers this Runtime's publications and Ebox refuses them, so the
+user's keystrokes, point, selection and undo stay untouched in the real
+buffer.  The framework stores no application value: call the session API from
+an event callback or command, mirror edits into application state through the
+component's own change callback, and publish the accepted value after
+`etaf-input-end'.
+
+Visible changes made meanwhile remain pending and are published when the
+session ends.  A missing Host, an unmounted Runtime and a second session on
+the same buffer are errors."
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (ebox-input-begin (etaf-runtime-buffer runtime) host-ref))
+
+(defun etaf-input-text (session)
+  "Return SESSION's current property-free user text."
+  (ebox-input-text session))
+
+(defun etaf-input-end (session)
+  "End SESSION, restore its published text, and return the user's text.
+The caller publishes the new value afterwards, normally by updating
+application state and calling `etaf-runtime-flush'."
+  (ebox-input-end session))
+
+(defun etaf-input-active-p (&optional runtime)
+  "Return RUNTIME's active input session, or nil.
+RUNTIME defaults to the Runtime in the current buffer."
+  (let ((runtime (or runtime (etaf-current-runtime))))
+    (when (and runtime (etaf-runtime-mounted-p runtime))
+      (ebox-input-active-p (etaf-runtime-buffer runtime)))))
+
 (defun etaf-host-ref-bounds (runtime host-ref)
   "Return live Ebox bounds for HOST-REF in mounted RUNTIME."
   (setq runtime (etaf-runtime-require-mounted runtime))

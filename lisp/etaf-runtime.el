@@ -6873,6 +6873,10 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
              etaf-scheduler-default-context)))
     (when (etaf-runtime-mounted-p runtime)
     (cond
+     ;; A native input session owns part of the buffer text.  Keep work
+     ;; pending instead of publishing; the session ends and flushes it.
+     ((ebox-input-active-p (etaf-runtime-buffer runtime))
+      (setf (etaf-runtime-pending-p runtime) t))
      ((or (> (etaf-runtime-event-depth runtime) 0)
           (etaf-runtime-flushing-p runtime))
       (setf (etaf-runtime-pending-p runtime) t))

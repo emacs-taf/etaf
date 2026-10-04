@@ -667,6 +667,26 @@
 ;; Invalid ETAF Host authority state
 ;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
+;; Function: etaf-input-begin (runtime host-ref)
+;;;###autoload (autoload 'etaf-input-begin "etaf" nil nil)
+;; Start native editing of a mounted Host's published text; return a session.
+;; ETAF defers this Runtime's publications while the session is active and
+;; Ebox refuses them, so keystrokes, point, selection and undo stay native in
+;; the real buffer. Host, Runtime, window and single-session rules are errors.
+;;
+;; Function: etaf-input-text (session)
+;;;###autoload (autoload 'etaf-input-text "etaf" nil nil)
+;; Return a session's current property-free user text.
+;;
+;; Function: etaf-input-end (session)
+;;;###autoload (autoload 'etaf-input-end "etaf" nil nil)
+;; End a session, restore the published text, and return the user's text.
+;; Update application state with the accepted value and flush afterwards.
+;;
+;; Function: etaf-input-active-p (&optional runtime)
+;;;###autoload (autoload 'etaf-input-active-p "etaf" nil nil)
+;; Return a mounted Runtime's active input session, or nil.
+;;
 ;; Function: etaf-host-ref-bounds (runtime host-ref)
 ;;;###autoload (autoload 'etaf-host-ref-bounds "etaf" nil nil)
 ;; Return live Ebox bounds for HOST-REF in mounted RUNTIME.
