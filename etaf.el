@@ -671,6 +671,14 @@
 ;;;###autoload (autoload 'etaf-host-ref-bounds "etaf" nil nil)
 ;; Return live Ebox bounds for HOST-REF in mounted RUNTIME.
 ;;
+;; Function: etaf-host-ref-size (runtime host-ref)
+;;;###autoload (autoload 'etaf-host-ref-size "etaf" nil nil)
+;; Return the committed painted border-box size as (WIDTH-PIXELS . HEIGHT-ROWS).
+;; RUNTIME must be mounted. Margins and neighbouring columns are excluded;
+;; clipping reduces the result, and absent or wholly hidden Hosts return nil.
+;; Read after layout to prepare resources; the query does not publish and is
+;; not intended for per-frame polling.
+;;
 ;; Function: etaf-host-ref-position (runtime host-ref)
 ;;;###autoload (autoload 'etaf-host-ref-position "etaf" nil nil)
 ;; Return the first live Ebox position for HOST-REF in RUNTIME.
@@ -1098,7 +1106,10 @@
 ;; Host's text, or an image object as returned by `create-image', published as
 ;; one image cell showing that image at its own size; a caller that keeps a
 ;; fixed-size Host live with per-frame images (video, charts, captures) passes
-;; a new image object per update.  The update replaces only the addressed Host
+;; a new image object per update. Strings retain caller-owned display
+;; properties, including image slices. Use a Text Host for changing media:
+;; replacing a Box's content changes its child structure instead.
+;; The update replaces only the addressed Host
 ;; and publishes once through Ebox, so a caller whose controlled state changed
 ;; one value skips an ordinary ETAF publication.  The next ordinary publication
 ;; must render the same content, or the retained Host is reconciled to it.  A
@@ -1339,7 +1350,7 @@
 ;; the application write, as with `etaf-set-value'.  Existing shallow equality,
 ;; reactive tracking and event batching apply; there is no implicit deep copy.
 ;;
-;; Component: etaf-video (&key src (columns 100) (rows 30) (mode 'image) (ramp etaf-video-density-ramp) (audio etaf-video-audio) (volume etaf-video-audio-volume) (speed 1) (autoplay t) handle device-pixel-ratio)
+;; Component: etaf-video (&key src (columns 100) (rows 30) (mode 'image) (ramp etaf-video-density-ramp) (audio etaf-video-audio) (volume etaf-video-audio-volume) (speed 1) (autoplay t) handle device-pixel-ratio display-fps position left top z-index)
 ;; Render a live video source in a fixed COLUMNS by ROWS canvas.
 ;;
 ;; SRC is nil for the built-in demo, a local file name, an HTTP(S) URL, or a
@@ -1350,7 +1361,17 @@
 ;; `etaf-video-density-ramp', AUDIO/VOLUME/SPEED configure playback, and
 ;; AUTOPLAY starts it at mount; without AUTOPLAY the first frame is shown
 ;; paused.  DEVICE-PIXEL-RATIO overrides the display's device pixel ratio for
-;; `image' frames so Retina screens stay sharp.
+;; `image' frames so Retina screens stay sharp.  DISPLAY-FPS is nil (use
+;; `etaf-video-display-fps') or a positive integer presentation-rate cap.
+;; Image frames share one image across row-height slices so adjacent content
+;; and controls below the canvas retain their normal line heights.  POSITION,
+;; LEFT, TOP and Z-INDEX place the canvas; they are declared on the canvas node
+;; itself so the retained content route can prove an inline placement winner
+;; even when the canvas sits deep in an application layout.
+;; AUDIO, VOLUME and SPEED also accept refs/computed sources; the Component
+;; reads them in its playback effect, not its View. Live volume must stay
+;; within 0..100 and speed must remain positive. Their identity can stay fixed
+;; while a shared UI control updates the value without rebuilding the shell.
 ;;
 ;; HANDLE is a symbol registered while mounted for the `etaf-video-play'
 ;; family of control functions; a video without a handle still plays itself.

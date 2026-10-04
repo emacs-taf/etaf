@@ -822,28 +822,21 @@ A nil operation records unsupported admission until an outside publication.")
 
 (defun etaf--publish-retained-host-contents (buffer updates)
   "Publish resolved content UPDATES in BUFFER, reusing a proved fixed canvas.
-Unsupported layouts retain the ordinary atomic route.  Content that carries
-its own `display' properties (image cells) always uses the ordinary scoped
-route, because the prepared-cohort route re-projects text properties from the
-source and would drop the caller's display specification.  No app opts into a
-backend-specific API, and changed bindings always require cold admission."
+Unsupported layouts retain the ordinary atomic route.  Text values with owned
+display properties use the same provider proof: a stable Text binding preserves
+image slices during prepared rendering.  Box content replacement changes child
+structure and keeps the ordinary route.  No app opts into a backend-specific
+API; changed bindings require cold admission."
   (let* ((refs (mapcar #'car updates))
-         (media (cl-some (lambda (entry)
-                           (let ((content (cdr entry)))
-                             (and (stringp content)
-                                  (text-property-not-all
-                                   0 (length content) 'display nil content))))
-                         updates))
          (token (ebox-update-binding-token buffer))
          (cache etaf--retained-content-cohort)
          (unique (= (length refs) (length (delete-dups (copy-sequence refs)))))
          (reusable (and cache (equal refs (aref cache 0)) (eq token (aref cache 1))))
          (operation
-          (unless media
-            (if reusable (aref cache 2)
-              (when (and refs unique)
-                (ebox-update-prepare
-                 buffer (vconcat (mapcar (lambda (ref) (vector ref [:content])) refs))))))))
+          (if reusable (aref cache 2)
+            (when (and refs unique)
+              (ebox-update-prepare
+               buffer (vconcat (mapcar (lambda (ref) (vector ref [:content])) refs)))))))
     (if (and operation
              (ebox-update-valid-p operation)
              (ebox-update-apply operation

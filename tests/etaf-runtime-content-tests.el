@@ -137,5 +137,51 @@ neither a string nor an image still signals `etaf-runtime-error'."
       (when-let* ((buffer (get-buffer buffer-name)))
         (kill-buffer buffer)))))
 
+(ert-deftest etaf-runtime-content-keeps-image-slices-across-mixed-updates ()
+  "Changing sliced images preserves every row and neighbouring controls."
+  (let ((buffer (generate-new-buffer " *etaf-sliced-content*")))
+    (unwind-protect
+        (progn
+          (etaf-mount buffer
+            (etaf-view
+             (box :position 'relative :width '(ch 40) :height '(lh 8)
+               (box :position 'absolute :left '(ch 0) :top '(lh 0) :z-index 0
+                    :width '(ch 16) :height '(lh 3) :overflow 'hidden :wrap-mode 'none
+                 (text :ref 'picture :id 'picture " "))
+               (box :position 'absolute :left '(ch 0) :top '(lh 5) :z-index 0
+                    :width '(ch 16) :height '(lh 1)
+                 (text :ref 'caption :id 'caption "ready"))))
+            '(:viewport-width 400 :viewport-height 8))
+          (let ((runtime (etaf-runtime-for-buffer buffer)))
+            (dotimes (index 5)
+              (let* ((image (create-image (format "frame-%d" index) 'png t))
+                     (value (mapconcat
+                             (lambda (row)
+                               (propertize " " 'display
+                                           (list (list 'slice 0 row 8 1) image)))
+                             '(0 1 2) "\n")))
+                (etaf-runtime-update-host-content runtime 'picture value)
+                (etaf-runtime-update-host-content runtime 'caption (format "frame %d" index))
+                (with-current-buffer buffer
+                  (let ((position (point-min)) (count 0))
+                    (while (< position (point-max))
+                      (let ((display (get-text-property position 'display)))
+                        (when (and (consp display) (consp (car display))
+                                   (eq (caar display) 'slice))
+                          (should (equal (cadr display) image))
+                          (setq count (1+ count))))
+                      (setq position (next-single-property-change position 'display nil (point-max))))
+                    (should (= count 3)))
+                  (should (string-match-p (format "frame %d" index)
+                                          (buffer-substring-no-properties (point-min) (point-max))))))
+              (when (= index 2) (etaf-runtime-refit runtime 450 9)))
+            (should-error (etaf-runtime-update-host-contents
+                           runtime '((caption . "lost") (missing . "bad")))
+                          :type 'etaf-runtime-error)
+            (with-current-buffer buffer
+              (should (string-match-p "frame 4" (buffer-substring-no-properties (point-min) (point-max)))))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (provide 'etaf-runtime-content-tests)
 ;;; etaf-runtime-content-tests.el ends here

@@ -173,6 +173,12 @@ restores the picture."
   "Return non-nil when INSTANCE's buffer is shown in a graphical frame."
   (display-graphic-p (etaf-video--instance-frame instance)))
 
+(defun etaf-video--control-value (source)
+  "Read a playback control SOURCE without subscribing the View to its value."
+  (if (or (etaf-ref-p source) (etaf-computed-p source))
+      (etaf-value source)
+    source))
+
 (defun etaf-video--instance-read-inputs (instance)
   "Return INSTANCE's current tracked input values as a plist."
   (let ((sources (etaf-video--instance-sources instance)))
@@ -181,10 +187,11 @@ restores the picture."
           :rows (etaf-value (plist-get sources :rows))
           :mode (etaf-value (plist-get sources :mode))
           :ramp (etaf-value (plist-get sources :ramp))
-          :audio (etaf-value (plist-get sources :audio))
-          :volume (etaf-value (plist-get sources :volume))
-          :speed (etaf-value (plist-get sources :speed))
-          :device-pixel-ratio (etaf-value (plist-get sources :device-pixel-ratio)))))
+          :audio (etaf-video--control-value (etaf-value (plist-get sources :audio)))
+          :volume (etaf-video--control-value (etaf-value (plist-get sources :volume)))
+          :speed (etaf-video--control-value (etaf-value (plist-get sources :speed)))
+          :device-pixel-ratio (etaf-value (plist-get sources :device-pixel-ratio))
+          :display-fps (etaf-value (plist-get sources :display-fps)))))
 
 (defun etaf-video--instance-effective-mode (instance)
   "Return INSTANCE's render mode after the graphic fallback.
@@ -245,6 +252,49 @@ displayed image (nil for the raw modes)."
       ('color (list 'rgb24 columns (* 2 rows) 1.0 nil nil))
       (_ (list 'gray columns rows 1.0 nil nil)))))
 
+(defun etaf-video--image-ascent (frame)
+  "Return the image ascent percentage that keeps a row at FRAME's line height.
+A canvas row usually shares its buffer line with application text, and a line
+grows to the sum of the largest ascent and the largest descent it holds.  The
+default font's own ascent and descent are therefore the whole row an image
+may occupy; aligning the image to that baseline keeps the line exactly one
+character high instead of pushing the rows below the canvas off the window."
+  (let* ((height (and (numberp (frame-char-height frame)) (frame-char-height frame)))
+         (info (ignore-errors (font-info (face-font 'default frame))))
+         (ascent (and (vectorp info) (> (length info) 9) (aref info 8)))
+         (descent (and (vectorp info) (> (length info) 9) (aref info 9))))
+    (if (and (numberp ascent) (numberp descent) (numberp height)
+             (> height 0) (> ascent 0) (>= descent 0))
+        (min 100 (max 1 (ceiling (* 100.0 (/ (float ascent) height)))))
+      82)))
+
+(defun etaf-video--image-grid-text (instance image)
+  "Return INSTANCE's canvas text cropping IMAGE into one cell per row.
+One frame image is many character rows tall while a buffer line holds one
+row, so publishing the image whole would push every line below the canvas
+past the window edge.  Slicing the frame into IMAGE's own character rows
+keeps the canvas exactly `rows' lines tall, which is what lets a caller
+place chrome under it."
+  (let* ((applied (etaf-video--instance-applied instance))
+         (rows (max 1 (or (plist-get applied :rows) 1)))
+         (frame (etaf-video--instance-frame instance))
+         (row-height (max 1 (frame-char-height frame)))
+         (display (etaf-video--instance-display-size instance))
+         (width (max 1 (or (car-safe display) 1)))
+         (height (max 1 (or (cdr-safe display) row-height))))
+    (mapconcat
+     (lambda (row)
+       (let ((y (* row row-height)))
+         (if (>= y height)
+             " "
+           (propertize
+            " "
+            'display
+            (list (list 'slice 0 y width (min row-height (- height y)))
+                  image)))))
+     (number-sequence 0 (1- rows))
+     "\n")))
+
 (defun etaf-video--instance-present (instance frame)
   "Map FRAME for INSTANCE's effective mode and publish it.
 The retained content update replaces only the canvas Host, so one displayed
@@ -254,25 +304,29 @@ frame does not pay for an ordinary ETAF publication."
       (let* ((applied (etaf-video--instance-applied instance))
              (cell (etaf-video--instance-cell instance))
              (ref (etaf-video--instance-ref instance))
+             (mode (etaf-video--instance-effective-mode instance))
+             (image (and (eq mode 'image)
+                         (create-image frame 'jpeg t
+                                       :ascent (etaf-video--image-ascent
+                                                (etaf-video--instance-frame instance))
+                                       :scale (etaf-video--instance-image-scale instance)
+                                       :max-width (etaf-video--instance-image-max-width instance)
+                                       :max-height (etaf-video--instance-image-max-height instance))))
              (content
-              (pcase (etaf-video--instance-effective-mode instance)
-                ('image
-                 (setcar cell " ")
-                 (create-image frame 'jpeg t
-                               :scale (etaf-video--instance-image-scale instance)
-                               :max-width (etaf-video--instance-image-max-width instance)
-                               :max-height (etaf-video--instance-image-max-height instance)))
+              (pcase mode
+                ('image (etaf-video--image-grid-text instance image))
                 ('color
-                 (setcar cell (etaf-video--color-grid-text
-                               frame
-                               (plist-get applied :columns)
-                               (plist-get applied :rows))))
+                 (etaf-video--color-grid-text
+                  frame
+                  (plist-get applied :columns)
+                  (plist-get applied :rows)))
                 (_
-                 (setcar cell (etaf-video--ascii-grid-text
-                               frame
-                               (plist-get applied :columns)
-                               (plist-get applied :rows)
-                               (plist-get applied :ramp)))))))
+                 (etaf-video--ascii-grid-text
+                  frame
+                  (plist-get applied :columns)
+                  (plist-get applied :rows)
+                  (plist-get applied :ramp))))))
+        (setcar cell content)
         (condition-case problem
             (progn
               (etaf-runtime-update-host-content runtime ref content)
@@ -283,9 +337,7 @@ frame does not pay for an ordinary ETAF publication."
               ;; and holds every decoded frame in memory.
               (when-let* ((previous (etaf-video--instance-image-last instance)))
                 (ignore-errors (image-flush previous)))
-              (setf (etaf-video--instance-image-last instance)
-                    (and (eq (etaf-video--instance-effective-mode instance) 'image)
-                         content)))
+              (setf (etaf-video--instance-image-last instance) image))
           (etaf-runtime-error
            (etaf-video-session-destroy (etaf-video--instance-session instance))
            (message "etaf-video: %s" (error-message-string problem))))))))
@@ -310,6 +362,7 @@ session starts playing; a paused session presents one frame instead."
                    :width (nth 1 size)
                    :height (nth 2 size)
                    :speed (plist-get applied :speed)
+                   :fps (plist-get applied :display-fps)
                    :start (or start 0)
                    :audio (plist-get applied :audio)
                    :volume (plist-get applied :volume)
@@ -358,7 +411,9 @@ session in place."
                  (not (equal (plist-get old :mode) (plist-get inputs :mode)))
                  (not (equal (plist-get old :ramp) (plist-get inputs :ramp)))
                  (not (equal (plist-get old :device-pixel-ratio)
-                             (plist-get inputs :device-pixel-ratio))))))
+                             (plist-get inputs :device-pixel-ratio)))
+                 (not (equal (plist-get old :display-fps)
+                             (plist-get inputs :display-fps))))))
         (setf (etaf-video--instance-applied instance) inputs)
         (if structural
             (when-let* ((session (etaf-video--instance-session instance)))
@@ -380,7 +435,8 @@ session in place."
     (&key src (columns 100) (rows 30) (mode 'image)
           (ramp etaf-video-density-ramp)
           (audio etaf-video-audio) (volume etaf-video-audio-volume) (speed 1)
-          (autoplay t) handle device-pixel-ratio)
+          (autoplay t) handle device-pixel-ratio display-fps
+          position left top z-index)
   "Render a live video source in a fixed COLUMNS by ROWS canvas.
 
 SRC is nil for the built-in demo, a local file name, an HTTP(S) URL, or a
@@ -394,9 +450,14 @@ DENSITY-RAMP defaults to `etaf-video-density-ramp'.
 
 AUDIO, VOLUME and SPEED configure the running playback; AUTOPLAY starts it
 as soon as the Component is mounted, otherwise the first frame is shown
-paused.  DEVICE-PIXEL-RATIO overrides the display's device pixel ratio for
-`image' frames, defaulting to `frame-scale-factor' so Retina displays stay
-sharp.
+paused.  DISPLAY-FPS caps the presented frame rate, defaulting to
+`etaf-video-display-fps'.  DEVICE-PIXEL-RATIO overrides the display's device
+pixel ratio for `image' frames, defaulting to `frame-scale-factor' so Retina
+displays stay sharp.
+
+POSITION, LEFT, TOP and Z-INDEX place the canvas; they are declared on the
+canvas node itself so the retained content route can prove an inline
+placement winner and publish frames without an ordinary publication.
 
 HANDLE is a symbol used by the `etaf-video-play' family of control
 functions; the Component registers it while mounted.  Without HANDLE the
@@ -418,14 +479,20 @@ video still plays itself but cannot be controlled."
                           (not (string-match-p "\n" ramp)))
                      "a nonempty single-line string")
     (etaf-check-prop :volume volume
-                     (and (numberp volume) (<= 0 volume 100))
-                     "a number between 0 and 100")
+                     (or (etaf-ref-p volume) (etaf-computed-p volume)
+                         (and (numberp volume) (<= 0 volume 100)))
+                     "a number between 0 and 100, or a reactive source")
     (etaf-check-prop :speed speed
-                     (and (numberp speed) (> speed 0))
-                     "a positive number")
+                     (or (etaf-ref-p speed) (etaf-computed-p speed)
+                         (and (numberp speed) (> speed 0)))
+                     "a positive number, or a reactive source")
     (etaf-check-prop :handle handle
                      (or (null handle) (symbolp handle))
                      "nil or a symbol")
+    (etaf-check-prop :display-fps display-fps
+                     (or (null display-fps)
+                         (and (integerp display-fps) (> display-fps 0)))
+                     "nil or a positive integer")
     (etaf-check-prop :device-pixel-ratio device-pixel-ratio
                      (or (null device-pixel-ratio)
                          (and (numberp device-pixel-ratio)
@@ -442,6 +509,7 @@ video still plays itself but cannot be controlled."
    (volume-input (etaf-prop 'volume))
    (speed-input (etaf-prop 'speed))
    (ratio-input (etaf-prop 'device-pixel-ratio))
+   (fps-input (etaf-prop 'display-fps))
    (content-ref (etaf-local-ref 'content))
    (content-id (etaf-video--next-content-id))
    (instance (etaf-video--instance--make
@@ -452,7 +520,8 @@ video still plays itself but cannot be controlled."
                              :rows rows-input :mode mode-input
                              :ramp ramp-input :audio audio-input
                              :volume volume-input :speed speed-input
-                             :device-pixel-ratio ratio-input))))
+                             :device-pixel-ratio ratio-input
+                             :display-fps fps-input))))
 
   :setup
   (progn
@@ -471,13 +540,21 @@ video still plays itself but cannot be controlled."
      :name 'etaf-video-inputs))
 
   :view
-  (box :ref content-ref :id content-id
-       :width (list 'ch columns)
+  ;; Placement is declared on the canvas node itself so Ebox's retained
+  ;; content route can prove an inline placement winner; a call-site prop
+  ;; that only reaches the node through component scoping would keep a
+  ;; playing canvas on the ordinary publication route.
+  (box :width (list 'ch columns)
        :height (list 'lh rows)
+       :position (or position 'static)
+       :left (or left '(px 0))
+       :top (or top '(lh 0))
+       :z-index (or z-index 0)
        :wrap-mode 'none
        :overflow 'hidden
        :background-color "#050607"
-    (text (expr (etaf-video--instance-view-content instance)))))
+    (text :ref content-ref :id content-id
+          (expr (etaf-video--instance-view-content instance)))))
 
 (defun etaf-video-play (handle)
   "Start or resume the mounted video identified by HANDLE.

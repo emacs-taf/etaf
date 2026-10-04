@@ -1564,11 +1564,30 @@ and `etaf-video-state'.  `:audio' non-nil starts an ffplay sidecar for
 sources that report an audio stream; volume is 0 to 100.  For `image'
 frames the Component decodes at the display's device pixel ratio
 (`frame-scale-factor') so Retina screens stay sharp; override it with
-`:device-pixel-ratio'.
+`:device-pixel-ratio'.  `:position', `:left', `:top' and `:z-index' place the
+canvas; they are declared on the canvas node itself, which keeps frames on the
+retained content route even when the canvas is nested in an application
+layout.  `etaf-host-ref-size' reports the committed `(PIXELS . ROWS)' of a
+Host, so a caller can fit the canvas to a measured region.  Each image is
+shared by one slice per canvas row,
+so adjacent text stays on normal-height lines. Frames update the retained
+Text Host inside the fixed canvas rather than replacing the canvas subtree.
+The content boundary preserves image display properties and can reuse a
+prepared Text update while its layout conditions remain valid.
+
+`:display-fps' caps presentation independently of the source frame rate.
+The newest complete frame wins; slower presentation never queues old frames.
+This is a pacing limit, not a guaranteed achieved frame rate.
 
 Changing `:src', `:columns', `:rows', `:mode', `:ramp' or
 `:device-pixel-ratio' rebuilds the session at the current position, while
-`:speed', `:volume' and `:audio' retune the running one.
+`:speed', `:volume' and `:audio' retune the running one. These three props
+also accept an `etaf-ref` or `etaf-computed` source: pass the source itself
+rather than reading it in the surrounding Component. Its changes retune
+playback without republishing that surrounding View, and the latest values
+survive a canvas resize. For example, share `(etaf-ref 60)` between
+`(etaf-video :volume volume ...)` and `(etaf-range :value volume ...)`;
+the latter is supplied by `etaf-ui`. Keep one authoritative control source.
 `etaf-video-source-info' returns a source's size, duration, rate and audio
 presence without mounting anything.
 

@@ -1328,7 +1328,54 @@ buffer 身份筛选操作，保留其他记录。提供方的重叠总耗时不�
 同一个 Runtime operation 边界。采集结束后关闭 mode，只解除当前 Runtime 的
 observer，不修改任何函数。
 
-## 14. 公共 API 速查
+## 14. 原生视频
+
+`etaf-video` 把视频画布放进布局。ffmpeg 解码，组件按模式转换完整帧，
+通过保留 Text Host 发布；播放不需要重新发送应用 View。
+
+```elisp
+(etaf-view
+ (etaf-video :src "/path/clip.mp4" :columns 80 :rows 24
+             :mode 'image :autoplay t :handle 'clip))
+
+(etaf-video-pause 'clip)
+(etaf-video-seek 'clip 12.5)
+(etaf-video-set-speed 'clip 2)
+(etaf-video-state 'clip)
+```
+
+`image` 模式需要图形帧，否则回退到 `ascii` 密度字符画；`color` 模式用半块
+字符显示彩色像素。来源可为 nil（内建演示）、本地路径、HTTP(S) URL 或来源
+plist。`:autoplay nil` 显示首帧后暂停。卸载会释放解码进程、音频进程和定时器。
+
+`:position`、`:left`、`:top` 和 `:z-index` 直接声明在画布节点上，因此画布
+嵌在应用布局深处时，帧仍走 retained content 路线。`etaf-host-ref-size` 返回
+Host 已提交的 `(像素 . 行数)`，调用方据此把画布适配到实测区域。
+
+图像按 `frame-scale-factor` 提供的设备像素比解码，Retina 不降低清晰度；
+`:device-pixel-ratio` 可显式覆盖。每帧的一张图按画布行数切片共享，邻接文字
+保持正常行高。更新的是固定画布内部的 Text，不是替换整个画布子树。
+保留内容接口保留图像的 display 属性，布局条件有效时复用已准备的 Text 更新。
+
+`:display-fps` 限制呈现频率，不改变源帧率，也不保证实际达到这个频率。
+显示始终取最新完整帧，不积压旧帧。`:src`、`:columns`、`:rows`、`:mode`、
+`:ramp` 或像素比变化时，在当前位置重建会话；`:speed`、`:volume` 和 `:audio`
+调整运行中的会话。后三项也接受 `etaf-ref` / `etaf-computed`：直接传 source，
+不要在外层组件先读值。例如把 `(etaf-ref 60)` 同时传给视频的 `:volume` 和
+`etaf-ui` 的 `etaf-range` 的 `:value`，让两者共用一份状态；调整不会重发外层
+View，resize 也保留最新值。
+
+`:audio` 非 nil 时，报告有音轨的来源通过 ffplay 播放；音量范围为 0–100。
+暂停释放音频进程，恢复从暂停位置开始。命令式播放、暂停、单步、seek 和设置
+接口见 [etaf.el 的公共 API](../etaf.el)。`etaf-video-source-info` 可在不挂载时
+读取尺寸、时长、帧率和音轨信息。
+
+组件只负责画布和播放。按钮、进度条和窗口外壳由调用方组合；`:on-press` 可用
+`(lambda () (etaf-video-toggle-playback 'clip))` 实现点击播放。
+拖动回调提供窗口像素坐标和 `start/move/end/cancel` 阶段，可在 `end` 时调用
+`etaf-video-seek` 完成跳转。
+
+## 15. 公共 API 速查
 
 | API 家族 | 主要入口 | 何时使用 |
 | --- | --- | --- |
@@ -1349,7 +1396,7 @@ observer，不修改任何函数。
 
 大多数应用一开始只需要 `etaf-view`、`etaf-mount`、`etaf-define-component`、`etaf-ref` 和事件 callback。其余 API 都是可选能力，不是理解核心语法的前置条件。
 
-## 15. 常见错误
+## 16. 常见错误
 
 - 所有属性必须放在第一个子节点之前。
 - 使用 `:font-weight 'bold`，不要使用 `:font-weight :bold`；weight 是 Elisp symbol 值，不是属性 keyword。

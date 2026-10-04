@@ -204,6 +204,79 @@ the background, and the producer receives RGB24 pixels at double height."
       (etaf-video-tests--cleanup name)
       (ignore-errors (delete-file log)))))
 
+(ert-deftest etaf-video-tests-image-canvas-uses-one-line-per-row ()
+  "An image canvas publishes one display cell per character row.
+A frame image is many character rows tall while a buffer line holds one row,
+so publishing it whole would push every line below the canvas past the
+window edge.  The canvas must occupy exactly the rows it declares, which is
+what lets a caller place chrome under it."
+  (let ((name " *etaf-video-image-rows*")
+        (log (etaf-video-tests--log))
+        (columns 16)
+        (rows 4))
+    (unwind-protect
+        (etaf-video-tests--with-fixture
+            log '("FAKE_FFMPEG_FRAMES=40" "FAKE_FFMPEG_INTERVAL=0.01")
+          (cl-letf (((symbol-function 'display-graphic-p)
+                     (lambda (&optional _frame) t))
+                    ((symbol-function 'image-type-available-p)
+                     (lambda (_type) nil)))
+            (let ((handle (etaf-video-tests--mount
+                           name (list :src etaf-video-tests--input :mode 'image
+                                      :columns columns :rows rows :autoplay t))))
+              (should (etaf-video-tests--wait
+                       (lambda () (>= (etaf-video-tests--presented handle) 1))))
+              (should (eq 'image (plist-get (etaf-video-tests--state handle) :mode)))
+              (with-current-buffer name
+                (let ((text (buffer-string))
+                      (position 0)
+                      sliced)
+                  (while (< position (length text))
+                    (let ((display (get-text-property position 'display text)))
+                      (when (and (consp display)
+                                 (eq (car-safe (car display)) 'slice))
+                        (setq sliced (1+ (or sliced 0)))))
+                    (setq position (or (next-property-change position text)
+                                       (length text))))
+                  (should (= rows sliced)))
+                (should (= rows (line-number-at-pos (point-max))))))))
+      (etaf-video-tests--cleanup name)
+      (ignore-errors (delete-file log)))))
+
+(ert-deftest etaf-video-tests-live-control-sources-survive-resize ()
+  "Reactive sound, volume and speed control playback without losing state."
+  (let ((name " *etaf-video-controlled*") (log (etaf-video-tests--log))
+        (volume (etaf-ref 70)) (audio (etaf-ref nil)) (speed (etaf-ref 1))
+        (columns (etaf-ref 16)) (handle (make-symbol "controlled-video")))
+    (unwind-protect
+        (etaf-video-tests--with-fixture
+            log '("FAKE_FFMPEG_FRAMES=200" "FAKE_FFMPEG_INTERVAL=0.01")
+          (etaf-mount name
+            (etaf-view
+             (etaf-video :src etaf-video-tests--input :handle handle :mode 'ascii
+                         :columns (etaf-value columns) :rows 4 :display-fps 24
+                         :volume volume :audio audio :speed speed)))
+          (should (etaf-video-tests--wait
+                   (lambda () (> (plist-get (etaf-video-state handle) :presented) 0))))
+          (etaf-batch
+            (etaf-set-value volume 35)
+            (etaf-set-value audio t)
+            (etaf-set-value speed 1.5))
+          (should (= 1.5 (plist-get (etaf-video-state handle) :speed)))
+          (should (= 24 (plist-get (etaf-video-state handle) :display-fps)))
+          (should (plist-get (etaf-video-state handle) :playing))
+          (etaf-set-value columns 18)
+          (should (= 18 (plist-get (etaf-video-state handle) :width)))
+          (should (= 1.5 (plist-get (etaf-video-state handle) :speed)))
+          (etaf-video-pause handle)
+          (should-not (plist-get (etaf-video-state handle) :playing))
+          (etaf-set-value volume 60)
+          (etaf-set-value audio nil)
+          (etaf-video-play handle)
+          (should (plist-get (etaf-video-state handle) :playing)))
+      (etaf-video-tests--cleanup name)
+      (delete-file log))))
+
 (ert-deftest etaf-video-tests-image-mode-falls-back-on-terminal ()
   "`image' mode renders ASCII when the buffer is not in a graphical frame.
 The session reports the effective mode and decodes grayscale instead of

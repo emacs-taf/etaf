@@ -176,6 +176,14 @@ otherwise call the local callback with no arguments."
   (ebox-host-ref-bounds (etaf-runtime-buffer runtime) host-ref))
 
 ;;;###autoload
+(defun etaf-host-ref-size (runtime host-ref)
+  "Return HOST-REF's committed painted size as (PIXELS . ROWS).
+RUNTIME must be mounted.  Return nil for an absent or wholly hidden Host.
+Margins and neighbouring columns are excluded; clipping reduces the result.
+Use this read-only query to prepare resources after layout, not per frame."
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (ebox-host-ref-size (etaf-runtime-buffer runtime) host-ref))
+
 (defun etaf-host-ref-position (runtime host-ref)
   "Return the first live Ebox position for HOST-REF in RUNTIME."
   (setq runtime (etaf-runtime-require-mounted runtime))

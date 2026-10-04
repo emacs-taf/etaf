@@ -1469,6 +1469,21 @@
       "purpose": "Color mode maps two full-color pixels into one half-block cell with the fixture's foreground and background colors at double-height RGB24."
     },
     {
+      "name": "etaf-runtime-content-keeps-image-slices-across-mixed-updates",
+      "file": "tests/etaf-runtime-content-tests.el",
+      "purpose": "Sliced images keep their display properties and row count while neighbouring status text changes, after resize, and after an invalid batch is rejected."
+    },
+    {
+      "name": "etaf-video-tests-live-control-sources-survive-resize",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "Shared reactive volume, sound and speed sources retune a playing canvas and survive a size rebuild with its presentation-rate setting."
+    },
+    {
+      "name": "etaf-video-tests-image-canvas-uses-one-line-per-row",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "An image-mode canvas publishes one display slice per declared row, so chrome placed under the canvas stays inside the window instead of being pushed off by one tall image line."
+    },
+    {
       "name": "etaf-video-tests-image-mode-falls-back-on-terminal",
       "file": "tests/etaf-video-tests.el",
       "purpose": "Image mode renders ASCII when the buffer is not in a graphical frame and reports the effective mode and grayscale format."

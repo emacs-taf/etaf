@@ -77,6 +77,22 @@
 
 ### Changed
 
+- Video image frames share row-sized slices of one Retina-resolution image,
+  keeping adjacent text at normal line height. Frame publication targets the
+  retained Text Host rather than replacing the canvas subtree; compatible
+  image-bearing Text updates now reuse the prepared content path.
+- `etaf-video` declares `:position`, `:left`, `:top` and `:z-index` on its
+  canvas node itself, so the retained content route can prove an inline
+  placement winner and publish frames without republishing the tree even when
+  the canvas sits deep in an application layout.
+- `etaf-host-ref-size` returns a mounted Host's committed painted size as
+  `(PIXELS . ROWS)`, so an application can fit a resource such as a video
+  canvas to a measured region instead of estimating it from window chrome.
+- `etaf-video` accepts reactive sources for speed, volume and audio. Controls
+  can share one source with the canvas without rerendering their surrounding
+  View, and their latest values survive a canvas resize. `display-fps` sets
+  the Component's presentation cap independently of decoding.
+
 - Parent rerenders retain unchanged surrounding output and publish only changed
   descendant ranges. Flattened single-root Component outputs can use their
   retained Host address; structural and source-fact differences keep the
