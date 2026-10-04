@@ -78,6 +78,32 @@ Visual review and latency certification remain separate from assertions."
                          (reverse (etaf-gui-verifier-context-measurements context))))))
     (rename-file pending (expand-file-name "result.json" directory) t)))
 
+(defun etaf-gui-verifier--capture-rectangle ()
+  "Return the selected frame's X11 capture rectangle as \"X,Y,W,H\".
+The outer position and size describe the window the display server places; on
+GTK builds the toolbar and menu bar sit outside `outer-size' and are added back
+here.  Return nil when the frame has no X display."
+  (let* ((frame (selected-frame))
+         (display (frame-parameter frame 'display))
+         (geometry (frame-geometry frame))
+         (position (or (alist-get 'outer-position geometry)
+                       (frame-position frame)))
+         (size (alist-get 'outer-size geometry))
+         (internal (or (alist-get 'internal-border-width geometry) 0))
+         (external (or (alist-get 'external-border-size geometry) '(0 . 0)))
+         (toolbar (or (alist-get 'tool-bar-size geometry) '(0 . 0)))
+         (menu-lines (or (frame-parameter frame 'menu-bar-lines) 0))
+         (x (max 0 (+ (car position) (car external))))
+         (y (max 0 (+ (cdr position) (cdr external))))
+         (width (+ (or (car-safe size) (frame-pixel-width frame))
+                   (* 2 internal) (car external)))
+         (height (+ (or (cdr-safe size) (frame-pixel-height frame))
+                    (cdr toolbar) (cdr external) (* 2 internal)
+                    (if (> menu-lines 0) (* 2 (frame-char-height frame)) 0))))
+    (when (and (stringp display) (> (length display) 0))
+      (format "%d,%d,%d,%d" x y width height))))
+
+
 (defun etaf-gui-verifier--capture (context action-id)
   "Capture CONTEXT's selected window for ACTION-ID without activation."
   (let* ((before (etaf-gui-verifier--measurement-state context))
@@ -96,6 +122,11 @@ Visual review and latency certification remain separate from assertions."
       (error "Capture requires one visible graphical frame and its selected target"))
     (make-directory (file-name-directory path) t)
     (setenv "ETAF_GUI_CAPTURE_PID" (number-to-string (emacs-pid)))
+    (unless (eq system-type 'darwin)
+      (let ((rectangle (etaf-gui-verifier--capture-rectangle)))
+        (unless rectangle
+          (error "Window capture needs a frame with an X display: %s" (selected-frame)))
+        (setenv "ETAF_GUI_CAPTURE_GEOMETRY" rectangle)))
     (unless (and (zerop (call-process etaf-gui-verifier--capture-program
                                     nil nil nil "-x" path))
                  (file-regular-p path) (> (file-attribute-size (file-attributes path)) 0))

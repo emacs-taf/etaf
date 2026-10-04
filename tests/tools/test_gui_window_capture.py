@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -13,6 +14,7 @@ CAPTURE = ROOT / "scripts/capture-emacs-window.sh"
 RECORDER_SOURCE = ROOT / "scripts/record-emacs-window.swift"
 
 
+@unittest.skipUnless(sys.platform == "darwin", "macOS window capture and Swift recorder")
 class WindowCaptureTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -104,6 +106,66 @@ if [ -f '{counter}' ]; then echo 456; else touch '{counter}'; echo 123; fi
             self.assertNotEqual(result.returncode, 0)
             self.assertFalse(self.log.exists())
 
+
+
+@unittest.skipUnless(sys.platform == "linux", "X11 window capture via ffmpeg")
+class LinuxWindowCaptureTests(unittest.TestCase):
+    """Owned-rectangle capture routing on Linux; never touches a real display."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name)
+        self.output = self.path / "a frame.png"
+        self.log = self.path / "arguments.json"
+        self.environment = dict(os.environ)
+        self.environment.update(
+            PATH=f"{self.path}:{os.environ['PATH']}",
+            DISPLAY=":99",
+            ETAF_GUI_CAPTURE_PID=str(os.getpid()),
+            ETAF_GUI_CAPTURE_GEOMETRY="10,20,300,400",
+            CAPTURE_TEST_LOG=str(self.log),
+        )
+        self.script(
+            "ffmpeg",
+            "#!/usr/bin/env python3\n"
+            "import json, os, pathlib, sys\n"
+            "pathlib.Path(os.environ['CAPTURE_TEST_LOG']).write_text(json.dumps(sys.argv[1:]))\n"
+            "pathlib.Path(sys.argv[-1]).write_bytes(b'capture stub')\n",
+        )
+
+    def script(self, name, contents):
+        path = self.path / name
+        path.write_text(contents)
+        path.chmod(0o755)
+        return path
+
+    def run_capture(self, *arguments):
+        return subprocess.run(
+            [str(CAPTURE), *arguments], env=self.environment,
+            capture_output=True, text=True, check=False,
+        )
+
+    def test_screenshot_grabs_the_frame_rectangle(self):
+        result = self.run_capture("-x", str(self.output))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        arguments = json.loads(self.log.read_text())
+        self.assertIn(":99+10,20", arguments)
+        self.assertIn("300x400", arguments)
+        self.assertEqual(self.output.read_bytes(), b"capture stub")
+
+    def test_missing_geometry_fails_without_invoking_capture(self):
+        del self.environment["ETAF_GUI_CAPTURE_GEOMETRY"]
+        result = self.run_capture("-x", str(self.output))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.log.exists())
+        self.assertIn("ETAF_GUI_CAPTURE_GEOMETRY", result.stderr)
+
+    def test_malformed_geometry_is_rejected(self):
+        self.environment["ETAF_GUI_CAPTURE_GEOMETRY"] = "10;20;300;400"
+        result = self.run_capture("-x", str(self.output))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.log.exists())
 
 
 if __name__ == "__main__":

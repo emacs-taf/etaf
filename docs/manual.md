@@ -1736,6 +1736,9 @@ scenarios live in their respective example repositories:
   rejects missing, ambiguous, or changing frame identities without activating
   Emacs. The runner compiles
   the video helper using the system Swift compiler; no package install is needed.
+  On Linux it grabs the rectangle the engine passes in
+  `ETAF_GUI_CAPTURE_GEOMETRY` with `ffmpeg` `x11grab`, so captures work on Xvfb
+  verification displays that have no macOS window identities.
 
 Concrete repositories provide adapter files that construct a Scenario and an
 entry function. They can run through the existing server. Load the engine and
@@ -1749,7 +1752,8 @@ and an editable composer. Evidence records every pane's buffer, pixel edges and
 selection state. Capture preserves application focus and rejects any change to
 the target, pane identities, buffers or geometry during capture. `make tool-check` runs the portable scenario/evidence contracts and is
 included in `make check`. On macOS, `make gui-tool-check` additionally checks
-the window capture and recorder commands using the system Swift SDK.
+the window capture and recorder commands using the system Swift SDK; on Linux
+the same target checks the `ffmpeg` capture path.
 
 The following command
 instead starts the legacy isolated environment; use it only when that separate
