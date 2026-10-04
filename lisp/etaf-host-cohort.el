@@ -528,9 +528,13 @@ still evaluate and publish through one cohort and one atomic provider call."
   t)
 
 (defun etaf--host-cohort-try-flush (runtime)
-  "Publish RUNTIME's eligible primitive work as one atomic retained cohort."
-  (when (and (etaf-runtime-dirty-effect-queue runtime)
-             (not (etaf-runtime-root-dirty-p runtime)))
+  "Publish RUNTIME's eligible primitive work as one atomic retained cohort.
+A native input session owns part of the buffer text, so its cohort is kept
+pending until the session ends instead of republishing over the user's edit."
+  (if (ebox-input-active-p (etaf-runtime-buffer runtime))
+      (progn (setf (etaf-runtime-pending-p runtime) t) nil)
+    (when (and (etaf-runtime-dirty-effect-queue runtime)
+               (not (etaf-runtime-root-dirty-p runtime)))
     (when-let* ((cohort (etaf--host-cohort-for-queue runtime)))
       (let (handled)
         (setf (etaf-runtime-flushing-p runtime) t)
@@ -549,7 +553,7 @@ still evaluate and publish through one cohort and one atomic provider call."
           (etaf-reactive-enqueue-runtime-flush
            (etaf-runtime-mount-epoch runtime) (etaf-runtime-flush-function runtime)
            (etaf-runtime-scheduler-context runtime)))
-        handled))))
+        handled)))))
 
 (provide 'etaf-host-cohort)
 ;;; etaf-host-cohort.el ends here

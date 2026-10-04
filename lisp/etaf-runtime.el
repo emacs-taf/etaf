@@ -6856,7 +6856,11 @@ walk even when a nearer ancestor retains its invalidation."
 (defun etaf--runtime-render-root-turn (runtime &optional force-components-p)
   "Evaluate and publish one full root turn for RUNTIME.
 When FORCE-COMPONENTS-P is non-nil, re-evaluate retained Components whose
-backend anchor proof failed; ordinary root turns keep their artifact reuse."
+backend anchor proof failed; ordinary root turns keep their artifact reuse.
+A native input session owns part of the buffer text, so rendering waits until
+it ends instead of republishing over the user's edit."
+  (if (ebox-input-active-p (etaf-runtime-buffer runtime))
+      (setf (etaf-runtime-pending-p runtime) t)
   (let ((etaf--runtime-force-full-component-render-p force-components-p))
     (etaf--runtime-record-effect-input-version
      runtime (etaf-runtime-current-generation runtime)
@@ -6864,7 +6868,7 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
     (etaf--runtime-begin-candidate runtime)
     (setf (etaf-runtime-root-view-cache runtime)
           (etaf--runtime-evaluate-root-candidate runtime))
-    (etaf--runtime-render-effect runtime)))
+    (etaf--runtime-render-effect runtime))))
 
 (defun etaf--runtime-request-flush-now (runtime)
   "Flush RUNTIME now, or mark one follow-up flush while busy."
@@ -6903,7 +6907,8 @@ backend anchor proof failed; ordinary root turns keep their artifact reuse."
                 (when (eq (etaf--runtime-component-overlay runtime)
                           :root-fallback)
                   (etaf--runtime-render-root-turn runtime t)))
-              (while (etaf-runtime-pending-p runtime)
+              (while (and (etaf-runtime-pending-p runtime)
+                          (not (ebox-input-active-p (etaf-runtime-buffer runtime))))
                 (setf (etaf-runtime-pending-p runtime) nil)
                 (if (etaf-runtime-root-dirty-p runtime)
                     (etaf--runtime-render-root-turn runtime)
