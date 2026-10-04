@@ -1124,5 +1124,55 @@
           (set-window-buffer window original)))
       (set-frame-size (selected-frame) 80 25))))
 
+(ert-deftest etaf-runtime-keeps-its-canvas-when-transient-ui-borrows-height ()
+  "A height borrowed by echo-area UI is not a resize, and exit reconciles."
+  (let ((buffer-name " *etaf-test-transient-refit*")
+        (original (get-buffer "*scratch*")))
+    (unwind-protect
+        (progn
+          (set-frame-size (selected-frame) 80 25)
+          (delete-other-windows)
+          (set-window-buffer (selected-window) (get-buffer-create buffer-name))
+          (etaf-mount buffer-name (etaf-view (text "Transient refit")))
+          (let* ((runtime (etaf-runtime-for-buffer buffer-name))
+                 (window (get-buffer-window buffer-name t))
+                 (before (etaf-runtime-viewport runtime))
+                 (popup (split-window window -1 'below)))
+            (unwind-protect
+                (progn
+                  (set-window-buffer popup (get-buffer-create " *etaf-test-popup*"))
+                  ;; Echo-area UI borrows the bottom line while the minibuffer
+                  ;; is active, and the frame loses one line meanwhile.  Batch
+                  ;; Emacs has no active minibuffer; present it the way the
+                  ;; window hook sees completion, and notify the framework the
+                  ;; way a resized frame would.
+                  (cl-letf (((symbol-function 'active-minibuffer-window)
+                             (lambda ()
+                               (minibuffer-window (selected-frame)))))
+                    (set-frame-size (selected-frame) 80 24)
+                    (run-hook-with-args 'window-size-change-functions
+                                        (selected-frame))
+                    (sleep-for 0.4)
+                    ;; Borrowed space must not refit the committed canvas.
+                    (should (equal (etaf-runtime-viewport runtime) before))
+                    (should (< (window-body-height window) (cdr before))))
+                  ;; The minibuffer releases the space: the settled refit
+                  ;; follows the geometry the user actually asked for.
+                  (delete-window popup)
+                  (run-hooks 'minibuffer-exit-hook)
+                  (sleep-for 0.4)
+                  (should (equal (etaf-runtime-viewport runtime)
+                                 (cons (car before) (window-body-height window))))
+                  (should (< (cdr (etaf-runtime-viewport runtime)) (cdr before))))
+              (when (window-live-p popup) (delete-window popup)))))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer-name)))
+        (etaf-unmount runtime))
+      (when-let* ((buffer (get-buffer buffer-name)))
+        (kill-buffer buffer))
+      (when-let* ((window (selected-window)))
+        (when (buffer-live-p original)
+          (set-window-buffer window original)))
+      (set-frame-size (selected-frame) 80 25))))
+
 (provide 'etaf-tests)
 ;;; etaf-tests.el ends here

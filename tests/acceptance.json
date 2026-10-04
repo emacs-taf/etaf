@@ -1389,6 +1389,11 @@
       "purpose": "A settled window size change refits the mounted Runtime to the window's new display-safe size automatically."
     },
     {
+      "name": "etaf-runtime-keeps-its-canvas-when-transient-ui-borrows-height",
+      "file": "tests/etaf-tests.el",
+      "purpose": "A same-width height decrease borrowed by minibuffer or echo-area UI keeps the committed canvas, and the exit hook reconciles once the space is released."
+    },
+    {
       "name": "etaf-native-interactive-hosts-default-the-pointer",
       "file": "tests/etaf-native-affordance-tests.el",
       "purpose": "A press or drag boundary publishes the hand or horizontal drag pointer by default, while an explicit :pointer (including nil) and a disabled boundary keep their own shape."

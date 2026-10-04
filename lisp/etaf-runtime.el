@@ -7051,11 +7051,27 @@ when neither source is usable."
           (run-at-time etaf--runtime-refit-delay nil
                        #'etaf--runtime-refit-settled))))
 
+(defun etaf--runtime-transient-height-borrow-p (frame viewport recorded)
+  "Whether FRAME borrows VIEWPORT's height for UI over RECORDED.
+An active minibuffer or completion popup, and a message in the echo area,
+shrink a display window without a user resize; the committed canvas must keep
+its size until that UI releases the space.  A width change, height growth or
+a missing RECORDED stays ordinary geometry."
+  (and (consp recorded)
+       (equal (car viewport) (car recorded))
+       (< (cdr viewport) (cdr recorded))
+       (or (let ((minibuffer (active-minibuffer-window)))
+             (and minibuffer
+                  (eq (window-frame minibuffer) frame)))
+           (and (current-message) t))))
+
 (defun etaf--runtime-refit-settled ()
   "Refit every mounted Runtime whose display window changed size.
 This runs after the resize settles, so a Runtime that re-laid out its view for
 the new window is painted at the matching canvas even when the renderer's own
-resize notification arrived before the final size was known."
+resize notification arrived before the final size was known.  Height that an
+active minibuffer, completion popup or echo-area message borrows is not a
+resize; `minibuffer-exit-hook' reconciles once that UI releases the space."
   (setq etaf--runtime-refit-timer nil)
   (let ((frames (prog1 (nreverse etaf--runtime-refit-frames)
                   (setq etaf--runtime-refit-frames nil))))
@@ -7068,17 +7084,30 @@ resize notification arrived before the final size was known."
             (when (and runtime (etaf-runtime-mounted-p runtime))
               (let ((viewport (and (eq window
                                        (etaf--runtime-display-window runtime))
-                                   (etaf--runtime-window-viewport window))))
+                                   (etaf--runtime-window-viewport window)))
+                    (recorded (gethash runtime etaf--runtime-viewports)))
                 (when (and viewport
-                           (not (equal viewport
-                                       (gethash runtime etaf--runtime-viewports))))
+                           (not (equal viewport recorded))
+                           (not (etaf--runtime-transient-height-borrow-p
+                                 frame viewport recorded)))
                   (condition-case nil
                       (etaf-runtime-refit runtime (car viewport) (cdr viewport))
                     (error nil))
                   (etaf--runtime-record-viewport runtime viewport))))))))))
 
+(defun etaf--runtime-minibuffer-exit ()
+  "Reconcile mounted runtimes once the minibuffer releases borrowed space.
+A completion popup may close inside `minibuffer-exit-hook' while the exit is
+still in progress, so the following settle re-reads the stable geometry."
+  (dolist (frame (frame-list))
+    (when (frame-live-p frame)
+      (etaf--runtime-window-size-change frame))))
+
 (when (boundp 'window-size-change-functions)
   (add-hook 'window-size-change-functions #'etaf--runtime-window-size-change))
+
+(when (boundp 'minibuffer-exit-hook)
+  (add-hook 'minibuffer-exit-hook #'etaf--runtime-minibuffer-exit))
 
 ;;;###autoload
 (defun etaf-runtime-viewport (&optional runtime)
