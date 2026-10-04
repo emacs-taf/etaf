@@ -1395,9 +1395,10 @@
 ;; a plist accepted by the `etaf-video' Component.  The result holds `:kind',
 ;; `:file', `:url', `:target', `:width', `:height', `:duration', `:fps' and
 ;; `:audio'.  Values come from ffprobe when it runs; a missing ffprobe keeps
-;; documented defaults.  Unsupported sources and unreadable files signal
-;; `user-error'.  Each call probes the source, so callers that keep the
-;; values should store the result.
+;; documented defaults.  The result is authoritative metadata and can be
+;; passed back as the Component's `:src' without another probe, so an
+;; application that resizes or restarts a video keeps them.  Unsupported
+;; sources and unreadable files signal `user-error'.
 ;;
 ;; Function: etaf-video-state (handle)
 ;;;###autoload (autoload 'etaf-video-state "etaf" nil nil)

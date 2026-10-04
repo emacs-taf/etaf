@@ -86,11 +86,21 @@ plist:
   (:url URL)     an HTTP(S) video stream decoded directly by ffmpeg
   (:demo)        a generated 30 second test pattern, no file needed
 
+A plist that already carries `:kind' is treated as authoritative metadata, as
+returned by `etaf-video-source-info', so callers that probed once can mount
+without another probe.
+
 The result holds `:kind', `:file', `:url', `:target', `:width', `:height',
 `:duration', `:fps' (source rate) and `:audio' (whether the source reports an
 audio stream)."
   (let (kind file url)
-    (cond ((null source) (setq kind 'demo))
+    (cond ((and (consp source) (plist-member source :kind))
+           (setq kind (plist-get source :kind)
+                 file (plist-get source :file)
+                 url (plist-get source :url))
+           (unless (memq kind '(file url demo))
+             (user-error "Unsupported etaf-video source kind: %S" kind)))
+          ((null source) (setq kind 'demo))
           ((etaf-video--url-p source) (setq kind 'url url source))
           ((stringp source) (setq kind 'file file source))
           ((and (consp source) (eq (car source) :demo)) (setq kind 'demo))
@@ -106,31 +116,41 @@ audio stream)."
     (when (eq kind 'url)
       (unless (etaf-video--url-p url)
         (user-error "Video URL must be http or https: %S" url)))
-    (let* ((probe (and (memq kind '(file url)) (etaf-video--probe (or file url))))
-           (width (or (and (memq kind '(file url)) (plist-get probe :width))
-                      (plist-get source :width) 640))
-           (height (or (and (memq kind '(file url)) (plist-get probe :height))
-                       (plist-get source :height) 360))
-           (duration (or (and (memq kind '(file url)) (plist-get probe :duration))
-                         (plist-get source :duration)
-                         (and (eq kind 'demo) 30)))
-           (fps (or (and (memq kind '(file url)) (plist-get probe :fps))
-                    (plist-get source :fps)
-                    (and (eq kind 'demo) 30)
-                    25))
-           (audio (if (eq kind 'demo)
-                      nil
-                    (or (and probe (plist-get probe :audio))
-                        (plist-get source :audio)))))
-      (list :kind kind
-            :file file
-            :url url
-            :target (or file url)
-            :width width
-            :height height
-            :duration duration
-            :fps fps
-            :audio audio))))
+    (if (and (consp source) (plist-member source :kind))
+        (list :kind kind
+              :file file
+              :url url
+              :target (or file url)
+              :width (plist-get source :width)
+              :height (plist-get source :height)
+              :duration (plist-get source :duration)
+              :fps (plist-get source :fps)
+              :audio (and (plist-get source :audio) t))
+      (let* ((probe (and (memq kind '(file url)) (etaf-video--probe (or file url))))
+             (width (or (and (memq kind '(file url)) (plist-get probe :width))
+                        (plist-get source :width) 640))
+             (height (or (and (memq kind '(file url)) (plist-get probe :height))
+                         (plist-get source :height) 360))
+             (duration (or (and (memq kind '(file url)) (plist-get probe :duration))
+                           (plist-get source :duration)
+                           (and (eq kind 'demo) 30)))
+             (fps (or (and (memq kind '(file url)) (plist-get probe :fps))
+                      (plist-get source :fps)
+                      (and (eq kind 'demo) 30)
+                      25))
+             (audio (if (eq kind 'demo)
+                        nil
+                      (or (and probe (plist-get probe :audio))
+                          (plist-get source :audio)))))
+        (list :kind kind
+              :file file
+              :url url
+              :target (or file url)
+              :width width
+              :height height
+              :duration duration
+              :fps fps
+              :audio audio)))))
 
 ;;;###autoload
 (defun etaf-video-source-info (source)
@@ -142,8 +162,9 @@ The result holds `:kind', `:file', `:url', `:target', `:width', `:height',
 `:duration', `:fps' (source rate) and `:audio' (whether the source reports an
 audio stream).  Values come from ffprobe when it runs; a missing ffprobe
 keeps documented defaults.  Unsupported sources and unreadable files signal
-`user-error'.  Each call probes the source, so callers that keep the values
-should store the result."
+`user-error'.  Each call probes the source; the result is authoritative
+metadata that can be passed back as the Component's `:src' without another
+probe, so an application that resizes or restarts a video keeps them."
   (etaf-video--normalize-source source))
 
 (defun etaf-video--ffmpeg-arguments (spec format width height speed start)

@@ -335,7 +335,9 @@ session in place."
   "Render a live video source in a fixed COLUMNS by ROWS canvas.
 
 SRC is nil for the built-in demo, a local file name, an HTTP(S) URL, or a
-plist accepted by the video source normalizer.  MODE selects the render mode:
+plist accepted by the video source normalizer; a normalized metadata plist
+from `etaf-video-source-info' mounts without another probe.  MODE selects
+how the canvas renders:
 `image' shows one scaled JPEG per frame and needs a graphical frame (it falls
 back to `ascii' otherwise), `ascii' maps each pixel to one density-ramp
 character, and `color' shows two full-color pixels per `▀' half-block cell.

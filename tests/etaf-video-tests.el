@@ -430,6 +430,34 @@ a stale session."
       (etaf-video-tests--cleanup name)
       (ignore-errors (delete-file log)))))
 
+(ert-deftest etaf-video-tests-normalized-source-skips-second-probe ()
+  "A metadata plist from `etaf-video-source-info' mounts without probing.
+The normalized result stays authoritative, so an application that probes
+once can resize or restart its video without repeating the metadata call."
+  (let ((name " *etaf-video-normalized*")
+        (probe-log (etaf-video-tests--log))
+        (log (etaf-video-tests--log)))
+    (unwind-protect
+        (etaf-video-tests--with-fixture
+            log (list "FAKE_FFMPEG_FRAMES=40" "FAKE_FFMPEG_INTERVAL=0.01"
+                      "FAKE_FFPROBE_DURATION=7.5"
+                      (concat "FAKE_FFPROBE_LOG=" probe-log))
+          (let* ((info (etaf-video-source-info etaf-video-tests--input))
+                 (probes (length (etaf-video-tests--runs probe-log)))
+                 (handle (etaf-video-tests--mount
+                          name (list :src info :mode 'ascii
+                                     :columns 8 :rows 2 :autoplay t))))
+            (should (= 7.5 (plist-get info :duration)))
+            (should (equal 640 (plist-get info :width)))
+            (should (= probes (length (etaf-video-tests--runs probe-log))))
+            (should (etaf-video-tests--wait
+                     (lambda () (>= (etaf-video-tests--presented handle) 1))))
+            (should (= 7.5 (plist-get (etaf-video-tests--state handle) :duration)))
+            (should (= probes (length (etaf-video-tests--runs probe-log))))))
+      (etaf-video-tests--cleanup name)
+      (ignore-errors (delete-file log))
+      (ignore-errors (delete-file probe-log)))))
+
 (ert-deftest etaf-video-tests-rejects-invalid-inputs ()
   "Invalid props and unknown handles are reported before publication.
 A Component call error names the offending property and no video is left
