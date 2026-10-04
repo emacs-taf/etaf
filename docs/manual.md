@@ -1528,7 +1528,51 @@ delegate to the same Runtime operation boundary.  Disable the mode when the
 capture is complete; this only detaches the Runtime observer and does not
 rewrite any function.
 
-## 14. Public API map
+## 14. Native video
+
+`etaf-video` places a live video source in a layout.  ffmpeg decodes the
+source, the Component maps each frame for the chosen render mode, and every
+frame is published through the retained Host content boundary, so a playing
+canvas does not re-render the application.
+
+```elisp
+(etaf-view
+ (etaf-video :src "/path/clip.mp4"
+             :columns 80 :rows 24
+             :mode 'image            ; image, ascii or color
+             :autoplay t
+             :handle 'clip))
+
+(etaf-video-pause 'clip)
+(etaf-video-seek 'clip 12.5)
+(etaf-video-set-speed 'clip 2)
+(etaf-video-state 'clip)             ; position, duration, dropped frames, ...
+```
+
+`mode' selects the canvas: `image' shows one scaled JPEG per frame and needs
+a graphical frame (elsewhere it falls back to `ascii'), `ascii' maps each
+pixel to a character of `etaf-video-density-ramp', and `color' shows two
+full-color pixels per `▀' half-block cell.  `src' is nil for the built-in
+demo, a local file name, an HTTP(S) URL, or a plist such as `(:file PATH)'.
+`autoplay' starts playback at mount; otherwise the first frame is shown
+paused.
+
+Playback is controlled by handle: `etaf-video-play', `etaf-video-pause',
+`etaf-video-toggle-playback', `etaf-video-step', `etaf-video-seek',
+`etaf-video-set-speed', `etaf-video-set-volume', `etaf-video-set-audio'
+and `etaf-video-state'.  `:audio' non-nil starts an ffplay sidecar for
+sources that report an audio stream; volume is 0 to 100.  For `image'
+frames the Component decodes at the display's device pixel ratio
+(`frame-scale-factor') so Retina screens stay sharp; override it with
+`:device-pixel-ratio'.
+
+Changing `:src', `:columns', `:rows', `:mode', `:ramp' or
+`:device-pixel-ratio' rebuilds the session at the current position, while
+`:speed', `:volume' and `:audio' retune the running one.
+`etaf-video-source-info' returns a source's size, duration, rate and audio
+presence without mounting anything.
+
+## 15. Public API map
 
 | API family | Main entry points | Use it when |
 | --- | --- | --- |
@@ -1545,11 +1589,12 @@ rewrite any function.
 | Resource | `etaf-resource`, `etaf-resource-result`, `etaf-error-boundary-run` | Own loader state and cleanup |
 | Official UI | `require 'etaf-ui`, `etaf-button`, `etaf-checkbox`, `etaf-number-input`, `etaf-label`, `etaf-panel`, `etaf-data-grid` | Use ready-made Components |
 | Playground | `etaf-playground-open`, `etaf-playground-open-ui`, `etaf-playground-close`, `ebox-playground-open`, `ebox-playground-close` | Explore the corresponding layer interactively |
+| Video | `etaf-video`, `etaf-video-play`, `etaf-video-state`, `etaf-video-source-info` | Place and control a live video canvas |
 | Performance | `etaf-performance-start`, `etaf-performance-stop`, `etaf-performance-mode`, `etaf-performance-show`, `etaf-performance-copy-report`, `etaf-performance-export`, `etaf-performance-environment-data`, `etaf-performance-records`, `etaf-performance-summary`, `etaf-performance-operation-stage-summary`, `etaf-performance-call-operation`, `etaf-performance-with-operation` | Attribute generic operation latency through public observers and share reports |
 
 Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, `etaf-ref`, and event callbacks at first. The remaining APIs are additive capabilities, not prerequisites for understanding the core grammar.
 
-## 15. Common mistakes
+## 16. Common mistakes
 
 - Put every property before the first child.
 - Use `:font-weight 'bold`, not `:font-weight :bold`; the weight is an Elisp symbol value, not a property keyword.

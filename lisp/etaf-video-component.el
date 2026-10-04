@@ -1,0 +1,496 @@
+;;; etaf-video-component.el --- Native video Component and controls -*- lexical-binding: t; -*-
+
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;;; Commentary:
+;; The `etaf-video' Component renders a live video source inside any ETAF
+;; layout.  A playback session decodes the source into raw frames, the
+;; Component maps each frame into the canvas and publishes it through the
+;; retained Host content boundary, so one displayed frame is one retained
+;; Ebox publication instead of an ordinary ETAF render.  Three render modes
+;; are available:
+;;
+;;   image  one scaled JPEG per frame as an image cell (graphical frames);
+;;   ascii  one density-ramp character per pixel;
+;;   color  two full-color pixels per `▀' half-block cell.
+;;
+;; `image' falls back to `ascii' when the target buffer is not shown in a
+;; graphical frame, so a layout built for one environment still renders in
+;; the other.  The density ramp, decoder programs and audio defaults are
+;; variables; applications keep canvas layout, input and chrome.
+;;
+;; Components are driven by handle: callers pass `:handle' and use the
+;; `etaf-video-play', `etaf-video-pause', `etaf-video-toggle-playback',
+;; `etaf-video-step', `etaf-video-seek', `etaf-video-set-speed',
+;; `etaf-video-set-volume', `etaf-video-set-audio' and `etaf-video-state'
+;; functions.  A video placed with the plain `etaf-video' DSL form and no
+;; handle still plays itself.
+
+;;; Code:
+
+(require 'cl-lib)
+(require 'etaf-component)
+(require 'etaf-reactive)
+(require 'etaf-runtime)
+(require 'etaf-video-audio)
+(require 'etaf-video-session)
+(require 'etaf-video-source)
+
+(defvar etaf-video-density-ramp " .:-=+*#%@"
+  "Characters used for one video pixel in the `ascii' render mode.
+The ramp maps darkness to density from left to right.  It must be nonempty
+and single-line.  Changing it takes effect on the next rendered frame.")
+
+(defvar etaf-video--cached-ramp-table nil
+  "Cached byte-to-character translation table, or nil.")
+(defvar etaf-video--cached-ramp nil
+  "Ramp the cached translation table was built from.")
+
+(defun etaf-video--ramp-table (ramp)
+  "Return RAMP's byte-to-character translation table.
+RAMP is a nonempty single-line string; each byte selects the ramp character
+nearest to its darkness.  Tables are cached per ramp."
+  (unless (and (stringp ramp) (> (length ramp) 0)
+               (not (string-match-p "\n" ramp)))
+    (user-error "Video density ramp must be a nonempty single-line string: %S"
+                ramp))
+  (unless (and etaf-video--cached-ramp-table
+               etaf-video--cached-ramp
+               (equal etaf-video--cached-ramp ramp))
+    (let ((table (make-char-table 'translation-table))
+          (last (1- (length ramp))))
+      (dotimes (byte 256)
+        ;; (255 * last + 127) / 255 rounds the byte to the nearest ramp slot.
+        (aset table byte (aref ramp (/ (+ (* byte last) 127) 255))))
+      (setq etaf-video--cached-ramp-table table
+            etaf-video--cached-ramp (copy-sequence ramp))))
+  etaf-video--cached-ramp-table)
+
+(defun etaf-video--ascii-grid-text (bytes columns rows ramp)
+  "Return BYTES as ROWS lines of COLUMNS ramp characters.
+BYTES holds COLUMNS times ROWS grayscale bytes.  The result carries no text
+properties."
+  (let ((buffer (generate-new-buffer " *etaf-video grid*")))
+    (unwind-protect
+        (with-current-buffer buffer
+          (erase-buffer)
+          (set-buffer-multibyte nil)
+          (insert bytes)
+          (translate-region (point-min) (point-max) (etaf-video--ramp-table ramp))
+          (let ((row (1- rows)))
+            (while (> row 0)
+              (goto-char (1+ (* row columns)))
+              (insert "\n")
+              (setq row (1- row))))
+          (buffer-substring-no-properties (point-min) (point-max)))
+      (kill-buffer buffer))))
+
+(defvar etaf-video--hex-pairs (make-vector 256 nil)
+  "Two-digit lowercase hex text for every byte, indexed by value.")
+
+(dotimes (byte 256)
+  (aset etaf-video--hex-pairs byte (format "%02x" byte)))
+
+(defun etaf-video--color-grid-text (bytes columns rows)
+  "Return BYTES as ROWS lines of half-block cells with true color.
+BYTES holds COLUMNS by twice ROWS RGB24 pixels in row-major order.  The top
+pixel of each cell becomes the foreground of a `▀' character and the bottom
+pixel its background, so one character cell shows two full-color pixels.
+The result carries one `face' property per cell."
+  (let ((text (mapconcat #'identity
+                         (make-list rows (make-string columns ?▀))
+                         "\n"))
+        (hex etaf-video--hex-pairs)
+        (position 0))
+    (dotimes (row rows)
+      (let ((top (* (* 2 row) columns 3))
+            (bottom (* (1+ (* 2 row)) columns 3)))
+        (dotimes (column columns)
+          (let* ((top-offset (+ top (* column 3)))
+                 (bottom-offset (+ bottom (* column 3))))
+            (put-text-property
+             position (1+ position) 'face
+             (list :foreground
+                   (concat "#" (aref hex (aref bytes top-offset))
+                           (aref hex (aref bytes (+ top-offset 1)))
+                           (aref hex (aref bytes (+ top-offset 2))))
+                   :background
+                   (concat "#" (aref hex (aref bytes bottom-offset))
+                           (aref hex (aref bytes (+ bottom-offset 1)))
+                           (aref hex (aref bytes (+ bottom-offset 2)))))
+             text)
+            (setq position (1+ position))))
+        (when (< row (1- rows))
+          (setq position (1+ position)))))
+    text))
+
+(defvar etaf-video--instances (make-hash-table :test #'eq)
+  "Mounted `etaf-video' instances by handle.
+The Component registers its instance after its first publication and removes
+it on unmount, so the control functions always address a live session.")
+
+(defvar etaf-video--content-id-counter 0
+  "Number of allocated canvas Host ids, used to make each one unique.")
+
+(defun etaf-video--next-content-id ()
+  "Return a canvas Host id that is unique within this Emacs session."
+  (format "etaf-video-canvas-%d" (cl-incf etaf-video--content-id-counter)))
+
+(defun etaf-video--instance-for (handle)
+  "Return the mounted video instance registered under HANDLE."
+  (unless (and handle (symbolp handle))
+    (user-error "Video handle must be a symbol: %S" handle))
+  (or (gethash handle etaf-video--instances)
+      (user-error "No mounted etaf-video for handle %S" handle)))
+
+(defun etaf-video--session-for (handle)
+  "Return the playback session registered under HANDLE."
+  (let ((instance (etaf-video--instance-for handle)))
+    (or (etaf-video--instance-session instance)
+        (user-error "The etaf-video for handle %S has no session" handle))))
+
+(cl-defstruct (etaf-video--instance (:constructor etaf-video--instance--make))
+  "Mounted state owned by one `etaf-video' Component instance."
+  handle ref cell sources runtime session applied image-scale)
+
+(defun etaf-video--instance-view-content (instance)
+  "Return INSTANCE's current canvas text for ordinary publications.
+Retained frame updates write through `etaf-runtime-update-host-content'; an
+ordinary publication renders this placeholder, and the next displayed frame
+restores the picture."
+  (or (car (etaf-video--instance-cell instance)) " "))
+
+(defun etaf-video--instance-frame (instance)
+  "Return the frame showing INSTANCE's buffer, or the selected frame."
+  (let* ((runtime (etaf-video--instance-runtime instance))
+         (buffer (and runtime (etaf-runtime-buffer runtime)))
+         (window (and buffer (buffer-live-p buffer)
+                      (get-buffer-window buffer t))))
+    (if window (window-frame window) (selected-frame))))
+
+(defun etaf-video--instance-graphic-p (instance)
+  "Return non-nil when INSTANCE's buffer is shown in a graphical frame."
+  (display-graphic-p (etaf-video--instance-frame instance)))
+
+(defun etaf-video--instance-read-inputs (instance)
+  "Return INSTANCE's current tracked input values as a plist."
+  (let ((sources (etaf-video--instance-sources instance)))
+    (list :src (etaf-value (plist-get sources :src))
+          :columns (etaf-value (plist-get sources :columns))
+          :rows (etaf-value (plist-get sources :rows))
+          :mode (etaf-value (plist-get sources :mode))
+          :ramp (etaf-value (plist-get sources :ramp))
+          :audio (etaf-value (plist-get sources :audio))
+          :volume (etaf-value (plist-get sources :volume))
+          :speed (etaf-value (plist-get sources :speed))
+          :device-pixel-ratio (etaf-value (plist-get sources :device-pixel-ratio)))))
+
+(defun etaf-video--instance-effective-mode (instance)
+  "Return INSTANCE's render mode after the graphic fallback.
+An `image' canvas falls back to `ascii' when its buffer is not shown in a
+graphical frame, so the same layout renders in terminals."
+  (let ((mode (plist-get (etaf-video--instance-applied instance) :mode)))
+    (if (and (eq mode 'image) (not (etaf-video--instance-graphic-p instance)))
+        'ascii
+      mode)))
+
+(defun etaf-video--instance-frame-size (instance)
+  "Return INSTANCE's `(FORMAT WIDTH HEIGHT SCALE)' for its effective mode.
+WIDTH and HEIGHT are producer pixels; SCALE maps device pixels back to
+logical pixels for image display."
+  (let* ((applied (etaf-video--instance-applied instance))
+         (columns (plist-get applied :columns))
+         (rows (plist-get applied :rows)))
+    (pcase (etaf-video--instance-effective-mode instance)
+      ('image
+       (let* ((frame (etaf-video--instance-frame instance))
+              (ratio (or (plist-get applied :device-pixel-ratio)
+                         (ignore-errors (frame-scale-factor frame))
+                         1.0)))
+         (list 'mjpeg
+               (max 1 (round (* columns (frame-char-width frame) ratio)))
+               (max 1 (round (* rows (frame-char-height frame) ratio)))
+               (if (> ratio 0) (/ 1.0 ratio) 1.0))))
+      ('color (list 'rgb24 columns (* 2 rows) 1.0))
+      (_ (list 'gray columns rows 1.0)))))
+
+(defun etaf-video--instance-present (instance frame)
+  "Map FRAME for INSTANCE's effective mode and publish it.
+The retained content update replaces only the canvas Host, so one displayed
+frame does not pay for an ordinary ETAF publication."
+  (let ((runtime (etaf-video--instance-runtime instance)))
+    (when (and runtime (etaf-runtime-mounted-p runtime))
+      (let* ((applied (etaf-video--instance-applied instance))
+             (cell (etaf-video--instance-cell instance))
+             (ref (etaf-video--instance-ref instance))
+             (content
+              (pcase (etaf-video--instance-effective-mode instance)
+                ('image
+                 (setcar cell " ")
+                 (create-image frame 'jpeg t
+                               :scale (etaf-video--instance-image-scale instance)))
+                ('color
+                 (setcar cell (etaf-video--color-grid-text
+                               frame
+                               (plist-get applied :columns)
+                               (plist-get applied :rows))))
+                (_
+                 (setcar cell (etaf-video--ascii-grid-text
+                               frame
+                               (plist-get applied :columns)
+                               (plist-get applied :rows)
+                               (plist-get applied :ramp)))))))
+        (condition-case problem
+            (etaf-runtime-update-host-content runtime ref content)
+          (etaf-runtime-error
+           (etaf-video-session-destroy (etaf-video--instance-session instance))
+           (message "etaf-video: %s" (error-message-string problem))))))))
+
+(defun etaf-video--instance-register (instance)
+  "Register INSTANCE's handle, refusing a handle owned by another video."
+  (let ((handle (etaf-video--instance-handle instance)))
+    (let ((existing (gethash handle etaf-video--instances)))
+      (when (and existing (not (eq existing instance)))
+        (user-error "An etaf-video is already mounted for handle %S" handle)))
+    (puthash handle instance etaf-video--instances)))
+
+(defun etaf-video--instance-build (instance &optional start playing)
+  "Create INSTANCE's playback session from its applied inputs.
+START is the seek position in seconds and PLAYING says whether the new
+session starts playing; a paused session presents one frame instead."
+  (let* ((applied (etaf-video--instance-applied instance))
+         (size (etaf-video--instance-frame-size instance))
+         (session (etaf-video-session-create
+                   (plist-get applied :src)
+                   :format (nth 0 size)
+                   :width (nth 1 size)
+                   :height (nth 2 size)
+                   :speed (plist-get applied :speed)
+                   :start (or start 0)
+                   :audio (plist-get applied :audio)
+                   :volume (plist-get applied :volume)
+                   :on-frame (lambda (frame _session)
+                               (etaf-video--instance-present instance frame)))))
+    (setf (etaf-video--instance-session instance) session
+          (etaf-video--instance-image-scale instance) (nth 3 size))
+    (if playing
+        (etaf-video-session-play session)
+      (etaf-video-session-step session))))
+
+(defun etaf-video--instance-mount (instance autoplay)
+  "Mount INSTANCE, start its session and honor AUTOPLAY."
+  (setf (etaf-video--instance-runtime instance) (etaf-current-runtime))
+  (etaf-video--instance-register instance)
+  (setf (etaf-video--instance-applied instance)
+        (etaf-video--instance-read-inputs instance))
+  (etaf-video--instance-build instance 0 autoplay))
+
+(defun etaf-video--instance-unmount (instance)
+  "Release INSTANCE's session and handle registration."
+  (when-let* ((session (etaf-video--instance-session instance)))
+    (etaf-video-session-destroy session)
+    (setf (etaf-video--instance-session instance) nil))
+  (let ((handle (etaf-video--instance-handle instance)))
+    (when (eq (gethash handle etaf-video--instances) instance)
+      (remhash handle etaf-video--instances)))
+  (setf (etaf-video--instance-runtime instance) nil))
+
+(defun etaf-video--instance-apply (instance inputs)
+  "Apply new tracked INPUTS to INSTANCE.
+A source, size, mode, ramp or device pixel ratio change rebuilds the session
+at the current position; speed, volume and audio changes update the running
+session in place."
+  (let ((old (etaf-video--instance-applied instance)))
+    (unless (equal old inputs)
+      (let ((structural
+             (or (not (equal (plist-get old :src) (plist-get inputs :src)))
+                 (not (equal (plist-get old :columns) (plist-get inputs :columns)))
+                 (not (equal (plist-get old :rows) (plist-get inputs :rows)))
+                 (not (equal (plist-get old :mode) (plist-get inputs :mode)))
+                 (not (equal (plist-get old :ramp) (plist-get inputs :ramp)))
+                 (not (equal (plist-get old :device-pixel-ratio)
+                             (plist-get inputs :device-pixel-ratio))))))
+        (setf (etaf-video--instance-applied instance) inputs)
+        (if structural
+            (when-let* ((session (etaf-video--instance-session instance)))
+              (let ((position (etaf-video-session-position session))
+                    (playing (etaf-video--session-playing session)))
+                (etaf-video-session-destroy session)
+                (setf (etaf-video--instance-session instance) nil)
+                (when (etaf-video--instance-runtime instance)
+                  (etaf-video--instance-build instance position playing))))
+          (when-let* ((session (etaf-video--instance-session instance)))
+            (unless (equal (plist-get old :speed) (plist-get inputs :speed))
+              (etaf-video-session-set-speed session (plist-get inputs :speed)))
+            (unless (equal (plist-get old :volume) (plist-get inputs :volume))
+              (etaf-video-session-set-volume session (plist-get inputs :volume)))
+            (unless (equal (plist-get old :audio) (plist-get inputs :audio))
+              (etaf-video-session-set-audio session (plist-get inputs :audio)))))))))
+
+(etaf-define-component etaf-video
+    (&key src (columns 100) (rows 30) (mode 'image)
+          (ramp etaf-video-density-ramp)
+          (audio etaf-video-audio) (volume etaf-video-audio-volume) (speed 1)
+          (autoplay t) handle device-pixel-ratio)
+  "Render a live video source in a fixed COLUMNS by ROWS canvas.
+
+SRC is nil for the built-in demo, a local file name, an HTTP(S) URL, or a
+plist accepted by the video source normalizer.  MODE selects the render mode:
+`image' shows one scaled JPEG per frame and needs a graphical frame (it falls
+back to `ascii' otherwise), `ascii' maps each pixel to one density-ramp
+character, and `color' shows two full-color pixels per `▀' half-block cell.
+DENSITY-RAMP defaults to `etaf-video-density-ramp'.
+
+AUDIO, VOLUME and SPEED configure the running playback; AUTOPLAY starts it
+as soon as the Component is mounted, otherwise the first frame is shown
+paused.  DEVICE-PIXEL-RATIO overrides the display's device pixel ratio for
+`image' frames, defaulting to `frame-scale-factor' so Retina displays stay
+sharp.
+
+HANDLE is a symbol used by the `etaf-video-play' family of control
+functions; the Component registers it while mounted.  Without HANDLE the
+video still plays itself but cannot be controlled."
+
+  :validate
+  (progn
+    (etaf-check-prop :columns columns
+                     (and (integerp columns) (> columns 0))
+                     "a positive integer")
+    (etaf-check-prop :rows rows
+                     (and (integerp rows) (> rows 0))
+                     "a positive integer")
+    (etaf-check-prop :mode mode
+                     (memq mode '(image ascii color))
+                     "image, ascii or color")
+    (etaf-check-prop :ramp ramp
+                     (and (stringp ramp) (> (length ramp) 0)
+                          (not (string-match-p "\n" ramp)))
+                     "a nonempty single-line string")
+    (etaf-check-prop :volume volume
+                     (and (numberp volume) (<= 0 volume 100))
+                     "a number between 0 and 100")
+    (etaf-check-prop :speed speed
+                     (and (numberp speed) (> speed 0))
+                     "a positive number")
+    (etaf-check-prop :handle handle
+                     (or (null handle) (symbolp handle))
+                     "nil or a symbol")
+    (etaf-check-prop :device-pixel-ratio device-pixel-ratio
+                     (or (null device-pixel-ratio)
+                         (and (numberp device-pixel-ratio)
+                              (> device-pixel-ratio 0)))
+                     "nil or a positive number"))
+
+  :bindings
+  ((src-input (etaf-prop 'src))
+   (columns-input (etaf-prop 'columns))
+   (rows-input (etaf-prop 'rows))
+   (mode-input (etaf-prop 'mode))
+   (ramp-input (etaf-prop 'ramp))
+   (audio-input (etaf-prop 'audio))
+   (volume-input (etaf-prop 'volume))
+   (speed-input (etaf-prop 'speed))
+   (ratio-input (etaf-prop 'device-pixel-ratio))
+   (content-ref (etaf-local-ref 'content))
+   (content-id (etaf-video--next-content-id))
+   (instance (etaf-video--instance--make
+              :handle (or handle (make-symbol "etaf-video"))
+              :ref content-ref
+              :cell (cons " " nil)
+              :sources (list :src src-input :columns columns-input
+                             :rows rows-input :mode mode-input
+                             :ramp ramp-input :audio audio-input
+                             :volume volume-input :speed speed-input
+                             :device-pixel-ratio ratio-input))))
+
+  :setup
+  (progn
+    (etaf-on-mounted
+     (lambda () (etaf-video--instance-mount instance autoplay)))
+    (etaf-on-unmounted
+     (lambda () (etaf-video--instance-unmount instance)))
+    ;; Inputs are tracked through the Component's own sources, so a change
+    ;; republishes first and only then restarts or retunes the session.  The
+    ;; watcher runs the getter directly so every changed prop source can
+    ;; reach it without an intermediate cached computed.
+    (etaf-watch-effect
+     (lambda ()
+       (etaf-video--instance-apply instance (etaf-video--instance-read-inputs instance))
+       nil)
+     :name 'etaf-video-inputs))
+
+  :view
+  (box :width (list 'ch columns)
+       :height (list 'lh rows)
+       :wrap-mode 'none
+       :overflow 'hidden
+       :background-color "#050607"
+    (text :ref content-ref :id content-id
+          (expr (etaf-video--instance-view-content instance)))))
+
+(defun etaf-video-play (handle)
+  "Start or resume the mounted video identified by HANDLE.
+The producer restarts at the last presented position, so a resume never
+fast-forwards to catch up with wall-clock time."
+  (etaf-video-session-play (etaf-video--session-for handle))
+  t)
+
+(defun etaf-video-pause (handle)
+  "Pause the mounted video identified by HANDLE.
+The producer and audio sidecar are released; the last picture stays on the
+canvas."
+  (etaf-video-session-pause (etaf-video--session-for handle))
+  t)
+
+(defun etaf-video-toggle-playback (handle)
+  "Toggle the mounted video identified by HANDLE between play and pause.
+A finished video restarts from its beginning."
+  (etaf-video-session-toggle (etaf-video--session-for handle))
+  t)
+
+(defun etaf-video-step (handle)
+  "Pause the mounted video identified by HANDLE and present one more frame."
+  (etaf-video-session-step (etaf-video--session-for handle))
+  t)
+
+(defun etaf-video-seek (handle seconds)
+  "Move the mounted video identified by HANDLE to SECONDS.
+A playing video restarts its producer at the new position; a paused video
+keeps the position for the next play or step."
+  (etaf-video-session-seek (etaf-video--session-for handle) seconds)
+  t)
+
+(defun etaf-video-set-speed (handle speed)
+  "Set the playback rate of the mounted video identified by HANDLE.
+SPEED is a positive number; a playing video restarts at the same position
+with the new rate."
+  (etaf-video-session-set-speed (etaf-video--session-for handle) speed)
+  t)
+
+(defun etaf-video-set-volume (handle volume)
+  "Set the audio volume of the mounted video identified by HANDLE.
+VOLUME is between 0 and 100; a playing video restarts its audio sidecar at
+the same position."
+  (etaf-video-session-set-volume (etaf-video--session-for handle) volume)
+  t)
+
+(defun etaf-video-set-audio (handle audio)
+  "Turn the audio sidecar of the mounted video identified by HANDLE on or off.
+AUDIO non-nil plays the source's audio track; a source without an audio
+stream stays silent."
+  (etaf-video-session-set-audio (etaf-video--session-for handle) audio)
+  t)
+
+(defun etaf-video-state (handle)
+  "Return the mounted video identified by HANDLE as a detached plist.
+Keys are `:handle', `:mode' (the effective render mode), `:source',
+`:playing', `:position', `:duration', `:speed', `:format', `:width',
+`:height' (producer pixels), `:display-fps', `:source-fps', `:received',
+`:presented', `:dropped', `:audio' and `:ended'."
+  (let ((instance (etaf-video--instance-for handle)))
+    (append (list :handle handle
+                  :mode (etaf-video--instance-effective-mode instance))
+            (etaf-video-session-state (etaf-video--session-for handle)))))
+
+(provide 'etaf-video-component)
+;;; etaf-video-component.el ends here

@@ -1339,6 +1339,98 @@
 ;; the application write, as with `etaf-set-value'.  Existing shallow equality,
 ;; reactive tracking and event batching apply; there is no implicit deep copy.
 ;;
+;; Component: etaf-video (&key src (columns 100) (rows 30) (mode 'image) (ramp etaf-video-density-ramp) (audio etaf-video-audio) (volume etaf-video-audio-volume) (speed 1) (autoplay t) handle device-pixel-ratio)
+;; Render a live video source in a fixed COLUMNS by ROWS canvas.
+;;
+;; SRC is nil for the built-in demo, a local file name, an HTTP(S) URL, or a
+;; plist accepted by the video source normalizer.  MODE is `image' (one scaled
+;; JPEG per frame, graphical frames only, falling back to `ascii' elsewhere),
+;; `ascii' (one density-ramp character per pixel) or `color' (two full-color
+;; pixels per `▀' half-block cell).  RAMP defaults to
+;; `etaf-video-density-ramp', AUDIO/VOLUME/SPEED configure playback, and
+;; AUTOPLAY starts it at mount; without AUTOPLAY the first frame is shown
+;; paused.  DEVICE-PIXEL-RATIO overrides the display's device pixel ratio for
+;; `image' frames so Retina screens stay sharp.
+;;
+;; HANDLE is a symbol registered while mounted for the `etaf-video-play'
+;; family of control functions; a video without a handle still plays itself.
+;;
+;; Function: etaf-video-play (handle)
+;;;###autoload (autoload 'etaf-video-play "etaf" nil nil)
+;; Start or resume the mounted video identified by HANDLE.
+;;
+;; Function: etaf-video-pause (handle)
+;;;###autoload (autoload 'etaf-video-pause "etaf" nil nil)
+;; Pause the mounted video identified by HANDLE, keeping the last picture.
+;;
+;; Function: etaf-video-toggle-playback (handle)
+;;;###autoload (autoload 'etaf-video-toggle-playback "etaf" nil nil)
+;; Toggle the mounted video identified by HANDLE between play and pause.
+;;
+;; Function: etaf-video-step (handle)
+;;;###autoload (autoload 'etaf-video-step "etaf" nil nil)
+;; Pause the mounted video identified by HANDLE and present one more frame.
+;;
+;; Function: etaf-video-seek (handle seconds)
+;;;###autoload (autoload 'etaf-video-seek "etaf" nil nil)
+;; Move the mounted video identified by HANDLE to SECONDS.
+;;
+;; Function: etaf-video-set-speed (handle speed)
+;;;###autoload (autoload 'etaf-video-set-speed "etaf" nil nil)
+;; Set the playback rate of the mounted video identified by HANDLE.
+;;
+;; Function: etaf-video-set-volume (handle volume)
+;;;###autoload (autoload 'etaf-video-set-volume "etaf" nil nil)
+;; Set the audio volume of the mounted video identified by HANDLE, 0 to 100.
+;;
+;; Function: etaf-video-set-audio (handle audio)
+;;;###autoload (autoload 'etaf-video-set-audio "etaf" nil nil)
+;; Turn the audio sidecar of the mounted video identified by HANDLE on or off.
+;;
+;; Function: etaf-video-source-info (source)
+;;;###autoload (autoload 'etaf-video-source-info "etaf" nil nil)
+;; Return SOURCE's normalized playback metadata as a plist.
+;;
+;; SOURCE is nil for the built-in demo, a local file name, an HTTP(S) URL, or
+;; a plist accepted by the `etaf-video' Component.  The result holds `:kind',
+;; `:file', `:url', `:target', `:width', `:height', `:duration', `:fps' and
+;; `:audio'.  Values come from ffprobe when it runs; a missing ffprobe keeps
+;; documented defaults.  Unsupported sources and unreadable files signal
+;; `user-error'.  Each call probes the source, so callers that keep the
+;; values should store the result.
+;;
+;; Function: etaf-video-state (handle)
+;;;###autoload (autoload 'etaf-video-state "etaf" nil nil)
+;; Return the mounted video identified by HANDLE as a detached plist.
+;; Keys are `:handle', `:mode', `:source', `:playing', `:position',
+;; `:duration', `:speed', `:format', `:width', `:height', `:display-fps',
+;; `:source-fps', `:received', `:presented', `:dropped', `:audio' and
+;; `:ended'.  A handle with no mounted video signals `user-error'.
+;;
+;; Variable: etaf-video-audio
+;; Whether new videos play their source's audio track by default.
+;; A `etaf-video' Component's `:audio' property overrides it per instance.
+;;
+;; Variable: etaf-video-audio-volume
+;; Default audio volume for new videos, from 0 to 100.
+;;
+;; Variable: etaf-video-density-ramp
+;; Characters used for one video pixel in the `ascii' render mode,
+;; from darkest to lightest; must be nonempty and single-line.
+;;
+;; Variable: etaf-video-display-fps
+;; Display timer rate in frames per second for new video playback.
+;; It caps the presented frame rate; values below 1 are raised to 1.
+;;
+;; Variable: etaf-video-ffmpeg-program
+;; Name or absolute path of the ffmpeg executable used to decode video.
+;;
+;; Variable: etaf-video-ffplay-program
+;; Name or absolute path of the ffplay executable used for audio.
+;;
+;; Variable: etaf-video-ffprobe-program
+;; Name or absolute path of the ffprobe executable used for metadata.
+;;
 ;; Macro: etaf-view (form)
 ;;;###autoload (autoload 'etaf-view "etaf" nil nil 'macro)
 ;; Construct a normalized ETAF View from structural FORM.
@@ -1552,6 +1644,7 @@
 (require 'etaf-list-cache)
 (require 'etaf-events)
 (require 'etaf-performance)
+(require 'etaf-video-component)
 
 (autoload 'etaf-retained-resize-open "examples/etaf-retained-resize" nil t)
 (autoload 'etaf-resource-example-open "examples/etaf-resource-example" nil t)

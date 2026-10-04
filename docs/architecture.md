@@ -330,6 +330,16 @@ native interaction; those consequences belong to Ebox's publication pipeline.
 
 The public View grammar does not accept raw Ebox Nodes. Framework integrations construct canonical TextNode and BoxNode values through Ebox's typed integration port, while ordinary ETAF applications stay on Hosts and Components. This keeps measurement, identity, and rollback ownership inside one lowering path.
 
+Native video is a core Component on the same boundary, not a new Host kind:
+`etaf-video` owns a headless playback session (ffmpeg producer, optional
+ffplay sidecar, display timer) and maps each decoded frame for its `image`,
+`ascii` or `color` mode, while `etaf-runtime-update-host-content` publishes
+the result on the canvas Host.  One displayed frame is therefore one retained
+Ebox publication.  Producers and sessions hold no buffer, Runtime or Ebox
+state, so decoding and frame mapping stay independent of the publication
+path; the Component, its handle control functions and
+`etaf-video-source-info` are the public surface applications consume.
+
 ## 7. Runtime and reactive state
 
 Runtime mount is transactional:

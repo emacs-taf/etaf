@@ -1452,6 +1452,56 @@
       "name": "etaf-image-test-rejects-invalid-input",
       "file": "tests/etaf-image-tests.el",
       "purpose": "Invalid source, size, adapter and children are reported before publication."
+    },
+    {
+      "name": "etaf-video-tests-renders-ascii-ramp-frames",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "Every canvas pixel is the ramp character of its grayscale byte, and the producer receives the documented gray scale and read rate."
+    },
+    {
+      "name": "etaf-video-tests-renders-color-half-blocks",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "Color mode maps two full-color pixels into one half-block cell with the fixture's foreground and background colors at double-height RGB24."
+    },
+    {
+      "name": "etaf-video-tests-image-mode-falls-back-on-terminal",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "Image mode renders ASCII when the buffer is not in a graphical frame and reports the effective mode and grayscale format."
+    },
+    {
+      "name": "etaf-video-tests-controls-pause-step-seek-speed",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "Pause freezes the position, step presents one more frame, and seek, playback and speed restart the producer with the documented arguments."
+    },
+    {
+      "name": "etaf-video-tests-finishes-and-restarts",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "A producer that runs out of frames ends the video, keeps its last picture, and plays again from the start."
+    },
+    {
+      "name": "etaf-video-tests-audio-sidecar-follows-playback",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "An audio source starts one ffplay sidecar with the documented arguments while playing and releases it on pause."
+    },
+    {
+      "name": "etaf-video-tests-streams-http-url",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "An HTTP URL reaches ffmpeg with reconnect options and presents a paused first frame while a non-HTTP scheme is rejected."
+    },
+    {
+      "name": "etaf-video-tests-restarts-on-input-change",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "A canvas size change republishes the canvas and rebuilds the session with the new scale at the same paused position."
+    },
+    {
+      "name": "etaf-video-tests-unmount-releases-runtime-and-handle",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "Unmounting stops producer processes and makes the released handle unaddressable."
+    },
+    {
+      "name": "etaf-video-tests-rejects-invalid-inputs",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "Invalid render props report a Component call error and unknown handles report a user error."
     }
   ]
 }

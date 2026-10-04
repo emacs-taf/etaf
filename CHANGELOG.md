@@ -4,6 +4,18 @@
 
 ### Added
 
+- `etaf-video` places a live video source in a layout: ffmpeg decodes the
+  source, the Component maps each frame for the `image`, `ascii` or `color`
+  render mode, and every frame is published through the retained Host content
+  boundary, so a playing canvas does not re-render the application.  Handle
+  control functions (`etaf-video-play', `etaf-video-pause',
+  `etaf-video-seek', `etaf-video-set-speed', `etaf-video-set-volume',
+  `etaf-video-set-audio' and `etaf-video-state') drive playback from ordinary
+  Elisp, and `etaf-video-source-info' reports a source's metadata without
+  mounting anything.  `image' frames decode at the display's device pixel
+  ratio so Retina screens stay sharp, `ascii' and `color' cover terminal and
+  graphical frames, and an optional ffplay sidecar plays a source's audio.
+
 - `etaf-list-cache-put` accepts an observation time with `:at`, so restored
   snapshots retain their age and background revalidation can prioritize them.
 

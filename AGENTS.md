@@ -23,6 +23,7 @@ grouped by the theme you are chasing:
 | Data controllers, Resources, shared async completion | `etaf-data`, `etaf-resource`, `etaf-async` |
 | Cached lists with background revalidation | `etaf-list-cache` |
 | The single Ebox boundary and its SPI port | `etaf-renderer`, `etaf-render-port` |
+| Native video sources, playback sessions and the video Component | `etaf-video-source`, `etaf-video-audio`, `etaf-video-session`, `etaf-video-component` |
 | Optional observation and recording | `etaf-observer`, `etaf-performance` |
 
 `docs/architecture.md` states concepts, ownership, data flow and invariants; it
