@@ -136,11 +136,14 @@ so a dropped display frame still advances the clock."
                        #'etaf-video--session-tick session))))
 
 (defun etaf-video-session-play (session)
-  "Start (or resume) SESSION: producer, audio and display timer."
+  "Start (or resume) SESSION: producer, audio and display timer.
+A pending manual step is cancelled: playing supersedes it, and leaving the
+step flag set would make the next tick pause after one frame."
   (unless (etaf-video--session-source session)
     (etaf-video--session-spawn session))
   (etaf-video--session-start-timer session)
-  (setf (etaf-video--session-playing session) t)
+  (setf (etaf-video--session-playing session) t
+        (etaf-video--session-stepping session) nil)
   (etaf-video--session-start-audio session)
   (etaf-video--session-notify session)
   t)

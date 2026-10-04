@@ -30,7 +30,6 @@
 
 (require 'cl-lib)
 (require 'etaf-component)
-(require 'etaf-events)
 (require 'etaf-reactive)
 (require 'etaf-runtime)
 (require 'etaf-video-audio)
@@ -153,7 +152,7 @@ it on unmount, so the control functions always address a live session.")
 (cl-defstruct (etaf-video--instance (:constructor etaf-video--instance--make))
   "Mounted state owned by one `etaf-video' Component instance."
   handle ref cell sources runtime session applied image-scale
-  image-max-width image-max-height refresh-timer image-last)
+  image-max-width image-max-height image-last)
 
 (defun etaf-video--instance-view-content (instance)
   "Return INSTANCE's current canvas text for ordinary publications.
@@ -197,24 +196,27 @@ graphical frame, so the same layout renders in terminals."
       mode)))
 
 (defun etaf-video--instance-display-size (instance)
-  "Return INSTANCE's canvas size in pixels as `(WIDTH . HEIGHT)', or nil.
-The canvas is measured from the displayed Host region, so an image frame is
-capped to exactly the space the canvas actually occupies; a frame sized from
-font metrics alone can be a few pixels wider and Ebox then declines the
-retained image content.  Nil when the Runtime buffer is not shown in a
-window, where no image is visible and the frame metrics supply the size."
-  (let* ((runtime (etaf-video--instance-runtime instance))
+  "Return INSTANCE's canvas size in pixels as `(WIDTH . HEIGHT)'.
+The canvas renders at its own cell size, except that a canvas wider than
+the window body is clamped by Ebox to the viewport; an image frame must fit
+the smaller of the two.  HEIGHT is capped to the window body as well, though
+a taller canvas is clipped by the layout anyway."
+  (let* ((applied (etaf-video--instance-applied instance))
+         (columns (plist-get applied :columns))
+         (rows (plist-get applied :rows))
+         (frame (etaf-video--instance-frame instance))
+         (runtime (etaf-video--instance-runtime instance))
          (buffer (and runtime (etaf-runtime-buffer runtime)))
          (window (and buffer (buffer-live-p buffer)
                       (get-buffer-window buffer t)))
-         (bounds (and window
-                      (ignore-errors
-                        (etaf-host-ref-bounds
-                         runtime (etaf-video--instance-ref instance))))))
-    (when (and window bounds (car bounds) (cdr bounds))
-      (with-current-buffer buffer
-        (let ((size (window-text-pixel-size window (car bounds) (cdr bounds))))
-          (cons (max 1 (car size)) (max 1 (cdr size))))))))
+         (char-width (frame-char-width frame))
+         (char-height (frame-char-height frame))
+         (width (* columns char-width))
+         (height (* rows char-height)))
+    (cons (if window (min width (window-body-width window t)) width)
+          (if window
+              (min height (* (window-body-height window) char-height))
+            height))))
 
 (defun etaf-video--instance-frame-size (instance)
   "Return INSTANCE's `(FORMAT WIDTH HEIGHT SCALE MAX-WIDTH MAX-HEIGHT)'.
@@ -327,63 +329,10 @@ session starts playing; a paused session presents one frame instead."
   (etaf-video--instance-register instance)
   (setf (etaf-video--instance-applied instance)
         (etaf-video--instance-read-inputs instance))
-  (etaf-video--instance-build instance 0 autoplay)
-  (etaf-video--instance-watch-display instance))
-
-(defun etaf-video--instance-stop-display-watch (instance)
-  "Stop INSTANCE's canvas size watch."
-  (when-let* ((timer (etaf-video--instance-refresh-timer instance)))
-    (cancel-timer timer)
-    (setf (etaf-video--instance-refresh-timer instance) nil)))
-
-(defun etaf-video--instance-watch-display (instance)
-  "Rebuild INSTANCE once its displayed canvas size has settled.
-The first published layout is not always drawn when the session is built,
-so an image session may start with provisional pixel sizes and Ebox would
-decline its frames.  The watch stops after a stable size has been applied or
-after a bounded number of checks."
-  (let ((tries 0)
-        (previous nil)
-        (stable 0))
-    (setf (etaf-video--instance-refresh-timer instance)
-          (run-at-time
-           0.25 0.25
-           (lambda ()
-             (let ((size (etaf-video--instance-display-size instance)))
-               (unless (etaf-video--instance-runtime instance)
-                 (etaf-video--instance-stop-display-watch instance))
-               (when (etaf-video--instance-runtime instance)
-                 (cond ((equal size previous) (setq stable (1+ stable)))
-                       (t (setq previous size stable 0)))
-                 (if (>= stable 2)
-                     (progn
-                       (etaf-video--instance-refresh-display instance)
-                       (etaf-video--instance-stop-display-watch instance))
-                   (cl-incf tries)
-                   (when (>= tries 8)
-                     (etaf-video--instance-stop-display-watch instance))))))))))
-
-(defun etaf-video--instance-refresh-display (instance)
-  "Rebuild INSTANCE when its settled canvas differs from the built one."
-  (when (and (etaf-video--instance-runtime instance)
-             (etaf-video--instance-session instance)
-             (eq (etaf-video--instance-effective-mode instance) 'image))
-    (let ((size (etaf-video--instance-display-size instance)))
-      (when (and size
-                 (or (not (eq (car size)
-                              (etaf-video--instance-image-max-width instance)))
-                     (not (eq (cdr size)
-                              (etaf-video--instance-image-max-height instance)))))
-        (let* ((session (etaf-video--instance-session instance))
-               (position (etaf-video-session-position session))
-               (playing (etaf-video--session-playing session)))
-          (etaf-video-session-destroy session)
-          (setf (etaf-video--instance-session instance) nil)
-          (etaf-video--instance-build instance position playing))))))
+  (etaf-video--instance-build instance 0 autoplay))
 
 (defun etaf-video--instance-unmount (instance)
   "Release INSTANCE's session and handle registration."
-  (etaf-video--instance-stop-display-watch instance)
   (when-let* ((image (etaf-video--instance-image-last instance)))
     (ignore-errors (image-flush image))
     (setf (etaf-video--instance-image-last instance) nil))
