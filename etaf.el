@@ -1088,6 +1088,20 @@
 ;; its current revision may still be provisional.  No tree is exported.
 ;; Use `etaf-runtime-snapshot' for an explicit snapshot.
 ;;
+;; Function: etaf-runtime-set-input-finisher (runtime finisher)
+;;;###autoload (autoload 'etaf-runtime-set-input-finisher "etaf" nil nil)
+;; Set mounted RUNTIME's native input session finisher to FINISHER or nil.
+;; The catalog's in-place text input registers a function while its session
+;; is open; the framework runs it before a `press' dispatches to another
+;; Host, so a superseded editing session finishes instead of deferring every
+;; publication forever.  FINISHER receives RUNTIME and should finish the
+;; session with the application's own keep/edit policy.  Setting nil removes
+;; it.  A non-mounted Runtime or a non-function FINISHER signals an error.
+;;
+;; Function: etaf-runtime-input-finisher (x)
+;;;###autoload (autoload 'etaf-runtime-input-finisher "etaf" nil nil)
+;; Access slot "input-finisher" of `etaf-runtime' struct X.
+;;
 ;; Function: etaf-runtime-for-buffer (buffer-or-name)
 ;;;###autoload (autoload 'etaf-runtime-for-buffer "etaf" nil nil)
 ;; Return the live Runtime mounted in BUFFER-OR-NAME, or nil.

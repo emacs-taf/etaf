@@ -1532,6 +1532,16 @@
       "name": "etaf-video-tests-rejects-invalid-inputs",
       "file": "tests/etaf-video-tests.el",
       "purpose": "Invalid render props report a Component call error and unknown handles report a user error."
+    },
+    {
+      "name": "etaf-native-input-refit-waits-for-the-session",
+      "file": "tests/etaf-native-input-tests.el",
+      "purpose": "A viewport refit requested while a native editing session owns the text is held and publishes the settled viewport when the session ends."
+    },
+    {
+      "name": "etaf-native-input-outside-press-runs-the-runtime-finisher",
+      "file": "tests/etaf-native-input-tests.el",
+      "purpose": "A press on another Host runs the Runtime's registered finisher before the callback, while a press on the session's own Host keeps editing."
     }
   ]
 }

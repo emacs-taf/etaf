@@ -56,5 +56,60 @@
       (when (etaf-runtime-for-buffer buffer) (etaf-unmount runtime))
       (kill-buffer buffer))))
 
+(ert-deftest etaf-native-input-refit-waits-for-the-session ()
+  "A viewport refit requested while editing publishes after the session ends."
+  (let ((buffer (generate-new-buffer " *etaf-input-refit*")) session)
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (etaf-view (column (text :ref 'edit "Edit")
+                              (text :ref 'other "Other")))
+           '(:viewport-width 600 :viewport-height 20))
+          (let ((runtime (etaf-runtime-for-buffer buffer)))
+            (setq session (etaf-input-begin runtime 'edit))
+            (should-not (etaf-runtime-refit runtime 500 19))
+            (should (equal (etaf-runtime-viewport runtime) '(600 . 20)))
+            (etaf-input-end session)
+            (setq session nil)
+            (etaf-runtime-flush runtime)
+            (should (equal (etaf-runtime-viewport runtime) '(500 . 19)))))
+      (when session (ignore-errors (etaf-input-end session)))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
+(ert-deftest etaf-native-input-outside-press-runs-the-runtime-finisher ()
+  "A press on another Host finishes the session through the Runtime finisher."
+  (let ((buffer (generate-new-buffer " *etaf-input-finisher*"))
+        session pressed end-text)
+    (unwind-protect
+        (progn
+          (etaf-mount
+           buffer
+           (etaf-view
+            (column
+             (text :ref 'edit :on-press (lambda () nil) "Edit")
+             (text :ref 'other :on-press (lambda () (setq pressed t)) "Other")))
+           '(:viewport-width 600 :viewport-height 20))
+          (let ((runtime (etaf-runtime-for-buffer buffer)))
+            (setq session (etaf-input-begin runtime 'edit))
+            (etaf-runtime-set-input-finisher
+             runtime
+             (lambda (rt)
+               (setq end-text (etaf-input-end session))
+               (etaf-runtime-set-input-finisher rt nil)))
+            ;; A press on the session's own Host keeps editing.
+            (etaf-dispatch-event runtime 'edit 'press)
+            (should-not pressed)
+            (should (ebox-input-active-p buffer))
+            (etaf-dispatch-event runtime 'other 'press)
+            (should pressed)
+            (should end-text)
+            (should-not (ebox-input-active-p buffer))
+            (should-not (etaf-runtime-input-finisher runtime))))
+      (when (and session (ebox-input-active-p buffer)) (etaf-input-end session))
+      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
+      (kill-buffer buffer))))
+
 (provide 'etaf-native-input-tests)
 ;;; etaf-native-input-tests.el ends here

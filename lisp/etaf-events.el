@@ -37,6 +37,8 @@
 (declare-function ebox-call-with-render-burst
                   "ebox-buffer-backend" (function &rest arguments))
 (declare-function ebox-call-with-input "ebox" (host-ref reader &optional buffer-or-name))
+(declare-function ebox-input-active-p "ebox" (buffer-or-name))
+(declare-function ebox-input-session-host-ref "ebox" (session))
 
 (define-error 'etaf-event-error "Invalid ETAF Event")
 
@@ -101,6 +103,20 @@ panel from one on the surface around it.  Outside an event callback signal
   (cdr (assq (etaf-event-kind kind)
              (etaf-runtime-handler-for runtime host-ref))))
 
+(defun etaf--maybe-finish-input-session (runtime host-ref)
+  "Finish RUNTIME's native input session when HOST-REF supersedes it.
+A press on the session's own Host keeps editing.  The Runtime's registered
+finisher receives RUNTIME and runs inside the press batch, so the session's
+own publication stays deferred until the batch ends and the superseding
+callback sees a settled buffer."
+  (when-let* ((finisher (etaf-runtime-input-finisher runtime))
+              (session (ebox-input-active-p (etaf-runtime-buffer runtime)))
+              (session-ref (ebox-input-session-host-ref session)))
+    (unless (or (equal host-ref session-ref)
+                (member session-ref
+                        (etaf-runtime-host-ancestor-refs runtime host-ref)))
+      (funcall finisher runtime))))
+
 ;;;###autoload
 (cl-defun etaf-dispatch-event
     (runtime host-ref kind &optional payload (payload-p nil))
@@ -129,9 +145,16 @@ otherwise call the local callback with no arguments."
                           :kind event-kind :payload payload)))
                (etaf-runtime-event-begin runtime)
                (unwind-protect
-                   (let ((result (if payload-p
-                                     (funcall callback payload)
-                                   (funcall callback))))
+                   (progn
+                     ;; A press outside an open editing session finishes that
+                     ;; session inside this batch, before the new callback
+                     ;; runs; the session's own publication then drains when
+                     ;; the batch ends.
+                     (when (eq event-kind 'press)
+                       (etaf--maybe-finish-input-session runtime host-ref))
+                     (let ((result (if payload-p
+                                       (funcall callback payload)
+                                     (funcall callback))))
                      ;; UI shells can install a capture callback on an
                      ;; ancestor Host.  This keeps activation and focus
                      ;; policy out of every leaf component while preserving
@@ -154,7 +177,7 @@ otherwise call the local callback with no arguments."
                                (if payload-p
                                    (funcall capture payload)
                                  (funcall capture)))))))
-                     result)
+                     result))
                  (etaf-runtime-event-end runtime))))))
          (run
           (lambda ()

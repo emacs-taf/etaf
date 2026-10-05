@@ -382,7 +382,11 @@ the sequential `etaf--pvec-put' contract."
   candidate-invalidated-ancestors
   prepared-text-cohort prepared-text-members prepared-text-rejections
   prepared-interactive-effect-ids
-  prepared-text-effect-ids prepared-related-text-effect-ids)
+  prepared-text-effect-ids prepared-related-text-effect-ids
+  ;; Native input session policy.  The catalog's text input registers a
+  ;; finisher while its session is open; a press outside the session's Host
+  ;; runs it so an editing session never keeps ownership of the buffer.
+  input-finisher)
 
 (defcustom etaf-generation-mirror-route 'project
   "Compatibility mirror route used after a committed generation changes.
@@ -6905,12 +6909,19 @@ it ends instead of republishing over the user's edit."
      ((or (> (etaf-runtime-event-depth runtime) 0)
           (etaf-runtime-flushing-p runtime))
       (setf (etaf-runtime-pending-p runtime) t))
-     ((and (progn (etaf--runtime-settle-source-effects runtime) t)
-           (not (etaf-runtime-root-dirty-p runtime))
-           (null (etaf-runtime-dirty-effect-queue runtime)))
+     ((progn
+        ;; A viewport refit deferred by a native input session lands before
+        ;; the checks that could otherwise treat the Runtime as settled.
+        (etaf--runtime-apply-pending-refit runtime)
+        (and (progn (etaf--runtime-settle-source-effects runtime) t)
+             (not (etaf-runtime-root-dirty-p runtime))
+             (null (etaf-runtime-dirty-effect-queue runtime))))
       (setf (etaf-runtime-pending-p runtime) nil))
      ((etaf--host-update-try-flush runtime))
      (t
+      ;; A refit deferred by a session lands first, so one flush publishes
+      ;; the settled viewport and the pending model change together.
+      (etaf--runtime-apply-pending-refit runtime)
       (setf (etaf-runtime-flushing-p runtime) t)
       (let* ((etaf--runtime-fixed-point-stamps
               (make-hash-table :test #'equal))
@@ -6944,6 +6955,19 @@ it ends instead of republishing over the user's edit."
       (etaf--runtime-with-operation (runtime 'flush "reactive flush")
         (etaf--runtime-request-flush-now runtime))
     (etaf--runtime-request-flush-now runtime)))
+
+;;;###autoload
+(defun etaf-runtime-set-input-finisher (runtime finisher)
+  "Set mounted RUNTIME's native input session finisher to FINISHER or nil.
+The catalog's in-place text input registers a function while its session is
+open; the framework runs it before a `press' dispatches to another Host, so a
+superseded editing session finishes instead of owning the buffer forever.
+FINISHER receives RUNTIME.  Setting nil removes it."
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (unless (or (null finisher) (functionp finisher))
+    (signal 'wrong-type-argument (list 'functionp finisher)))
+  (setf (etaf-runtime-input-finisher runtime) finisher)
+  finisher)
 
 ;;;###autoload
 (defun etaf-runtime-flush (&optional runtime)
@@ -6980,13 +7004,30 @@ borrowed.")
     (puthash frame size etaf--runtime-refit-frame-sizes)))
 
 ;;;###autoload
+(defvar etaf--runtime-pending-refits (make-hash-table :test #'eq)
+  "Latest viewport refit requested while an input session owned a Runtime.
+The value is (WIDTH . HEIGHT); a session end applies it through the ordinary
+flush path.")
+
+(defun etaf--runtime-apply-pending-refit (runtime)
+  "Apply RUNTIME's session-deferred viewport refit, if any.
+Return non-nil when a refit was published.  The refit is dropped from the
+table first, so a failure inside the renderer cannot retry it forever."
+  (let ((pending (gethash runtime etaf--runtime-pending-refits)))
+    (when pending
+      (remhash runtime etaf--runtime-pending-refits)
+      (etaf-runtime-refit runtime (car pending) (cdr pending))
+      t)))
+
 (defun etaf-runtime-refit (runtime viewport-width &optional viewport-height)
   "Refit mounted RUNTIME to VIEWPORT-WIDTH pixels and VIEWPORT-HEIGHT lines.
 The call re-resolves viewport units and viewport-dependent layout through the
 selected renderer port, so the framework's publication accounting sees it like
-any other publication.  Return non-nil when the renderer refitted a mounted
-surface; RUNTIME defaults to the Runtime in the current buffer, and a
-non-mounted Runtime signals `etaf-runtime-error'."
+any other publication.  A native input session owns the buffer text, so the
+refit waits until the session ends and a flush applies the latest request.
+Return non-nil when the renderer refitted a mounted surface; RUNTIME defaults
+to the Runtime in the current buffer, and a non-mounted Runtime signals
+`etaf-runtime-error'."
   (let ((runtime (etaf-runtime-require-mounted runtime)))
     (unless (and (numberp viewport-width) (> viewport-width 0))
       (signal 'wrong-type-argument (list 'numberp viewport-width)))
@@ -6994,14 +7035,20 @@ non-mounted Runtime signals `etaf-runtime-error'."
                (not (and (numberp viewport-height) (> viewport-height 0))))
       (signal 'wrong-type-argument (list 'numberp viewport-height)))
     (etaf--assert-not-rendering 'runtime-refit)
-    (prog1 (ebox-call-with-render-burst
-            (lambda ()
-              (etaf-render-port-refit (etaf-runtime-buffer runtime)
-                                      viewport-width viewport-height)))
-      (puthash runtime (cons viewport-width viewport-height)
-               etaf--runtime-viewports)
-      (when-let* ((window (etaf--runtime-display-window runtime)))
-        (etaf--runtime-record-frame-size (window-frame window))))))
+    (if (ebox-input-active-p (etaf-runtime-buffer runtime))
+        (progn
+          (puthash runtime (cons viewport-width viewport-height)
+                   etaf--runtime-pending-refits)
+          (setf (etaf-runtime-pending-p runtime) t)
+          nil)
+      (prog1 (ebox-call-with-render-burst
+              (lambda ()
+                (etaf-render-port-refit (etaf-runtime-buffer runtime)
+                                        viewport-width viewport-height)))
+        (puthash runtime (cons viewport-width viewport-height)
+                 etaf--runtime-viewports)
+        (when-let* ((window (etaf--runtime-display-window runtime)))
+          (etaf--runtime-record-frame-size (window-frame window)))))))
 
 ;;;###autoload
 (defun etaf-refit (&optional runtime window)
