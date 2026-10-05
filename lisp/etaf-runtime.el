@@ -4212,6 +4212,7 @@ ITEM-ROOT-GROUPS and ITEM-NODE-COUNTS describe aligned item spans."
   "Complete and return ROOTS' reachable candidate semantic graph in RUNTIME."
   (let ((queue (copy-sequence roots))
         (generation (etaf-runtime-current-generation runtime))
+        (missing (make-symbol "etaf-candidate-children-missing"))
         result)
     (while queue
       (let ((semantic-id (pop queue)))
@@ -4229,11 +4230,31 @@ ITEM-ROOT-GROUPS and ITEM-NODE-COUNTS describe aligned item spans."
                         (etaf-generation-semantic-nodes generation) semantic-id)))
             (etaf--runtime-carry-committed-subtree runtime generation retained)))
         (push semantic-id result)
-        (setq queue
-              (nconc queue
-                     (copy-sequence
-                      (gethash semantic-id
-                               (etaf-runtime-candidate-graph-children runtime)))))))
+        (let ((children
+               (gethash semantic-id
+                        (etaf-runtime-candidate-graph-children runtime)
+                        missing)))
+          ;; Inline staging can patch a retained Host into the candidate
+          ;; without restaging its child order, so it has no candidate child
+          ;; list.  Its retained children are still part of this candidate's
+          ;; subtree; fall back to the staged node, then to the committed
+          ;; generation, instead of treating them as removed.  A child this
+          ;; round already removed stays removed: the fallback only restores
+          ;; the child order the walk needs to stay closed.
+          (when (eq children missing)
+            (setq children
+                  (cl-remove-if
+                   (lambda (child)
+                     (memq child
+                           (etaf-runtime-candidate-removed-semantic-ids
+                            runtime)))
+                   (or (etaf--semantic-child-ids
+                        (gethash semantic-id
+                                 (etaf-runtime-candidate-graph-nodes runtime)))
+                       (and generation
+                            (etaf--generation-child-ids generation semantic-id))))))
+          (setq queue
+                (nconc queue (copy-sequence children))))))
     (nreverse result)))
 
 (defun etaf--runtime-generation-descendant-ids (generation roots)
