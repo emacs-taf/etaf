@@ -281,6 +281,86 @@ The runtime stays mounted until the driver calls the returned `:cleanup'."
              count)
      :setup (lambda (_mode) (etaf-row-update-benchmark--fixture count nil)))))
 
+;; A keyed list append must cost like a one-row change.  The native retained
+;; patch path proves equal-length replacements only, so an inserted row falls
+;; back to re-encoding the whole frame; these scenarios guard the incremental
+;; path for growing lists.
+
+(etaf-define-component etaf-list-append-benchmark--probe (&key rows)
+  "Render ROWS one-line rows keyed by their number."
+  :view
+  (column :width 'stretch :item-gap '(lh 0)
+    (box :for (row (etaf-value rows)) :key row
+         :height '(lh 1) :overflow 'hidden
+         (text (expr (format "row %04d 汉字 ABC abcdefghijklmnopqrstuvwxyz" row))))))
+
+(defun etaf-list-append-benchmark--fixture (rows _mode)
+  "Mount ROWS keyed rows and append one row per sample.
+The runtime stays mounted until the driver calls the returned `:cleanup'."
+  (let* ((buffer (generate-new-buffer (format " *TAF list append %s*" rows)))
+         (rows-ref (etaf-ref (number-sequence 1 rows) :name 'etaf-list-append-rows))
+         (appended 0)
+         runtime)
+    (with-current-buffer buffer (setq-local truncate-lines t))
+    (etaf-mount buffer
+                (etaf-view (etaf-list-append-benchmark--probe :rows rows-ref))
+                (list :viewport-width 1200 :viewport-height 40))
+    (setq runtime (etaf-runtime-for-buffer buffer))
+    (etaf-runtime-flush runtime)
+    (list
+     :buffer buffer
+     :environment (lambda () (list :rows rows :viewport-rows 40))
+     :invoke (lambda (_sample)
+               (cl-incf appended)
+               (etaf-set-value rows-ref
+                               (append (etaf-value rows-ref)
+                                       (list (+ rows appended))))
+               (etaf-runtime-flush runtime))
+     :verify
+     (lambda ()
+       (with-current-buffer buffer
+         (let ((newest (format "row %04d" (+ rows appended))))
+           (if (string-match-p newest (buffer-substring-no-properties
+                                       (point-min) (point-max)))
+               t
+             (format "appended %s is not published" newest)))))
+     :observe
+     (lambda (sink)
+       (etaf-performance-start runtime)
+       (let ((before (mapcar (lambda (operation)
+                               (cons (plist-get operation :runtime-id)
+                                     (plist-get operation :id)))
+                             (plist-get (etaf-performance-report-data) :operations))))
+         (lambda ()
+           (etaf-performance-stop runtime)
+           (dolist (operation (plist-get (etaf-performance-report-data) :operations))
+             (when (and (equal (plist-get operation :buffer-name) (buffer-name buffer))
+                        (not (member (cons (plist-get operation :runtime-id)
+                                           (plist-get operation :id)) before)))
+               (dolist (stage (plist-get operation :stages))
+                 (funcall sink
+                          (append (list :provider (plist-get stage :provider)
+                                        :stage (plist-get stage :stage)
+                                        :duration-ms (plist-get stage :duration-ms))
+                                  (plist-get stage :metadata)))))))))
+     :cleanup
+     (lambda ()
+       (when (buffer-live-p buffer)
+         (when (etaf-runtime-for-buffer buffer) (etaf-unmount runtime))
+         (kill-buffer buffer))))))
+
+(dolist (rows '(30 120))
+  (let ((count rows))
+    (taf-benchmark-register
+     (format "list-append.%s" count)
+     :version 1 :modes '(batch) :isolation 'series
+     :required-providers '(etaf ebox)
+     :impact 'local :budget-ms 10
+     :description
+     (format "Append one keyed row to a %d-row list; the cost must not scale with the list"
+             count)
+     :setup (lambda (_mode) (etaf-list-append-benchmark--fixture count nil)))))
+
 ;;; performance-scenarios.el ends here
 
 ;;; ---------------------------------------------------------------------------
