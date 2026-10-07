@@ -14,1046 +14,6 @@
   "support": [],
   "cases": [
     {
-      "name": "etaf-layout-visible-publication-preserves-typography",
-      "file": "tests/etaf-cascade-layout-tests.el",
-      "purpose": "A visible mount preserves the same font and display properties as a hidden mount, including after deferred publication work."
-    },
-    {
-      "name": "etaf-component-output-publishes-flattened-single-root-child",
-      "file": "tests/etaf-component-output-tests.el",
-      "purpose": "A changed single-root loop child publishes through its stable Host address without republishing its parent or sibling, and matches fresh rendering."
-    },
-    {
-      "name": "etaf-component-output-keeps-range-membership-and-order",
-      "file": "tests/etaf-component-output-tests.el",
-      "purpose": "Two child ranges publish cardinality changes independently, while adding, removing or reordering their anchors still replaces the parent and matches fresh rendering."
-    },
-    {
-      "name": "etaf-component-output-publishes-only-changed-child-ranges",
-      "file": "tests/etaf-component-output-tests.el",
-      "purpose": "Parent rerenders publish only a changed nested child, retain parent publication for own content changes, and match fresh rendering."
-    },
-    {
-      "name": "etaf-prepared-batch-couples-computed-paint-and-status",
-      "file": "tests/etaf-prepared-batch-tests.el",
-      "purpose": "Paint and status computed from one reactive source publish atomically, recover from a rejected status getter, and alternate with independent clock updates without stale state."
-    },
-    {
-      "name": "etaf-prepared-batch-expands-demand-and-rebinds-after-structure",
-      "file": "tests/etaf-prepared-batch-tests.el",
-      "purpose": "Separately requested geometry, inline and paint programs preserve atomic mixed updates, rejected-input retry, alternating text and interaction cohorts, and first updates after structural publication or viewport changes."
-    },
-    {
-      "name": "etaf-theme-contextual-transforms-retain-consumer-context",
-      "file": "tests/etaf-theme-cascade-tests.el",
-      "purpose": "Context-sensitive Theme transforms preserve distinct consuming Context values across source updates."
-    },
-    {
-      "name": "etaf-theme-unused-tokens-retain-publication",
-      "file": "tests/etaf-theme-cascade-tests.el",
-      "purpose": "Unconsumed Theme token edits retain the committed generation while consumed token changes repaint."
-    },
-    {
-      "name": "etaf-theme-dynamic-token-switch-observes-selected-value",
-      "file": "tests/etaf-theme-cascade-tests.el",
-      "purpose": "Prepared dynamic Theme token selection observes later edits of the selected key."
-    },
-    {
-      "name": "etaf-theme-source-replacement-retires-old-provider",
-      "file": "tests/etaf-theme-cascade-tests.el",
-      "purpose": "Replacing a Theme provider observes the new source and retires publication from the old source."
-    },
-    {
-      "name": "etaf-theme-projection-transform-failure-retries-written-state",
-      "file": "tests/etaf-theme-cascade-tests.el",
-      "purpose": "A failed Theme transform preserves committed output and retries the written palette without another write."
-    },
-    {
-      "name": "etaf-host-geometry-resizes-fixed-text-through-prepared-publication",
-      "file": "tests/etaf-host-geometry-tests.el",
-      "purpose": "Mounted fixed-text size bindings publish through the prepared provider while preserving semantic snapshots and input targets."
-    },
-    {
-      "name": "etaf-retained-resize-example-controls-size-and-cancellation",
-      "file": "tests/etaf-host-geometry-tests.el",
-      "purpose": "The runnable retained resize example changes controlled size, restores its origin on cancellation and preserves its independent peer."
-    },
-    {
-      "name": "etaf-primitive-bindings-follow-explicit-component-render",
-      "file": "tests/etaf-primitive-binding-tests.el",
-      "purpose": "An explicit Component render replaces three native controls, preserves canonical snapshot pairing and permits a later geometry update."
-    },
-    {
-      "name": "etaf-primitive-bindings-hover-source-keeps-native-and-owner-lifecycle",
-      "file": "tests/etaf-primitive-binding-tests.el",
-      "purpose": "Reactive hover content preserves native visible hover, activation, owner update participation, rejected input and explicit retry."
-    },
-    {
-      "name": "etaf-primitive-bindings-normalize-class-grammar-at-lowering",
-      "file": "tests/etaf-primitive-binding-tests.el",
-      "purpose": "Pure and mounted Box/Text selectors normalize whitespace strings, nested class lists and symbols while Host queries retain raw values."
-    },
-    {
-      "name": "etaf-primitive-bindings-publish-selection-and-variable-status",
-      "file": "tests/etaf-primitive-binding-tests.el",
-      "purpose": "Selection class, border color, font weight, z-order and varying status text publish atomically and preserve detached snapshots."
-    },
-    {
-      "name": "etaf-primitive-bindings-leave-undirtied-programs-lazy",
-      "file": "tests/etaf-primitive-binding-tests.el",
-      "purpose": "A changed mounted primitive does not evaluate a different registered input whose dependencies did not change."
-    },
-    {
-      "name": "etaf-primitive-bindings-observer-write-keeps-newer-input-pending",
-      "file": "tests/etaf-primitive-binding-tests.el",
-      "purpose": "A publication observer sees accepted output before its newer direct or computed input write is subsequently displayed."
-    },
-    {
-      "name": "etaf-primitive-bindings-move-themed-host-without-a-new-generation",
-      "file": "tests/etaf-primitive-binding-tests.el",
-      "purpose": "Geometry writes on a Host styled by a reactive Theme publish as prepared updates that keep the committed generation, while a Theme change still repaints."
-    },
-    {
-      "name": "etaf-primitive-bindings-switch-theme-tokens-without-a-new-generation",
-      "file": "tests/etaf-primitive-binding-tests.el",
-      "purpose": "A paint expression that switches between Theme tokens publishes through the tokens' installed paint slots without a new generation, and a Theme change still recolors."
-    },
-    {
-      "name": "etaf-prepared-batch-hook-error-keeps-accepted-members",
-      "file": "tests/etaf-prepared-batch-tests.el",
-      "purpose": "Postcommit update-hook failure retains accepted mixed members and revision, preserves the original error and does not repeat the hook."
-    },
-    {
-      "name": "etaf-prepared-batch-retry-drains-lifecycle-writes",
-      "file": "tests/etaf-prepared-batch-tests.el",
-      "purpose": "Explicit publication retry drains reactive writes from accepted inline update hooks before returning."
-    },
-    {
-      "name": "etaf-prepared-batch-publishes-mixed-host-inputs-once",
-      "file": "tests/etaf-prepared-batch-tests.el",
-      "purpose": "Repeated geometry, paint, hover and inline batches match fresh mounts with one revision and one owner update."
-    },
-    {
-      "name": "etaf-prepared-batch-rejection-retains-all-members-until-retry",
-      "file": "tests/etaf-prepared-batch-tests.el",
-      "purpose": "A getter failure preserves committed output, properties, revision and lifecycle; written refs survive and retry publishes once."
-    },
-    {
-      "name": "etaf-computed-settlement-retires-before-child-read",
-      "file": "tests/etaf-computed-gating-tests.el",
-      "purpose": "Structural removal precedes a retired descendant computed getter that would now fail."
-    },
-    {
-      "name": "etaf-computed-equality-retains-child-under-rerendered-parent",
-      "file": "tests/etaf-computed-gating-tests.el",
-      "purpose": "A retained child whose computed input settles equal is not rendered again when its parent re-renders."
-    },
-    {
-      "name": "etaf-computed-equality-settles-component-input-and-render",
-      "file": "tests/etaf-computed-gating-tests.el",
-      "purpose": "Equal computed Component input and render dependencies preserve publication revision and lifecycle."
-    },
-    {
-      "name": "etaf-computed-equality-retains-host-geometry-publication",
-      "file": "tests/etaf-computed-gating-tests.el",
-      "purpose": "Equal computed Host geometry retains publication across successive geometry commits."
-    },
-    {
-      "name": "etaf-computed-settlement-preserves-consumer-context",
-      "file": "tests/etaf-computed-gating-tests.el",
-      "purpose": "Lazy getters retain the mounted consumer environment and ordinary Context dependency tracking."
-    },
-    {
-      "name": "etaf-computed-equality-retains-mounted-publication",
-      "file": "tests/etaf-computed-gating-tests.el",
-      "purpose": "Equal computed values retain Root, Component and inline publication revisions and update lifecycle."
-    },
-    {
-      "name": "etaf-computed-equality-retargets-conditional-inputs",
-      "file": "tests/etaf-computed-gating-tests.el",
-      "purpose": "Equal derived results still retarget conditional inputs and observe subsequent selected-source changes."
-    },
-    {
-      "name": "etaf-computed-settlement-preserves-unused-laziness",
-      "file": "tests/etaf-computed-gating-tests.el",
-      "purpose": "Previously read unobserved computed branches remain lazy during mounted publication."
-    },
-    {
-      "name": "etaf-computed-settlement-failure-preserves-retry",
-      "file": "tests/etaf-computed-gating-tests.el",
-      "purpose": "Failed computed getters and comparisons preserve displayed output and allow explicit Runtime retry."
-    },
-    {
-      "name": "etaf-computed-settlement-observes-complete-batch",
-      "file": "tests/etaf-computed-gating-tests.el",
-      "purpose": "Unequal-depth derived inputs settle against the complete batch before mounted publication."
-    },
-    {
-      "name": "etaf-host-geometry-resolves-theme-tokens-across-declaration-changes",
-      "file": "tests/etaf-host-geometry-tests.el",
-      "purpose": "Geometry Theme tokens resolve initially and when introduced after ordinary scalar declarations."
-    },
-    {
-      "name": "etaf-host-geometry-accepts-unit-and-unspecified-transitions",
-      "file": "tests/etaf-host-geometry-tests.el",
-      "purpose": "Valid geometry unit and unspecified transitions match fresh rendering and bounds; invalid units preserve prior output."
-    },
-    {
-      "name": "etaf-batch-defers-observers-until-outer-scope-exits",
-      "file": "tests/etaf-batch-tests.el",
-      "purpose": "Nested batches expose current refs and notify watches with the final related state."
-    },
-    {
-      "name": "etaf-batch-defers-mounted-output-until-outer-scope-exits",
-      "file": "tests/etaf-batch-tests.el",
-      "purpose": "Mounted output retains its committed revision until related writes finish."
-    },
-    {
-      "name": "etaf-batch-body-error-drains-writes-before-resignaling",
-      "file": "tests/etaf-batch-tests.el",
-      "purpose": "Body errors retain written refs and publish pending output before re-signaling."
-    },
-    {
-      "name": "etaf-batch-primary-error-survives-publication-failure",
-      "file": "tests/etaf-batch-tests.el",
-      "purpose": "A publication failure preserves the original body error and supports later repair."
-    },
-    {
-      "name": "etaf-batch-runtime-failure-preserves-other-publications",
-      "file": "tests/etaf-batch-tests.el",
-      "purpose": "Runtime failure keeps its prior display without rolling back another Runtime or application refs."
-    },
-    {
-      "name": "etaf-batch-quit-drains-written-state",
-      "file": "tests/etaf-batch-tests.el",
-      "purpose": "A quit delivers pending notifications for changed refs before escaping."
-    },
-    {
-      "name": "etaf-batch-rejects-invalid-functions-and-render-scopes",
-      "file": "tests/etaf-batch-tests.el",
-      "purpose": "Invalid callback input and render-phase batching are rejected before running the body."
-    },
-    {
-      "name": "etaf-component-directives-validate-branch-and-loop-grammar",
-      "file": "tests/etaf-component-frontends-tests.el",
-      "purpose": "DSL directives reject ambiguous structure during macro expansion."
-    },
-    {
-      "name": "etaf-component-frontends-project-default-and-named-slots",
-      "file": "tests/etaf-component-frontends-tests.el",
-      "purpose": "DSL and code Components preserve caller-owned slot order and styling."
-    },
-    {
-      "name": "etaf-component-frontends-render-state-layout-style-and-events",
-      "file": "tests/etaf-component-frontends-tests.el",
-      "purpose": "DSL and code Components mount equivalent stateful interactive surfaces."
-    },
-    {
-      "name": "etaf-component-state-distinguishes-nil-from-no-setup",
-      "file": "tests/etaf-component-frontends-tests.el",
-      "purpose": "A completed setup may return nil without becoming setup absence."
-    },
-    {
-      "name": "etaf-component-key-is-framework-owned-and-render-result-is-typed",
-      "file": "tests/etaf-component-frontends-tests.el",
-      "purpose": "Identity metadata stays outside business props and node lists stay invalid."
-    },
-    {
-      "name": "etaf-component-frontends-compose-context-theme-style-and-behavior",
-      "file": "tests/etaf-component-frontends-tests.el",
-      "purpose": "Test child inheritance and composition; separate tests cover slot authors."
-    },
-    {
-      "name": "etaf-component-host-attrs-fall-through-one-root-chain",
-      "file": "tests/etaf-component-frontends-tests.el",
-      "purpose": "Undeclared Host attrs cross a root Component chain without entering props."
-    },
-    {
-      "name": "etaf-component-host-attrs-reject-ambiguous-or-invalid-targets",
-      "file": "tests/etaf-component-frontends-tests.el",
-      "purpose": "Fallthrough fails closed for unknown, duplicate, conflicting, and multi-root input."
-    },
-    {
-      "name": "etaf-component-host-attrs-rollback-root-shape-failure",
-      "file": "tests/etaf-component-frontends-tests.el",
-      "purpose": "A later multi-root result cannot publish or retire the previous root."
-    },
-    {
-      "name": "etaf-component-compiled-host-sites-are-instance-scoped",
-      "file": "tests/etaf-component-frontends-tests.el",
-      "purpose": "Two instances of one compiled Component never share generated Host refs."
-    },
-    {
-      "name": "etaf-data-controller-loads-query-and-status",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Load memory source records through the public controller API."
-    },
-    {
-      "name": "etaf-data-controller-accepts-prepared-initial-result",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Seed one data-ready Controller without a second source call."
-    },
-    {
-      "name": "etaf-data-controller-reloads-for-pagination",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Reload when controller pagination refs change."
-    },
-    {
-      "name": "etaf-data-imperative-pagination-reloads-without-auto-load",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Public pager commands reload Controllers that opt out of AUTO-LOAD."
-    },
-    {
-      "name": "etaf-data-source-page-normalization-does-not-reload-twice",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Avoid a second reload when source results normalize page refs."
-    },
-    {
-      "name": "etaf-data-memory-source-mutates-and-reloads",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Apply source mutations through the controller boundary."
-    },
-    {
-      "name": "etaf-data-mutate-many-reconciles-once-and-keeps-order",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "A batch writes every operation in order and reloads the Controller once."
-    },
-    {
-      "name": "etaf-data-mutate-many-uses-batch-capability-once",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "A batch-capable source receives the whole operation list exactly once."
-    },
-    {
-      "name": "etaf-data-mutate-many-reports-partial-failure",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "A signaled operation stops the batch and completed results stay visible."
-    },
-    {
-      "name": "etaf-data-mutate-many-rejects-asynchronous-batches",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Reject an asynchronous batch result instead of publishing it as a value."
-    },
-    {
-      "name": "etaf-data-memory-source-supports-keyword-alist-records",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Query and mutate memory records represented as keyword alists."
-    },
-    {
-      "name": "etaf-data-errors-are-observable-and-resignaled",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Store source load errors in controller state and re-signal them."
-    },
-    {
-      "name": "etaf-data-m4a-malformed-load-publishes-atomic-error",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "A malformed source result leaves old data intact and exits loading."
-    },
-    {
-      "name": "etaf-data-m4a-loading-projection-fault-exits-terminally",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "A loading dispatch fault publishes error and prevents the mutation call."
-    },
-    {
-      "name": "etaf-data-selected-refs-are-stable-and-differential",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Selected refs keep identity and notify only changed identities."
-    },
-    {
-      "name": "etaf-data-select-one-replaces-existing-selection",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Single-selection consumers replace, rather than adjoin, identities."
-    },
-    {
-      "name": "etaf-data-selected-item-resolves-the-current-identity",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Resolve a selected identity to the loaded item through the public helper."
-    },
-    {
-      "name": "etaf-data-stop-disposes-source-and-controller",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Stop controller lifecycle resources and reject later operations."
-    },
-    {
-      "name": "etaf-data-source-rejects-invalid-observation-provider",
-      "file": "tests/etaf-data-tests.el",
-      "purpose": "Require an explicit source provider to be a non-nil symbol."
-    },
-    {
-      "name": "etaf-docs-readme-examples-mount-and-dispatch-in-fresh-emacs",
-      "file": "tests/etaf-docs-tests.el",
-      "purpose": "Both READMEs must work from their exact requires in isolated processes."
-    },
-    {
-      "name": "etaf-dynamic-components-removed-slot-selects-fallback",
-      "file": "tests/etaf-dynamic-components-tests.el",
-      "purpose": "etaf dynamic components removed slot selects fallback"
-    },
-    {
-      "name": "etaf-dynamic-components-empty-candidate-props-and-slots",
-      "file": "tests/etaf-dynamic-components-tests.el",
-      "purpose": "Slot programs observe present empty inputs in their caller's environment."
-    },
-    {
-      "name": "etaf-dynamic-components-root-slot-context-matches-component-author",
-      "file": "tests/etaf-dynamic-components-tests.el",
-      "purpose": "Root-owned slots use root Context while ordinary factories use consumers."
-    },
-    {
-      "name": "etaf-dynamic-components-parent-range-retargets-lexical-programs",
-      "file": "tests/etaf-dynamic-components-tests.el",
-      "purpose": "Fresh lexical inputs update stable child Range owners and roll back errors."
-    },
-    {
-      "name": "etaf-dynamic-components-helper-expr-keeps-dependencies-local",
-      "file": "tests/etaf-dynamic-components-tests.el",
-      "purpose": "Direct and structural-expression use retain the same child dependencies."
-    },
-    {
-      "name": "etaf-dynamic-components-invalid-output-has-public-context",
-      "file": "tests/etaf-dynamic-components-tests.el",
-      "purpose": "etaf dynamic components invalid output has public context"
-    },
-    {
-      "name": "etaf-dynamic-components-pure-stateless-output-matches-mounted",
-      "file": "tests/etaf-dynamic-components-tests.el",
-      "purpose": "etaf dynamic components pure stateless output matches mounted"
-    },
-    {
-      "name": "etaf-dynamic-components-theme-default-respects-property-alias",
-      "file": "tests/etaf-dynamic-components-tests.el",
-      "purpose": "etaf dynamic components theme default respects property alias"
-    },
-    {
-      "name": "etaf-dynamic-components-theme-preserves-anonymous-host-layout",
-      "file": "tests/etaf-dynamic-components-tests.el",
-      "purpose": "Theme changes preserve visible geometry and interactive Host bounds."
-    },
-    {
-      "name": "etaf-forward-disabled-or-recomputes-and-guards-public-input",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "Outer nil never enables an internally disabled Host; later inputs recover."
-    },
-    {
-      "name": "etaf-forward-press-capture-identifies-the-target-panel",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "etaf-event-target-within-p tells a root press or capture callback whether the pressed Host lies inside a given panel."
-    },
-    {
-      "name": "etaf-forward-business-conversion-precedes-subscriptions",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "A consumed change prop remains the business conversion for one press."
-    },
-    {
-      "name": "etaf-forward-wrapper-duplicate-behaviors-fail-before-install",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "Do not lose duplicate names when declared use props consume fallthrough."
-    },
-    {
-      "name": "etaf-forward-failed-callback-stops-outer-subscriptions",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "An inner callback error stops outer subscriptions and Behaviors."
-    },
-    {
-      "name": "etaf-forward-disabled-behavior-never-installs",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "Final disabled state, including Behavior defaults, precedes installation."
-    },
-    {
-      "name": "etaf-forward-behavior-disabled-transitions-and-rollback",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "Commit disables clean up once; failed disables preserve the old resource."
-    },
-    {
-      "name": "etaf-forward-failed-enable-disposes-only-candidate-behavior",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "A failed enable cleans its new resource while committed Host stays disabled."
-    },
-    {
-      "name": "etaf-forward-component-overlay-promotes-behavior-lifetime",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "A locally enabled Component owns its installed Behavior through teardown."
-    },
-    {
-      "name": "etaf-forward-component-overlay-removes-use-resources",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "Changing or removing use retires obsolete names on a retained Host."
-    },
-    {
-      "name": "etaf-forward-carried-component-keeps-behavior-resource",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "A Root update carrying an unchanged Component retains its Host resource."
-    },
-    {
-      "name": "etaf-forward-callback-snapshot-changes-only-after-commit",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "Composed subscriptions preserve committed scalar props after render fails."
-    },
-    {
-      "name": "etaf-forward-focused-control-follows-changing-layout",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "Repeated keyboard activation follows a retained control after width changes."
-    },
-    {
-      "name": "etaf-forward-layout-update-respects-manually-moved-point",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "A layout commit must not pull point back after the user leaves a control."
-    },
-    {
-      "name": "etaf-forward-focused-point-survives-failed-publication",
-      "file": "tests/etaf-event-forwarding-tests.el",
-      "purpose": "A failed candidate retains the old focus and point; the next commit follows."
-    },
-    {
-      "name": "etaf-performance-mode-rejects-non-runtime-buffer",
-      "file": "tests/etaf-performance-tests.el",
-      "purpose": "The buffer-local convenience requires a mounted Runtime."
-    },
-    {
-      "name": "etaf-performance-environment-reports-native-jit-state",
-      "file": "tests/etaf-performance-tests.el",
-      "purpose": "Expose background JIT state beside absolute latency records."
-    },
-    {
-      "name": "etaf-render-view-equivalent-to-view-and-node",
-      "file": "tests/etaf-render-view-tests.el",
-      "purpose": "All frontends produce the same visible structure and Host properties."
-    },
-    {
-      "name": "etaf-render-view-prop-loop-conflicts-match-view",
-      "file": "tests/etaf-render-view-tests.el",
-      "purpose": "Nested Views use Component prop validation during definition expansion."
-    },
-    {
-      "name": "etaf-render-view-preserves-ordinary-lexical-shadowing",
-      "file": "tests/etaf-render-view-tests.el",
-      "purpose": "Let and lambda bindings shadow prop shorthand using normal Elisp scope."
-    },
-    {
-      "name": "etaf-render-view-retains-surrounding-macro-environment",
-      "file": "tests/etaf-render-view-tests.el",
-      "purpose": "A lexically scoped macro cannot hide a View from prop grammar checks."
-    },
-    {
-      "name": "etaf-render-view-props-shadow-surrounding-symbol-macros",
-      "file": "tests/etaf-render-view-tests.el",
-      "purpose": "A Component's prop scope overrides same-named outer symbol macros."
-    },
-    {
-      "name": "etaf-render-view-byte-compiled-callback-retains-lexical-props",
-      "file": "tests/etaf-render-view-tests.el",
-      "purpose": "Compiled Component definitions preserve the same delayed callback scope."
-    },
-    {
-      "name": "etaf-render-view-keeps-deferred-dependencies-local",
-      "file": "tests/etaf-render-view-tests.el",
-      "purpose": "Capturing stable handles does not pull reactive reads into Component render."
-    },
-    {
-      "name": "etaf-render-view-projects-caller-owned-slots",
-      "file": "tests/etaf-render-view-tests.el",
-      "purpose": "Embedded Views distinguish projections from named inputs and caller props."
-    },
-    {
-      "name": "etaf-render-view-callback-captures-committed-prop-snapshot",
-      "file": "tests/etaf-render-view-tests.el",
-      "purpose": "A normal lexical callback uses new committed props and survives rollback."
-    },
-    {
-      "name": "etaf-render-view-callback-live-ref-is-not-a-ui-snapshot",
-      "file": "tests/etaf-render-view-tests.el",
-      "purpose": "An explicit shared ref remains live even when a sibling rejects its UI."
-    },
-    {
-      "name": "etaf-resource-loads-synchronous-value",
-      "file": "tests/etaf-resource-tests.el",
-      "purpose": "Expose successful loader output through the public Resource readers."
-    },
-    {
-      "name": "etaf-resource-captures-loader-error-state",
-      "file": "tests/etaf-resource-tests.el",
-      "purpose": "Capture synchronous loader failures without signaling them."
-    },
-    {
-      "name": "etaf-resource-reload-runs-cleanup-and-replaces-value",
-      "file": "tests/etaf-resource-tests.el",
-      "purpose": "Run loader cleanup on reload and disposal."
-    },
-    {
-      "name": "etaf-error-boundary-run-handles-body-error",
-      "file": "tests/etaf-resource-tests.el",
-      "purpose": "Convert an explicitly wrapped body error into a handler result."
-    },
-    {
-      "name": "etaf-error-boundary-run-preserves-unhandled-errors",
-      "file": "tests/etaf-resource-tests.el",
-      "purpose": "Do not swallow errors outside the wrapped body or inside the handler."
-    },
-    {
-      "name": "etaf-view-property-region-precedes-children",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Reject a property that appears after a structural child."
-    },
-    {
-      "name": "etaf-view-ordinary-control-flow-belongs-in-expr",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Reject ordinary Elisp control flow in the child region."
-    },
-    {
-      "name": "etaf-view-attribute-values-are-ordinary-elisp",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Evaluate an attribute expression without an extra evaluation wrapper."
-    },
-    {
-      "name": "etaf-host-metadata-uses-the-frozen-runtime-grammar",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Semantic metadata should validate before it reaches Runtime or Ebox."
-    },
-    {
-      "name": "etaf-view-expr-evaluates-control-flow",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Use the sole child computation bridge for ordinary control flow."
-    },
-    {
-      "name": "etaf-view-expr-can-return-a-view",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Allow an expression to return a dynamically constructed View."
-    },
-    {
-      "name": "etaf-text-expr-requires-one-string",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Reject structural and sequence values at the Text interpolation boundary."
-    },
-    {
-      "name": "etaf-view-expr-rejects-extra-properties",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Reject an expr property other than `:value'."
-    },
-    {
-      "name": "etaf-view-quoted-view-data-is-not-executed",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Reject quoted View data when it reaches the executable child boundary."
-    },
-    {
-      "name": "etaf-view-layouts-lower-to-ebox",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Lower row and column Hosts through Ebox's public constructors."
-    },
-    {
-      "name": "etaf-view-box-rejects-invalid-layout",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Reject an invalid canonical Box layout before publication."
-    },
-    {
-      "name": "etaf-runtime-box-retains-child-text-update",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Mounted canonical Box should retain its layout while Text updates."
-    },
-    {
-      "name": "etaf-view-prefixed-host-is-not-an-implicit-alias",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Keep the core Host registry exact instead of deriving prefix aliases."
-    },
-    {
-      "name": "etaf-component-prefixed-name-is-not-an-implicit-alias",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Keep an `etaf-' Component name exact in the public registry."
-    },
-    {
-      "name": "etaf-component-registry-does-not-generate-elisp-aliases",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Use the exact Component name even when an Elisp function collides."
-    },
-    {
-      "name": "etaf-component-rejects-unknown-props",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Reject undeclared Component props at the Component boundary."
-    },
-    {
-      "name": "etaf-component-definition-keywords-have-one-owner",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Accept the two definition modes and reject ambiguous combinations."
-    },
-    {
-      "name": "etaf-component-slots-share-one-default-and-named-model",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Render default children and explicit named slot contributions."
-    },
-    {
-      "name": "etaf-component-nested-slot-inputs-stay-named",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Treat a nested Component's slot child as input, not as projection."
-    },
-    {
-      "name": "etaf-theme-token-updates-host-property-without-component-render",
-      "file": "tests/etaf-tests.el",
-      "purpose": "A reactive Theme token should publish one Host paint update directly."
-    },
-    {
-      "name": "etaf-theme-resolves-explicit-light-dark-palette",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Resolve semantic palette pairs without coupling Theme to a renderer."
-    },
-    {
-      "name": "etaf-box-composes-adjacent-styled-text-runs",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Represent styled runs as sibling Text nodes, never a nested Text tree."
-    },
-    {
-      "name": "etaf-runtime-recollects-late-branch-dependencies",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Recollect refs introduced by a branch after the initial mount."
-    },
-    {
-      "name": "etaf-context-provide-inject-follows-component-tree",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Test Component inheritance; separate slot tests cover author environments."
-    },
-    {
-      "name": "etaf-reactive-computed-watch-and-cleanup-share-one-model",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Compute values, watch changes, and dispose watch cleanup deterministically."
-    },
-    {
-      "name": "etaf-stateful-props-update-without-rerunning-setup",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Track a reactive root prop while retaining one Component setup Scope."
-    },
-    {
-      "name": "etaf-runtime-keeps-last-committed-view-after-render-error",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Rollback a failed candidate without losing the last committed buffer."
-    },
-    {
-      "name": "etaf-runtime-keeps-published-state-when-lifecycle-fails",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Keep retained state aligned with the published tree after hook failure."
-    },
-    {
-      "name": "etaf-events-support-payload-and-cyclic-focus",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Dispatch a payload and cycle focus through visible tab-index Hosts."
-    },
-    {
-      "name": "etaf-event-dispatch-batches-reactive-publication",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Publish one final tree for a callback's reactive dependency chain."
-    },
-    {
-      "name": "etaf-runtime-equal-component-input-skips-render",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Promote an input target dependency change without running its render target."
-    },
-    {
-      "name": "etaf-runtime-shared-inline-source-updates-distinct-text-hosts",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Publish two distinct Text hosts that read one shared source in one commit."
-    },
-    {
-      "name": "etaf-runtime-nested-component-input-reads-caller-candidate-props",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Resolve child input thunks from final candidate parent props."
-    },
-    {
-      "name": "etaf-runtime-context-provider-promotes-consumer-atomically",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Promote provider and dependent Host property only with their generation."
-    },
-    {
-      "name": "etaf-event-dispatch-noop-does-not-publish",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Do not publish when an event callback changes no reactive state."
-    },
-    {
-      "name": "etaf-event-dispatch-batches-behavior-two-ref-write",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Batch a Behavior callback that writes two reactive refs."
-    },
-    {
-      "name": "etaf-event-dispatch-batches-resource-success-and-error",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Batch synchronous Resource success and error publications per event."
-    },
-    {
-      "name": "etaf-mount-publishes-through-ebox",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Mount a View into a buffer using Ebox's buffer publication API."
-    },
-    {
-      "name": "etaf-mount-accepts-final-initial-viewport",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Publish the first generation at its final viewport without a rerender."
-    },
-    {
-      "name": "etaf-prop-callbacks-follow-successful-publication",
-      "file": "tests/etaf-prop-callback-tests.el",
-      "purpose": "Deferred callbacks retain committed prop snapshots, preserve live refs and recover after rejected output."
-    },
-    {
-      "name": "etaf-component-defaults-retain-instance-values",
-      "file": "tests/etaf-component-defaults-tests.el",
-      "purpose": "Absent inputs use retained defaults; explicit nil, overrides and rejected candidates preserve the input contract."
-    },
-    {
-      "name": "etaf-component-defaults-isolate-instances-and-remounts",
-      "file": "tests/etaf-component-defaults-tests.el",
-      "purpose": "Mutable default values belong to one retained component and are released across remounts."
-    },
-    {
-      "name": "etaf-component-defaults-validate-declarations",
-      "file": "tests/etaf-component-defaults-tests.el",
-      "purpose": "Invalid default declarations fail with a component definition error."
-    },
-    {
-      "name": "etaf-component-defaults-support-pure-rendering",
-      "file": "tests/etaf-component-defaults-tests.el",
-      "purpose": "Stateless default inputs work through etaf-render without a runtime."
-    },
-    {
-      "name": "etaf-component-defaults-publish-first-use-atomically",
-      "file": "tests/etaf-component-defaults-tests.el",
-      "purpose": "A rejected first use cannot commit default inputs; recovery initializes and retains the successful value."
-    },
-    {
-      "name": "etaf-component-defaults-preserve-list-identity-on-local-updates",
-      "file": "tests/etaf-component-defaults-tests.el",
-      "purpose": "Component-local updates preserve default list object identity in published callbacks."
-    },
-    {
-      "name": "etaf-scope-stop-releases-effects-and-owned-children",
-      "file": "tests/etaf-scope-tests.el",
-      "purpose": "Standalone scopes release effects and children, reject reentry and dispose exactly once."
-    },
-    {
-      "name": "etaf-scope-stop-contains-cleanup-errors-and-quits",
-      "file": "tests/etaf-scope-tests.el",
-      "purpose": "Cleanup failures and quits are returned without preventing remaining teardown."
-    },
-    {
-      "name": "etaf-scope-rejects-cleanup-registration-after-stop",
-      "file": "tests/etaf-scope-tests.el",
-      "purpose": "Disposed scopes cannot acquire unreachable cleanup during a still-active call."
-    },
-    {
-      "name": "etaf-behavior-context-reports-installation-and-cleanup",
-      "file": "tests/etaf-behavior-context-tests.el",
-      "purpose": "Installers can query owning Runtime, effective reference and protected installation properties through cleanup."
-    },
-    {
-      "name": "etaf-behavior-context-candidate-facts-do-not-publish-early",
-      "file": "tests/etaf-behavior-context-tests.el",
-      "purpose": "Candidate context facts remain distinct from committed Host inputs during failure and replacement cleanup."
-    },
-    {
-      "name": "etaf-tracked-props-follow-publication-and-disposal",
-      "file": "tests/etaf-tracked-props-tests.el",
-      "purpose": "Setup-derived values and watch notifications follow successful prop updates and stop on disposal."
-    },
-    {
-      "name": "etaf-tracked-props-reach-retained-descendants",
-      "file": "tests/etaf-tracked-props-tests.el",
-      "purpose": "Root and local input changes publish retained descendant consumers before notifying watchers."
-    },
-    {
-      "name": "etaf-tracked-props-restore-successful-computation-after-late-failure",
-      "file": "tests/etaf-tracked-props-tests.el",
-      "purpose": "A late render failure rolls back successful candidate computations and preserves committed callbacks."
-    },
-    {
-      "name": "etaf-tracked-props-rollback-restores-conditional-dependencies",
-      "file": "tests/etaf-tracked-props-tests.el",
-      "purpose": "Rejected prop-driven branches restore computed dependencies while ordinary business refs remain live."
-    },
-    {
-      "name": "etaf-tracked-props-defaults-and-applications-are-independent",
-      "file": "tests/etaf-tracked-props-tests.el",
-      "purpose": "Tracked sources include defaults, retain per-instance identity and reject reads from disposed owners."
-    },
-    {
-      "name": "etaf-local-ref-retains-target-across-reorder-and-failure",
-      "file": "tests/etaf-local-ref-tests.el",
-      "purpose": "Distinct instance handles retain committed event targets across reorder and failed publication; removal and replacement end old targets."
-    },
-    {
-      "name": "etaf-local-ref-isolates-applications-and-rejected-creation",
-      "file": "tests/etaf-local-ref-tests.el",
-      "purpose": "Rejected creations and independent applications cannot acquire another instance target."
-    },
-    {
-      "name": "etaf-local-ref-validates-context-and-copies-name",
-      "file": "tests/etaf-local-ref-tests.el",
-      "purpose": "Local reference creation validates setup context and input names while preserving ownership after caller string mutation."
-    },
-    {
-      "name": "etaf-component-rule-replacement-validates-before-mutation",
-      "file": "tests/etaf-rules-tests.el",
-      "purpose": "Component style replacements share ECSS selector and Ebox schema validation and preserve prior rules after invalid input."
-    },
-    {
-      "name": "etaf-component-rules-defer-theme-value-validation",
-      "file": "tests/etaf-rules-tests.el",
-      "purpose": "Theme token rules validate property facts statically and actual values after contextual resolution."
-    },
-    {
-      "name": "etaf-selector-facts-pure-hosts-preserve-semantics",
-      "file": "tests/etaf-selector-facts-tests.el",
-      "purpose": "Host role, ARIA presence and disabled state are visible to shared structural selectors."
-    },
-    {
-      "name": "etaf-selector-facts-follow-accepted-reactive-properties",
-      "file": "tests/etaf-selector-facts-tests.el",
-      "purpose": "Accepted reactive metadata reaches Ebox selectors while failed candidates preserve committed facts."
-    },
-    {
-      "name": "etaf-layout-values-match-shared-ebox-projection",
-      "file": "tests/etaf-cascade-layout-tests.el",
-      "purpose": "Box, Row, Column, Flex and Grid share Ebox projection for tagged layout declarations."
-    },
-    {
-      "name": "etaf-layout-values-publish-reactively-and-reject-invalid-input",
-      "file": "tests/etaf-cascade-layout-tests.el",
-      "purpose": "Reactive tagged layout changes match fresh provider output and invalid candidates preserve committed display."
-    },
-    {
-      "name": "etaf-theme-defaults-use-ecss-origin-on-retained-updates",
-      "file": "tests/etaf-theme-cascade-tests.el",
-      "purpose": "Reactive Theme defaults use UA precedence, survive inline updates and reject invalid candidate values."
-    },
-    {
-      "name": "etaf-theme-defaults-match-provider-ua-origin",
-      "file": "tests/etaf-theme-cascade-tests.el",
-      "purpose": "Mounted Component output matches Ebox UA-important precedence over inline importance."
-    },
-    {
-      "name": "etaf-theme-defaults-update-empty-layout-and-isolate-apps",
-      "file": "tests/etaf-theme-cascade-tests.el",
-      "purpose": "Empty Theme defaults acquire and remove geometry through retained updates matching fresh mounts without changing another application."
-    },
-    {
-      "name": "etaf-component-rules-share-specificity-structure-and-reactivity",
-      "file": "tests/etaf-component-cascade-tests.el",
-      "purpose": "Specificity, source order and physical sibling selectors match pure output after retained class updates."
-    },
-    {
-      "name": "etaf-component-rules-mark-every-transparent-root",
-      "file": "tests/etaf-component-cascade-tests.el",
-      "purpose": "Every transparent forest root accepts root rules while excluding ordinary descendant rules."
-    },
-    {
-      "name": "etaf-component-rules-retain-slot-ownership-across-theme-updates",
-      "file": "tests/etaf-component-cascade-tests.el",
-      "purpose": "Reactive component rule revisions reach retained caller-owned slots, isolate child fallback and preserve failed publications."
-    },
-    {
-      "name": "etaf-component-rules-preserve-code-slot-author",
-      "file": "tests/etaf-component-cascade-tests.el",
-      "purpose": "Code slot accessors preserve caller style ownership through recomposition in pure and retained Components."
-    },
-    {
-      "name": "etaf-component-rules-preserve-importance-and-custom-properties",
-      "file": "tests/etaf-component-cascade-tests.el",
-      "purpose": "Component author importance overrides normal inline values and inherited custom properties resolve through ECSS."
-    },
-    {
-      "name": "etaf-native-activation-matches-direct-ebox-counter",
-      "file": "tests/etaf-native-activation-tests.el",
-      "purpose": "Direct Ebox and ETAF counters update through the same public native activation command."
-    },
-    {
-      "name": "etaf-native-navigation-and-activation-preserve-hit-barriers",
-      "file": "tests/etaf-native-activation-tests.el",
-      "purpose": "Ebox navigation discovers ETAF handlers and preserves disabled and callbackless descendant hit barriers."
-    },
-    {
-      "name": "etaf-native-activation-reads-only-committed-handlers",
-      "file": "tests/etaf-native-activation-tests.el",
-      "purpose": "Native commands observe only current committed handler snapshots across successful and rejected updates."
-    },
-    {
-      "name": "etaf-native-keyboard-preserves-explicit-focused-parent",
-      "file": "tests/etaf-native-activation-tests.el",
-      "purpose": "Native RET respects explicit parent or child focus when their visible positions coincide."
-    },
-    {
-      "name": "etaf-focus-shares-ebox-ownership-and-reactive-navigation",
-      "file": "tests/etaf-focus-tests.el",
-      "purpose": "Both APIs observe one focus while tab order, disabled and visibility change."
-    },
-    {
-      "name": "etaf-focus-follows-identity-across-removal-rejection-and-apps",
-      "file": "tests/etaf-focus-tests.el",
-      "purpose": "Shared focus follows references through reorder, isolates mounts and rejects candidates."
-    },
-    {
-      "name": "etaf-native-keyboard-uses-shared-buffer-bindings-and-activation",
-      "file": "tests/etaf-native-activation-tests.el",
-      "purpose": "ETAF mounts use Ebox TAB and activation, sharing focus and releasing mode bindings on unmount."
-    },
-    {
-      "name": "etaf-disabled-state-shares-provider-cascade",
-      "file": "tests/etaf-component-cascade-tests.el",
-      "purpose": "Reactive disabled input gives pure and mounted component rules the same state."
-    },
-    {
-      "name": "etaf-component-focus-rules-follow-shared-publication",
-      "file": "tests/etaf-component-cascade-tests.el",
-      "purpose": "Component focus rules share Ebox focus, reactive publication and pure isolation."
-    },
-    {
-      "name": "etaf-native-activation-retains-automatic-target-after-style-update",
-      "file": "tests/etaf-native-activation-tests.el",
-      "purpose": "Automatic Host identity continues to activate through RET after retained style changes and disable/re-enable updates."
-    },
-    {
-      "name": "etaf-slot-view-composes-controlled-and-conditional-updates",
-      "file": "tests/etaf-slot-updates-tests.el",
-      "purpose": "View slots keep one interactive child and current conditional content across repeated updates."
-    },
-    {
-      "name": "etaf-slot-code-composes-controlled-and-conditional-updates",
-      "file": "tests/etaf-slot-updates-tests.el",
-      "purpose": "Code slots keep one interactive child and current conditional content across repeated updates."
-    },
-    {
-      "name": "etaf-instance-bindings-retain-values-and-current-props",
-      "file": "tests/etaf-instance-bindings-tests.el",
-      "purpose": "Named instance handles retain identity, committed callbacks and reactive output through reorder, rejected publication, recovery and unmount."
-    },
-    {
-      "name": "etaf-instance-bindings-clean-up-rejected-initialization",
-      "file": "tests/etaf-instance-bindings-tests.el",
-      "purpose": "Failed initialization releases tracked sources, while a later mount owns fresh values."
-    },
-    {
-      "name": "etaf-instance-bindings-validate-definition-names",
-      "file": "tests/etaf-instance-bindings-tests.el",
-      "purpose": "Binding declarations reject malformed, duplicate and prop-shadowing names."
-    },
-    {
-      "name": "etaf-instance-bindings-preserve-setup-result-contract",
-      "file": "tests/etaf-instance-bindings-tests.el",
-      "purpose": "Named bindings ignore lifecycle initialization results and reject the opaque setup-state accessor."
-    },
-    {
-      "name": "etaf-instance-bindings-compose-resource-state-and-inherited-paint",
-      "file": "tests/etaf-instance-bindings-tests.el",
-      "purpose": "An instance-owned Resource publishes reload, error, cleanup and retry consistently with inherited paint in nested text."
-    },
-    {
-      "name": "etaf-value-update-replaces-structured-state-and-renders",
-      "file": "tests/etaf-value-update-tests.el",
-      "purpose": "Public events replace structured ref values, preserve previous objects and stop publishing after unmount."
-    },
-    {
-      "name": "etaf-value-update-rejects-invalid-writes-before-updater",
-      "file": "tests/etaf-value-update-tests.el",
-      "purpose": "Read-only and render writes reject before updater execution; updater failure preserves the ref."
-    },
-    {
-      "name": "etaf-value-update-preserves-write-after-rejected-publication",
-      "file": "tests/etaf-value-update-tests.el",
-      "purpose": "A rendering failure retains the application replacement and later repair updates the displayed value."
-    },
-    {
       "name": "etaf-async-resource-native-timer-refreshes-retained-value",
       "file": "tests/etaf-async-tests.el",
       "purpose": "Native completion replaces a retained value and releases it once."
@@ -1124,14 +84,54 @@
       "purpose": "A pending write and its commit are observable even before first page completion."
     },
     {
-      "name": "etaf-native-input-uses-the-current-event-and-restores-focus",
-      "file": "tests/etaf-native-input-tests.el",
-      "purpose": "The current event supplies the mounted owner, including from another buffer."
+      "name": "etaf-component-lifecycle-hooks-run-in-order",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "Mounted hooks run children first; branch removal runs unmounted hooks."
     },
     {
-      "name": "etaf-native-input-unmount-cancels-results-and-forwarded-observers",
-      "file": "tests/etaf-native-input-tests.el",
-      "purpose": "Closing a mounted owner during input cannot publish a value or observer."
+      "name": "etaf-component-tracked-props-update-without-setup",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "`etaf-prop' tracks inputs while setup and bindings run once."
+    },
+    {
+      "name": "etaf-component-validation-rejects-invalid-input",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "Invalid props signal and keep the last accepted render."
+    },
+    {
+      "name": "etaf-component-render-frontend-and-state",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "`:render' returns ordinary Views and setup state is readable."
+    },
+    {
+      "name": "etaf-component-context-reaches-descendants",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "Provided values reach rendered descendants; slot content keeps caller Context."
+    },
+    {
+      "name": "etaf-component-theme-tokens-follow-provided-theme",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "Theme tokens in Component rules resolve from the provided Theme."
+    },
+    {
+      "name": "etaf-component-local-ref-resolves-committed-host",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "A local Host reference supports focus and position queries."
+    },
+    {
+      "name": "etaf-component-output-shape-changes-keep-bindings",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "Output may switch between nil, one View and a fragment."
+    },
+    {
+      "name": "etaf-component-error-boundary-handles-errors",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "The error boundary returns the handler's value for signaled errors."
+    },
+    {
+      "name": "etaf-component-unknown-component-signals",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "Unknown Component tags are rejected at View construction."
     },
     {
       "name": "etaf-data-source-capabilities-compose-async-storage-and-disposal",
@@ -1139,264 +139,149 @@
       "purpose": "An adapted source retains storage and lifecycle while Data publishes asynchronous results."
     },
     {
-      "name": "etaf-conditional-component-retires-before-stale-input-work",
-      "file": "tests/etaf-conditional-lifecycle-tests.el",
-      "purpose": "Repeated conditional removal and recreation retain matching text, callbacks and disposal."
-    },
-    {
-      "name": "etaf-conditional-data-detail-retires-staged-descendants",
-      "file": "tests/etaf-conditional-lifecycle-tests.el",
-      "purpose": "Filtering or deleting an asynchronously refreshed selection releases its whole detail and permits later loads and reselection."
-    },
-    {
-      "name": "etaf-drag-publishes-motion-bursts-through-ebox",
-      "file": "tests/etaf-drag-tests.el",
-      "purpose": "Native motion bursts publish intermediate active output before release, preserve the Host target and accept the exact release endpoint."
-    },
-    {
-      "name": "etaf-drag-cancellation-clears-transient-state-on-disable",
-      "file": "tests/etaf-drag-tests.el",
-      "purpose": "Disabling a retained target delivers cancellation and then prevents new input."
-    },
-    {
-      "name": "etaf-draggable-behavior-publishes-coordinate-refs",
-      "file": "tests/etaf-geometry-behavior-tests.el",
-      "purpose": "A reusable Behavior translates Ebox gesture deltas into caller-owned coordinate refs."
-    },
-    {
-      "name": "etaf-resizable-behavior-clamps-and-keeps-left-edge",
-      "file": "tests/etaf-geometry-behavior-tests.el",
-      "purpose": "A reusable resize Behavior updates geometry refs and preserves the opposite edge under bounds."
-    },
-    {
-      "name": "etaf-geometry-behavior-converts-ebox-deltas",
-      "file": "tests/etaf-geometry-behavior-tests.el",
-      "purpose": "A caller-provided converter maps Ebox pixel deltas into logical geometry units."
-    },
-    {
-      "name": "etaf-geometry-behaviors-reject-invalid-contracts",
-      "file": "tests/etaf-geometry-behavior-tests.el",
-      "purpose": "Geometry Behaviors reject missing refs, duplicate edges and invalid bounds at construction."
-    },
-    {
-      "name": "etaf-native-affordances-match-ebox-inheritance",
-      "file": "tests/etaf-native-affordance-tests.el",
-      "purpose": "Nested Hosts preserve Ebox native hover, help and explicit nil boundaries."
-    },
-    {
-      "name": "etaf-native-affordances-update-through-component-attributes",
-      "file": "tests/etaf-native-affordance-tests.el",
-      "purpose": "Forwarded affordances update with reactive inputs without replacing activation."
-    },
-    {
-      "name": "etaf-native-hover-content-forwards-to-ebox-text-surface",
-      "file": "tests/etaf-native-affordance-tests.el",
-      "purpose": "ETAF forwards Ebox hover content through text properties and opts only that mounted buffer into local motion tracking."
-    },
-    {
-      "name": "etaf-component-active-rules-share-native-press-lifecycle",
-      "file": "tests/etaf-component-cascade-tests.el",
-      "purpose": "Native primary press publishes scoped active paint in its mounted instance and releases before one reactive activation."
-    },
-    {
-      "name": "etaf-host-properties-batches-compose-shared-ancestors-and-retry",
-      "file": "tests/etaf-host-properties-tests.el",
-      "purpose": "Batched sibling properties and inline text compose through shared slots and Components, preserve committed output on rejection, and remain current through retry and enclosing structural updates."
-    },
-    {
-      "name": "etaf-host-properties-compose-with-retained-components",
-      "file": "tests/etaf-host-properties-tests.el",
-      "purpose": "Reactive parent geometry and interaction changes compose with retained Component state, child content and conditional siblings."
-    },
-    {
-      "name": "etaf-slot-fragments-preserve-parent-layout",
-      "file": "tests/etaf-transparent-slots-tests.el",
-      "purpose": "Transparent declarative and programmatic slot components preserve direct-child Row, Column, Flex and Grid presentation."
-    },
-    {
-      "name": "etaf-slot-fragments-retain-keyed-children",
-      "file": "tests/etaf-transparent-slots-tests.el",
-      "purpose": "Named and default slots preserve keyed child state and focus through reorder, updates, removal and recreation without adding a layout container."
-    },
-    {
-      "name": "etaf-component-output-shapes-preserve-enclosing-layout",
-      "file": "tests/etaf-component-output-tests.el",
-      "purpose": "Zero, one and multiple Component roots can repeatedly change at the application root and inside Row, Column, Flex and Grid, matching fresh rendering."
-    },
-    {
-      "name": "etaf-component-output-shapes-retain-owner-and-child-lifetimes",
-      "file": "tests/etaf-component-output-tests.el",
-      "purpose": "A component keeps its state across output shape changes, retains keyed child state and focus while attached, and releases children and owners at their own lifecycle boundaries."
-    },
-    {
-      "name": "etaf-component-input-replacement-preserves-application-identity",
-      "file": "tests/etaf-input-identity-tests.el",
-      "purpose": "Both Component frontends accept replacement business objects through root, input, expression and slot updates while preserving instance state and focus."
-    },
-    {
-      "name": "etaf-keyed-items-follow-object-replacement",
-      "file": "tests/etaf-input-identity-tests.el",
-      "purpose": "Keyed Hosts and Components publish callbacks to replacement row objects with equal contents, retaining state and focus under the same key."
-    },
-    {
-      "name": "etaf-nested-reorder-keeps-state-visible-without-host-keys",
-      "file": "tests/etaf-nested-reorder-tests.el",
-      "purpose": "Nested row and column Components preserve local state, focus, visible updates and cleanup without repeating component keys on internal Hosts."
-    },
-    {
-      "name": "etaf-component-validation-reports-resolved-inputs",
-      "file": "tests/etaf-input-validation-tests.el",
-      "purpose": "Defaults and explicit inputs share validation, reporting the component, property, received value and expectation through the public error."
-    },
-    {
-      "name": "etaf-component-validation-precedes-setup-and-input-publication",
-      "file": "tests/etaf-input-validation-tests.el",
-      "purpose": "Rejected initial or updated props preserve lifecycle ownership and committed output across full and local input evaluation."
-    },
-    {
-      "name": "etaf-component-validation-rejects-malformed-definition",
-      "file": "tests/etaf-input-validation-tests.el",
-      "purpose": "Duplicate validation clauses and incomplete check metadata report definition errors."
-    },
-    {
-      "name": "etaf-focus-within-shares-provider-order-and-reactive-visibility",
-      "file": "tests/etaf-focus-within-tests.el",
-      "purpose": "ETAF panel navigation shares Ebox focus, nested ordering and reactive visibility without admitting outside controls."
-    },
-    {
-      "name": "etaf-performance-portable-report-is-a-detached-snapshot",
-      "file": "tests/etaf-performance-tests.el",
-      "purpose": "Portable performance reports identify the owning runtime and buffer, support explicit empty input and detach mutable labels from supplied record snapshots."
-    },
-    {
-      "name": "etaf-lifecycle-callbacks-expose-owning-runtime-buffer",
-      "file": "tests/etaf-runtime-publication-tests.el",
-      "purpose": "Lifecycle callbacks resolve the owning Runtime and target buffer when mounting by a buffer name from another caller buffer."
-    },
-    {
-      "name": "etaf-runtime-committed-queries-exclude-active-publication",
-      "file": "tests/etaf-runtime-publication-tests.el",
-      "purpose": "Committed Runtime queries reject provisional Ebox publication while preserving mounted state."
-    },
-    {
-      "name": "etaf-performance-correlates-render-and-publication-reports",
-      "file": "tests/etaf-runtime-publication-tests.el",
-      "purpose": "An observed Runtime event correlates Ebox rendering and publication reports with its visible result."
-    },
-    {
-      "name": "etaf-data-auto-load-survives-view-switches-without-reloading",
+      "name": "etaf-data-memory-source-loads-pages-and-query-forms",
       "file": "tests/etaf-data-tests.el",
-      "purpose": "Synchronous auto-load completes once; retained page switches preserve rows without reloading, pagination reloads once, and unmount stops automatic loads."
+      "purpose": "Memory sources support paging and all public query forms."
     },
     {
-      "name": "etaf-controlled-draggable-keeps-aggregate-state-authoritative",
-      "file": "tests/etaf-controlled-geometry-behavior-tests.el",
-      "purpose": "Controlled dragging emits detached aggregate geometry without creating a second persistent coordinate store."
+      "name": "etaf-data-status-refreshing-retains-items",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Refreshing keeps accepted items until the asynchronous completion lands."
     },
     {
-      "name": "etaf-controlled-resizable-applies-edge-and-bounds",
-      "file": "tests/etaf-controlled-geometry-behavior-tests.el",
-      "purpose": "Controlled resizing applies edge geometry and minimum bounds while preserving the opposite edge."
+      "name": "etaf-data-async-load-success-error-cancel-and-timeout",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Asynchronous loads publish success, error, cancellation and timeout states."
     },
     {
-      "name": "etaf-controlled-draggable-retains-origin-through-rerenders",
-      "file": "tests/etaf-controlled-geometry-behavior-tests.el",
-      "purpose": "A Behavior created in retained bindings keeps one drag origin through multi-motion parent projections."
+      "name": "etaf-data-memory-source-mutations-publish-outcomes",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Memory insert, update, delete, replace and reset reconcile the controller."
     },
     {
-      "name": "etaf-controlled-draggable-cancel-and-repeated-gestures-use-current-state",
-      "file": "tests/etaf-controlled-geometry-behavior-tests.el",
-      "purpose": "Cancellation clears transient drag state and each later gesture starts from the current aggregate geometry."
+      "name": "etaf-data-v2-certainty-outcomes-are-reported",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "V2 committed, rolled-back and unknown outcomes shape mutation envelopes."
     },
     {
-      "name": "etaf-controlled-resizable-retains-origin-through-rerenders",
-      "file": "tests/etaf-controlled-geometry-behavior-tests.el",
-      "purpose": "A retained resize Behavior applies move and end deltas from one start geometry through parent projections."
+      "name": "etaf-data-async-mutation-publishes-pending-outcome",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Asynchronous mutations expose pending and completed outcome envelopes."
     },
     {
-      "name": "etaf-runtime-update-host-geometry-uses-retained-provider-region",
-      "file": "tests/etaf-runtime-geometry-tests.el",
-      "purpose": "The ETAF incremental Host geometry boundary updates the retained Ebox region while leaving window policy to the caller."
+      "name": "etaf-data-mutate-many-reconciles-and-reports-prefix-failure",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Mutate-many uses batch capabilities and records failure prefixes."
     },
     {
-      "name": "etaf-runtime-content-fixed-canvas-keeps-batches-and-rebinds",
-      "file": "tests/etaf-runtime-content-tests.el",
-      "purpose": "Fixed content updates preserve rich text, reject invalid batches atomically and rebind after a resize."
+      "name": "etaf-data-retry-reconciliation-reloads-without-replaying-mutation",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Retry reloads a committed mutation after read-side failure only once."
     },
     {
-      "name": "etaf-runtime-update-host-content-publishes-image-cells",
-      "file": "tests/etaf-runtime-content-tests.el",
-      "purpose": "An image object is published as a Host content cell that keeps the caller's display specification, while a value that is neither a string nor an image signals an error."
+      "name": "etaf-data-selection-apis-and-selected-ref-stability",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Selection helpers maintain stable per-identity refs."
     },
     {
-      "name": "etaf-runtime-update-host-content-replaces-retained-text",
-      "file": "tests/etaf-runtime-content-tests.el",
-      "purpose": "The ETAF incremental Host content boundary replaces one retained text without an ordinary publication, and the next ordinary publication keeps the caller's state authoritative."
+      "name": "etaf-data-stop-disposes-source-and-rejects-access",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Stop returns cleanup errors, cancels work and rejects later operations."
     },
     {
-      "name": "etaf-runtime-update-host-content-rejects-invalid-targets",
-      "file": "tests/etaf-runtime-content-tests.el",
-      "purpose": "Invalid Host content targets signal an ETAF runtime error before any replacement, so a rejected batch leaves the committed text untouched."
+      "name": "etaf-data-initial-result-seeds-without-loading",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Prepared initial results seed a successful controller."
     },
     {
-      "name": "etaf-host-geometry-publishes-semantics-and-detached-snapshots",
-      "file": "tests/etaf-host-geometry-tests.el",
-      "purpose": "Repeated reactive geometry changes keep semantic properties, retained interactions and provider geometry coherent while earlier exported snapshots and property results remain unchanged."
+      "name": "etaf-data-owner-scope-disposes-controller",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Owner scope disposal stops its child controller."
     },
     {
-      "name": "etaf-host-geometry-recovers-after-invalid-input-and-replacement",
-      "file": "tests/etaf-host-geometry-tests.el",
-      "purpose": "Invalid geometry retains the committed picture and semantic revision; later resize, structural removal, replacement and movement recover with current geometry and interactions."
+      "name": "etaf-data-completion-publishes-atomically",
+      "file": "tests/etaf-data-tests.el",
+      "purpose": "Items, total and status change in one observer turn for a completion."
     },
     {
-      "name": "etaf-host-geometry-keeps-component-state-and-property-guards",
-      "file": "tests/etaf-host-geometry-tests.el",
-      "purpose": "Component-owned geometry updates retain local state and handlers while changed visibility follows ordinary publication and restores current position."
+      "name": "etaf-docs-readme-examples-mount-and-dispatch-in-fresh-emacs",
+      "file": "tests/etaf-docs-tests.el",
+      "purpose": "Both READMEs must work from their exact requires in isolated processes."
     },
     {
-      "name": "etaf-host-geometry-rebinds-changed-reactive-dependencies",
-      "file": "tests/etaf-host-geometry-tests.el",
-      "purpose": "A conditional geometry expression follows a newly selected reactive source and later switches back without losing updates."
+      "name": "etaf-events-press-runs-callback-in-one-batch",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "A press callback runs in a batch and publishes its writes once."
     },
     {
-      "name": "etaf-host-geometry-unsupported-root-recovers-from-invalid-value",
-      "file": "tests/etaf-host-geometry-tests.el",
-      "purpose": "A standalone absolute Host without a containing plane uses ordinary geometry validation, retains committed state on invalid input and accepts a later valid value."
+      "name": "etaf-events-rejects-disabled-and-missing-handlers",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "Disabled Hosts and Hosts without a handler signal `etaf-event-error'."
     },
     {
-      "name": "etaf-conditional-layout-kind-change-keeps-runtime-type-counts",
-      "file": "tests/etaf-conditional-lifecycle-tests.el",
-      "purpose": "A retained conditional arm that switches from a Box layout to a Grid layout keeps runtime type counts exact, so removing the subtree afterwards succeeds instead of decrementing a bucket the node never entered."
+      "name": "etaf-events-press-capture-sees-target",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "Ancestor press-capture callbacks run after the target and see it."
     },
     {
-      "name": "etaf-runtime-refit-reapplies-the-viewport",
-      "file": "tests/etaf-tests.el",
-      "purpose": "A mounted Runtime refits to an explicit viewport, the convenience entry uses the display window's safe width, and both become safe no-ops once the Runtime is unmounted."
+      "name": "etaf-events-actions-dispatch-through-runtime",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "Named Actions receive the Runtime and run in an event batch."
     },
     {
-      "name": "etaf-refit-without-a-mounted-runtime-is-a-no-op",
-      "file": "tests/etaf-tests.el",
-      "purpose": "Refitting a buffer that has no mounted Runtime returns nil instead of signaling, so a window-change hook can call it unconditionally."
+      "name": "etaf-events-focus-navigation",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "Focus moves among tab stops and reports committed Host references."
     },
     {
-      "name": "etaf-runtime-viewport-reports-and-follows-refits",
-      "file": "tests/etaf-tests.el",
-      "purpose": "The viewport reader reports the mounted canvas and follows refits, and an unmounted Runtime signals."
+      "name": "etaf-events-activate-dispatches-press-at-point",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "Activation at point dispatches the enclosing Host's press callback."
     },
     {
-      "name": "etaf-runtime-refits-after-a-window-size-change",
-      "file": "tests/etaf-tests.el",
-      "purpose": "A settled window size change refits the mounted Runtime to the window's new display-safe size automatically."
+      "name": "etaf-events-behaviors-toggle-and-drag",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "Toggleable and draggable Behaviors update caller-owned refs."
     },
     {
-      "name": "etaf-runtime-keeps-its-canvas-when-transient-ui-borrows-height",
-      "file": "tests/etaf-tests.el",
-      "purpose": "A same-width height decrease borrowed by minibuffer or echo-area UI keeps the committed canvas, and the exit hook reconciles once the space is released."
+      "name": "etaf-events-native-input-session",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "An input session edits a Host's text and restores it on end."
     },
     {
-      "name": "etaf-native-interactive-hosts-default-the-pointer",
-      "file": "tests/etaf-native-affordance-tests.el",
-      "purpose": "A press or drag boundary publishes the hand or horizontal drag pointer by default, while an explicit :pointer (including nil) and a disabled boundary keep their own shape."
+      "name": "etaf-events-host-queries",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "Host queries report committed props, handlers, bounds and size."
+    },
+    {
+      "name": "etaf-events-retained-host-updates",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "Retained content and geometry updates change one Host and bump the revision."
+    },
+    {
+      "name": "etaf-events-performance-records-operations",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "The performance recorder captures observed event operations."
+    },
+    {
+      "name": "etaf-image-test-placeholder-grid-has-exact-cell-size",
+      "file": "tests/etaf-image-tests.el",
+      "purpose": "A placeholder image occupies exactly its columns by rows character cells."
+    },
+    {
+      "name": "etaf-image-test-missing-file-falls-back-to-placeholder",
+      "file": "tests/etaf-image-tests.el",
+      "purpose": "An unreadable image source becomes a placeholder instead of failing the render."
+    },
+    {
+      "name": "etaf-image-test-inside-layout-keeps-its-grid",
+      "file": "tests/etaf-image-tests.el",
+      "purpose": "An image inside a Row keeps its own cell size next to ordinary text."
+    },
+    {
+      "name": "etaf-image-test-rejects-invalid-input",
+      "file": "tests/etaf-image-tests.el",
+      "purpose": "Invalid source, size, adapter and children are reported before publication."
     },
     {
       "name": "etaf-list-cache-stores-rows-total-and-time",
@@ -1439,24 +324,44 @@
       "purpose": "A version token is stored per entry and a not-modified answer refreshes only the check time and the token."
     },
     {
-      "name": "etaf-image-test-placeholder-grid-has-exact-cell-size",
-      "file": "tests/etaf-image-tests.el",
-      "purpose": "A placeholder image occupies exactly its columns by rows character cells."
+      "name": "etaf-resource-loads-synchronous-value",
+      "file": "tests/etaf-resource-tests.el",
+      "purpose": "Expose successful loader output through the public Resource readers."
     },
     {
-      "name": "etaf-image-test-missing-file-falls-back-to-placeholder",
-      "file": "tests/etaf-image-tests.el",
-      "purpose": "An unreadable image source becomes a placeholder instead of failing the render."
+      "name": "etaf-resource-captures-loader-error-state",
+      "file": "tests/etaf-resource-tests.el",
+      "purpose": "Capture synchronous loader failures without signaling them."
     },
     {
-      "name": "etaf-image-test-inside-layout-keeps-its-grid",
-      "file": "tests/etaf-image-tests.el",
-      "purpose": "An image inside a Row keeps its own cell size next to ordinary text."
+      "name": "etaf-resource-reload-runs-cleanup-and-replaces-value",
+      "file": "tests/etaf-resource-tests.el",
+      "purpose": "Run loader cleanup on reload and disposal."
     },
     {
-      "name": "etaf-image-test-rejects-invalid-input",
-      "file": "tests/etaf-image-tests.el",
-      "purpose": "Invalid source, size, adapter and children are reported before publication."
+      "name": "etaf-error-boundary-run-handles-body-error",
+      "file": "tests/etaf-resource-tests.el",
+      "purpose": "Convert an explicitly wrapped body error into a handler result."
+    },
+    {
+      "name": "etaf-error-boundary-run-preserves-unhandled-errors",
+      "file": "tests/etaf-resource-tests.el",
+      "purpose": "Do not swallow errors outside the wrapped body or inside the handler."
+    },
+    {
+      "name": "etaf-scope-stop-releases-effects-and-owned-children",
+      "file": "tests/etaf-scope-tests.el",
+      "purpose": "Standalone scopes release effects and children, reject reentry and dispose exactly once."
+    },
+    {
+      "name": "etaf-scope-stop-contains-cleanup-errors-and-quits",
+      "file": "tests/etaf-scope-tests.el",
+      "purpose": "Cleanup failures and quits are returned without preventing remaining teardown."
+    },
+    {
+      "name": "etaf-scope-rejects-cleanup-registration-after-stop",
+      "file": "tests/etaf-scope-tests.el",
+      "purpose": "Disposed scopes cannot acquire unreachable cleanup during a still-active call."
     },
     {
       "name": "etaf-video-tests-renders-ascii-ramp-frames",
@@ -1469,19 +374,14 @@
       "purpose": "Color mode maps two full-color pixels into one half-block cell with the fixture's foreground and background colors at double-height RGB24."
     },
     {
-      "name": "etaf-runtime-content-keeps-image-slices-across-mixed-updates",
-      "file": "tests/etaf-runtime-content-tests.el",
-      "purpose": "Sliced images keep their display properties and row count while neighbouring status text changes, after resize, and after an invalid batch is rejected."
+      "name": "etaf-video-tests-image-canvas-uses-one-line-per-row",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "An image-mode canvas publishes one display slice per declared row, so chrome placed under the canvas stays inside the window instead of being pushed off by one tall image line."
     },
     {
       "name": "etaf-video-tests-live-control-sources-survive-resize",
       "file": "tests/etaf-video-tests.el",
       "purpose": "Shared reactive volume, sound and speed sources retune a playing canvas and survive a size rebuild with its presentation-rate setting."
-    },
-    {
-      "name": "etaf-video-tests-image-canvas-uses-one-line-per-row",
-      "file": "tests/etaf-video-tests.el",
-      "purpose": "An image-mode canvas publishes one display slice per declared row, so chrome placed under the canvas stays inside the window instead of being pushed off by one tall image line."
     },
     {
       "name": "etaf-video-tests-image-mode-falls-back-on-terminal",
@@ -1514,6 +414,11 @@
       "purpose": "A canvas size change republishes the canvas and rebuilds the session with the new scale at the same paused position."
     },
     {
+      "name": "etaf-video-tests-unmount-releases-runtime-and-handle",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "Unmounting stops producer processes and makes the released handle unaddressable."
+    },
+    {
       "name": "etaf-video-tests-normalized-source-skips-second-probe",
       "file": "tests/etaf-video-tests.el",
       "purpose": "A metadata plist from etaf-video-source-info mounts with its values and without another ffprobe call."
@@ -1524,24 +429,74 @@
       "purpose": "A video sits in a layout as one fixed box next to ordinary siblings, and the consumer's on-press gesture toggles playback through the handle."
     },
     {
-      "name": "etaf-video-tests-unmount-releases-runtime-and-handle",
-      "file": "tests/etaf-video-tests.el",
-      "purpose": "Unmounting stops producer processes and makes the released handle unaddressable."
-    },
-    {
       "name": "etaf-video-tests-rejects-invalid-inputs",
       "file": "tests/etaf-video-tests.el",
       "purpose": "Invalid render props report a Component call error and unknown handles report a user error."
     },
     {
-      "name": "etaf-native-input-refit-waits-for-the-session",
-      "file": "tests/etaf-native-input-tests.el",
-      "purpose": "A viewport refit requested while a native editing session owns the text is held and publishes the settled viewport when the session ends."
+      "name": "etaf-view-mounts-static-and-expression-text",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "A mounted View paints static text and updates an expression in place."
     },
     {
-      "name": "etaf-native-input-outside-press-runs-the-runtime-finisher",
-      "file": "tests/etaf-native-input-tests.el",
-      "purpose": "A press on another Host runs the Runtime's registered finisher before the callback, while a press on the session's own Host keeps editing."
+      "name": "etaf-view-batches-writes-into-one-commit",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "Writes inside one batch become visible together in one revision."
+    },
+    {
+      "name": "etaf-view-updates-reactive-paint-properties",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "A reactive Host property changes the painted face without changing text."
+    },
+    {
+      "name": "etaf-view-switches-branches",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "Branch directives mount only the selected arm and switch when inputs change."
+    },
+    {
+      "name": "etaf-view-keyed-list-retains-instances",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "Keyed rows keep Component state across insertion, reordering and removal."
+    },
+    {
+      "name": "etaf-view-keyed-list-appends-and-clears",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "Appending to and clearing a keyed list matches a fresh render."
+    },
+    {
+      "name": "etaf-view-rejects-duplicate-list-keys",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "Duplicate keys signal and keep the previous committed rows."
+    },
+    {
+      "name": "etaf-view-projects-default-and-named-slots",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "Default and named slots project caller content; absent slots use fallback."
+    },
+    {
+      "name": "etaf-view-component-props-update-retained-instance",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "A changed business prop updates the instance without resetting bindings."
+    },
+    {
+      "name": "etaf-view-render-returns-detached-node",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "Pure rendering evaluates the View once without a Runtime."
+    },
+    {
+      "name": "etaf-view-node-builds-views-programmatically",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "`etaf-node' constructs the same Views as the DSL."
+    },
+    {
+      "name": "etaf-view-applies-component-styles",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "Component rules style owned Hosts and later rule changes repaint them."
+    },
+    {
+      "name": "etaf-view-unmount-and-kill-release-runtime",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "Unmounting releases the Runtime; killing a buffer unmounts it."
     }
   ]
 }

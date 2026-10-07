@@ -220,7 +220,7 @@
           (etaf-data-retry-reconciliation controller)
           (etaf-async-test-wait (lambda () (eq 'success (etaf-value (etaf-data-status controller)))))
           (should (equal '(saved) (etaf-value (etaf-data-items controller))))
-          (should (eq 'projected (etaf-data-reconciliation-state controller)))
+          (should (eq 'reconciled (etaf-data-reconciliation-state controller)))
           (should-not (etaf-data-retry-reconciliation controller))
           (should (= 1 writes)))
       (etaf-data-stop controller)

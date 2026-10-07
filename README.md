@@ -88,7 +88,7 @@ with its explicit companion registration handling executable Elisp.
 ETAF provides an independent, opt-in, application-neutral timing recorder.  It
 consumes public Runtime observer reports without advice or private cross-package
 probes.  Runtime operations such as Event, Action, mount, flush, and unmount are
-recorded automatically; Ebox rendering and publication, Data, Resource, and SQLite stages
+recorded automatically; Ebox layout and buffer publication, Data, Resource, and SQLite stages
 inside the same operation are correlated by sequence.
 
 ```elisp
@@ -109,7 +109,7 @@ operations, GC deltas, and ordered provider stages.  The panel header exposes
 the same environment context so a machine-wide slowdown is not mistaken for
 one package hotspot.
 
-The `*ETAF Performance*` panel shows operation IDs, generation changes, total
+The `*ETAF Performance*` panel shows operation IDs, revision changes, total
 latency, GC deltas, and each flat provider stage in sequence.  Provider stages
 may overlap, so they are not presented as exclusive/self time.  Records are
 bounded by `etaf-performance-max-records`; disabling the mode only detaches the
@@ -117,11 +117,11 @@ Runtime observer and never rewrites functions.  `etaf-performance-summary`
 computes operation p50/p95/max statistics on demand, while
 `etaf-performance-operation-stage-summary` groups one operation's flat stages
 by provider category.  `etaf-performance-records` returns defensive operation
-and stage snapshots; caller mutation cannot rewrite retained history.
+and stage copies; caller mutation cannot rewrite retained history.
 Pass a numeric observer runtime ID to `etaf-performance-records` to select one
 mount's history even when a buffer name is reused. Summary and report functions
 use all retained records when called without an argument; an explicit `nil`
-means an empty selection. The exported environment describes report generation,
+means an empty selection. The exported environment describes report creation,
 not each historical operation. These synchronous operation durations do not
 measure physical input-to-presentation latency; use the GUI measurement entry
 in [README.md](README.md) for per-action condition checks.
@@ -145,8 +145,6 @@ The [`examples/`](README.md) directory contains three core-only best-practice ap
 
 - [Architecture](docs/architecture.md) · [中文架构](docs/architecture.zh-CN.md)
 - [User guide](docs/manual.md) · [中文用户指南](docs/manual.zh-CN.md)
-- [Implementation plan](docs/architecture.md) · [中文实施计划](docs/architecture.zh-CN.md)
-- [Module-boundary proposal (unimplemented)](docs/architecture.md) · [模块边界提案（未实现）](docs/architecture.zh-CN.md)
 - [Best-practice examples](README.md) · [中文示例](README.zh-CN.md)
 
 ## Independent packages
@@ -163,11 +161,9 @@ There is no separate `etaf-data` install: Data is a core ETAF capability. There 
 ## Load and verify
 
 Install ECSS before Ebox, then install ETAF. ETAF declares ECSS directly to
-preserve deferred cascade values when resolving Theme tokens. Rendering and Host
-final-accept authority use Ebox's public contracts. The renderer requires Ebox
-framework SPI v3 and `ebox-publication/v1`; a missing, malformed, or incompatible
-provider fails during ETAF bootstrap. ETAF snapshots one immutable render port
-for the Emacs process.
+preserve deferred cascade values when resolving Theme tokens. ETAF uses Ebox as
+its retained node, layout, focus, input and buffer engine; applications stay on
+ETAF public APIs.
 
 During development, load the sibling Ebox checkout before ETAF:
 

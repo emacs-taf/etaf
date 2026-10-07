@@ -77,7 +77,7 @@
 ;; and :properties (installation-time semantic Host properties).
 ;; The plist and property container are fresh; contained values retain identity
 ;; and must be treated as read-only. These facts remain readable after cleanup,
-;; but do not certify that the candidate published or the Host is still mounted.
+;; but do not certify that the Host is still mounted.
 ;; Use Runtime public queries for committed state, and return installer cleanup
 ;; to release resources on replacement, rollback or unmount.
 ;; Invalid CONTEXT signals `etaf-behavior-error`.
@@ -248,7 +248,7 @@
 ;; Loading before first success uses `loading'; later reads use `refreshing' and
 ;; retain items.  Completion publishes `success', `error' or `cancelled'.
 ;; Synchronous source errors are recorded and re-signaled.  Asynchronous source
-;; errors are recorded; projection/rendering errors still signal from completion.
+;; errors are recorded; rendering errors still signal from completion.
 ;; A new load cancels the old request.  Superseding a pending write records unknown
 ;; external certainty; it does not imply rollback.
 ;;
@@ -313,14 +313,6 @@
 ;;;###autoload (autoload 'etaf-data-previous-page "etaf" nil nil)
 ;; Move CONTROLLER to the previous page and return the new page.
 ;;
-;; Error: etaf-data-projection-conflict
-;; ETAF Data projection expected-version conflict
-;; Catch this condition with condition-case; failed calls do not return a value.
-;;
-;; Error: etaf-data-projection-error
-;; ETAF Data projection failed
-;; Catch this condition with condition-case; failed calls do not return a value.
-;;
 ;; Function: etaf-data-query (controller)
 ;;;###autoload (autoload 'etaf-data-query "etaf" nil nil)
 ;; Return CONTROLLER's query ref.
@@ -328,13 +320,17 @@
 ;; Function: etaf-data-reconciliation-state (controller)
 ;;;###autoload (autoload 'etaf-data-reconciliation-state "etaf" nil nil)
 ;; Return CONTROLLER's current reconciliation state symbol, if any.
+;; A committed mutation starts `reconciliation-pending'; its refresh ends in
+;; `reconciled' or `reconciliation-error'.  Other outcomes report
+;; `rolled-back' or `external-unknown'.  No mutation yet returns nil.
 ;;
 ;; Function: etaf-data-retry-reconciliation (controller)
 ;;;###autoload (autoload 'etaf-data-retry-reconciliation "etaf" nil nil)
 ;; Reload a committed mutation without replaying its source mutation.
 ;;
-;; The operation is allowed only for a committed outcome with a pending token;
-;; unknown and rolled-back outcomes are deliberately not retried.
+;; The operation is allowed only for a committed outcome whose reconciliation
+;; token is pending or failed; unknown and rolled-back outcomes are deliberately
+;; not retried.
 ;; Return the synchronous loaded page, or nil when asynchronous work is pending
 ;; or no retry is eligible.  Observe status and `etaf-data-reconciliation-state'
 ;; to distinguish completion.  No automatic write retry is performed.
@@ -583,10 +579,9 @@
 ;; panel from one on the surface around it.  Outside an event callback signal
 ;; `etaf-event-error'.
 ;;
-;; Function: etaf-effect-scope (&key detached name scheduler-context)
+;; Function: etaf-effect-scope (&key detached name)
 ;;;###autoload (autoload 'etaf-effect-scope "etaf" nil nil)
 ;; Create a Scope named NAME, owned by the current Scope unless DETACHED.
-;; SCHEDULER-CONTEXT defaults to the parent or dynamically active context.
 ;; The parent disposes child scopes automatically. Without a parent, or when
 ;; DETACHED is non-nil, the caller must use `etaf-scope-stop` for cleanup.
 ;;
@@ -646,33 +641,14 @@
 ;; Return Ebox's current focus Host reference in mounted RUNTIME.
 ;; Direct Ebox focus operations and these APIs observe the same buffer owner.
 ;;
-;; Error: etaf-generation-conflict
-;; Stale ETAF semantic generation candidate
-;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
-;; Error: etaf-generation-error
-;; Invalid ETAF generation authority
-;; Catch this condition with condition-case; failed calls do not return a value.
-;;
-;; Function: etaf-generation-p (x)
-;;;###autoload (autoload 'etaf-generation-p "etaf" nil nil)
-;;
-;;
-;; Function: etaf-generation-root-semantic-id (x)
-;;;###autoload (autoload 'etaf-generation-root-semantic-id "etaf" nil nil)
-;; Access slot "root-semantic-id" of `etaf-generation' struct X.
-;;
-;;
-;; Error: etaf-host-authority-error
-;; Invalid ETAF Host authority state
-;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
 ;; Function: etaf-input-begin (runtime host-ref)
 ;;;###autoload (autoload 'etaf-input-begin "etaf" nil nil)
 ;; Start native editing of a mounted Host's published text; return a session.
-;; ETAF defers this Runtime's publications while the session is active and
-;; Ebox refuses them, so keystrokes, point, selection and undo stay native in
-;; the real buffer. Host, Runtime, window and single-session rules are errors.
+;; While the session is active Ebox keeps this buffer's tree changes and
+;; writes them when the session ends, so keystrokes, point, selection and undo
+;; stay native in the real buffer. Host, Runtime, window and single-session rules are errors.
 ;;
 ;; Function: etaf-input-text (session)
 ;;;###autoload (autoload 'etaf-input-text "etaf" nil nil)
@@ -931,8 +907,8 @@
 ;; Return the current Component's stable read-only reactive input NAME.
 ;; Call during setup, then read with `etaf-value` in computed getters or watches.
 ;; NAME is a declared prop name or keyword; defaults are included. Plain prop
-;; variables remain snapshots. Candidate rendering reads candidate input;
-;; watchers are notified after successful publication. Rejection restores caches.
+;; variables remain snapshots. Fine-grained bindings that read the prop update
+;; only their own Host; watchers run in the same commit.
 ;; The Component owns the source; reads after disposal signal an error.
 ;;
 ;; Function: etaf-provide (key value)
@@ -985,10 +961,6 @@
 ;;
 ;; Error: etaf-render-side-effect-error
 ;; ETAF render must be side-effect free
-;; Catch this condition with condition-case; failed calls do not return a value.
-;;
-;; Error: etaf-render-write-error
-;; ETAF state cannot be written while rendering
 ;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
 ;; Error: etaf-renderer-error
@@ -1051,10 +1023,6 @@
 ;;;###autoload (autoload 'etaf-resource-value "etaf" nil nil)
 ;; Return RESOURCE's successful value, or nil before success.
 ;;
-;; Error: etaf-retirement-error
-;; Invalid ETAF retirement journal
-;; Catch this condition with condition-case; failed calls do not return a value.
-;;
 ;; Function: etaf-runtime-buffer (x)
 ;;;###autoload (autoload 'etaf-runtime-buffer "etaf" nil nil)
 ;; Access slot "buffer" of `etaf-runtime' struct X.
@@ -1068,25 +1036,23 @@
 ;; not guaranteed to be the mounted target when `etaf-mount' receives a name.
 ;;
 ;;
-;; Function: etaf-runtime-current-generation (runtime)
-;;;###autoload (autoload 'etaf-runtime-current-generation "etaf" nil nil)
-;; Return RUNTIME's uniquely authoritative committed generation.
-;; The opaque object may retain identity across prepared scalar updates. Use
-;; `etaf-runtime-generation' or the committed Ebox revision for settlement;
-;; `etaf-runtime-snapshot' exports a detached snapshot.
-;;
 ;; Error: etaf-runtime-error
 ;; ETAF runtime error
 ;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
 ;; Function: etaf-runtime-flush (&optional runtime)
 ;;;###autoload (autoload 'etaf-runtime-flush "etaf" nil nil)
-;; Request mounted RUNTIME's pending work and return its committed revision.
-;; This returns an integer, not an Ebox node.  Busy or batched work may remain
-;; pending; the result identifies the currently committed Ebox publication.
-;; An active Ebox transaction is rejected before requesting work, because
-;; its current revision may still be provisional.  No tree is exported.
-;; Use `etaf-runtime-snapshot' for an explicit snapshot.
+;; Settle mounted RUNTIME's pending reactive work and return its revision.
+;; Inside `etaf-call-with-batch' or a running commit the pending work stays
+;; deferred to that boundary and the current revision is returned.
+;; RUNTIME defaults to the Runtime of the current buffer.
+;;
+;; Function: etaf-runtime-revision (runtime)
+;;;###autoload (autoload 'etaf-runtime-revision "etaf" nil nil)
+;; Return RUNTIME's committed revision, an integer that increases once for
+;; every commit that changed its buffer (ordinary reactive work, Host content
+;; or geometry updates and refits).  Tests and benchmarks compare revisions
+;; to observe that a change was published.
 ;;
 ;; Function: etaf-runtime-set-input-finisher (runtime finisher)
 ;;;###autoload (autoload 'etaf-runtime-set-input-finisher "etaf" nil nil)
@@ -1106,10 +1072,6 @@
 ;;;###autoload (autoload 'etaf-runtime-for-buffer "etaf" nil nil)
 ;; Return the live Runtime mounted in BUFFER-OR-NAME, or nil.
 ;;
-;; Function: etaf-runtime-generation (runtime)
-;;;###autoload (autoload 'etaf-runtime-generation "etaf" nil nil)
-;; Return RUNTIME's committed generation id.
-;;
 ;; Function: etaf-runtime-handler-entries (runtime)
 ;;;###autoload (autoload 'etaf-runtime-handler-entries "etaf" nil nil)
 ;; Return committed handler contribution entries for RUNTIME.
@@ -1117,9 +1079,9 @@
 ;; Function: etaf-runtime-host-ancestries (runtime host-refs)
 ;;;###autoload (autoload 'etaf-runtime-host-ancestries "etaf" nil nil)
 ;; Return committed semantic ancestries for HOST-REFS in RUNTIME.
-;; This activation-local lookup visits the retained graph at most once, stopping
-;; when all requested Hosts are found.  Callers use it only for overlapping hit
-;; candidates; no second retained identity or layout index is maintained.
+;; The result is a hash table mapping each found reference to its lineage list
+;; (REF PARENT-REF ... ROOT-REF).  Missing references are absent.  Callers use
+;; it for overlapping hit tests; the lookup walks the retained Host parents.
 ;;
 ;; Function: etaf-runtime-host-props-entries (runtime)
 ;;;###autoload (autoload 'etaf-runtime-host-props-entries "etaf" nil nil)
@@ -1165,9 +1127,10 @@
 ;;
 ;; Function: etaf-runtime-update-host-geometry (runtime host-ref &rest geometry)
 ;;;###autoload (autoload 'etaf-runtime-update-host-geometry "etaf" nil nil)
-;; Apply Ebox's typed incremental geometry update to HOST-REF in mounted RUNTIME.
-;; GEOMETRY contains only low-level position, size and layer facts accepted by
-;; `ebox-region-update-geometry'.  This is a display projection boundary for a
+;; Set HOST-REF's position, size or layer properties in mounted RUNTIME.
+;; GEOMETRY is a plist of style properties such as :left, :top, :width,
+;; :height and :z-index.  Only the Host's relayout boundary is laid out and
+;; its changed buffer region rewritten.  This is a display projection boundary for a
 ;; caller's already-updated controlled state: it does not change Component
 ;; props or implement window policy.  The next ordinary ETAF publication must
 ;; provide the same values, or the retained Host will be reconciled to that
@@ -1179,11 +1142,8 @@
 ;;;###autoload (autoload 'etaf-runtime-update-host-geometries "etaf" nil nil)
 ;; Apply several HOST-REF/GEOMETRY pairs in one retained Ebox publication.
 ;; UPDATES is an alist whose keys are committed Host references and whose values
-;; are geometry plists.  All targets validate before the batch starts.  A single
-;; entry first reuses RUNTIME's retained `ebox-geometry-prepare' operation for
-;; that Host and property set, so repeated moves and fixed-text resizes publish
-;; without ordinary layout; declined or multi-Host updates use the ordinary
-;; geometry batch with the same result.  A committed update returns t.  Invalid
+;; are geometry plists.  All targets validate before the batch starts and the
+;; updates publish as one buffer write.  A committed update returns t.  Invalid
 ;; targets or updates, unmounted Runtimes, active Ebox transactions, and
 ;; rejected geometry signal `etaf-runtime-error' without a partial update.
 ;;
@@ -1200,11 +1160,10 @@
 ;; Function: etaf-runtime-refit (runtime viewport-width &optional viewport-height)
 ;;;###autoload (autoload 'etaf-runtime-refit "etaf" nil nil)
 ;; Refit mounted RUNTIME to VIEWPORT-WIDTH pixels and VIEWPORT-HEIGHT lines.
-;; The call re-resolves viewport units and viewport-dependent layout through
-;; the selected renderer port, so the framework's publication accounting sees
-;; it like any other publication.  Return non-nil when the renderer refitted a
-;; mounted surface; RUNTIME defaults to the Runtime in the current buffer, and
-;; a non-mounted Runtime signals `etaf-runtime-error'.
+;; The fixed viewport replaces window-size tracking: viewport units and
+;; viewport-dependent layout are re-resolved and the changed region rewritten.
+;; Return non-nil when the layout changed.  A non-mounted Runtime signals
+;; `etaf-runtime-error' and non-positive sizes signal `wrong-type-argument'.
 ;;
 ;; Function: etaf-runtime-viewport (&optional runtime)
 ;;;###autoload (autoload 'etaf-runtime-viewport "etaf" nil nil)
@@ -1215,28 +1174,11 @@
 ;; in the current buffer, and a non-mounted Runtime signals
 ;; `etaf-runtime-error'.
 ;;
-;; Function: etaf-runtime-root-node (runtime)
-;;;###autoload (autoload 'etaf-runtime-root-node "etaf" nil nil)
-;; Return RUNTIME's current root through an explicit detached snapshot.
-;; This obsolete read-compatible getter costs O(N); no root mirror is stored.
-;; Use `etaf-runtime-snapshot' to retain the root's matching source facts.
-;;
-;; Function: etaf-runtime-snapshot (&optional runtime)
-;;;###autoload (autoload 'etaf-runtime-snapshot "etaf" nil nil)
-;; Export mounted RUNTIME's currently committed Ebox snapshot.
-;; Return a plist with `:input' (a canonical Ebox input), `:revision', and
-;; `:mount-id'.  The export costs O(N), detaches mutable node payload, and keeps
-;; opaque callback identities.  It neither drains pending work nor evaluates
-;; Components, publishes, or increments the revision.  Unmounted Runtimes and
-;; reads inside an Ebox transaction signal an error.
-;;
-;; Error: etaf-scheduler-error
-;; Invalid ETAF scheduler operation
-;; Catch this condition with condition-case; failed calls do not return a value.
-;;
-;; Function: etaf-scope-run (scope function &key (watch-scheduler nil watch-scheduler-p))
+;; Function: etaf-scope-run (scope function)
 ;;;###autoload (autoload 'etaf-scope-run "etaf" nil nil)
-;; Run FUNCTION with active SCOPE and optional WATCH-SCHEDULER.
+;; Run FUNCTION with SCOPE active and return its value.  Effects, computeds,
+;; watchers, child Scopes and cleanups created by FUNCTION belong to SCOPE.
+;; An inactive SCOPE signals `etaf-reactive-error'.
 ;;
 ;; Function: etaf-scope-stop (scope)
 ;;;###autoload (autoload 'etaf-scope-stop "etaf" nil nil)
@@ -1257,14 +1199,6 @@
 ;; Function: etaf-set-value (source new-value)
 ;;;###autoload (autoload 'etaf-set-value "etaf" nil nil)
 ;; Set writable reactive SOURCE to NEW-VALUE and return NEW-VALUE.
-;;
-;; Error: etaf-spi-bootstrap-error
-;; Malformed Ebox framework SPI provider
-;; Catch this condition with condition-case; failed calls do not return a value.
-;;
-;; Error: etaf-spi-incompatible-error
-;; Incompatible Ebox framework SPI provider
-;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
 ;; Function: etaf-state ()
 ;;;###autoload (autoload 'etaf-state "etaf" nil nil)
@@ -1290,7 +1224,8 @@
 ;; Defaults enter Ebox as UA-origin declarations and follow ECSS precedence,
 ;; including UA-important precedence over author-important values. Normal Host
 ;; and Component declarations override normal defaults. Reactive ref/computed
-;; plists remain tracked; invalid resolved values reject candidate publication.
+;; plists remain tracked; invalid resolved values signal before the buffer is
+;; written.
 ;;
 ;; Function: etaf-theme-resolve-palette (palette mode)
 ;;;###autoload (autoload 'etaf-theme-resolve-palette "etaf" nil nil)
@@ -1520,16 +1455,19 @@
 ;;;###autoload (autoload 'etaf-watch "etaf" nil nil)
 ;; Watch SOURCE and call CALLBACK with NEW and OLD values.
 ;;
-;; IMMEDIATE calls CALLBACK for the initial value.  FLUSH is passed to the
-;; current Runtime scheduler.  TEST and NAME customize comparison and
-;; diagnostics.  Return a stop function.
+;; SOURCE is a ref, computed or zero-argument function.  IMMEDIATE calls
+;; CALLBACK for the initial value.  FLUSH is `pre' (before mounted Runtimes
+;; write their buffers) or `post' (after).  TEST and NAME customize comparison
+;; and diagnostics.  When CALLBACK returns a function, it runs before the next
+;; callback and when the watcher stops.  Return a zero-argument stop function.
 ;;
 ;; Function: etaf-watch-effect (function &key (flush 'pre) name)
 ;;;###autoload (autoload 'etaf-watch-effect "etaf" nil nil)
 ;; Run FUNCTION immediately and again after a reactive dependency change.
 ;;
-;; FLUSH selects the Runtime scheduler boundary.  NAME optionally labels the
-;; effect.  If FUNCTION returns a function, it cleans up the previous run.
+;; FLUSH is `pre' or `post' as in `etaf-watch'.  NAME optionally labels the
+;; effect.  If FUNCTION returns a function, it cleans up the previous run and
+;; runs when the effect stops.  Return a zero-argument stop function.
 ;;
 
 ;; Function: etaf-retained-resize-open (&optional buffer-or-name)
@@ -1680,20 +1618,12 @@
 (require 'etaf-view)
 (require 'etaf-compiler)
 (require 'etaf-component)
-(require 'etaf-scheduler)
 (require 'etaf-reactive)
 (require 'etaf-observer)
 (require 'etaf-context)
 (require 'etaf-resource)
 (require 'etaf-data)
-(require 'etaf-generation)
-(require 'etaf-host)
-(require 'etaf-retirement)
-(require 'etaf-render-port)
-(require 'etaf-renderer)
 (require 'etaf-runtime)
-(require 'etaf-host-update)
-(require 'etaf-host-cohort)
 (require 'etaf-behavior)
 (require 'etaf-controlled-behavior)
 (require 'etaf-actions)
@@ -1705,9 +1635,6 @@
 (autoload 'etaf-retained-resize-open "examples/etaf-retained-resize" nil t)
 (autoload 'etaf-resource-example-open "examples/etaf-resource-example" nil t)
 (autoload 'etaf-resource-example-close "examples/etaf-resource-example" nil t)
-
-(unless (fboundp 'ebox-call-with-render-burst)
-  (error "ETAF requires an Ebox build with framework render-burst support"))
 
 (provide 'etaf)
 ;;; etaf.el ends here

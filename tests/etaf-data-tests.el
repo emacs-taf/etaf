@@ -1,12 +1,12 @@
-;;; etaf-data-tests.el --- Public API acceptance -*- lexical-binding: t; -*-
+;;; etaf-data-tests.el --- Public Data API acceptance -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;;; Commentary:
-;; Test supported package inputs, outputs, errors and lifecycle.
-;; Internal implementation details are outside this contract.
+;; Public tests for the standalone ETAF Data controller.
 
 ;;; Code:
+
 (require 'cl-lib)
 (require 'ert)
 (require 'etaf)
@@ -16,465 +16,410 @@
     (:id 2 :name "Grace" :group "systems")
     (:id 3 :name "Alan" :group "compiler")
     (:id 4 :name "Barbara" :group "compiler"))
-  "Records shared by ETAF Data tests.")
+  "Records shared by Data tests.")
 
-(defun etaf-data-test--ids (controller)
-  "Return loaded item ids from CONTROLLER."
-  (mapcar (lambda (record) (plist-get record :id))
-          (etaf-value (etaf-data-items controller))))
+(defun etaf-data-test--ids (items)
+  "Return :id values from ITEMS."
+  (mapcar (lambda (item) (etaf-data-test--record-value item :id)) items))
 
-(ert-deftest etaf-data-controller-loads-query-and-status ()
-  "Load memory source records through the public controller API."
-  (let* ((source (etaf-data-memory-source etaf-data-test-records
-                                          :id-key :id))
-         (controller (etaf-data-controller source
-                                           :query '(:group "compiler")
-                                           :page-size 2)))
-    (unwind-protect
-        (progn
-          (etaf-data-load controller)
-          (should (equal '(1 3) (etaf-data-test--ids controller)))
-          (should (= 3 (etaf-value (etaf-data-total controller))))
-          (should (eq 'success (etaf-value (etaf-data-status controller)))))
-      (etaf-data-stop controller))))
+(defun etaf-data-test--controller-ids (controller)
+  "Return current loaded ids from CONTROLLER."
+  (etaf-data-test--ids (etaf-value (etaf-data-items controller))))
 
-(etaf-define-component etaf-data-test-retained-pages (&key source page ready)
-  :bindings ((data (etaf-data-controller source :auto-load t :page-size 2)))
-  :setup (funcall ready data)
-  :view
-  (column
-   (text "Retained header")
-   (expr (if (eq (etaf-value page) 'data)
-             (etaf-view
-              (column
-               (text (expr (symbol-name (etaf-value (etaf-data-status data)))))
-               (text (expr (mapconcat
-                            (lambda (row) (plist-get row :name))
-                            (etaf-value (etaf-data-items data)) ", ")))))
-           (etaf-view (text "Preferences"))))))
+(defun etaf-data-test--record-value (record key)
+  "Return RECORD value for KEY in test data."
+  (cond
+   ((hash-table-p record) (gethash key record))
+   ((and (proper-list-p record) (keywordp (car record))) (plist-get record key))
+   ((listp record) (alist-get key record nil nil #'equal))))
 
-(ert-deftest etaf-data-auto-load-survives-view-switches-without-reloading ()
-  "Retained pages share one loaded Controller until query or pagination changes."
-  (let* ((buffer (generate-new-buffer " *data-pages*"))
-         (page (etaf-ref 'data))
-         (capabilities (etaf-data-source-capabilities
-                        (etaf-data-memory-source etaf-data-test-records :id-key :id)))
-         (load-page (plist-get capabilities :load))
-         (loads 0) data)
-    (unwind-protect
-        (progn
-          (etaf-mount
-           buffer
-           (etaf-view
-            (etaf-data-test-retained-pages
-             :page page :ready (lambda (controller) (setq data controller))
-             :source (apply #'etaf-data-source
-                            (plist-put capabilities :load
-                                       (lambda (&rest args)
-                                         (cl-incf loads)
-                                         (apply load-page args)))))))
-          (should (eq (etaf-value (etaf-data-status data)) 'success))
-          (should (= loads 1))
-          (dotimes (_ 3)
-            (setf (etaf-value page) 'preferences)
-            (should (with-current-buffer buffer
-                      (string-match-p "Preferences" (buffer-string))))
-            (setf (etaf-value page) 'data)
-            (should (with-current-buffer buffer
-                      (string-match-p "Ada, Grace" (buffer-string))))
-            (should (= loads 1)))
-          (etaf-data-next-page data)
-          (should (= loads 2))
-          (should (with-current-buffer buffer
-                    (string-match-p "Alan, Barbara" (buffer-string))))
-          (let ((data-page (etaf-data-page data)))
-            (etaf-unmount (etaf-runtime-for-buffer buffer))
-            (setf (etaf-value data-page) 1))
-          (should-error (etaf-data-load data) :type 'etaf-data-stopped-error)
-          (should (= loads 2)))
-      (when-let* ((runtime (etaf-runtime-for-buffer buffer))) (etaf-unmount runtime))
-      (when data (etaf-data-stop data))
-      (kill-buffer buffer))))
+(defun etaf-data-test--wait (&optional seconds)
+  "Let timers run for SECONDS."
+  (accept-process-output nil (or seconds 0.05)))
 
-(ert-deftest etaf-data-controller-accepts-prepared-initial-result ()
-  "Seed one data-ready Controller without a second source call."
-  (let* ((calls 0)
-         (source
-          (etaf-data-source
-           :load (lambda (_query page page-size)
-                   (cl-incf calls)
-                   (list :items '((:id 9 :name "Prepared"))
-                         :total 41 :page page :page-size page-size))))
-         (prepared (etaf-data-source-load-page source nil 2 10))
-         (controller (etaf-data-controller
-                      source :page 2 :page-size 10
-                      :initial-result prepared :item-key (lambda (row)
-                                                           (plist-get row :id)))))
-    (unwind-protect
-        (progn
-          (should (= 1 calls))
-          (should (equal '(9) (etaf-data-test--ids controller)))
-          (should (= 41 (etaf-value (etaf-data-total controller))))
-          (should (= 2 (etaf-value (etaf-data-page controller))))
-          (should (= 10 (etaf-value (etaf-data-page-size controller))))
-          (should (eq 'success (etaf-value (etaf-data-status controller))))
-          (should-error
-           (etaf-data-controller source :initial-result prepared :auto-load t)))
-      (etaf-data-stop controller))))
+(ert-deftest etaf-data-memory-source-loads-pages-and-query-forms ()
+  "Memory sources support paging and all public query forms."
+  (let* ((hash (make-hash-table :test #'equal))
+         (records (append etaf-data-test-records
+                          (list '((:id . 5) (:name . "Edsger") (:group . "systems"))
+                                hash)))
+         (source (etaf-data-memory-source records :id-key :id :name 'memory)))
+    (puthash :id 6 hash)
+    (puthash :name "Frances" hash)
+    (puthash :group "compiler" hash)
+    (should (equal (plist-get (etaf-data-source-capabilities source) :provider)
+                   'memory))
+    (should (equal '(1 2)
+                   (etaf-data-test--ids
+                    (plist-get (etaf-data-source-load-page source nil 1 2)
+                               :items))))
+    (should (equal '(3 4)
+                   (etaf-data-test--ids
+                    (plist-get (etaf-data-source-load-page source nil 2 2)
+                               :items))))
+    (should (= 4 (plist-get (etaf-data-source-load-page
+                             source '(:group "compiler") 1 10)
+                            :total)))
+    (should (equal '(2 5)
+                   (etaf-data-test--ids
+                    (plist-get (etaf-data-source-load-page
+                                source '((:group . "systems")) 1 10)
+                               :items))))
+    (should (equal '(1 3 4 6)
+                   (etaf-data-test--ids
+                    (plist-get (etaf-data-source-load-page
+                                source (lambda (row)
+                                         (equal (etaf-data-test--record-value row :group)
+                                                "compiler"))
+                                1 10)
+                               :items))))
+    (should (equal '(2)
+                   (etaf-data-test--ids
+                    (plist-get (etaf-data-source-load-page source "Grace" 1 10)
+                               :items))))
+    (should (equal (list (car etaf-data-test-records))
+                   (plist-get (etaf-data-source-load-page
+                               source (car etaf-data-test-records) 1 10)
+                              :items)))))
 
-(ert-deftest etaf-data-controller-reloads-for-pagination ()
-  "Reload when controller pagination refs change."
-  (let* ((source (etaf-data-memory-source etaf-data-test-records
-                                          :id-key :id))
-         (controller (etaf-data-controller source
-                                           :query '(:group "compiler")
-                                           :page-size 2
-                                           :auto-load t)))
-    (unwind-protect
-        (progn
-          (should (equal '(1 3) (etaf-data-test--ids controller)))
-          (should (= 2 (etaf-data-next-page controller)))
-          (should (equal '(4) (etaf-data-test--ids controller)))
-          (should (= 1 (etaf-data-previous-page controller)))
-          (should (equal '(1 3) (etaf-data-test--ids controller))))
-      (etaf-data-stop controller))))
+(ert-deftest etaf-data-status-refreshing-retains-items ()
+  "Refreshing keeps accepted items until the asynchronous completion lands."
+  (let (resolve)
+    (let* ((source (etaf-data-source
+                    :load (lambda (_query _page _page-size)
+                            (etaf-async
+                             (lambda (ok _reject)
+                               (setq resolve ok)
+                               nil)))))
+           (controller (etaf-data-controller
+                        source :initial-result '(:items ((:id 1)) :total 1))))
+      (unwind-protect
+          (progn
+            (should-not (etaf-data-load controller))
+            (should (eq (etaf-value (etaf-data-status controller)) 'refreshing))
+            (should (equal '((:id 1)) (etaf-value (etaf-data-items controller))))
+            (funcall resolve '(:items ((:id 2)) :total 1))
+            (should (eq (etaf-value (etaf-data-status controller)) 'success))
+            (should (equal '(2) (etaf-data-test--controller-ids controller))))
+        (etaf-data-stop controller)))))
 
-(ert-deftest etaf-data-imperative-pagination-reloads-without-auto-load ()
-  "Public pager commands reload Controllers that opt out of AUTO-LOAD."
-  (let* ((source (etaf-data-memory-source etaf-data-test-records
-                                          :id-key :id))
-         (controller (etaf-data-controller source :page-size 2)))
-    (unwind-protect
-        (progn
-          (etaf-data-load controller)
-          (should (equal '(1 2) (etaf-data-test--ids controller)))
-          (should (= 2 (etaf-data-next-page controller)))
-          (should (equal '(3 4) (etaf-data-test--ids controller)))
-          (should (= 1 (etaf-data-previous-page controller)))
-          (should (equal '(1 2) (etaf-data-test--ids controller))))
-      (etaf-data-stop controller))))
+(ert-deftest etaf-data-async-load-success-error-cancel-and-timeout ()
+  "Asynchronous loads publish success, error, cancellation and timeout states."
+  (let (resolve reject cancel-called)
+    (let* ((source (etaf-data-source
+                    :load (lambda (&rest _args)
+                            (etaf-async
+                             (lambda (ok fail)
+                               (setq resolve ok
+                                     reject fail)
+                               (lambda () (setq cancel-called t)))))))
+           (controller (etaf-data-controller source)))
+      (unwind-protect
+          (progn
+            (should-not (etaf-data-load controller))
+            (funcall resolve '(:items ((:id 7)) :total 1))
+            (should (eq 'success (etaf-value (etaf-data-status controller))))
+            (should (equal '(7) (etaf-data-test--controller-ids controller)))
+            (etaf-data-load controller)
+            (funcall reject '(error "network"))
+            (should (eq 'error (etaf-value (etaf-data-status controller))))
+            (should (equal '(7) (etaf-data-test--controller-ids controller)))
+            (etaf-data-load controller)
+            (etaf-data-cancel controller)
+            (should cancel-called)
+            (should (eq 'cancelled (etaf-value (etaf-data-status controller))))
+            (should (eq 'etaf-async-cancelled
+                        (car (etaf-value (etaf-data-error controller))))))
+        (etaf-data-stop controller))))
+  (let (cancelled)
+    (let* ((source (etaf-data-source
+                    :load (lambda (&rest _args)
+                            (etaf-async
+                             (lambda (_ok _fail)
+                               (lambda () (setq cancelled t)))))))
+           (controller (etaf-data-controller source :timeout 0.01)))
+      (unwind-protect
+          (progn
+            (etaf-data-load controller)
+            (etaf-data-test--wait 0.08)
+            (should cancelled)
+            (should (eq 'error (etaf-value (etaf-data-status controller))))
+            (should (eq 'etaf-async-timeout
+                        (car (etaf-value (etaf-data-error controller))))))
+        (etaf-data-stop controller)))))
 
-(ert-deftest etaf-data-source-page-normalization-does-not-reload-twice ()
-  "Avoid a second reload when source results normalize page refs."
-  (let* ((load-count 0)
-         (source (etaf-data-source
-                  :load (lambda (_query _page page-size)
-                          (cl-incf load-count)
-                          (list :items '(only)
-                                :total 1
-                                :page 1
-                                :page-size page-size))))
-         (controller (etaf-data-controller source :auto-load t)))
-    (unwind-protect
-        (progn
-          (should (= 1 load-count))
-          (etaf-data-set-page controller 99)
-          (should (= 2 load-count))
-          (should (= 1 (etaf-value (etaf-data-page controller)))))
-      (etaf-data-stop controller))))
-
-(ert-deftest etaf-data-memory-source-mutates-and-reloads ()
-  "Apply source mutations through the controller boundary."
-  (let* ((source (etaf-data-memory-source etaf-data-test-records
-                                          :id-key :id))
-         (controller (etaf-data-controller source
-                                           :page-size 10
-                                           :auto-load t)))
-    (unwind-protect
-        (progn
-          (etaf-data-mutate
-           controller 'insert '(:id 5 :name "Edsger" :group "systems"))
-          (should (equal '(1 2 3 4 5) (etaf-data-test--ids controller)))
-          (etaf-data-mutate
-           controller 'replace '(:id 2 :name "Grace Hopper" :group "navy"))
-          (should (equal "Grace Hopper"
-                         (plist-get (cadr (etaf-value
-                                           (etaf-data-items controller)))
-                                    :name)))
-          (etaf-data-mutate controller 'delete 1)
-          (should (equal '(2 3 4 5) (etaf-data-test--ids controller))))
-      (etaf-data-stop controller))))
-
-(ert-deftest etaf-data-memory-source-supports-keyword-alist-records ()
-  "Query and mutate memory records represented as keyword alists."
-  (let* ((records '((( :id . 1) (:group . "compiler"))
-                    ((:id . 2) (:group . "systems"))))
-         (source (etaf-data-memory-source records :id-key :id))
-         (controller (etaf-data-controller source
-                                           :query '((:group . "compiler"))
-                                           :auto-load t)))
-    (unwind-protect
-        (progn
-          (should (= 1 (length (etaf-value (etaf-data-items controller)))))
-          (etaf-data-mutate
-           controller 'replace '((:id . 1) (:group . "language")))
-          (etaf-data-set-query controller '((:group . "language")))
-          (should (equal "language"
-                         (alist-get :group
-                                    (car (etaf-value
-                                          (etaf-data-items controller)))))))
-      (etaf-data-stop controller))))
-
-(ert-deftest etaf-data-errors-are-observable-and-resignaled ()
-  "Store source load errors in controller state and re-signal them."
-  (let* ((source (etaf-data-source
-                  :load (lambda (_query _page _page-size)
-                          (error "boom"))))
-         (controller (etaf-data-controller source)))
-    (unwind-protect
-        (progn
-          (should-error (etaf-data-load controller) :type 'error)
-          (should (eq 'error (etaf-value (etaf-data-status controller))))
-          (should (eq 'error
-                      (car (etaf-value (etaf-data-error controller))))))
-      (etaf-data-stop controller))))
-
-(ert-deftest etaf-data-m4a-malformed-load-publishes-atomic-error ()
-  "A malformed source result leaves old data intact and exits loading."
-  (let* ((source (etaf-data-source
-                  :load (lambda (&rest _args) '(:total 99))))
-         (controller
-          (etaf-data-controller
-           source
-           :initial-result '(:items (old) :total 1 :page 2 :page-size 7)))
-         captured)
-    (unwind-protect
-        (progn
-          (condition-case condition
-              (etaf-data-load controller)
-            (error (setq captured condition)))
-          (should captured)
-          (should (eq 'error (car captured)))
-          (should (eq 'error (etaf-value (etaf-data-status controller))))
-          (should (equal captured
-                         (etaf-value (etaf-data-error controller))))
-          (should (equal '(old) (etaf-value (etaf-data-items controller))))
-          (should (= 1 (etaf-value (etaf-data-total controller))))
-          (should (= 2 (etaf-value (etaf-data-page controller))))
-          (should (= 7 (etaf-value (etaf-data-page-size controller)))))
-      (etaf-data-stop controller))))
-
-(ert-deftest etaf-data-m4a-loading-projection-fault-exits-terminally ()
-  "A loading dispatch fault publishes error and prevents the mutation call."
-  (let* ((mutate-count 0)
-         (source
-          (etaf-data-source
-           :load (lambda (&rest _args) '(:items (old) :total 1))
-           :mutate (lambda (&rest _args)
-                     (cl-incf mutate-count)
-                     'mutation-result)))
-         (controller
-          (etaf-data-controller source :initial-result '(:items (old) :total 1)))
-         (stop-status-watch
-          (etaf-watch
-           (etaf-data-status controller)
-           (lambda (new _old)
-             (when (eq new 'loading)
-               (error "loading projection failed")))))
-         captured)
-    (unwind-protect
-        (progn
-          (condition-case condition
-              (etaf-data-mutate controller 'update 'payload)
-            (error (setq captured condition)))
-          (should (equal '(error "loading projection failed") captured))
-          (should (= 0 mutate-count))
-          (should (eq 'error (etaf-value (etaf-data-status controller))))
-          (should (equal captured (etaf-value (etaf-data-error controller)))))
-      (funcall stop-status-watch)
-      (etaf-data-stop controller))))
-
-(ert-deftest etaf-data-selected-refs-are-stable-and-differential ()
-  "Selected refs keep identity and notify only changed identities."
+(ert-deftest etaf-data-memory-source-mutations-publish-outcomes ()
+  "Memory insert, update, delete, replace and reset reconcile the controller."
   (let* ((source (etaf-data-memory-source etaf-data-test-records :id-key :id))
-         (controller (etaf-data-controller source :selection '(1 3)))
-         (one (etaf-data-selected-ref controller 1))
-         (two (etaf-data-selected-ref controller 2))
-         (three (etaf-data-selected-ref controller 3))
-         (one-updates 0)
-         (two-updates 0)
-         (three-updates 0))
-    (unwind-protect
-        (progn
-          (should (eq one (etaf-data-selected-ref controller 1)))
-          (should (etaf-value one))
-          (should-not (etaf-value two))
-          (should (etaf-value three))
-          (etaf-watch one (lambda (&rest _) (cl-incf one-updates)))
-          (etaf-watch two (lambda (&rest _) (cl-incf two-updates)))
-          (etaf-watch three (lambda (&rest _) (cl-incf three-updates)))
-          (setf (etaf-value (etaf-data-selection controller)) '(2 3))
-          (should-not (etaf-value one))
-          (should (etaf-value two))
-          (should (etaf-value three))
-          (should (= 1 one-updates))
-          (should (= 1 two-updates))
-          (should (zerop three-updates)))
-      (etaf-data-stop controller))))
-
-(ert-deftest etaf-data-select-one-replaces-existing-selection ()
-  "Single-selection consumers replace, rather than adjoin, identities."
-  (let* ((source (etaf-data-memory-source
-                  '((:id 1) (:id 2) (:id 3)) :id-key :id))
-         (controller (etaf-data-controller source :auto-load nil)))
-    (unwind-protect
-        (progn
-          (etaf-data-select-one controller 1)
-          (etaf-data-select-one controller 2)
-          (should (equal '(2) (etaf-value (etaf-data-selection controller))))
-          (etaf-data-select-one controller 2)
-          (should (equal '(2) (etaf-value (etaf-data-selection controller))))
-          (etaf-data-select-one controller nil)
-          (should-not (etaf-value (etaf-data-selection controller))))
-      (etaf-data-stop controller))))
-
-(ert-deftest etaf-data-selected-item-resolves-the-current-identity ()
-  "Resolve a selected identity to the loaded item through the public helper."
-  (let* ((source (etaf-data-memory-source etaf-data-test-records :id-key :id))
-         (controller (etaf-data-controller
-                      source :item-key (lambda (record) (plist-get record :id))
-                      :auto-load t)))
-    (unwind-protect
-        (progn
-          (etaf-data-select-one controller 3)
-          (should (equal "Alan"
-                         (plist-get (etaf-data-selected-item controller)
-                                    :name)))
-          (etaf-data-select-one controller 99)
-          (should-not (etaf-data-selected-item controller)))
-      (etaf-data-stop controller))))
-
-(ert-deftest etaf-data-stop-disposes-source-and-controller ()
-  "Stop controller lifecycle resources and reject later operations."
-  (let* ((dispose-count 0)
-         (source (etaf-data-source
-                  :load (lambda (_query _page _page-size)
-                          (list :items nil :total 0))
-                  :dispose (lambda ()
-                             (cl-incf dispose-count))))
-         (controller (etaf-data-controller source :auto-load t)))
-    (should (eq 'success (etaf-value (etaf-data-status controller))))
-    (should-not (etaf-data-stop controller))
-    (should (= 1 dispose-count))
-    (should-error (etaf-data-load controller)
-                  :type 'etaf-data-stopped-error)
-    (should-error (etaf-data-set-page controller 2)
-                  :type 'etaf-data-stopped-error)))
-
-(ert-deftest etaf-data-source-rejects-invalid-observation-provider ()
-  "Require an explicit source provider to be a non-nil symbol."
-  (should-error
-   (etaf-data-source :provider nil
-                     :load (lambda (&rest _args) (list :items nil)))
-   :type 'wrong-type-argument)
-  (should-error
-   (etaf-data-source :provider 7
-                     :load (lambda (&rest _args) (list :items nil)))
-   :type 'wrong-type-argument))
-
-(ert-deftest etaf-data-mutate-many-reconciles-once-and-keeps-order ()
-  "A batch writes every operation in order and reloads the Controller once."
-  (let* ((base (etaf-data-memory-source etaf-data-test-records :id-key :id))
-         (capabilities (etaf-data-source-capabilities base))
-         (load (plist-get capabilities :load))
-         (loads 0)
-         (source (apply #'etaf-data-source
-                        (plist-put capabilities :load
-                                   (lambda (&rest args)
-                                     (cl-incf loads)
-                                     (apply load args)))))
          (controller (etaf-data-controller source :page-size 10 :auto-load t)))
     (unwind-protect
         (progn
-          (should (= 1 loads))
-          (let ((result (etaf-data-mutate-many
-                         controller
-                         '((insert (:id 5 :name "Edsger" :group "systems"))
-                           (replace (:id 2 :name "Grace Hopper" :group "navy"))
-                           (delete 1)))))
-            (should (= 2 loads))
-            (should (eq 'mutate-many (plist-get result :operation)))
-            (should (= 3 (length (plist-get result :results))))
-            (should (equal "Grace Hopper"
-                           (plist-get (car (etaf-value
-                                            (etaf-data-items controller)))
-                                      :name)))
-            (should (equal '(2 3 4 5) (etaf-data-test--ids controller))))
+          (etaf-data-mutate controller 'insert '(:id 5 :name "Edsger" :group "systems"))
+          (should (equal '(1 2 3 4 5) (etaf-data-test--controller-ids controller)))
           (should (eq 'committed
+                      (plist-get (etaf-data-mutation-outcome controller) :certainty)))
+          (etaf-data-mutate controller 'update '(:id 2 :name "Grace Hopper" :group "navy"))
+          (should (equal "Grace Hopper"
+                         (plist-get (cadr (etaf-value (etaf-data-items controller)))
+                                    :name)))
+          (etaf-data-mutate controller 'delete 1)
+          (should (equal '(2 3 4 5) (etaf-data-test--controller-ids controller)))
+          (etaf-data-mutate controller 'replace '(:id 3 :name "Alan Turing" :group "logic"))
+          (should (member "Alan Turing"
+                          (mapcar (lambda (row) (plist-get row :name))
+                                  (etaf-value (etaf-data-items controller)))))
+          (etaf-data-mutate controller 'reset '((:id 9 :name "Reset")))
+          (should (equal '(9) (etaf-data-test--controller-ids controller))))
+      (etaf-data-stop controller))))
+
+(ert-deftest etaf-data-v2-certainty-outcomes-are-reported ()
+  "V2 committed, rolled-back and unknown outcomes shape mutation envelopes."
+  (let* ((rows '((:id 1)))
+         (committed (etaf-data-source
+                     :load (lambda (&rest _args) (list :items rows :total 1))
+                     :mutate-v2 (lambda (_operation payload)
+                                  (setq rows (list payload))
+                                  (list :certainty 'committed :result payload))))
+         (controller (etaf-data-controller committed :auto-load t)))
+    (unwind-protect
+        (progn
+          (should (equal '(:id 2) (etaf-data-mutate controller 'replace '(:id 2))))
+          (let ((outcome (etaf-data-mutation-outcome controller)))
+            (should (eq 'committed (plist-get outcome :certainty)))
+            (should (plist-get outcome :reconciliation-token)))
+          (should (eq 'reconciled (etaf-data-reconciliation-state controller))))
+      (etaf-data-stop controller)))
+  (let* ((rolled (etaf-data-source
+                  :load (lambda (&rest _args) '(:items nil :total 0))
+                  :mutate-v2 (lambda (&rest _args)
+                               '(:certainty rolled-back :error (error "nope")))))
+         (controller (etaf-data-controller rolled)))
+    (unwind-protect
+        (progn
+          (should-error (etaf-data-mutate controller 'insert '(:id 1)) :type 'error)
+          (should (eq 'rolled-back
+                      (plist-get (etaf-data-mutation-outcome controller) :certainty))))
+      (etaf-data-stop controller)))
+  (let* ((unknown (etaf-data-source
+                   :load (lambda (&rest _args) '(:items nil :total 0))
+                   :mutate-v2 (lambda (&rest _args)
+                                '(:certainty external-unknown))))
+         (controller (etaf-data-controller unknown)))
+    (unwind-protect
+        (progn
+          (should-error (etaf-data-mutate controller 'insert '(:id 1))
+                        :type 'etaf-data-error)
+          (should (eq 'external-unknown
                       (plist-get (etaf-data-mutation-outcome controller)
                                  :certainty))))
       (etaf-data-stop controller))))
 
-(ert-deftest etaf-data-mutate-many-uses-batch-capability-once ()
-  "A batch-capable source receives the whole operation list exactly once."
-  (let* ((base (etaf-data-memory-source etaf-data-test-records :id-key :id))
-         (capabilities (etaf-data-source-capabilities base))
-         (mutation (plist-get capabilities :mutate))
-         (batches nil)
-         (source (apply #'etaf-data-source
-                        (plist-put capabilities :mutate-batch
-                                   (lambda (operations)
-                                     (push (length operations) batches)
-                                     (mapcar
-                                      (lambda (operation)
-                                        (apply mutation operation)
-                                        (list :operation (car operation)
-                                              :changes 1))
-                                      operations)))))
-         (controller (etaf-data-controller source :page-size 10 :auto-load t)))
-    (unwind-protect
-        (progn
+(ert-deftest etaf-data-async-mutation-publishes-pending-outcome ()
+  "Asynchronous mutations expose pending and completed outcome envelopes."
+  (let (resolve rows)
+    (let* ((source (etaf-data-source
+                    :load (lambda (&rest _args)
+                            (list :items rows :total (length rows)))
+                    :mutate (lambda (_operation payload)
+                              (etaf-async
+                               (lambda (ok _fail)
+                                 (setq resolve (lambda ()
+                                                 (setq rows (list payload))
+                                                 (funcall ok payload)))
+                                 nil)))))
+           (controller (etaf-data-controller source)))
+      (unwind-protect
+          (progn
+            (should-not (etaf-data-mutate controller 'insert '(:id 8)))
+            (let ((outcome (etaf-data-mutation-outcome controller)))
+              (should (plist-get outcome :pending-p))
+              (should (eq 'external-unknown (plist-get outcome :certainty))))
+            (funcall resolve)
+            (let ((outcome (etaf-data-mutation-outcome controller)))
+              (should-not (plist-get outcome :pending-p))
+              (should (eq 'committed (plist-get outcome :certainty))))
+            (should (equal '(8) (etaf-data-test--controller-ids controller))))
+        (etaf-data-stop controller)))))
+
+(ert-deftest etaf-data-mutate-many-reconciles-and-reports-prefix-failure ()
+  "Mutate-many uses batch capabilities and records failure prefixes."
+  (let ((batch-calls 0)
+        rows)
+    (let* ((source (etaf-data-source
+                    :load (lambda (&rest _args) (list :items rows :total (length rows)))
+                    :mutate-batch (lambda (operations)
+                                    (cl-incf batch-calls)
+                                    (setq rows (mapcar #'cadr operations))
+                                    '((:changes 1) (:changes 2)))))
+           (controller (etaf-data-controller source)))
+      (unwind-protect
           (let ((result (etaf-data-mutate-many
-                         controller
-                         '((insert (:id 5 :name "Edsger"))
-                           (insert (:id 6 :name "Barbara"))))))
-            (should (equal '(2) batches))
-            (should (= 2 (plist-get result :changes)))
-            (should (equal '(1 2 3 4 5 6)
-                           (etaf-data-test--ids controller)))))
-      (etaf-data-stop controller))))
+                         controller '((insert (:id 1)) (insert (:id 2))))))
+            (should (= 1 batch-calls))
+            (should (equal '((:changes 1) (:changes 2))
+                           (plist-get result :results)))
+            (should (= 3 (plist-get result :changes)))
+            (should (equal '(1 2) (etaf-data-test--controller-ids controller))))
+        (etaf-data-stop controller))))
+  (let ((calls 0))
+    (let* ((source (etaf-data-source
+                    :load (lambda (&rest _args) '(:items nil :total 0))
+                    :mutate (lambda (_operation payload)
+                              (cl-incf calls)
+                              (when (= calls 2)
+                                (error "second failed"))
+                              (list :ok payload))))
+           (controller (etaf-data-controller source)))
+      (unwind-protect
+          (progn
+            (should-error
+             (etaf-data-mutate-many controller
+                                    '((insert (:id 1)) (insert (:id 2))))
+             :type 'error)
+            (let ((outcome (etaf-data-mutation-outcome controller)))
+              (should (eq 'external-unknown (plist-get outcome :certainty)))
+              (should (equal '((:ok (:id 1))) (plist-get outcome :results)))))
+        (etaf-data-stop controller)))))
 
-(ert-deftest etaf-data-mutate-many-reports-partial-failure ()
-  "A signaled operation stops the batch and completed results stay visible."
-  (let* ((source (etaf-data-source
-                  :load (lambda (_query page page-size)
-                          (list :items '((:id 1)) :total 1
-                                :page page :page-size page-size))
-                  :mutate (lambda (operation _payload)
-                            (if (eq operation 'boom)
-                                (error "batch boom")
-                              (list :operation operation :changes 1)))))
+(ert-deftest etaf-data-retry-reconciliation-reloads-without-replaying-mutation ()
+  "Retry reloads a committed mutation after read-side failure only once."
+  (let ((mutations 0)
+        (loads 0)
+        (fail-load t))
+    (let* ((source (etaf-data-source
+                    :load (lambda (&rest _args)
+                            (cl-incf loads)
+                            (if fail-load
+                                (error "refresh failed")
+                              '(:items ((:id 10)) :total 1)))
+                    :mutate-v2 (lambda (_operation payload)
+                                 (cl-incf mutations)
+                                 (list :certainty 'committed :result payload))))
+           (controller (etaf-data-controller source)))
+      (unwind-protect
+          (progn
+            (should-error (etaf-data-mutate controller 'insert '(:id 10))
+                          :type 'error)
+            (should (= 1 mutations))
+            (should (= 1 loads))
+            (should (eq 'reconciliation-error
+                        (etaf-data-reconciliation-state controller)))
+            (setq fail-load nil)
+            (etaf-data-retry-reconciliation controller)
+            (should (= 1 mutations))
+            (should (= 2 loads))
+            (should (equal '(10) (etaf-data-test--controller-ids controller)))
+            (should (eq 'reconciled (etaf-data-reconciliation-state controller))))
+        (etaf-data-stop controller)))))
+
+(ert-deftest etaf-data-selection-apis-and-selected-ref-stability ()
+  "Selection helpers maintain stable per-identity refs."
+  (let* ((source (etaf-data-memory-source etaf-data-test-records :id-key :id))
          (controller (etaf-data-controller source :page-size 10 :auto-load t)))
     (unwind-protect
-        (progn
-          (should-error
-           (etaf-data-mutate-many
-            controller '((insert (:id 2)) (boom (:id 3)) (insert (:id 4))))
-           :type 'error)
-          (let ((outcome (etaf-data-mutation-outcome controller)))
-            (should (eq 'external-unknown (plist-get outcome :certainty)))
-            (should (= 1 (length (plist-get outcome :results))))
-            (should (eq 'insert
-                        (plist-get (car (plist-get outcome :results))
-                                   :operation)))))
+        (let ((one-a (etaf-data-selected-ref controller 1))
+              (one-b (etaf-data-selected-ref controller 1))
+              (two (etaf-data-selected-ref controller 2)))
+          (should (eq one-a one-b))
+          (should-not (etaf-value one-a))
+          (etaf-data-select controller 1)
+          (should (etaf-value one-a))
+          (should-not (etaf-value two))
+          (should (equal 1 (plist-get (etaf-data-selected-item controller) :id)))
+          (etaf-data-select-one controller 2)
+          (should-not (etaf-value one-a))
+          (should (etaf-value two))
+          (setf (etaf-value (etaf-data-selection controller)) '(1 2))
+          (should (etaf-value one-a))
+          (should (etaf-value two))
+          (etaf-data-select controller 2 nil)
+          (should (etaf-value one-a))
+          (should-not (etaf-value two))
+          (should (equal '(1) (etaf-value (etaf-data-selection controller)))))
       (etaf-data-stop controller))))
 
-(ert-deftest etaf-data-mutate-many-rejects-asynchronous-batches ()
-  "Reject an asynchronous batch result instead of publishing it as a value."
-  (let* ((source (etaf-data-source
-                  :load (lambda (_query page page-size)
-                          (list :items nil :total 0
-                                :page page :page-size page-size))
-                  :mutate-batch
-                  (lambda (_operations)
-                    (etaf-async (lambda (resolve _reject)
-                                  (funcall resolve 'committed)
-                                  nil)))))
-         (controller (etaf-data-controller source :page-size 10 :auto-load t)))
-    (unwind-protect
-        (should-error (etaf-data-mutate-many controller '((insert (:id 1))))
-                      :type 'etaf-data-error)
-      (etaf-data-stop controller))))
+(ert-deftest etaf-data-stop-disposes-source-and-rejects-access ()
+  "Stop returns cleanup errors, cancels work and rejects later operations."
+  (let (cancelled)
+    (let* ((source (etaf-data-source
+                    :load (lambda (&rest _args)
+                            (etaf-async
+                             (lambda (_ok _fail)
+                               (lambda () (setq cancelled t)))))
+                    :dispose (lambda () (error "dispose failed"))))
+           (controller (etaf-data-controller source)))
+      (etaf-data-load controller)
+      (let ((errors (etaf-data-stop controller)))
+        (should cancelled)
+        (should (= 1 (length errors)))
+        (should (eq 'error (caar errors))))
+      (should-error (etaf-data-load controller) :type 'etaf-data-stopped-error)
+      (should-error (etaf-data-items controller) :type 'etaf-data-stopped-error))))
+
+(ert-deftest etaf-data-initial-result-seeds-without-loading ()
+  "Prepared initial results seed a successful controller."
+  (let ((loads 0))
+    (let* ((source (etaf-data-source
+                    :load (lambda (_query page page-size)
+                            (cl-incf loads)
+                            (list :items '((:id 9)) :total 42
+                                  :page page :page-size page-size))))
+           (prepared (etaf-data-source-load-page source nil 3 5))
+           (controller (etaf-data-controller source :initial-result prepared)))
+      (unwind-protect
+          (progn
+            (should (= 1 loads))
+            (should (eq 'success (etaf-value (etaf-data-status controller))))
+            (should (equal '(9) (etaf-data-test--controller-ids controller)))
+            (should (= 42 (etaf-value (etaf-data-total controller))))
+            (should (= 3 (etaf-value (etaf-data-page controller))))
+            (should (= 5 (etaf-value (etaf-data-page-size controller))))
+            (should-error
+             (etaf-data-controller source :initial-result prepared :auto-load t)))
+        (etaf-data-stop controller)))))
+
+(ert-deftest etaf-data-owner-scope-disposes-controller ()
+  "Owner scope disposal stops its child controller."
+  (let* ((scope (etaf-effect-scope :detached t))
+         controller)
+    (etaf-scope-run
+     scope
+     (lambda ()
+       (setq controller
+             (etaf-data-controller
+              (etaf-data-memory-source etaf-data-test-records :id-key :id)
+              :auto-load t))))
+    (should (equal '(1 2 3 4) (etaf-data-test--controller-ids controller)))
+    (etaf-scope-stop scope)
+    (should-error (etaf-data-load controller) :type 'etaf-data-stopped-error)))
+
+(ert-deftest etaf-data-completion-publishes-atomically ()
+  "Items, total and status change in one observer turn for a completion."
+  (let (resolve events stop)
+    (let* ((source (etaf-data-source
+                    :load (lambda (&rest _args)
+                            (etaf-async
+                             (lambda (ok _fail)
+                               (setq resolve ok)
+                               nil)))))
+           (controller (etaf-data-controller source)))
+      (unwind-protect
+          (progn
+            (setq stop
+                  (etaf-watch
+                   (lambda ()
+                     (list (etaf-value (etaf-data-items controller))
+                           (etaf-value (etaf-data-total controller))
+                           (etaf-value (etaf-data-status controller))))
+                   (lambda (new _old) (push new events))
+                   :test #'equal))
+            (etaf-data-load controller)
+            (setq events nil)
+            (funcall resolve '(:items ((:id 1) (:id 2)) :total 2))
+            (should (= 1 (length events)))
+            (should (equal '(((:id 1) (:id 2)) 2 success) (car events))))
+        (when stop (funcall stop))
+        (etaf-data-stop controller)))))
 
 (provide 'etaf-data-tests)
 ;;; etaf-data-tests.el ends here

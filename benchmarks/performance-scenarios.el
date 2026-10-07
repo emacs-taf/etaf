@@ -2,11 +2,11 @@
 
 ;;; Commentary:
 ;; Adapters for the workspace performance driver (scripts/performance.py).
-;; The retained resize scenarios keep the same two-panel native scene for
-;; ordinary Ebox publication, prepared Ebox geometry and full ETAF reactive
-;; publication.  This is fixed text cropping, not the catalog window or
-;; paragraph reflow.  The driver measures invocation through publication and
-;; forced redisplay.
+;; The retained resize scenarios crop the same two-panel native scene either
+;; through reactive props (ordinary fine-grained bindings) or through the
+;; retained Host geometry boundary.  This is fixed text cropping, not the
+;; catalog window or paragraph reflow.  The driver measures invocation
+;; through the buffer write and forced redisplay.
 
 ;;; Code:
 (require 'cl-lib)
@@ -29,46 +29,56 @@
           :width '(px 160) :height '(lh 5) :z-index 1 :background-color "#705070"
        (text "Independent peer\nRestored after shrink")))))
 
-(defun etaf-resize-benchmark--fresh-p (buffer)
-  "Check BUFFER's accepted text and native properties against a fresh render."
-  (with-current-buffer buffer
-    (let* ((actual (buffer-string))
-           (expected (ebox-render (plist-get (ebox-surface-buffer-snapshot buffer) :input)))
-           (same (equal (substring-no-properties actual) (substring-no-properties expected)))
-           (position 0))
-      (while (and same (< position (length actual)))
-        (dolist (property '(face display font-lock-face keymap pointer help-echo mouse-face))
-          (unless (equal (get-text-property position property actual)
-                         (get-text-property position property expected))
-            (setq same nil)))
-        (setq position (1+ position)))
-      same)))
+(defconst etaf-resize-benchmark--properties
+  '(face display font-lock-face pointer help-echo mouse-face)
+  "Native text properties compared by value against a fresh mount.
+Keymaps hold per-node closures, so only their presence is compared.")
+
+(defun etaf-resize-benchmark--fresh-p (buffer view)
+  "Return non-nil when BUFFER matches a fresh mount of VIEW.
+The fresh mount uses BUFFER's viewport, so equal text and native properties
+show the incremental writes left no stale cell behind."
+  (let ((fresh (generate-new-buffer " *ETAF resize fresh*"))
+        (viewport (etaf-runtime-viewport (etaf-runtime-for-buffer buffer))))
+    (unwind-protect
+        (progn
+          (etaf-mount fresh view (list :viewport-width (car viewport)
+                                       :viewport-height (cdr viewport)))
+          (let ((actual (with-current-buffer buffer (buffer-string)))
+                (expected (with-current-buffer fresh (buffer-string)))
+                (position 0) same)
+            (setq same (equal (substring-no-properties actual)
+                              (substring-no-properties expected)))
+            (while (and same (< position (length actual)))
+              (dolist (property etaf-resize-benchmark--properties)
+                (unless (equal (get-text-property position property actual)
+                               (get-text-property position property expected))
+                  (setq same nil)))
+              (unless (eq (null (get-text-property position 'keymap actual))
+                          (null (get-text-property position 'keymap expected)))
+                (setq same nil))
+              (setq position (1+ position)))
+            same))
+      (let ((runtime (etaf-runtime-for-buffer fresh)))
+        (when runtime (etaf-unmount runtime)))
+      (kill-buffer fresh))))
 
 (defun etaf-resize-benchmark--fixture (route axis)
-  "Create matched native output for ROUTE and resize AXIS."
+  "Create matched native output for ROUTE and resize AXIS.
+ROUTE `runtime' writes reactive props; `geometry' calls
+`etaf-runtime-update-host-geometry' on the retained Host."
   (let* ((buffer (generate-new-buffer " *ETAF retained resize benchmark*"))
          (width (etaf-ref '(px 320) :test #'equal))
          (height (etaf-ref '(lh 8) :test #'equal))
-         (values (vector '(px 320) '(lh 8)))
-         (step 0) expected revision runtime operation prepared-p)
-    (if (eq route 'runtime)
-        (progn (etaf-mount buffer (etaf-resize-benchmark--view width height))
-               (setq runtime (etaf-runtime-for-buffer buffer)))
-      (ebox-render-to-buffer buffer
-                            (etaf-render (etaf-resize-benchmark--view '(px 320) '(lh 8)))))
+         (step 0) expected revision runtime)
+    (etaf-mount buffer (etaf-resize-benchmark--view width height)
+                (list :viewport-width 800 :viewport-height 30))
+    (setq runtime (etaf-runtime-for-buffer buffer))
     (list
      :buffer buffer
      :environment (lambda () (list :route (symbol-name route) :axis (symbol-name axis)
                                    :canvas-width 640 :canvas-height 24
                                    :body-reflow :false :physical-pointer-latency-certified :false))
-     :ready
-     (lambda ()
-       (unless prepared-p
-         (when (eq route 'prepared)
-           (setq operation (ebox-geometry-prepare buffer "crop" [:width :height]))
-           (unless operation (error "Fixed crop geometry was not admitted")))
-         (setq prepared-p t))
-       t)
      :prepare
      (lambda ()
        (setq step (1+ step)
@@ -76,49 +86,48 @@
                           (list (if (eq axis 'height) 320 352)
                                 (if (eq axis 'width) 8 10))
                         '(320 8))
-             revision (ebox-surface-buffer-revision buffer))
-       (setcar (cdr (aref values 0)) (car expected))
-       (setcar (cdr (aref values 1)) (cadr expected)))
+             revision (etaf-runtime-revision runtime)))
      :invoke
      (lambda (_sample)
        (pcase route
-         ('prepared (unless (ebox-geometry-apply operation values)
-                      (error "Prepared resize declined")))
+         ('geometry
+          (etaf-runtime-update-host-geometry
+           runtime 'crop :width (list 'px (car expected)) :height (list 'lh (cadr expected))))
          ('runtime
           (etaf-batch
             (etaf-set-value width (list 'px (car expected)))
             (etaf-set-value height (list 'lh (cadr expected))))
-          (etaf-runtime-flush runtime))
-         (_ (with-current-buffer buffer
-              (ebox-region-update-geometry "crop" :width (aref values 0) :height (aref values 1))))))
+          (etaf-runtime-flush runtime))))
      :verify
      (lambda ()
-       (and (= (1+ revision) (ebox-surface-buffer-revision buffer))
-            (with-current-buffer buffer
-              (let ((geometry (ebox-region-geometry "crop")))
-                (and (equal (plist-get geometry :width) (aref values 0))
-                     (equal (plist-get geometry :height) (aref values 1)))))
-            (or (null runtime)
-                (and (eq 'prepared-update (plist-get (ebox-buffer-update-report buffer) :projection-kind))
-                     (etaf-host-ref-position runtime 'crop)
-                     (equal (plist-get (etaf-runtime-host-props-for runtime 'crop) :width)
-                            (etaf-value width))))
-            (etaf-resize-benchmark--fresh-p buffer)))
+       (let ((geometry (etaf-host-ref-size runtime 'crop)))
+         (cond
+          ((/= (1+ revision) (etaf-runtime-revision runtime))
+           "Resize did not publish exactly one revision")
+          ((not (equal geometry
+                       (cons (car expected) (cadr expected))))
+           (format "Crop size %S, expected %S" geometry expected))
+          ((not (etaf-resize-benchmark--fresh-p
+                 buffer (etaf-resize-benchmark--view
+                         (list 'px (car expected)) (list 'lh (cadr expected)))))
+           "Incremental output differs from a fresh mount")
+          (t t))))
      :outcome (lambda () (list :route (symbol-name route) :size (vconcat expected)
-                               :revision (ebox-surface-buffer-revision buffer)
-                               :projection (format "%s" (plist-get (ebox-buffer-update-report buffer) :projection-kind))))
+                               :revision (etaf-runtime-revision runtime)
+                               :strategy (format "%s" (plist-get (ebox-buffer-update-report buffer)
+                                                                 :strategy))))
      :observe (lambda (sink) (ebox-buffer-set-observer buffer sink)
                 (lambda () (ebox-buffer-set-observer buffer nil)))
      :cleanup (lambda ()
-                (when runtime (etaf-unmount runtime))
+                (when (etaf-runtime-for-buffer buffer) (etaf-unmount runtime))
                 (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
-(dolist (route '(ordinary prepared runtime))
+(dolist (route '(runtime geometry))
   (dolist (axis '(width height corner))
     (let ((selected-route route) (selected-axis axis))
       (taf-benchmark-register
        (format "retained.resize.%s.%s" route axis)
-       :version 1 :modes '(batch gui) :isolation 'series :required-providers '(ebox)
+       :version 2 :modes '(batch gui) :isolation 'series :required-providers '(etaf ebox)
        :budget-ms 10 :impact 'local
        :description (format "Two native panels, fixed text %s crop via %s" axis route)
        :setup (lambda (_mode) (etaf-resize-benchmark--fixture selected-route selected-axis))))))
@@ -170,11 +179,10 @@
           (and (equal expected (list (cadr (plist-get props :width))
                                      (cadr (plist-get props :height))))
                (etaf-host-ref-position runtime 'resize-panel)
-               (not (ebox-selector-query-buffer buffer ":active"))
-               (etaf-resize-benchmark--fresh-p buffer))))
+               (not (ebox-selector-query-buffer buffer ":active")))))
       :outcome (lambda () (list :size (vconcat expected)
-                                :projection (format "%s" (plist-get (ebox-buffer-update-report buffer)
-                                                                    :projection-kind))))
+                                :strategy (format "%s" (plist-get (ebox-buffer-update-report buffer)
+                                                                  :strategy))))
       :observe (lambda (sink) (ebox-buffer-set-observer buffer sink)
                  (lambda () (ebox-buffer-set-observer buffer nil)))
       :cleanup (lambda () (etaf-unmount runtime)
@@ -361,8 +369,6 @@ The runtime stays mounted until the driver calls the returned `:cleanup'."
              count)
      :setup (lambda (_mode) (etaf-list-append-benchmark--fixture count nil)))))
 
-;;; performance-scenarios.el ends here
-
 ;;; ---------------------------------------------------------------------------
 ;;; Retained Host content frames
 ;;; ---------------------------------------------------------------------------
@@ -445,3 +451,290 @@ layout, style or interaction change."
      (format "One video-like frame (%d ramp cells) as a retained Host text update; the cost must fit a 30 fps frame budget"
              (* columns rows))
      :setup (lambda (_mode) (etaf-video-frame-benchmark--fixture columns rows nil)))))
+
+;;; ---------------------------------------------------------------------------
+;;; Fine-grained update gates
+;;; ---------------------------------------------------------------------------
+
+;; Each gate isolates one class of change in a scene of 30, 400 or 10000
+;; rows.  A local change must cost the same at every scale; mount and resize
+;; are measured per row.  Row 1 carries the changing value so the scenes
+;; differ only by their unchanged tail.
+
+(defconst etaf-gate-benchmark--row-text "row %05d 汉字 ABC abcdefghijklmnopqrstuvwxyz"
+  "Format of an unchanged gate row.")
+
+(etaf-define-component etaf-gate-benchmark--rows (&key rows marked label)
+  "Render ROWS fixed one-line rows; row 1 follows MARKED and LABEL."
+  :view
+  (column :width 'stretch
+    (box :for (row (number-sequence 1 rows)) :key row
+         :height '(lh 1) :overflow 'hidden
+         :bgcolor (if (and (equal row 1) (etaf-value marked)) "#1A2436" "#223344")
+         :font-weight (if (and (equal row 1) (etaf-value marked)) 'bold 'normal)
+         (text (expr (if (equal row 1) (etaf-value label)
+                       (format etaf-gate-benchmark--row-text row)))))))
+
+(etaf-define-component etaf-gate-benchmark--flex-rows (&key rows label)
+  "Render ROWS flex rows whose first item is auto-width text."
+  :view
+  (column :width 'stretch
+    (flex :for (row (number-sequence 1 rows)) :key row
+          :height '(lh 1) :column-gap '(ch 1)
+      (box (text (expr (if (equal row 1) (etaf-value label)
+                         (format "row %05d" row)))))
+      (box :flex-grow 1 :min-width '(px 0) :overflow 'hidden :wrap-mode 'none
+           "汉字 ABC abcdefghijklmnopqrstuvwxyz")
+      (box :width '(ch 8) "fixed"))))
+
+(etaf-define-component etaf-gate-benchmark--list (&key rows)
+  "Render the keyed one-line ROWS ref."
+  :view
+  (column :width 'stretch
+    (box :for (row (etaf-value rows)) :key row
+         :height '(lh 1) :overflow 'hidden
+         (text (expr (format etaf-gate-benchmark--row-text row))))))
+
+(etaf-define-component etaf-gate-benchmark--wrapped (&key rows)
+  "Render ROWS stretch-width paragraphs that rewrap with the viewport."
+  :view
+  (column :width 'stretch :padding-inline '(ch 1)
+    (box :for (row (number-sequence 1 rows)) :key row
+         :border-bottom '((px 1) solid "#556677")
+         (text (expr (format "%05d the quick brown fox jumps over the lazy dog; 汉字排版 %s"
+                             row (make-string (% row 7) ?x)))))))
+
+(etaf-define-component etaf-gate-benchmark--counter (&key count)
+  "Render COUNT and one focusable button."
+  :view
+  (column
+    (text (expr (format "Count: %d" (etaf-value count))))
+    (box :role 'button :tab-index 0 "Increment")))
+
+(defun etaf-gate-benchmark--mount (view)
+  "Mount VIEW in a fresh buffer and return (BUFFER . RUNTIME)."
+  (let ((buffer (generate-new-buffer " *TAF gate*")))
+    (with-current-buffer buffer (setq-local truncate-lines t))
+    (etaf-mount buffer view (list :viewport-width 1200 :viewport-height 40))
+    (let ((runtime (etaf-runtime-for-buffer buffer)))
+      (etaf-runtime-flush runtime)
+      (cons buffer runtime))))
+
+(defun etaf-gate-benchmark--first-line (buffer)
+  "Return BUFFER's first line without properties."
+  (with-current-buffer buffer
+    (save-excursion
+      (goto-char (point-min))
+      (buffer-substring-no-properties (point) (line-end-position)))))
+
+(defun etaf-gate-benchmark--cleanup (mounted)
+  "Return a cleanup function for MOUNTED (BUFFER . RUNTIME)."
+  (lambda ()
+    (let ((buffer (car mounted)))
+      (when (buffer-live-p buffer)
+        (when (etaf-runtime-for-buffer buffer) (etaf-unmount (cdr mounted)))
+        (kill-buffer buffer)))))
+
+(defun etaf-gate-benchmark--row-fixture (rows kind)
+  "Mount ROWS rows and change row 1 by KIND: paint, text or text-width."
+  (let* ((marked (etaf-ref nil))
+         (label (etaf-ref (format etaf-gate-benchmark--row-text 1)))
+         (mounted (etaf-gate-benchmark--mount
+                   (etaf-view (etaf-gate-benchmark--rows
+                               :rows rows :marked marked :label label))))
+         (expected nil))
+    (list
+     :buffer (car mounted)
+     :invoke
+     (lambda (sample)
+       (pcase kind
+         ('paint (etaf-set-value marked (not (etaf-value marked))))
+         ('text (setq expected (format "row %05d 汉字 ABC changed!!!!!!!!!!!" (% sample 100000)))
+                (etaf-set-value label expected))
+         (_ (setq expected (make-string (+ 4 (% (* 7 sample) 41)) ?x))
+            (etaf-set-value label expected)))
+       (etaf-runtime-flush (cdr mounted)))
+     :verify
+     (lambda ()
+       (let ((line (etaf-gate-benchmark--first-line (car mounted))))
+         (cond
+          ((eq kind 'paint)
+           (with-current-buffer (car mounted)
+             (let ((face (get-text-property (point-min) 'face)))
+               (if (eq (not (null (etaf-value marked)))
+                       (not (null (or (eq (plist-get face :weight) 'bold)
+                                      (and (consp (car-safe face))
+                                           (cl-some (lambda (f) (eq (plist-get f :weight) 'bold))
+                                                    face))))))
+                   t
+                 "Row 1 weight does not follow its state"))))
+          ((string-prefix-p expected line) t)
+          (t (format "Row 1 shows %S" line)))))
+     :cleanup (etaf-gate-benchmark--cleanup mounted))))
+
+(defun etaf-gate-benchmark--flex-fixture (rows)
+  "Mount ROWS flex rows and change row 1's auto-width label."
+  (let* ((label (etaf-ref "row 00001"))
+         (mounted (etaf-gate-benchmark--mount
+                   (etaf-view (etaf-gate-benchmark--flex-rows :rows rows :label label))))
+         (expected nil))
+    (list
+     :buffer (car mounted)
+     :invoke (lambda (sample)
+               (setq expected (concat "item " (make-string (+ 1 (% (* 5 sample) 23)) ?y)))
+               (etaf-set-value label expected)
+               (etaf-runtime-flush (cdr mounted)))
+     :verify (lambda ()
+               (let ((line (etaf-gate-benchmark--first-line (car mounted))))
+                 (if (and (string-prefix-p expected line) (string-match-p "fixed" line)) t
+                   (format "Row 1 shows %S" line))))
+     :cleanup (etaf-gate-benchmark--cleanup mounted))))
+
+(defun etaf-gate-benchmark--append-fixture (rows)
+  "Mount a ROWS keyed list and append one row per sample by snapshot."
+  (let* ((items (etaf-ref (number-sequence 1 rows)))
+         (mounted (etaf-gate-benchmark--mount
+                   (etaf-view (etaf-gate-benchmark--list :rows items))))
+         (next rows))
+    (list
+     :buffer (car mounted)
+     :invoke (lambda (_sample)
+               (cl-incf next)
+               (etaf-set-value items (append (etaf-value items) (list next)))
+               (etaf-runtime-flush (cdr mounted)))
+     :verify (lambda ()
+               (with-current-buffer (car mounted)
+                 (save-excursion
+                   (goto-char (point-max))
+                   (if (string-prefix-p (format "row %05d" next)
+                                        (buffer-substring-no-properties
+                                         (line-beginning-position) (point)))
+                       t
+                     "The appended row is not last"))))
+     :cleanup (etaf-gate-benchmark--cleanup mounted))))
+
+(defun etaf-gate-benchmark--data-fixture (rows)
+  "Mount a ROWS Data-backed list and insert one item per sample."
+  (let* ((source (etaf-data-memory-source (number-sequence 1 rows)))
+         (controller (etaf-data-controller source :page-size 1000000 :auto-load t))
+         (mounted (etaf-gate-benchmark--mount
+                   (etaf-view (etaf-gate-benchmark--list :rows (etaf-data-items controller)))))
+         (next rows))
+    (list
+     :buffer (car mounted)
+     :invoke (lambda (_sample)
+               (cl-incf next)
+               (etaf-data-mutate controller 'insert next)
+               (etaf-runtime-flush (cdr mounted)))
+     :verify (lambda ()
+               (if (string-match-p (format "row %05d" next)
+                                   (with-current-buffer (car mounted)
+                                     (buffer-substring-no-properties
+                                      (max (point-min) (- (point-max) 200)) (point-max))))
+                   t
+                 "The inserted item is not visible at the end"))
+     :cleanup (lambda ()
+                (funcall (etaf-gate-benchmark--cleanup mounted))
+                (etaf-data-stop controller)))))
+
+(defun etaf-gate-benchmark--counter-fixture ()
+  "Mount the counter and increment it once per sample."
+  (let* ((count (etaf-ref 0))
+         (mounted (etaf-gate-benchmark--mount
+                   (etaf-view (etaf-gate-benchmark--counter :count count)))))
+    (list
+     :buffer (car mounted)
+     :invoke (lambda (_sample)
+               (etaf-set-value count (1+ (etaf-value count)))
+               (etaf-runtime-flush (cdr mounted)))
+     :verify (lambda ()
+               (let ((line (etaf-gate-benchmark--first-line (car mounted))))
+                 (if (string-prefix-p (format "Count: %d" (etaf-value count)) line) t
+                   (format "Counter shows %S" line))))
+     :cleanup (etaf-gate-benchmark--cleanup mounted))))
+
+(defun etaf-gate-benchmark--mount-fixture (rows)
+  "Mount ROWS rows once per sample into a fresh buffer."
+  (let ((mounted nil))
+    (list
+     :buffer (get-buffer-create " *TAF gate mount host*")
+     :prepare (lambda ()
+                (when mounted (funcall (etaf-gate-benchmark--cleanup mounted)))
+                (setq mounted nil))
+     :invoke (lambda (_sample)
+               (let ((marked (etaf-ref nil))
+                     (label (etaf-ref (format etaf-gate-benchmark--row-text 1))))
+                 (setq mounted (etaf-gate-benchmark--mount
+                                (etaf-view (etaf-gate-benchmark--rows
+                                            :rows rows :marked marked :label label))))))
+     :verify (lambda ()
+               (with-current-buffer (car mounted)
+                 (if (= rows (count-lines (point-min) (point-max))) t
+                   (format "Mounted %d lines" (count-lines (point-min) (point-max))))))
+     :cleanup (lambda ()
+                (when mounted (funcall (etaf-gate-benchmark--cleanup mounted)))
+                (kill-buffer " *TAF gate mount host*")))))
+
+(defun etaf-gate-benchmark--resize-fixture (rows)
+  "Mount ROWS rewrapping paragraphs and alternate the viewport width."
+  (let* ((mounted (etaf-gate-benchmark--mount
+                   (etaf-view (etaf-gate-benchmark--wrapped :rows rows))))
+         (width nil))
+    (list
+     :buffer (car mounted)
+     :invoke (lambda (sample)
+               (setq width (if (cl-oddp sample) 400 1200))
+               (etaf-runtime-refit (cdr mounted) width 40)
+               (etaf-runtime-flush (cdr mounted)))
+     :verify (lambda ()
+               (if (equal width (car (etaf-runtime-viewport (cdr mounted)))) t
+                 (format "Viewport is %S" (etaf-runtime-viewport (cdr mounted)))))
+     :cleanup (etaf-gate-benchmark--cleanup mounted))))
+
+(dolist (rows '(30 400 10000))
+  (let ((count rows))
+    (dolist (kind '(paint text text-width))
+      (let ((selected kind))
+        (taf-benchmark-register
+         (format "gate.%s.%d" kind count)
+         :version 1 :modes '(batch gui) :isolation 'series :impact 'local
+         :budget-ms (if (eq kind 'paint) 0.2 0.2)
+         :description (format "Row 1 %s change in a %d-row scene; must not scale with the scene"
+                              kind count)
+         :setup (lambda (_mode) (etaf-gate-benchmark--row-fixture count selected)))))
+    (taf-benchmark-register
+     (format "gate.flex-text.%d" count)
+     :version 1 :modes '(batch gui) :isolation 'series :impact 'local :budget-ms 0.2
+     :description (format "Auto-width Flex text change in row 1 of %d rows" count)
+     :setup (lambda (_mode) (etaf-gate-benchmark--flex-fixture count)))
+    (taf-benchmark-register
+     (format "gate.append.%d" count)
+     :version 1 :modes '(batch gui) :isolation 'series :impact 'local
+     :budget-ms (if (>= count 10000) 2 0.3)
+     :description (format "Snapshot append of one keyed row to %d rows" count)
+     :setup (lambda (_mode) (etaf-gate-benchmark--append-fixture count)))
+    (taf-benchmark-register
+     (format "gate.data-append.%d" count)
+     :version 1 :modes '(batch gui) :isolation 'series :impact 'local :budget-ms 0.3
+     :description (format "Data insert of one item into %d loaded items" count)
+     :setup (lambda (_mode) (etaf-gate-benchmark--data-fixture count)))
+    (taf-benchmark-register
+     (format "gate.mount.%d" count)
+     :version 1 :modes '(batch gui) :isolation 'series :impact 'global
+     :budget-ms (* 0.04 count)
+     :description (format "Mount %d fixed rows (40 us per row)" count)
+     :setup (lambda (_mode) (etaf-gate-benchmark--mount-fixture count)))))
+
+(taf-benchmark-register
+ "gate.counter"
+ :version 1 :modes '(batch gui) :isolation 'series :impact 'local :budget-ms 0.03
+ :description "Increment a minimal reactive counter"
+ :setup (lambda (_mode) (etaf-gate-benchmark--counter-fixture)))
+
+(taf-benchmark-register
+ "gate.resize.400"
+ :version 1 :modes '(batch gui) :isolation 'series :impact 'global :budget-ms 16
+ :description "Rewrap 400 stretch-width paragraphs after a viewport width change"
+ :setup (lambda (_mode) (etaf-gate-benchmark--resize-fixture 400)))
+
+;;; performance-scenarios.el ends here

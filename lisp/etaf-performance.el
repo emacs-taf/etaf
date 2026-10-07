@@ -38,7 +38,7 @@
 (cl-defstruct (etaf-performance-operation
                (:constructor etaf-performance--operation-create))
   "One completed Runtime operation and its ordered provider reports."
-  id kind label runtime-id buffer-name generation-before generation-after
+  id kind label runtime-id buffer-name revision-before revision-after
   elapsed status gc-count gc-elapsed metadata stages)
 
 (cl-defstruct (etaf-performance--attachment
@@ -98,10 +98,10 @@
    :runtime-id (etaf-performance-operation-runtime-id operation)
    :buffer-name (etaf-performance--copy-value
                  (etaf-performance-operation-buffer-name operation))
-   :generation-before
-   (etaf-performance-operation-generation-before operation)
-   :generation-after
-   (etaf-performance-operation-generation-after operation)
+   :revision-before
+   (etaf-performance-operation-revision-before operation)
+   :revision-after
+   (etaf-performance-operation-revision-after operation)
    :elapsed (etaf-performance-operation-elapsed operation)
    :status (etaf-performance-operation-status operation)
    :gc-count (etaf-performance-operation-gc-count operation)
@@ -251,8 +251,8 @@ Omitted RECORDS selects all retained records; explicit nil selects none."
      :label (plist-get final :label)
      :runtime-id (plist-get final :runtime-id)
      :buffer-name (plist-get final :buffer-name)
-     :generation-before (plist-get final :generation-before)
-     :generation-after (plist-get final :generation-after)
+     :revision-before (plist-get final :revision-before)
+     :revision-after (plist-get final :revision-after)
      :elapsed (plist-get final :duration-ms)
      :status (plist-get final :status)
      :gc-count (or (plist-get final :gc-count) 0)
@@ -404,10 +404,10 @@ If another observer replaced the recorder sink, leave that observer intact."
         :label (etaf-performance--copy-value (etaf-performance-operation-label operation))
         :runtime-id (etaf-performance-operation-runtime-id operation)
         :buffer-name (etaf-performance--copy-value (etaf-performance-operation-buffer-name operation))
-        :generation-before
-        (etaf-performance-operation-generation-before operation)
-        :generation-after
-        (etaf-performance-operation-generation-after operation)
+        :revision-before
+        (etaf-performance-operation-revision-before operation)
+        :revision-after
+        (etaf-performance-operation-revision-after operation)
         :elapsed-ms (etaf-performance-operation-elapsed operation)
         :status (etaf-performance-operation-status operation)
         :gc-count (etaf-performance-operation-gc-count operation)

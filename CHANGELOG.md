@@ -1,13 +1,16 @@
 # Changelog
 
-## Unreleased
+## [Unreleased]
 
 ### Added
 
+- `etaf-runtime-revision` reports the mounted Runtime's committed revision
+  without forcing a flush.
+
 - `etaf-video` places a live video source in a layout: ffmpeg decodes the
   source, the Component maps each frame for the `image`, `ascii` or `color`
-  render mode, and every frame is published through the retained Host content
-  boundary, so a playing canvas does not re-render the application.  Handle
+  render mode, and every frame updates only the canvas Text Host, so a playing
+  canvas does not re-render the application.  Handle
   control functions (`etaf-video-play', `etaf-video-pause',
   `etaf-video-seek', `etaf-video-set-speed', `etaf-video-set-volume',
   `etaf-video-set-audio' and `etaf-video-state') drive playback from ordinary
@@ -48,14 +51,10 @@
   boundary stays with the plain arrow.
 - `etaf-retained-resize-open` mounts a runnable fixed-text resize example:
   a controlled `etaf-resizable-controlled` Behavior drives a clipped panel
-  whose `:width`/`:height` bindings publish through Ebox's prepared crop
-  primitive, with Shift-locked drags and Escape restoring the starting size.
+  whose `:width`/`:height` bindings relayout only the panel, with Shift-locked
+  drags and Escape restoring the starting size.
   `benchmarks/performance-scenarios.el` registers matching
-  `retained.resize.*` workloads for ordinary, prepared and Runtime routes.
-- `etaf-runtime-update-host-geometries` reuses a retained
-  `ebox-geometry-prepare` operation per Runtime, Host and property set for
-  single-Host updates, so repeated moves and fixed-text resizes skip ordinary
-  layout; declined or multi-Host updates keep the ordinary geometry batch.
+  `retained.resize.*` workloads for reactive and Host-geometry routes.
 - `etaf-event-target-within-p` reports, from an event callback, whether the
   pressed Host is a given Host or one of its descendants. Combined with a root
   `:on-press` and `:on-press-capture` it lets a shell dismiss an open panel
@@ -77,14 +76,21 @@
 
 ### Changed
 
+- Runtime publication uses the fine-grained retained architecture: `etaf-view`
+  compiles to retained segments, Host property and text reads become
+  per-binding effects, Ebox nodes stay mounted, and commits patch local buffer
+  regions instead of rebuilding the application tree.  This improves ordinary
+  text, style and geometry update latency and keeps Ebox as ETAF's internal
+  retained node engine.
+- Data reconciliation success is now `reconciled` instead of `projected`;
+  update consumers that compare `etaf-data-reconciliation-state` symbols.
+- Migration: use `etaf-runtime-revision` or the value returned by
+  `etaf-runtime-flush` instead of generation APIs.  Compare revisions to
+  observe that a publication reached the buffer.
+
 - Video image frames share row-sized slices of one Retina-resolution image,
-  keeping adjacent text at normal line height. Frame publication targets the
-  retained Text Host rather than replacing the canvas subtree; compatible
-  image-bearing Text updates now reuse the prepared content path.
-- `etaf-video` declares `:position`, `:left`, `:top` and `:z-index` on its
-  canvas node itself, so the retained content route can prove an inline
-  placement winner and publish frames without republishing the tree even when
-  the canvas sits deep in an application layout.
+  keeping adjacent text at normal line height. Each frame updates the retained
+  canvas Text Host rather than replacing the canvas subtree.
 - `etaf-host-ref-size` returns a mounted Host's committed painted size as
   `(PIXELS . ROWS)`, so an application can fit a resource such as a video
   canvas to a measured region instead of estimating it from window chrome.
@@ -93,64 +99,25 @@
   View, and their latest values survive a canvas resize. `display-fps` sets
   the Component's presentation cap independently of decoding.
 
-- Parent rerenders retain unchanged surrounding output and publish only changed
-  descendant ranges. Flattened single-root Component outputs can use their
-  retained Host address; structural and source-fact differences keep the
-  enclosing replacement. Ebox retains authority over layout propagation.
-- Theme dependencies follow the defaults and static token values each Host
-  consumes. Unchanged Theme projections avoid unrelated property updates.
-- Batched sibling updates share pending ancestor invalidations while preserving
-  convergence tracking, detached snapshots and rejected-publication recovery.
-- A commit reuses the canonical Range input snapshotted when the current
-  generation was published instead of lowering the old output forest again,
-  halving Range normalization in structural updates such as a Desktop close.
-- A retained child Component whose queued render or input effect settles to
-  equal values is no longer rendered again when a structural ancestor
-  re-renders, so a parent update touches only children whose inputs changed.
-- Idle preparation follows interactive properties and text sharing their
-  reactive source roots. Independent text prepares on demand in a separate
-  cohort, so periodic data does not recompile the interactive member set.
-  Accepted effect deltas maintain the preparation hints across structural
-  changes. Interrupted preparation discards partially rebound members; source
-  writes still publish atomically and remain retryable after rejection.
-- Mounted reactive primitive bindings are now prepared before input and shared
-  by sparse geometry, focus paint, native hover and text updates. Known class
-  variants, fixed-shape border colors and measured normal/bold changes can use
-  the same publication; observer and lifecycle writes keep their pending work.
 - Box and Text class lowering now consistently normalizes whitespace strings,
   symbols and nested lists for selectors while preserving public raw Host props.
-- Equal computed inputs retain mounted output and update lifecycle without
-  publishing a new revision. Custom `:test` comparisons apply before rendering;
-  unused computations stay lazy and failed computation remains retryable.
-- Supported reactive Host geometry is prepared automatically for direct
-  retained publication. Geometry and semantic queries commit together without
-  rebuilding the Component tree; unsupported or structural changes keep the
-  ordinary update path. Use committed generation numbers or revisions to
-  detect updates, since the opaque generation object may retain identity.
-- Related primitive Host paint, hover, `:visibility` and fixed-extent inline
-  text changes can join geometry in one retained publication. Existing batch, lifecycle,
-  snapshot and rejected-update semantics remain available through ordinary Views.
-- Hosts styled by a reactive Theme (`etaf-theme-provide` with a ref or
-  computed) now keep prepared property bindings. The Theme source guards the
-  binding by version instead of forcing ordinary publication, so moving,
-  resizing or hiding themed Hosts retains the committed generation; a Theme
-  change still repaints through the ordinary path. A `:color` or
-  `:background-color` expression that chooses between `etaf-theme-token`
-  values also stays prepared: it publishes the token's installed paint slot
-  and declines to ordinary publication only for a token painted for the
-  first time. Requires Ebox's paint-slot face binding fix.
-- Retained publication is now owned by Ebox. Update Ebox and ETAF together;
-  the integration uses SPI v3 and `ebox-publication/v1`. Publication reports
-  use `:publication-*` fields and the `ebox-publication` provider.
+- Equal computed inputs retain mounted output without committing a new
+  revision. Custom `:test` comparisons apply before rendering; unused
+  computations stay lazy and failed computation remains retryable.
 
+### Removed
 
-### Changed
-
-- Rendering requires Ebox framework SPI v3 and `ebox-publication/v1`. Host
-  final-accept authority and committed-query guards now use Ebox transactions.
-  Upgrade Ebox before ETAF and restart Emacs to load
-  one consistent provider and render port. Performance reports correlate the
-  `ebox-publication` stage with rendering through `:publication-transaction-id`.
+- Removed the deleted Runtime and integration APIs: `etaf-runtime-generation`,
+  `etaf-runtime-current-generation`, `etaf-runtime-snapshot`,
+  `etaf-runtime-root-node`, `etaf-generation-p`,
+  `etaf-generation-root-semantic-id`, `etaf-generation-conflict`,
+  `etaf-generation-error`, `etaf-host-authority-error`,
+  `etaf-render-write-error`, `etaf-retirement-error`, `etaf-scheduler-error`,
+  `etaf-spi-bootstrap-error`, `etaf-spi-incompatible-error`,
+  `etaf-data-projection-conflict`, `etaf-data-projection-error`,
+  the `:scheduler-context` option of `etaf-effect-scope`,
+  the `:watch-scheduler` option of `etaf-scope-run`, and
+  `benchmarks/benchmark-ebox-resize.el`.
 
 ### Fixed
 

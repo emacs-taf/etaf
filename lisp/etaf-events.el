@@ -12,7 +12,6 @@
 
 (require 'cl-lib)
 (require 'ebox)
-(require 'etaf-scheduler)
 (require 'etaf-reactive)
 (require 'etaf-runtime)
 
@@ -34,11 +33,8 @@
 (declare-function etaf-runtime-observer "etaf-runtime" (runtime))
 (declare-function etaf-runtime-call-operation
                   "etaf-runtime" (runtime kind label function))
-(declare-function ebox-call-with-render-burst
-                  "ebox-buffer-backend" (function &rest arguments))
-(declare-function ebox-call-with-input "ebox" (host-ref reader &optional buffer-or-name))
-(declare-function ebox-input-active-p "ebox" (buffer-or-name))
-(declare-function ebox-input-session-host-ref "ebox" (session))
+(declare-function etaf-runtime-host-node "etaf-runtime" (runtime ref))
+(declare-function etaf-runtime-node-host-ref "etaf-runtime" (runtime node))
 
 (define-error 'etaf-event-error "Invalid ETAF Event")
 
@@ -64,7 +60,13 @@ Errors and user quit propagate; target invalidation signals a subtype of
     (signal 'etaf-event-error (list "Native input requires a Host event callback")))
   (let ((runtime (plist-get etaf--current-event :runtime))
         (host-ref (plist-get etaf--current-event :host-ref)))
-    (ebox-call-with-input host-ref reader (etaf-runtime-buffer runtime))))
+    (ebox-call-with-input (etaf--event-host-node runtime host-ref) reader
+                          (etaf-runtime-buffer runtime))))
+
+(defun etaf--event-host-node (runtime host-ref)
+  "Return RUNTIME's node for HOST-REF or signal `user-error'."
+  (or (etaf-runtime-host-node runtime host-ref)
+      (user-error "No committed ETAF Host %S" host-ref)))
 
 ;;;###autoload
 (defun etaf-event-target-within-p (host-ref)
@@ -111,7 +113,8 @@ own publication stays deferred until the batch ends and the superseding
 callback sees a settled buffer."
   (when-let* ((finisher (etaf-runtime-input-finisher runtime))
               (session (ebox-input-active-p (etaf-runtime-buffer runtime)))
-              (session-ref (ebox-input-session-host-ref session)))
+              (session-ref (etaf-runtime-node-host-ref
+                            runtime (ebox-input-session-node session))))
     (unless (or (equal host-ref session-ref)
                 (member session-ref
                         (etaf-runtime-host-ancestor-refs runtime host-ref)))
@@ -179,18 +182,13 @@ otherwise call the local callback with no arguments."
                                  (funcall capture)))))))
                      result))
                  (etaf-runtime-event-end runtime))))))
-         (run
-          (lambda ()
-            (etaf-scheduler-call-with-context
-             (etaf-runtime-scheduler-context runtime)
-             (lambda ()
-               (etaf-call-with-batch dispatch))))))
+         (run (lambda () (etaf-call-with-batch dispatch))))
     (if (or etaf--observer-context (etaf-runtime-observer runtime))
         (etaf-runtime-call-operation
          runtime 'event
          (format "%s %S" (etaf-event-kind kind) host-ref)
-         (lambda () (ebox-call-with-render-burst run)))
-      (ebox-call-with-render-burst run))))
+         run)
+      (funcall run))))
 
 ;;;###autoload
 (defun etaf-input-begin (runtime host-ref)
@@ -207,7 +205,10 @@ Visible changes made meanwhile remain pending and are published when the
 session ends.  A missing Host, an unmounted Runtime and a second session on
 the same buffer are errors."
   (setq runtime (etaf-runtime-require-mounted runtime))
-  (ebox-input-begin (etaf-runtime-buffer runtime) host-ref))
+  (ebox-input-begin (etaf-runtime-buffer runtime)
+                    (or (etaf-runtime-host-node runtime host-ref)
+                        (signal 'etaf-event-error
+                                (list "No committed Host reference" host-ref)))))
 
 (defun etaf-input-text (session)
   "Return SESSION's current property-free user text."
@@ -229,7 +230,8 @@ RUNTIME defaults to the Runtime in the current buffer."
 (defun etaf-host-ref-bounds (runtime host-ref)
   "Return live Ebox bounds for HOST-REF in mounted RUNTIME."
   (setq runtime (etaf-runtime-require-mounted runtime))
-  (ebox-host-ref-bounds (etaf-runtime-buffer runtime) host-ref))
+  (when-let* ((node (etaf-runtime-host-node runtime host-ref)))
+    (ebox-node-bounds node)))
 
 ;;;###autoload
 (defun etaf-host-ref-size (runtime host-ref)
@@ -238,12 +240,17 @@ RUNTIME must be mounted.  Return nil for an absent or wholly hidden Host.
 Margins and neighbouring columns are excluded; clipping reduces the result.
 Use this read-only query to prepare resources after layout, not per frame."
   (setq runtime (etaf-runtime-require-mounted runtime))
-  (ebox-host-ref-size (etaf-runtime-buffer runtime) host-ref))
+  (when-let* ((node (etaf-runtime-host-node runtime host-ref))
+              (geometry (ebox-node-geometry node))
+              (width (plist-get geometry :width))
+              (height (plist-get geometry :height)))
+    (and (> width 0) (> height 0) (cons width height))))
 
 (defun etaf-host-ref-position (runtime host-ref)
   "Return the first live Ebox position for HOST-REF in RUNTIME."
   (setq runtime (etaf-runtime-require-mounted runtime))
-  (ebox-host-ref-position (etaf-runtime-buffer runtime) host-ref))
+  (when-let* ((node (etaf-runtime-host-node runtime host-ref)))
+    (ebox-node-position node)))
 
 (defun etaf--dispatch-activation (runtime host-ref)
   "Dispatch an enabled committed HOST-REF activation in RUNTIME."
@@ -274,7 +281,12 @@ navigation; a negative or absent index permits explicit focus."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (let ((buffer (etaf-runtime-buffer runtime)))
     (condition-case condition
-        (if host-ref (ebox-focus host-ref buffer) (ebox-focus-first buffer))
+        (if host-ref
+            (ebox-focus (or (etaf-runtime-host-node runtime host-ref)
+                            (signal 'etaf-event-error
+                                    (list "No committed Host reference" host-ref)))
+                        buffer)
+          (ebox-focus-first buffer))
       (user-error
        (if host-ref
            (signal 'etaf-event-error (cdr condition))
@@ -283,8 +295,9 @@ navigation; a negative or absent index permits explicit focus."
 ;;;###autoload
 (defun etaf-focused-host-ref (&optional runtime)
   "Return the currently focused Host reference in mounted RUNTIME."
-  (ebox-focused-host-ref
-   (etaf-runtime-buffer (etaf-runtime-require-mounted runtime))))
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (when-let* ((node (ebox-focused-node (etaf-runtime-buffer runtime))))
+    (etaf-runtime-node-host-ref runtime node)))
 
 ;;;###autoload
 (defun etaf-focus-next (&optional runtime)
@@ -305,8 +318,9 @@ Nil COUNT selects the first stop.  Integer COUNT moves forward or backward
 with wrapping; zero queries current focus membership.  Ebox owns ordering,
 visibility and retained identity.  Missing roots or stops signal `user-error'.
 This creates no persistent focus restriction or additional input bindings."
-  (ebox-focus-within host-ref count t
-                     (etaf-runtime-buffer (etaf-runtime-require-mounted runtime))))
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (ebox-focus-within (etaf--event-host-node runtime host-ref) count t
+                     (etaf-runtime-buffer runtime)))
 
 (provide 'etaf-events)
 

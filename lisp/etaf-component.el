@@ -13,6 +13,7 @@
 
 (require 'cl-lib)
 (require 'macroexp)
+(require 'etaf-reactive)
 (require 'etaf-view)
 (require 'ecss)
 (require 'etaf-compiler)
@@ -95,9 +96,18 @@
   "Return current Component prop NAME.
 
 NAME is normally an ordinary symbol used by the `:setup' lexical shorthand.
-The function is also useful to code that deliberately avoids that shorthand."
-  (plist-get etaf--current-component-props
-             (etaf--component-prop-key name)))
+The function is also useful to code that deliberately avoids that shorthand.
+During view/render the read is reactive: the calling binding re-runs when
+the caller later supplies a different value."
+  (let ((props etaf--current-component-props))
+    (if (vectorp props)
+        (let ((index (cl-position
+                      (if (keywordp name)
+                          (intern (substring (symbol-name name) 1))
+                        name)
+                      (aref props 0))))
+          (and index (etaf-value (aref props (1+ index)))))
+      (plist-get props (etaf--component-prop-key name)))))
 
 ;;;###autoload
 (defun etaf-state ()
@@ -160,7 +170,10 @@ does not depend on ETAF's private registry flag."
   (let ((etaf--allow-component-redefinition t))
     (funcall function)))
 
-(defvar etaf--render-parent-style-owners)
+(defvar etaf--render-parent-style-owners nil
+  "Style owners of the Component whose View is being rendered.")
+
+(declare-function etaf-theme-token-p "etaf-context" (value))
 
 (defun etaf--slot-composable-children (name content)
   "Return NAME's CONTENT as caller-owned composable children."
@@ -176,6 +189,12 @@ does not depend on ETAF's private registry flag."
                :style-owners etaf--render-parent-style-owners))
             children)))
 
+(defun etaf--current-slot-entries ()
+  "Return the current Component's slot alist, tracking a mounted slot cell."
+  (if etaf--current-component-slots-ref
+      (etaf-value etaf--current-component-slots-ref)
+    etaf--current-component-slots))
+
 (defun etaf-current-slots ()
   "Return the current Component's slot alist of opaque composable children."
   (unless (eq etaf--component-phase 'render)
@@ -185,7 +204,7 @@ does not depend on ETAF's private registry flag."
   (mapcar (lambda (entry)
             (cons (car entry)
                   (etaf--slot-composable-children (car entry) (cdr entry))))
-          etaf--current-component-slots))
+          (etaf--current-slot-entries)))
 
 (defun etaf-current-slot (name &optional fallback)
   "Return caller-owned composable children for NAME, or FALLBACK when absent."
@@ -193,7 +212,7 @@ does not depend on ETAF's private registry flag."
     (etaf--component-definition-error
      "Slots are available only during Component view/render"))
   (setq etaf--raw-slot-read-p t)
-  (let ((entry (assq name etaf--current-component-slots)))
+  (let ((entry (assq name (etaf--current-slot-entries))))
     (if entry
         (etaf--slot-composable-children name (cdr entry))
       fallback)))
@@ -473,24 +492,32 @@ published props and callbacks; it does not undo the caller's business ref write.
            (styles-form (etaf--validate-styles-form styles-form name))
            (definition-symbol
             (intern (format "%s--etaf-component-definition" name)))
+           (cells (make-symbol "cells"))
            (render-lambda
-            `(lambda (etaf--component-props etaf--component-slots)
-               (let ((etaf--current-component-props etaf--component-props)
+            `(lambda (,cells etaf--component-slots)
+               (let ((etaf--current-component-props ,cells)
                      (etaf--current-component-slots etaf--component-slots)
                      (etaf--component-phase 'render))
                  ,(let ((etaf--compiling-component-props (append props binding-names)))
                     ;; Expand every embedded View inside its Component prop
                     ;; grammar, including Views produced by lexical macros.
-                    ;; Lexical props belong to this evaluation and its closures.
+                    ;; A `:view' runs once per instance, so each prop name
+                    ;; reads its reactive cell wherever the View evaluates
+                    ;; it; a `:render' re-runs and snapshots tracked values.
                     ;; Nested let/lambda bindings retain normal Elisp shadowing.
                     (macroexpand-all
-                     `(let ,(etaf--component-prop-bindings props)
-                        (ignore ,@props)
-                        (let* ,render-bindings
-                          (ignore ,@binding-names)
-                          ,(if saw-view
-                               (etaf-compiler-expand-view view-form :projection)
-                             render-form)))
+                     (if saw-view
+                         `(cl-symbol-macrolet
+                              ,(cl-loop for prop in props for index from 1
+                                        collect `(,prop (etaf-value (aref ,cells ,index))))
+                            (let* ,render-bindings
+                              (ignore ,@binding-names)
+                              ,(etaf-compiler-expand-view view-form :projection)))
+                       `(let ,(etaf--component-prop-bindings props)
+                          (ignore ,@props)
+                          (let* ,render-bindings
+                            (ignore ,@binding-names)
+                            ,render-form)))
                      macroexpand-all-environment)))))
            (setup-lambda
             (when (or saw-setup binding-names)
@@ -522,6 +549,7 @@ published props and callbacks; it does not undo the caller's business ref write.
                               (ignore ,@props)
                               ,validate-form)))
             :render ,render-lambda
+            :view-p ,saw-view
             :setup ,setup-lambda
             :styles ',styles-form)
            ,(or docstring

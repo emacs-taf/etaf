@@ -14,15 +14,13 @@ grouped by the theme you are chasing:
 | --- | --- |
 | View grammar, Hosts, structural normalization | `etaf-view`, `etaf-compiler` |
 | Component definition, props, slots, retained instances | `etaf-component` |
-| Mounted lifetime, commit, effect settlement, fixed point | `etaf-runtime`, `etaf-generation`, `etaf-retirement` |
-| Host attach/detach, prepared property and geometry publication, cohorts | `etaf-host`, `etaf-host-update`, `etaf-host-cohort` |
-| Reactive state, derived values, batches, dispatch queues | `etaf-reactive`, `etaf-scheduler` |
+| Mounted lifetime, retained Host tree, fine-grained bindings, commit, direct Ebox writes | `etaf-runtime` |
+| Reactive state, derived values, effects, batches, Scopes | `etaf-reactive` |
 | Events, activation, focus, input identity | `etaf-events` |
 | Behaviors and named Actions | `etaf-behavior`, `etaf-controlled-behavior`, `etaf-actions` |
 | Inherited Context and Theme resolution | `etaf-context` |
 | Data controllers, Resources, shared async completion | `etaf-data`, `etaf-resource`, `etaf-async` |
 | Cached lists with background revalidation | `etaf-list-cache` |
-| The single Ebox boundary and its SPI port | `etaf-renderer`, `etaf-render-port` |
 | Native video sources, playback sessions and the video Component | `etaf-video-source`, `etaf-video-audio`, `etaf-video-session`, `etaf-video-component` |
 | Optional observation and recording | `etaf-observer`, `etaf-performance` |
 
@@ -37,9 +35,9 @@ like this" when the documents do not.
 
 ## Reading `lisp/etaf-runtime.el`
 
-It is the largest module by far, about 7000 lines with no internal section
-markers, so locating a topic by reading or searching line ranges costs far more
-than asking for the definition:
+It is the largest module, about 2100 lines organised in `;;;;` sections
+(segments, Hosts, regions, Components, commit, mounting and Host queries).  Ask for a
+definition instead of reading guessed line ranges:
 
 ```sh
 python3 ../scripts/elisp.py def SYMBOL...   # complete forms, with file and range
@@ -47,9 +45,8 @@ python3 ../scripts/elisp.py refs SYMBOL     # callers grouped by definition
 ```
 
 Both directions are available for every module; batch independent symbols into
-one call. Some retained paths are resolved through reactive property programs
-and registry tables rather than direct calls, so `refs` reporting no caller for
-a runtime entry point is expected, not evidence that it is unused.
+one call. Bindings are closures registered as reactive effects, so `refs`
+reporting no direct caller for a binding updater is expected.
 
 ## Enforced gates
 

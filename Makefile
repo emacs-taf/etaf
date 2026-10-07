@@ -2,13 +2,13 @@
 .NOTPARALLEL:
 EMACS ?= emacs
 LOAD_PATH = -L . -L lisp -L examples -L scripts -L benchmarks -L ../ebox -L ../ecss
-SOURCES = lisp/etaf-view.el lisp/etaf-compiler.el lisp/etaf-component.el lisp/etaf-scheduler.el lisp/etaf-reactive.el lisp/etaf-observer.el lisp/etaf-context.el lisp/etaf-async.el lisp/etaf-resource.el lisp/etaf-data.el lisp/etaf-list-cache.el lisp/etaf-generation.el lisp/etaf-host.el lisp/etaf-retirement.el lisp/etaf-render-port.el lisp/etaf-renderer.el lisp/etaf-runtime.el lisp/etaf-behavior.el lisp/etaf-controlled-behavior.el lisp/etaf-actions.el lisp/etaf-events.el lisp/etaf-performance.el etaf.el scripts/emacs-gui-verifier.el benchmarks/benchmark-scheduler-context.el benchmarks/benchmark-ebox-resize.el
-SOURCES += lisp/etaf-host-update.el lisp/etaf-host-cohort.el scripts/resource-gui-scenarios.el benchmarks/performance-scenarios.el
+SOURCES = lisp/etaf-view.el lisp/etaf-compiler.el lisp/etaf-component.el lisp/etaf-reactive.el lisp/etaf-observer.el lisp/etaf-context.el lisp/etaf-async.el lisp/etaf-resource.el lisp/etaf-data.el lisp/etaf-list-cache.el lisp/etaf-runtime.el lisp/etaf-behavior.el lisp/etaf-controlled-behavior.el lisp/etaf-actions.el lisp/etaf-events.el lisp/etaf-performance.el etaf.el scripts/emacs-gui-verifier.el
+SOURCES += scripts/resource-gui-scenarios.el benchmarks/performance-scenarios.el
 SOURCES += lisp/etaf-video-source.el lisp/etaf-video-audio.el lisp/etaf-video-session.el lisp/etaf-video-component.el
 EXAMPLES = examples/etaf-counter-example.el examples/etaf-data-example.el examples/etaf-resource-example.el examples/etaf-retained-resize.el
 TESTS = $(filter-out tests/etaf-docs-tests.el,$(wildcard tests/*-tests.el))
 
-.PHONY: compile load checkdoc docs-check metadata-check scheduler-benchmark check clean
+.PHONY: compile load checkdoc docs-check metadata-check check clean
 
 compile: clean
 	$(EMACS) -Q --batch $(LOAD_PATH) \
@@ -25,11 +25,6 @@ docs-check:
 
 metadata-check:
 	$(EMACS) -Q --batch --eval "(progn (require 'package) (with-temp-buffer (insert-file-contents \"etaf.el\") (let ((desc (package-buffer-info))) (unless (and (equal (package-desc-version desc) '(0 2 1)) (equal (package-desc-reqs desc) '((emacs (29 1)) (ebox (3 0 0))))) (error \"Unexpected ETAF package metadata: %S\" desc)))))"
-
-scheduler-benchmark:
-	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" \
-		-l benchmarks/benchmark-scheduler-context.el \
-		-f etaf-scheduler-benchmark-run
 
 checkdoc:
 	$(EMACS) -Q --batch --eval '(progn (require (quote checkdoc)) (dolist (directory (list "lisp" "examples" "scripts")) (dolist (file (directory-files directory t)) (when (string-suffix-p ".el" file) (checkdoc-file file)))))'

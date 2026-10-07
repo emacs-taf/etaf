@@ -3,8 +3,9 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;;; Commentary:
-;; A real ETAF Runtime and controlled Behavior drive Ebox's prepared crop
-;; primitive.  This deliberately has no window chrome or paragraph reflow.
+;; A real ETAF Runtime and controlled Behavior resize a clipped panel whose
+;; geometry relayouts only the panel.  This deliberately has no window chrome
+;; or paragraph reflow.
 ;; Drag the panel, Shift-drag to lock, and Escape to restore the starting size.
 ;; The peer remains an independently owned, keyboard-accessible input target.
 

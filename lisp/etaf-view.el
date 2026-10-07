@@ -47,7 +47,8 @@
   render
   setup
   styles
-  validate)
+  validate
+  view-p)
 
 (cl-defstruct (etaf--component-call
                (:constructor etaf--component-call-create))
@@ -139,6 +140,9 @@ disposing the old Runtime.")
 
 (defvar etaf--current-component-slots nil
   "Dynamic slots of the Component currently being evaluated.")
+
+(defvar etaf--current-component-slots-ref nil
+  "Reactive slot cell of the mounted Component currently being evaluated.")
 
 (defvar etaf--current-component-instance nil
   "Dynamic Component instance currently being evaluated.")
@@ -261,12 +265,6 @@ disposing the old Runtime.")
         (push token result)))
     (nreverse result)))
 
-(defun etaf--merge-class-input (root-value caller-value)
-  "Return a class value merging possibly lazy ROOT-VALUE and CALLER-VALUE."
-  (etaf--merge-class-values
-   (etaf--resolve-property-value root-value)
-   (etaf--resolve-property-value caller-value)))
-
 (defun etaf--compose-event-callbacks (primary secondary)
   "Compose PRIMARY then SECONDARY, preserving the primary return value.
 An error stops the chain.  This shared value operation lives with View
@@ -297,11 +295,22 @@ Runtime validates all names before installing any resources."
     (append (if (proper-list-p root) root (list root))
             (if (proper-list-p caller) caller (list caller)))))
 
+(defun etaf--lazy-merge (function &rest inputs)
+  "Combine INPUTS with FUNCTION, deferring when any input is lazy.
+Static inputs combine now; otherwise the result is a property thunk that
+resolves every input when the consuming Host evaluates it."
+  (if (cl-some #'etaf--expr-p inputs)
+      (etaf--expr-create
+       :thunk (lambda ()
+                (apply function (mapcar #'etaf--resolve-property-value inputs))))
+    (apply function inputs)))
+
 (defun etaf--merge-host-attrs (props attrs &optional tag component-name)
   "Merge caller ATTRS into root Host PROPS for TAG.
 Non-nil visual attributes override defaults; class and Behavior sources merge.
 Callbacks append, disabled combines with OR, and owned semantic conflicts
-are rejected.  COMPONENT-NAME labels diagnostics."
+are rejected.  Lazy inputs stay lazy so the consuming Host tracks them.
+COMPONENT-NAME labels diagnostics."
   (let ((result (copy-sequence props))
         (tail attrs))
     (while tail
@@ -318,37 +327,60 @@ are rejected.  COMPONENT-NAME labels diagnostics."
           (setq result
                 (etaf--plist-set
                  result :class
-                 (etaf--merge-class-input (plist-get result :class) value))))
+                 (etaf--lazy-merge #'etaf--merge-class-values
+                                   (plist-get result :class) value))))
          ((etaf--event-property-p key)
           (setq result
                 (etaf--plist-set
                  result key
-                 (etaf--compose-event-callbacks
-                  (etaf--resolve-property-value (plist-get result key))
-                  (etaf--resolve-property-value value)))))
+                 (etaf--lazy-merge #'etaf--compose-event-callbacks
+                                   (plist-get result key) value))))
          ((eq key :use)
           (setq result
                 (etaf--plist-set
-                 result key (etaf--merge-use-input (plist-get result key) value))))
+                 result key
+                 (etaf--lazy-merge #'etaf--merge-use-input
+                                   (plist-get result key) value))))
          ((eq key :disabled)
-          (let ((inner (etaf--resolve-property-value (plist-get result key)))
-                (outer (etaf--resolve-property-value value)))
-            (unless (and (memq inner '(nil t)) (memq outer '(nil t)))
-              (etaf--component-error "Component %S :disabled must be boolean"
-                                     component-name))
-            (setq result (etaf--plist-set result key (or inner outer)))))
+          (setq result
+                (etaf--plist-set
+                 result key
+                 (etaf--lazy-merge
+                  (lambda (inner outer)
+                    (unless (and (memq inner '(nil t)) (memq outer '(nil t)))
+                      (etaf--component-error
+                       "Component %S :disabled must be boolean" component-name))
+                    (or inner outer))
+                  (plist-get result key) value))))
          (style-p
-          (when (etaf--resolve-property-value value)
-            (setq result
-                  (append (etaf--plist-remove-domain result key)
-                          (list key value)))))
+          (let* ((domain (etaf--property-domain-key key))
+                 (old (cl-loop for (k v) on result by #'cddr
+                               when (eq (etaf--property-domain-key k) domain)
+                               return v)))
+            (cond
+             ((etaf--expr-p value)
+              (setq result
+                    (append (etaf--plist-remove-domain result key)
+                            (list key (etaf--lazy-merge
+                                       (lambda (outer inner) (or outer inner))
+                                       value old)))))
+             (value
+              (setq result
+                    (append (etaf--plist-remove-domain result key)
+                            (list key value)))))))
          ((and (etaf--owned-semantic-property-p key)
-               (plist-member result key)
-               (not (equal (etaf--resolve-property-value (plist-get result key))
-                           (etaf--resolve-property-value value))))
-          (etaf--component-error
-           "Component %S root Host %S owns %S; conflicting fallthrough value %S"
-           component-name tag key value))
+               (plist-member result key))
+          (setq result
+                (etaf--plist-set
+                 result key
+                 (etaf--lazy-merge
+                  (lambda (inner outer)
+                    (unless (equal inner outer)
+                      (etaf--component-error
+                       "Component %S root Host %S owns %S; conflicting fallthrough value %S"
+                       component-name tag key outer))
+                    inner)
+                  (plist-get result key) value))))
          ((plist-member result key)
           (setq result (etaf--plist-set result key value)))
          (t
@@ -532,39 +564,6 @@ belong to the anonymous `default' slot."
   (and (etaf--expr-p value)
        (memq (etaf--expr-kind value) '(branch keyed-list))))
 
-(defun etaf--keyed-program-snapshot (program)
-  "Evaluate and validate one compiler-owned keyed-list PROGRAM snapshot."
-  (unless (and (etaf--expr-p program)
-               (eq (etaf--expr-kind program) 'keyed-list)
-               (functionp (etaf--expr-range-snapshot program))
-               (functionp (etaf--expr-range-item program)))
-    (etaf--component-error "Invalid keyed-list program: %S" program))
-  (let* ((snapshot (funcall (etaf--expr-range-snapshot program)))
-         (items (and (proper-list-p snapshot) (plist-get snapshot :items)))
-         (keys (and (proper-list-p snapshot) (plist-get snapshot :keys))))
-    (unless (and (proper-list-p items) (proper-list-p keys)
-                 (= (length items) (length keys)))
-      (etaf--component-error "Invalid keyed-list snapshot: %S" snapshot))
-    (let ((seen (make-hash-table :test #'equal))
-          validated)
-      (dolist (key keys)
-        (setq key (etaf--validate-key key))
-        (when (gethash key seen)
-          (etaf--component-error "Duplicate keyed-list key: %S" key))
-        (puthash key t seen)
-        (push key validated))
-      (let ((copy (copy-sequence snapshot)))
-        (plist-put copy :items (copy-sequence items))
-        (plist-put copy :keys (nreverse validated))
-        copy))))
-
-(defun etaf--keyed-program-outputs (program snapshot)
-  "Return PROGRAM outputs for already validated keyed SNAPSHOT."
-  (let ((renderer (etaf--expr-range-item program))
-        (context (plist-get snapshot :context)))
-    (mapcar (lambda (item) (funcall renderer item context))
-            (plist-get snapshot :items))))
-
 (defun etaf--view-form-parts (form)
   "Return parsed `(TAG PROPS CHILDREN)' for directive-capable FORM."
   (unless (and (consp form) (symbolp (car form))
@@ -646,20 +645,31 @@ Return `(COMPILED . REMAINING)' for one compiler-owned Range program."
             (setq remaining (cdr remaining)))
            (t (setq done t))))))
     (let ((token (gensym "etaf-branch-site-"))
-          (ordered (nreverse arms)))
+          (ordered (nreverse arms))
+          (selector (gensym "etaf-branch-arm-"))
+          (index -1))
       (cons
-       `(etaf--expr-create
-         :kind 'branch
-         :token ',token
-         :thunk
-         (lambda ()
-           (cond
-            ,@(mapcar
+       `(let ((,selector
                (lambda (arm)
-                 (pcase (car arm)
-                   (:else `(t ,(nth 2 arm)))
-                   (_ `(,(nth 1 arm) ,(nth 2 arm)))))
-               ordered))))
+                 (pcase arm
+                   ,@(let ((i -1))
+                       (mapcar (lambda (arm) `(,(cl-incf i) ,(nth 2 arm)))
+                               ordered))))))
+          (etaf--expr-create
+           :kind 'branch
+           :token ',token
+           :range-snapshot
+           (lambda ()
+             (cond
+              ,@(mapcar
+                 (lambda (arm)
+                   (cl-incf index)
+                   (pcase (car arm)
+                     (:else `(t ,index))
+                     (_ `(,(nth 1 arm) ,index))))
+                 ordered)))
+           :range-item ,selector
+           :thunk nil))
        remaining))))
 
 (defun etaf--compile-for-child (form slot-mode)
@@ -685,37 +695,27 @@ Return `(COMPILED . REMAINING)' for one compiler-owned Range program."
     (let* ((item (car for-form))
            (items-form (cadr for-form))
            (key-form (plist-get props :key))
+           (cell (make-symbol "item-cell"))
            (compiled (etaf--compile-view-form
                       (etaf--view-without-directives form) slot-mode))
-           (token (gensym "etaf-keyed-list-site-"))
-           (snapshot (gensym "etaf-keyed-snapshot-"))
-           (item-renderer (gensym "etaf-keyed-item-")))
-      `(let ((,snapshot
-              (lambda ()
-                (let ((items ,items-form))
-                  (unless (proper-list-p items)
-                    (etaf--component-error
-                     ":for collection must be a proper list: %S" items))
-                  (list :items (copy-sequence items)
-                        :keys
-                        (mapcar
-                         (lambda (,item) (etaf--validate-key ,key-form))
-                         items)
-                        :context nil))))
-             (,item-renderer
-              (lambda (,item _etaf-keyed-context) ,compiled)))
-         (etaf--expr-create
-          :kind 'keyed-list
-          :token ',token
-          :thunk
-          (lambda ()
-            (let* ((program (funcall ,snapshot))
-                   (items (plist-get program :items)))
-              (mapcar (lambda (,item)
-                        (funcall ,item-renderer ,item nil))
-                      items)))
-          :range-snapshot ,snapshot
-          :range-item ,item-renderer)))))
+           (token (gensym "etaf-keyed-list-site-")))
+      ;; Each retained row reads its item through a reactive cell, so a new
+      ;; item object under the same key updates the row's bindings in place.
+      `(etaf--expr-create
+        :kind 'keyed-list
+        :token ',token
+        :range-snapshot
+        (lambda ()
+          (let ((items ,items-form))
+            (unless (proper-list-p items)
+              (etaf--component-error
+               ":for collection must be a proper list: %S" items))
+            items))
+        :range-key (lambda (,item) (etaf--validate-key ,key-form))
+        :range-item
+        (lambda (,cell)
+          (cl-symbol-macrolet ((,item (etaf-value ,cell)))
+            ,compiled))))))
 
 (defun etaf--compile-child-sequence (children slot-mode)
   "Compile sibling CHILDREN with branch and keyed-list SLOT-MODE structure."

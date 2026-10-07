@@ -11,7 +11,6 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'etaf-scheduler)
 (require 'etaf-reactive)
 (require 'etaf-runtime)
 
@@ -112,14 +111,11 @@ RUNTIME ACTION ...)'.  Action functions receive Runtime first."
               (list (format "Unknown ETAF Action: %S" action))))
     (let ((run
            (lambda ()
-             (etaf-scheduler-call-with-context
-              (etaf-runtime-scheduler-context runtime)
+             (etaf-call-with-batch
               (lambda ()
-                (etaf-call-with-batch
-                 (lambda ()
-                   (let ((etaf--current-runtime runtime))
-                     (apply (etaf-action-spec-function spec)
-                            runtime arguments)))))))))
+                (let ((etaf--current-runtime runtime))
+                  (apply (etaf-action-spec-function spec)
+                         runtime arguments)))))))
       (if (or etaf--observer-context (etaf-runtime-observer runtime))
           (etaf-runtime-call-operation
            runtime 'action (format "%S" action) run)

@@ -78,32 +78,7 @@ View 含有状态型 Component、响应式数据、事件或生命周期时，�
 根 View 顶部保留一行空白。页面与行数预算常量把这行 padding 计入 chrome；
 窗口过矮时少显示内容行，不要裁掉第一行。
 
-需要显式请求处理待办更新时，调用 `(etaf-runtime-flush runtime)`。
-它现在返回 **Ebox 已提交 revision 整数**，不再返回旧版的 Ebox 节点。
-Runtime 忙碌或仍处于批处理时，更新可能继续等待；返回值标识此刻读者可见的
-发布版本。活动 Ebox 事务内的调用会在请求更新之前报错，因为事务中的
-revision 可能尚未提交。普通 flush 不导出整棵树，也不强制重建 Root。
-
-需要当前树及其配套 source facts 时，显式获取快照：
-
-```elisp
-(let* ((runtime (etaf-runtime-for-buffer "*etaf-hello*"))
-       (snapshot (etaf-runtime-snapshot runtime)))
-  (list (plist-get snapshot :revision)
-        (plist-get snapshot :mount-id)
-        (ebox-render (plist-get snapshot :input))))
-```
-
-快照包含 `:input`（canonical Ebox input）、`:revision` 和 `:mount-id`
-（本次挂载的身份）。导出成本为 O(N)，会分离节点的普通可变数据；它不处理
-待办更新，不求值 Component，不发布，也不增加 revision。input 在后续提交或
-卸载后仍可使用。callback 等不透明能力保持身份，查询不会冻结这些外部能力或
-显示环境。对未挂载 Runtime 或在活动 Ebox 事务内查询会报错。
-
-已废弃的 `etaf-runtime-root-node` getter 通过上述 O(N) 查询保留读取兼容性，
-返回当前唯一根节点；Runtime 不再保存根节点镜像。请迁移到
-`etaf-runtime-snapshot`，保留 canonical input 中与根节点配套的 source facts；
-不要再把旧 getter 当作低成本字段读取或写入目标。
+需要显式处理待办更新时，调用 `(etaf-runtime-flush runtime)`。它会在没有外层 batch 或渲染求值时 drain 该 Runtime，并返回已提交 revision。`etaf-runtime-revision` 不强制 drain，只读取同一个单调 revision。每次 commit 改变 buffer 时 revision 增加一次，包括保留 Host 的内容或几何更新。应用需要确认发布已经到达 buffer 时比较 revision；不要把它当作树句柄或可变目标。
 
 当前 core 不直接加载 `.etaf`。`etaf-define-component` 是结构/样式/行为单元：用 View 定义结构，用 `:styles` 放静态 presentation，用 `:bindings` 管理保留值，用 `:setup` 管理生命周期。未来 `.etaf` SFC 属于把结果编译成同一套 Component 契约的 compiler layer，而不是第二个 Runtime 入口。
 
@@ -167,7 +142,7 @@ quote 只有普通 Elisp 的含义：
    (text "Lovelace"))))
 ```
 
-轨道模板支持 `auto`、`min-content`、`max-content`、`(fr FACTOR)`、`(minmax MIN MAX)` 和 `(repeat COUNT TRACK-LIST)`。`:grid-auto-columns` 与 `:grid-auto-rows` 负责隐式轨道尺寸；`:grid-auto-flow` 支持 `row` 或 `column`。子节点可以使用 `:grid-column`、`:grid-row`、`:grid-column-span` 和 `:grid-row-span`；测量、放置以及 item/content 对齐由 Ebox 完成。可选 native backend 不支持 Grid 时会回退到 Elisp Ebox renderer。
+轨道模板支持 `auto`、`min-content`、`max-content`、`(fr FACTOR)`、`(minmax MIN MAX)` 和 `(repeat COUNT TRACK-LIST)`。`:grid-auto-columns` 与 `:grid-auto-rows` 负责隐式轨道尺寸；`:grid-auto-flow` 支持 `row` 或 `column`。子节点可以使用 `:grid-column`、`:grid-row`、`:grid-column-span` 和 `:grid-row-span`；测量、放置以及 item/content 对齐由 Ebox 完成。可选 native backend 不支持 Grid 时会回退到 Elisp Ebox 实现。
 
 Host 元数据也会传给共享的 Ebox/ECSS selector subject。`:class` 与 `:id` 使用
 Ebox 归一化；非 nil 的 `:role` 和显式提供的每个 `:aria-*` 属性成为选择器属性。
@@ -670,14 +645,11 @@ Behavior 用来打包可复用的非视觉属性和 cleanup：
 Installer 内将 `etaf-current-behavior-context` 交给 `etaf-behavior-context-info`，
 即可查询 Runtime、实际 Host 引用和安装时的语义属性。上下文是安装快照，
 不是实时 Host 查询，也不证明候选已经发布；清理期间及之后仍可读取。发布后
-用返回的 Runtime/引用调用 `etaf-runtime-host-props-for` 查询已提交属性，不能
-用候选安装信息提前激活输入。返回的容器是新建的，其中的值保持身份并应视为只读。
+用返回的 Runtime/引用调用 `etaf-runtime-host-props-for` 查询已提交属性，不能用安装信息提前激活输入。返回的容器是新建的，其中的值保持身份并应视为只读。
 
 Behavior equality 对 function 和 reactive value 使用 `eq`，新 installer 闭包
 表示替换。规格和 Host 引用稳定时，其他 Host 属性变化可以复用安装，其上下文
-保留原安装信息。替换资源先暂存，generation 成功发布后才成为权威；旧 cleanup
-在成功发布后运行，回滚只清理候选并保留旧安装。Installer 应为取得的每项资源
-返回 cleanup，以便替换、回滚或卸载时释放；候选资源不得在发布前接收输入。
+保留原安装信息。替换资源会在成功提交后成为权威；旧 cleanup 在成功提交后运行，失败更新只清理新资源并保留旧安装。Installer 应为取得的每项资源返回 cleanup，以便替换、失败更新或卸载时释放；资源不得在其 owner 提交前接收输入。
 
 <a id="interaction-migration"></a>
 
@@ -852,47 +824,15 @@ press 处理键盘激活，drag 持有主鼠标按钮序列。字段和同一 GU
 手势的临时起点，不复制应用的 x/y/width/height 状态，同时保留边界、取消和逻辑单位
 位移转换语义。
 
-响应式几何读取应放在使用它的 Host 属性表达式中，如上面的 `movable-panel`。
-挂载与普通发布会在后续输入前准备已登记的响应式 primitive 绑定，不为准备而
-求值未使用的计算。应用继续
-使用 ref、computed 和普通 View 属性，无须管理执行计划。相关几何、颜色、背景、
-hover-content、class、边框颜色、字重、visibility 与单表达式文本可共享一次预备
-发布；用 `etaf-batch` 组合相关写入。
-不支持的几何、依赖变化和结构变化保留普通发布路径。Host 属性表达式只有在
-每次求值都读取相同的响应式来源时才保持预备绑定：先读取全部来源再按值分支，
-不要让 `cond` 或 `and` 短路跳过某个来源，否则依赖集合与预备时不同会回退到
-普通发布。Text 可以在
-[Ebox 预备更新契约](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/ebox.el)
-获准的固定分配中改变宽度；无法证明分配范围和所有权的文本或富文本变化使用
-普通发布。已知有限 class 值、保持宽度/样式的边框颜色变化，以及 normal/bold
-变化可在 Ebox 证明选择器与实际度量约束后进入同一批次。新 class 值及不支持的
-绘制变化仍使用普通路径。class 的空白字符串、symbol 与嵌套列表保留原有语义，
-public Host props 保留原始作者值。
-inline 与响应式 native hover-content 变化保留 Component updated hook，
-在成功发布全部成员后每个 owner 执行一次。
-Host 语义属性和 Ebox 几何同时
-提交；拒绝无效值时，上一份画面仍可查询，应用 ref 保留已经发生的写入。
-使用 `etaf-runtime-generation` 或 `etaf-runtime-flush` 判断已提交 revision；
-几何更新期间不透明的当前 generation 对象可保留身份。显式
-`etaf-runtime-snapshot` 导出仍与内部可变数据脱离。
+响应式几何读取应放在使用它的 Host 属性表达式中，如上面的 `movable-panel`。ETAF 会把每个响应式 Host 属性或 text 表达式变成一个保留绑定。source 变化时，只有读取它的绑定重新运行、patch 自己的 Ebox 节点，并参与下一次 batch commit。应用继续使用 ref、computed 和普通 View 属性；相关写入用 `etaf-batch` 组合。
 
-这类 controlled Behavior 应该在保留的 `:bindings`（或其他有明确生命周期的持有者）
-中创建一次，再把得到的 spec 传给 View。不要在 `:render` 中重新创建：每次渲染都会产生
-新的回调闭包，ETAF 会正确地把它视为新的 Behavior 生命周期。父组件在一次移动发布几何
-更新后重新渲染时，新 spec 没有原手势的临时起点，后续 move/end 阶段就无法继续原手势。
-稳定的 binding 会保留这个临时起点，同时仍由应用持有聚合的 `read`/`on-change` 状态。
-这个契约不依赖全局缓存，也不能安全地通过处理器源码或闭包内容推断。
+一个绑定只拥有一个目标：Host 属性集、Text payload 或动态子区域。增加或删除子节点这类结构变化只 patch 产生它们的区域；样式、几何和文本变化直接 patch 保留 Host 节点。Ebox 决定布局传播范围，并在 commit 期间只写受损 buffer 行。Component `updated` hook 在所属保留节点可见提交后运行。
 
-如果应用已经拥有聚合的几何状态，可以用
-`etaf-runtime-update-host-geometry` 做高频的显示投影。它接收已挂载的
-Runtime、已提交的 ETAF Host 引用，以及 `:left`、`:top`、`:width`、`:height`
-和 `:z-index` 等 Ebox 几何事实。ETAF 会解析 Host 对应的 retained provider
-区域并调用类型化的 Ebox 增量发布；它不实现拖拽策略，也不替换调用方的状态。
-调用方应先更新受控状态，并保证下一次普通 ETAF 渲染提供相同的几何值。Host
-已经移除或几何值无效时会返回 `etaf-runtime-error`，不会产生部分更新；窗口应用
-可以回退到自己的普通状态发布路径。
-需要同时更新多个 Host（例如焦点切换前后的两个窗口）时，使用接收 alist 的
-`etaf-runtime-update-host-geometries`，它会把这些几何更新合并到一次 Ebox 发布中。
+Host 语义属性和 Ebox 几何同时提交；拒绝无效值时，上一份画面仍可查询，应用 ref 保留已经发生的写入。需要在基准或应用中确认 buffer 已变化时，调用 `etaf-runtime-flush` settle 待办工作并比较 `etaf-runtime-revision`。
+
+这类 controlled Behavior 应该在保留的 `:bindings`（或其他有明确生命周期的持有者）中创建一次，再把得到的 spec 传给 View。不要在 `:render` 中重新创建：每次渲染都会产生新的回调闭包，ETAF 会正确地把它视为新的 Behavior 生命周期。父组件在一次移动发布几何更新后重新渲染时，新 spec 没有原手势的临时起点，后续 move/end 阶段就无法继续原手势。稳定的 binding 会保留这个临时起点，同时仍由应用持有聚合的 `read`/`on-change` 状态。这个契约不依赖全局缓存，也不能安全地通过处理器源码或闭包内容推断。
+
+如果应用已经拥有聚合的几何状态，可以用 `etaf-runtime-update-host-geometry` 做高频的显示投影。它接收已挂载的 Runtime、已提交的 ETAF Host 引用，以及 `:left`、`:top`、`:width`、`:height` 和 `:z-index` 等 Ebox 几何事实。ETAF 会解析 Host 对应的保留节点，并在一个 Ebox batch 中 patch 它；它不实现拖拽策略，也不替换调用方的状态。调用方应先更新受控状态，并保证下一次普通 ETAF 绑定提供相同的几何值。Host 已经移除或几何值无效时会 signal `etaf-runtime-error`，不会产生部分更新；窗口应用可以回退到自己的普通状态发布路径。需要同时更新多个 Host（例如焦点切换前后的两个窗口）时，使用接收 alist 的 `etaf-runtime-update-host-geometries`，它会把这些几何更新合并到一次 Ebox batch 中。
 
 ```elisp
 (etaf-runtime-update-host-geometry
@@ -1411,7 +1351,7 @@ View，resize 也保留最新值。
 
 | API 家族 | 主要入口 | 何时使用 |
 | --- | --- | --- |
-| View 与 Runtime | `etaf-view`、`etaf-render`、`etaf-mount`、`etaf-unmount`、`etaf-runtime-flush`、`etaf-runtime-snapshot` | 构建、渲染、挂载、flush 或显式导出已提交应用 |
+| View 与 Runtime | `etaf-view`、`etaf-render`、`etaf-mount`、`etaf-unmount`、`etaf-runtime-flush`、`etaf-runtime-revision` | 构建、渲染、挂载、flush 或观察已提交 revision |
 | Component | `etaf-define-component`、`etaf-current-prop`、`etaf-current-slots`、`etaf-component-set-styles`、`etaf-component-redefine-run` | 复用 View、保留局部状态、设置 authoring 样式或显式重载代码 |
 | 响应式状态 | `etaf-ref`、`etaf-value`、`etaf-set-value`、`etaf-computed` | 保存或派生状态 |
 | 响应式 effect | `etaf-watch`、`etaf-watch-effect`、`etaf-effect-scope`、`etaf-scope-run` | 观察状态或同步外部资源 |
@@ -1441,7 +1381,7 @@ View，resize 也保留最新值。
 
 普通应用在启用 lexical-binding 的 `.el` 文件中定义并挂载 Component。可选的
 Playground 使用 inert `.etaf` 结构与显式注册的 `.el` companion；core 不会自动
-发现或执行这组文件。同一 batch 内的响应式写入合并为一次 generation publication；
+发现或执行这组文件。同一 batch 内的响应式写入合并为一次 commit；
 发布失败可以重试，non-converging effect 会报告错误，不会持续占用事件循环。
 
 ## 示例组织
@@ -1502,6 +1442,18 @@ Playground 使用 inert `.etaf` 结构与显式注册的 `.el` companion；core 
 `make tool-check` 场景与证据契约检查；macOS 上另运行 `make gui-tool-check`，
 使用系统 Swift SDK 检查截图和录制命令。完整测量边界见[英文 GUI 指南](manual.md#measuring-an-existing-gui-action)。
 
+## Resize 测量
+
+Resize latency 通过工作区性能工具测量，不再使用单独 driver。`benchmarks/performance-scenarios.el` 注册 `gate.resize.400`（400 行 flex view 的 viewport refit）、`retained.resize.native.corner` 与 `retained.resize.native.sweep`（保留式 resize 示例的原生拖动），以及 `retained.resize.*` 几何路径。从工作区根目录列出并运行：
+
+```sh
+python3 scripts/performance.py list --scenario 'resize'
+python3 scripts/performance.py run --mode batch --scenario 'gate\.resize\.400'
+python3 scripts/performance.py run --mode gui --server NAME --scenario 'retained\.resize\.native\..*'
+```
+
+该工具的 latency、trace、CPU、allocation pass 与 baseline 比较见工作区手册。batch 结果不证明 GUI 呈现；仍需按 [GUI 场景验收工具](#gui-场景验收工具) 在应用真实 frame 中检查 resize。
+
 ## 提供方契约
 
-ETAF 通过公共 [Ebox framework SPI](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.zh-CN.md#框架集成契约) 选择渲染能力，该契约由 Ebox 维护。应用 Component 使用本手册中的 ETAF View 和生命周期 API。
+ETAF 使用 Ebox 作为保留节点、布局与 buffer 引擎；底层契约由 Ebox 维护。应用 Component 使用本手册中的 ETAF View 和生命周期 API。

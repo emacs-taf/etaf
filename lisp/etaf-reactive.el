@@ -1,468 +1,520 @@
-;;; etaf-reactive.el --- Reactive cells and effect scopes -*- lexical-binding: t; -*-
+;;; etaf-reactive.el --- Reactive cells, effects and scopes -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;;; Commentary:
 
-;; ETAF has one reactive model.  Refs, computed values, watchers, component
-;; renders, and external Effects all use the same dependency graph.  This
-;; module deliberately knows nothing about Views, Ebox, or buffers.
+;; ETAF has one reactive graph.  Refs hold values, computeds cache derived
+;; values lazily, and effects re-run when what they read changes.  A write
+;; colors its direct observers dirty and their transitive observers "check";
+;; queued effects then pull dirty computeds in dependency order, so an effect
+;; whose computed inputs compare unchanged is skipped and no effect observes
+;; a half-updated graph.
+;;
+;; Effects run in three phases: pre (watchers), render (Runtime bindings) and
+;; post (post-flush watchers).  The outermost batch, or a write outside any
+;; batch, drains the queues; between the render and post phases the drain
+;; calls `etaf--drain-commit-function' so Runtimes write their buffers once.
+;; Errors from individual effects are collected and the first is re-signaled
+;; after the drain completes.
+;;
+;; Dependency lists are per observer.  Each source keeps a list of observers;
+;; dropping a dependency removes the observer from short lists immediately and
+;; lazily from long ones, so disposing many observers of one shared source is
+;; amortized linear.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'gv)
-(require 'etaf-scheduler)
 
 (define-error 'etaf-reactive-error "Invalid ETAF reactive operation")
 (define-error 'etaf-render-side-effect-error
   "ETAF render must be side-effect free"
   'etaf-reactive-error)
-(define-error 'etaf-render-write-error
-  "ETAF state cannot be written while rendering"
-  'etaf-render-side-effect-error)
 
-(cl-defstruct (etaf-ref
-               (:constructor etaf--ref-create))
-  "A writable shallow reactive cell."
-  value
-  test
-  (version 0)
-  subscribers
-  source-id
-  name)
+;;;; Graph records
 
-(cl-defstruct (etaf-computed
-               (:constructor etaf--computed-create))
+(cl-defstruct (etaf--source (:constructor nil) (:copier nil))
+  "Common reactive source state."
+  value test (version 0) subs (nsubs 0) (dead 0) (mark 0) name)
+
+(cl-defstruct (etaf-ref (:include etaf--source)
+                        (:constructor etaf--ref-create)
+                        (:copier nil))
+  "A writable shallow reactive cell.")
+
+(cl-defstruct (etaf-computed (:include etaf--source)
+                             (:constructor etaf--computed-create)
+                             (:copier nil))
   "A lazy cached reactive value."
-  getter
-  validator
-  value
-  test
-  (version 0)
-  subscribers
-  source-id
-  effect
-  (dirty-p t)
-  evaluated-p
-  evaluating-p
-  name)
+  getter deps (state 2) evaluated evaluating (active t))
 
-(cl-defstruct (etaf-effect
-               (:constructor etaf--effect-create))
-  "A dependency-tracked computation owned by a Scope."
-  function
-  output-source
-  scheduler
-  deps
-  owner-scope
-  scheduler-context
-  on-stop
-  name
-  (active-p t)
-  running-p)
+(cl-defstruct (etaf-effect (:constructor etaf--effect-create) (:copier nil))
+  "A dependency-tracked computation."
+  fn deps (state 0) (phase 0) (id 0) home (active t) running on-stop
+  owner data name)
 
-(cl-defstruct (etaf-effect-scope
-               (:constructor etaf--effect-scope-create))
+(cl-defstruct (etaf-effect-scope (:constructor etaf--effect-scope-create)
+                                 (:copier nil))
   "A tree of effects and cleanups with one disposal boundary."
-  parent
-  effects
-  children
-  cleanups
-  scheduler-context
-  name
-  (active-p t))
+  parent effects children cleanups name (active-p t))
 
-(cl-defstruct (etaf-runtime-route
-               (:constructor etaf-runtime-route-create))
-  "Opaque Runtime route stored by reactive sources."
-  runtime-id mount-epoch authority-token scheduler scheduler-context
-  accepts-p
-  (active-p t))
+;;;; Dynamic state
 
-(defvar etaf--active-effect nil
-  "The effect currently collecting dependencies.")
+(defvar etaf--observer nil
+  "The computed or effect collecting dependencies, or nil.")
 
-(defvar etaf--source-id-counter 0)
+(defvar etaf--observed nil
+  "Sources read by `etaf--observer' during its current run.")
 
-(defun etaf-reactive-source-id (source)
-  "Return stable integer id of reactive SOURCE."
-  (cond ((etaf-ref-p source) (etaf-ref-source-id source))
-        ((etaf-computed-p source) (etaf-computed-source-id source))
-        (t (signal 'wrong-type-argument (list 'etaf-reactive-source-p source)))))
+(defvar etaf--observe-stamp 0
+  "Mark identifying the current tracking run.")
 
-(defvar etaf--active-scope nil
-  "The Scope that owns newly created effects and cleanups.")
+(defvar etaf--stamp 0
+  "Monotonic mark counter for tracking and dependency diffs.")
+
+(defvar etaf--effect-counter 0
+  "Monotonic effect id; earlier effects run first within a phase.")
 
 (defvar etaf--tracking-enabled-p t
   "Whether reactive reads may collect dependencies.")
 
-(defvar etaf--runtime-dependency-collector nil
-  "Runtime-local collector called for each reactive source read.")
+(defvar etaf--active-scope nil
+  "The Scope that owns newly created effects and cleanups.")
 
 (defvar etaf--render-phase-p nil
   "Whether the current call is producing a View tree.")
+
+(defvar etaf--batch-depth 0
+  "Nesting depth of active batches.")
+
+(defvar etaf--draining nil
+  "Non-nil while queued effects are being drained.")
+
+(defvar etaf--queues (vector nil nil nil)
+  "Pending effects for the pre, render and post phases.")
+
+(defvar etaf--drain-commit-function nil
+  "Function called when the pre and render queues are empty.
+It returns non-nil when it did work, which restarts the drain loop.")
+
+(defvar etaf--drain-around-function nil
+  "Function called with the zero-argument drain loop, or nil.
+The Runtime wraps a drain in one Ebox batch so it flushes once.")
+
+(defvar etaf--effect-error-function nil
+  "Function called with an effect and condition that escaped the effect.
+It returns non-nil when it took ownership of the condition.")
+
+(defvar etaf--drain-errors nil
+  "Conditions collected by the current drain.")
 
 (defun etaf--assert-not-rendering (operation)
   "Reject detectable side-effect OPERATION during pure render."
   (when etaf--render-phase-p
     (signal 'etaf-render-side-effect-error (list operation))))
 
-(defvar etaf--watch-scheduler nil
-  "Scheduler for watchers created in the current Scope.
-
-The function receives a zero-argument job and a phase symbol.  Outside a
-Runtime, watchers run synchronously.")
-
-(defun etaf--subscriber-scheduler-context (subscriber)
-  "Return SUBSCRIBER's scheduler context or the default context."
-  (or (cond
-       ((etaf-runtime-route-p subscriber)
-        (etaf-runtime-route-scheduler-context subscriber))
-       ((etaf-effect-p subscriber)
-        (etaf-effect-scheduler-context subscriber)))
-      etaf-scheduler-default-context))
-
-(defun etaf-runtime-route-live-p (route)
-  "Return non-nil when opaque Runtime ROUTE still owns dispatch authority."
-  (and (etaf-runtime-route-p route)
-       (etaf-runtime-route-active-p route)
-       (let ((predicate (etaf-runtime-route-accepts-p route)))
-         (or (null predicate)
-             (condition-case condition
-                 (funcall predicate route)
-               ((error quit)
-                (etaf-scheduler-record-route-authority-fault
-                 (etaf--subscriber-scheduler-context route) condition)
-                nil))))))
-
-(defun etaf-reactive-enqueue-runtime-flush
-    (runtime function &optional scheduler-context)
-  "Queue FUNCTION once for RUNTIME in SCHEDULER-CONTEXT.
-The default context preserves the legacy two-argument facade."
-  (etaf-scheduler-enqueue-runtime
-   (or scheduler-context (etaf-scheduler-current-context))
-   runtime function))
-
-(defun etaf--dispatch-subscriber-group
-    (context source _projection-epoch subscribers)
-  "Notify SOURCE SUBSCRIBERS already grouped for scheduler CONTEXT."
-  (let (first-condition)
-    (dolist (subscriber subscribers)
-      (etaf-scheduler-record-subscriber-visit context)
-      (condition-case condition
-          (cond
-           ((etaf-runtime-route-p subscriber)
-            (if (etaf-runtime-route-live-p subscriber)
-                (funcall (etaf-runtime-route-scheduler subscriber)
-                         subscriber source)
-              (etaf-scheduler-record-stale-route-drop context)))
-           ((and (etaf-effect-p subscriber)
-                 (etaf-effect-active-p subscriber)
-                 (etaf-scheduler-claim-effect context subscriber))
-            (if-let* ((scheduler (etaf-effect-scheduler subscriber)))
-                (funcall scheduler subscriber)
-              (etaf-reactive-effect-run subscriber))))
-        ((error quit)
-         (unless first-condition
-           (setq first-condition condition)))))
-    (when first-condition
-      (signal (car first-condition) (cdr first-condition)))))
-
 (defun etaf--reactive-same-p (left right)
-  "Return whether LEFT and RIGHT are equal under ETAF's shallow rule."
-  (if (or (functionp left) (consp left) (vectorp left) (hash-table-p left)
-          (recordp left) (bufferp left) (windowp left)
-          (markerp left) (overlayp left) (processp left))
+  "Return non-nil when LEFT and RIGHT are reactively unchanged.
+Conses, vectors, records, hash tables, functions and editor handles compare
+by identity; other values use `equal'."
+  (if (or (consp left) (vectorp left) (recordp left) (hash-table-p left)
+          (functionp left) (bufferp left) (markerp left) (windowp left)
+          (framep left) (overlayp left) (processp left))
       (eq left right)
     (equal left right)))
 
-(defun etaf--source-test (source)
-  "Return SOURCE's equality predicate."
-  (or (and (etaf-ref-p source) (etaf-ref-test source))
-      (and (etaf-computed-p source) (etaf-computed-test source))
-      #'etaf--reactive-same-p))
+;;;; Subscriptions
 
-(defun etaf--source-version (source)
-  "Return SOURCE's last successfully evaluated value version."
-  (if (etaf-ref-p source) (etaf-ref-version source)
-    (etaf-computed-version source)))
+(defsubst etaf--track (source)
+  "Record SOURCE as read by the current observer."
+  (when (and etaf--observer etaf--tracking-enabled-p
+             (not (eq (etaf--source-mark source) etaf--observe-stamp)))
+    (setf (etaf--source-mark source) etaf--observe-stamp)
+    (push source etaf--observed)))
 
-(defun etaf--source-subscribers (source)
-  "Return the subscriber table of reactive SOURCE."
-  (cond
-   ((etaf-ref-p source) (etaf-ref-subscribers source))
-   ((etaf-computed-p source) (etaf-computed-subscribers source))
-   (t (signal 'wrong-type-argument (list 'etaf-reactive-source-p source)))))
+(defun etaf--node-deps (node)
+  "Return observer NODE's dependency list."
+  (if (etaf-effect-p node) (etaf-effect-deps node) (etaf-computed-deps node)))
 
-(defun etaf--track-source (source)
-  "Record SOURCE as a dependency of the active effect."
-  (when (and etaf--tracking-enabled-p etaf--runtime-dependency-collector
-             (null etaf--active-effect))
-    (funcall etaf--runtime-dependency-collector source))
-  (when (and etaf--tracking-enabled-p etaf--active-effect
-             (etaf-effect-active-p etaf--active-effect))
-    (let ((subscribers (etaf--source-subscribers source)))
-      (unless (gethash etaf--active-effect subscribers)
-        (puthash etaf--active-effect t subscribers)
-        (push source (etaf-effect-deps etaf--active-effect))))))
+(defun etaf--node-live-p (node source)
+  "Return non-nil when NODE still observes SOURCE."
+  (if (etaf-effect-p node)
+      (and (etaf-effect-active node) (memq source (etaf-effect-deps node)))
+    (and (etaf-computed-active node) (memq source (etaf-computed-deps node)))))
 
-(defun etaf--clear-effect-deps (effect)
-  "Remove EFFECT from all reactive sources it previously read."
-  (dolist (source (etaf-effect-deps effect))
-    (remhash effect (etaf--source-subscribers source)))
-  (setf (etaf-effect-deps effect) nil))
+(defun etaf--prune (source)
+  "Drop SOURCE's observers that no longer depend on it."
+  (let (kept)
+    (dolist (node (etaf--source-subs source))
+      (when (etaf--node-live-p node source)
+        (push node kept)))
+    (setq kept (nreverse (delete-dups kept)))
+    (setf (etaf--source-subs source) kept
+          (etaf--source-nsubs source) (length kept)
+          (etaf--source-dead source) 0)))
 
-(defun etaf--stop-effect (effect)
-  "Stop EFFECT and run its one-time cleanup."
-  (when (and (etaf-effect-p effect) (etaf-effect-active-p effect))
-    (setf (etaf-effect-active-p effect) nil)
-    (etaf--clear-effect-deps effect)
-    (when-let* ((cleanup (etaf-effect-on-stop effect)))
-      (setf (etaf-effect-on-stop effect) nil)
-      (funcall cleanup)))
-  effect)
+(defun etaf--unsubscribe (source node)
+  "Stop SOURCE from notifying NODE."
+  (if (<= (etaf--source-nsubs source) 16)
+      (let ((subs (delq node (etaf--source-subs source))))
+        (setf (etaf--source-subs source) subs
+              (etaf--source-nsubs source) (length subs)))
+    (cl-incf (etaf--source-dead source))
+    (when (> (* 2 (etaf--source-dead source)) (etaf--source-nsubs source))
+      (etaf--prune source))))
 
-(cl-defun etaf-reactive-effect-create
-    (function &key scheduler name scope on-stop)
-  "Create an effect for FUNCTION.
+(defun etaf--subscribe (source node)
+  "Make SOURCE notify NODE."
+  (push node (etaf--source-subs source))
+  (cl-incf (etaf--source-nsubs source)))
 
-SCHEDULER receives the effect when a dependency changes.  SCOPE defaults to
-the current Scope.  NAME optionally labels the effect.  ON-STOP runs once
-when the effect is disposed."
-  (etaf--assert-not-rendering 'create-effect)
-  (unless (functionp function)
-    (signal 'wrong-type-argument (list 'functionp function)))
-  (let* ((owner (or scope etaf--active-scope))
-         (scheduler-context
-          (or (and owner (etaf-effect-scope-scheduler-context owner))
-              (etaf-scheduler-current-context)))
-         (effect (etaf--effect-create
-                  :function function
-                  :scheduler scheduler
-                  :owner-scope owner
-                  :scheduler-context scheduler-context
-                  :on-stop on-stop
-                  :name name)))
-    (when owner
-      (unless (etaf-effect-scope-active-p owner)
-        (error "Cannot create an effect in a stopped ETAF Scope"))
-      (push effect (etaf-effect-scope-effects owner)))
+(defun etaf--set-deps (node new failed)
+  "Install NEW as NODE's dependencies.
+When FAILED is non-nil the run did not complete: keep old dependencies too."
+  (let ((old (etaf--node-deps node)))
+    ;; Fast path: the same reads in the same order.
+    (let ((a old) (b new))
+      (while (and a b (eq (car a) (car b)))
+        (setq a (cdr a) b (cdr b)))
+      (unless (and (null a) (null b))
+        (let ((stamp (cl-incf etaf--stamp)))
+          (dolist (s new) (setf (etaf--source-mark s) stamp))
+          (dolist (s old)
+            (if (eq (etaf--source-mark s) stamp)
+                (setf (etaf--source-mark s) 0)
+              (if failed
+                  (push s new)
+                (etaf--unsubscribe s node))))
+          (dolist (s new)
+            (when (eq (etaf--source-mark s) stamp)
+              (setf (etaf--source-mark s) 0)
+              (etaf--subscribe s node))))
+        (if (etaf-effect-p node)
+            (setf (etaf-effect-deps node) new)
+          (setf (etaf-computed-deps node) new))))))
+
+(defun etaf--release-deps (node)
+  "Unsubscribe NODE from all its dependencies."
+  (dolist (s (etaf--node-deps node))
+    (etaf--unsubscribe s node))
+  (if (etaf-effect-p node)
+      (setf (etaf-effect-deps node) nil)
+    (setf (etaf-computed-deps node) nil)))
+
+(defmacro etaf--with-observer (node &rest body)
+  "Run BODY collecting reads as NODE's dependencies; return BODY's value."
+  (declare (indent 1) (debug t))
+  (let ((ok (make-symbol "ok")) (result (make-symbol "result")))
+    `(let ((etaf--observer ,node)
+           (etaf--observed nil)
+           (etaf--observe-stamp (cl-incf etaf--stamp))
+           (,ok nil) ,result)
+       (unwind-protect
+           (setq ,result (progn ,@body) ,ok t)
+         (etaf--set-deps etaf--observer (nreverse etaf--observed) (not ,ok)))
+       ,result)))
+
+(defmacro etaf-untracked (&rest body)
+  "Evaluate BODY without collecting reactive dependencies."
+  (declare (indent 0) (debug t))
+  `(let ((etaf--observer nil)) ,@body))
+
+;;;; Notification
+
+(defun etaf--enqueue (effect)
+  "Queue EFFECT in its phase."
+  (let ((phase (etaf-effect-phase effect)))
+    (aset etaf--queues phase (cons effect (aref etaf--queues phase)))))
+
+(defun etaf--stale (node state)
+  "Raise observer NODE to STATE (1 check, 2 dirty) and propagate."
+  (if (etaf-effect-p node)
+      (let ((old (etaf-effect-state node)))
+        (when (< old state)
+          (setf (etaf-effect-state node) state)
+          (when (and (= old 0) (not (etaf-effect-running node)))
+            (etaf--enqueue node))))
+    (let ((old (etaf-computed-state node)))
+      (when (< old state)
+        (setf (etaf-computed-state node) state)
+        (when (= old 0)
+          (etaf--notify node 1))))))
+
+(defun etaf--notify (source state)
+  "Raise SOURCE's observers to STATE."
+  (if (= 0 (etaf--source-dead source))
+      (dolist (node (etaf--source-subs source))
+        (etaf--stale node state))
+    (let ((dead 0))
+      (dolist (node (etaf--source-subs source))
+        (if (etaf--node-live-p node source)
+            (etaf--stale node state)
+          (setq dead (1+ dead))))
+      (when (> (* 2 dead) (etaf--source-nsubs source))
+        (etaf--prune source)))))
+
+;;;; Computed values
+
+(defun etaf--computed-refresh (computed)
+  "Bring COMPUTED up to date with its dependencies."
+  (when (= (etaf-computed-state computed) 1)
+    (let ((deps (etaf-computed-deps computed)))
+      (while (and deps (= (etaf-computed-state computed) 1))
+        (let ((s (car deps)))
+          (when (etaf-computed-p s) (etaf--computed-refresh s)))
+        (setq deps (cdr deps))))
+    (when (= (etaf-computed-state computed) 1)
+      (setf (etaf-computed-state computed) 0)))
+  (when (= (etaf-computed-state computed) 2)
+    (when (etaf-computed-evaluating computed)
+      (signal 'etaf-reactive-error
+              (list "Recursive computed evaluation"
+                    (or (etaf-computed-name computed) computed))))
+    (setf (etaf-computed-evaluating computed) t)
+    (unwind-protect
+        (let* ((old (etaf-computed-value computed))
+               (new (if (etaf-computed-active computed)
+                        (etaf--with-observer computed
+                          (funcall (etaf-computed-getter computed)))
+                      (etaf-untracked (funcall (etaf-computed-getter computed)))))
+               (changed (or (not (etaf-computed-evaluated computed))
+                            (not (funcall (or (etaf-computed-test computed)
+                                              #'etaf--reactive-same-p)
+                                          old new)))))
+          (setf (etaf-computed-value computed) new
+                (etaf-computed-evaluated computed) t
+                (etaf-computed-state computed)
+                (if (etaf-computed-active computed) 0 2))
+          (when changed
+            (cl-incf (etaf-computed-version computed))
+            (dolist (node (etaf-computed-subs computed))
+              (when (etaf--node-live-p node computed)
+                (etaf--stale node 2)))))
+      (setf (etaf-computed-evaluating computed) nil))))
+
+;;;; Effects
+
+(defun etaf--effect-run (effect)
+  "Run EFFECT now, tracking its dependencies; return its function's value."
+  (setf (etaf-effect-state effect) 0
+        (etaf-effect-running effect) t)
+  (unwind-protect
+      (etaf--with-observer effect
+        (funcall (etaf-effect-fn effect)))
+    (setf (etaf-effect-running effect) nil)
+    ;; A dependency changed while the effect ran: run it again.
+    (when (and (/= 0 (etaf-effect-state effect)) (etaf-effect-active effect))
+      (etaf--enqueue effect))))
+
+(defun etaf--effect-update (effect)
+  "Run queued EFFECT if a dependency really changed."
+  (when (and (etaf-effect-active effect) (= (etaf-effect-state effect) 1))
+    (let ((deps (etaf-effect-deps effect)))
+      (while (and deps (= (etaf-effect-state effect) 1))
+        (let ((s (car deps)))
+          (when (etaf-computed-p s) (etaf--computed-refresh s)))
+        (setq deps (cdr deps))))
+    (when (= (etaf-effect-state effect) 1)
+      (setf (etaf-effect-state effect) 0)))
+  (when (and (etaf-effect-active effect) (= (etaf-effect-state effect) 2))
+    (etaf--effect-run effect)))
+
+(cl-defun etaf-reactive-effect-create (function &key (phase 0) owner data name
+                                                (scope etaf--active-scope))
+  "Create an effect running FUNCTION and return it without running it.
+PHASE is 0 (pre), 1 (render) or 2 (post).  OWNER and DATA are opaque values
+for the caller.  SCOPE owns the effect; nil leaves disposal to the caller."
+  (let ((effect (etaf--effect-create :fn function :phase phase :owner owner
+                                     :data data :name name
+                                     :id (cl-incf etaf--effect-counter)
+                                     :home scope)))
+    (when scope
+      (unless (etaf-effect-scope-active-p scope)
+        (signal 'etaf-reactive-error (list "Inactive Scope" scope)))
+      (push effect (etaf-effect-scope-effects scope)))
     effect))
 
-(cl-defun etaf-reactive-effect-run (effect &key rendering)
-  "Run EFFECT and recollect its dependencies.
+(defun etaf-reactive-effect-run (effect)
+  "Run EFFECT now with dependency tracking and return its value."
+  (etaf--effect-run effect))
 
-When RENDERING is non-nil, `etaf-value' writes are rejected for the duration
-of the run."
-  (unless (etaf-effect-p effect)
-    (signal 'wrong-type-argument (list 'etaf-effect-p effect)))
-  (let* ((scheduler-context
-          (or (etaf-effect-scheduler-context effect)
-              (etaf-scheduler-current-context)))
-         (etaf--scheduler-context scheduler-context))
-    (etaf-scheduler-record-effect-evaluation scheduler-context)
-    (cond
-   ((etaf-effect-running-p effect)
-    (error "Recursive ETAF effect execution: %S"
-           (or (etaf-effect-name effect) effect)))
-   ((not (etaf-effect-active-p effect))
-    (funcall (etaf-effect-function effect)))
-   (t
-    (let ((old-deps (copy-sequence (etaf-effect-deps effect)))
-          (completed-p nil)
-          result)
-      (etaf--clear-effect-deps effect)
-      (let ((etaf--active-effect effect)
-            (etaf--active-scope (etaf-effect-owner-scope effect))
-            (etaf--runtime-dependency-collector nil)
-            (etaf--tracking-enabled-p t)
-            (etaf--render-phase-p (or rendering etaf--render-phase-p)))
-        (setf (etaf-effect-running-p effect) t)
-        (unwind-protect
-            (progn
-              (setq result (funcall (etaf-effect-function effect)))
-              (setq completed-p t)
-              result)
-          (setf (etaf-effect-running-p effect) nil)
-          (unless completed-p
-            (etaf--clear-effect-deps effect)
-            (dolist (source old-deps)
-              (puthash effect t (etaf--source-subscribers source)))
-            (setf (etaf-effect-deps effect) old-deps)))))))))
+(defun etaf-reactive-effect-stop (effect &optional keep-scope)
+  "Dispose EFFECT; run its stop function.
+When KEEP-SCOPE is nil, also remove EFFECT from its owning Scope."
+  (when (etaf-effect-active effect)
+    (setf (etaf-effect-active effect) nil)
+    (etaf--release-deps effect)
+    (let ((scope (etaf-effect-home effect)))
+      (when (and scope (not keep-scope))
+        (setf (etaf-effect-scope-effects scope)
+              (delq effect (etaf-effect-scope-effects scope)))))
+    (when-let* ((stop (etaf-effect-on-stop effect)))
+      (funcall stop))))
 
-(defun etaf--dispatch-source (source &optional context-filter)
-  "Notify current subscribers of SOURCE once.
+;;;; Draining
 
-When CONTEXT-FILTER is non-nil, it is called with each subscriber's scheduler
-context and only subscribers for which it returns non-nil are included.  The
-filter is an internal reconciliation hook: the ordinary source publication
-path leaves it nil, while a retry can target only contexts that did not finish
-an earlier projection epoch."
-  (etaf-scheduler-call-with-projection
-   (lambda ()
-     (let ((groups (make-hash-table :test #'eq)))
-       (maphash
-        (lambda (subscriber _)
-          (let ((context (etaf--subscriber-scheduler-context subscriber)))
-            (when (or (null context-filter)
-                      (funcall context-filter context))
-              (cond
-             ((etaf-runtime-route-p subscriber)
-              (if (etaf-runtime-route-live-p subscriber)
-                  (puthash context
-                           (cons subscriber (gethash context groups)) groups)
-                (etaf-scheduler-record-stale-route-drop context)))
-             ((and (etaf-effect-p subscriber)
-                   (etaf-effect-active-p subscriber))
-             (puthash context
-                       (cons subscriber (gethash context groups)) groups)))))
-            )
-        (etaf--source-subscribers source))
-       (let (contexts)
-         (maphash (lambda (context _) (push context contexts)) groups)
-         (dolist (context
-                  (sort contexts
-                      (lambda (left right)
-                        (< (etaf-scheduler-context-id left)
-                           (etaf-scheduler-context-id right)))))
-           (let ((subscribers (nreverse (gethash context groups))))
-             (etaf-scheduler-enqueue-source
-              context source
-              (lambda (delivery-context delivery-source projection-epoch)
-                (etaf--dispatch-subscriber-group
-                 delivery-context delivery-source projection-epoch
-                 subscribers))))))))))
+(defun etaf--effect-before-p (a b)
+  "Return non-nil when effect A was created before B."
+  (< (etaf-effect-id a) (etaf-effect-id b)))
+
+(defun etaf--run-phase (phase)
+  "Run the effects queued in PHASE."
+  (let ((batch (aref etaf--queues phase)))
+    (aset etaf--queues phase nil)
+    (when (cdr batch)
+      (setq batch (sort batch #'etaf--effect-before-p)))
+    (dolist (effect batch)
+      (condition-case err
+          (etaf--effect-update effect)
+        ((error quit)
+         (setf (etaf-effect-state effect) 0)
+         (unless (and etaf--effect-error-function
+                      (funcall etaf--effect-error-function effect err))
+           (push err etaf--drain-errors)))))))
+
+(defun etaf--drain-loop ()
+  "Run the queued phases and commits until nothing remains."
+  (let ((queues etaf--queues))
+    (while (cond ((aref queues 0) (etaf--run-phase 0) t)
+                 ((aref queues 1) (etaf--run-phase 1) t)
+                 ((and etaf--drain-commit-function
+                       (condition-case err
+                           (funcall etaf--drain-commit-function)
+                         ((error quit) (push err etaf--drain-errors) t))))
+                 ((aref queues 2) (etaf--run-phase 2) t)))))
+
+(defun etaf--drain ()
+  "Run queued effects until the graph is settled; re-signal the first error."
+  (unless etaf--draining
+    (let ((etaf--draining t)
+          (etaf--drain-errors nil))
+      (if etaf--drain-around-function
+          (funcall etaf--drain-around-function #'etaf--drain-loop)
+        (etaf--drain-loop))
+      (when etaf--drain-errors
+        (let ((first (car (last etaf--drain-errors))))
+          (signal (car first) (cdr first)))))))
+
+(defun etaf--settle ()
+  "Drain queued effects unless a batch or drain is active."
+  (when (and (= etaf--batch-depth 0) (not etaf--draining))
+    (etaf--drain)))
 
 (defun etaf-call-with-batch (function)
   "Call zero-argument FUNCTION with deferred reactive notifications.
-Return FUNCTION's result after pending observers and Runtime updates finish.
+Return FUNCTION's result after queued effects and Runtime updates finish.
 Nested calls join the outer batch.  Ref writes are immediately readable,
-but their notifications wait until the outermost call completes.
+but their effects wait until the outermost call completes.
 
-If FUNCTION signals an error or quit after writing refs, pending work still
-runs before the original condition is re-signaled.  Written refs are not
-rolled back, and publication across Runtimes is not atomic.  A notification
-or publication error signals when FUNCTION itself completed successfully.
-
-Use outside rendering in synchronous application code on the main Emacs
-event loop.  Later asynchronous callbacks must establish their own batch."
+If FUNCTION signals after writing refs, queued work still runs before the
+original condition is re-signaled.  Written refs are not rolled back.  An
+effect or Runtime error signals when FUNCTION itself completed normally.
+Use outside rendering on the main Emacs event loop."
   (etaf--assert-not-rendering 'batch)
   (unless (functionp function)
     (signal 'wrong-type-argument (list 'functionp function)))
-  (etaf-scheduler-call-with-projection function))
+  (let ((ok nil) result)
+    (unwind-protect
+        (let ((etaf--batch-depth (1+ etaf--batch-depth)))
+          (setq result (funcall function) ok t))
+      (when (and (= etaf--batch-depth 0) (not etaf--draining))
+        (if ok
+            (etaf--drain)
+          (ignore-errors (etaf--drain)))))
+    result))
 
 (defmacro etaf-batch (&rest body)
   "Evaluate BODY with deferred reactive notifications and return its result.
-Nested batches join the outermost one.  See `etaf-call-with-batch' for
-immediate ref reads, synchronous scope and failure semantics."
+Nested batches join the outermost one.  See `etaf-call-with-batch'."
   (declare (indent 0) (debug t))
   `(etaf-call-with-batch (lambda () ,@body)))
+
+;;;; Public sources
 
 ;;;###autoload
 (cl-defun etaf-ref (initial-value &key test name)
   "Create a writable shallow reactive cell containing INITIAL-VALUE.
 
 Lists, vectors, hash tables, records, functions and editor handles compare by
-identity; other values use equal. Replacing an object notifies dependents
+identity; other values use equal.  Replacing an object notifies dependents
 even when its contents match.
 TEST optionally compares old and new values.  NAME is used in diagnostics."
   (etaf--assert-not-rendering 'create-ref)
   (when (and test (not (functionp test)))
     (signal 'wrong-type-argument (list 'functionp test)))
-  (etaf--ref-create :value initial-value
-                    :test test
-                    :subscribers (make-hash-table :test #'eq)
-                    :source-id (cl-incf etaf--source-id-counter)
-                    :name name))
-
-(defvar etaf--computed-snapshot-observer nil
-  "Optional candidate observer called before a computed cache changes.")
-
-(defun etaf--computed-value (computed)
-  "Read COMPUTED, evaluating it when its dependencies are dirty."
-  (when-let* ((validate (etaf-computed-validator computed))) (funcall validate))
-  (etaf--track-source computed)
-  (when (etaf-computed-dirty-p computed)
-    (when etaf--computed-snapshot-observer
-      (funcall etaf--computed-snapshot-observer computed))
-    (when (etaf-computed-evaluating-p computed)
-      (error "Recursive ETAF computed evaluation: %S"
-             (or (etaf-computed-name computed) computed)))
-    (setf (etaf-computed-evaluating-p computed) t)
-    (unwind-protect
-        (let* ((old (etaf-computed-value computed))
-               (was-evaluated (etaf-computed-evaluated-p computed))
-               (new (etaf-reactive-effect-run
-                     (etaf-computed-effect computed)))
-               (changed (or (not was-evaluated)
-                            (not (funcall (etaf--source-test computed) old new)))))
-          (setf (etaf-computed-value computed) new
-                (etaf-computed-dirty-p computed) nil
-                (etaf-computed-evaluated-p computed) t)
-          (when changed
-            (cl-incf (etaf-computed-version computed))))
-      (setf (etaf-computed-evaluating-p computed) nil)))
-  (etaf-computed-value computed))
+  (etaf--ref-create :value initial-value :test test :name name))
 
 ;;;###autoload
 (cl-defun etaf-computed (getter &key test name)
   "Create a lazy cached value computed by zero-argument GETTER.
 
-TEST optionally compares old and new values.  NAME optionally labels the
-computed value.  Mounted consumers retain their publication when all their
-reactive inputs compare unchanged; getters reading ambient Context use the
-ordinary render path to preserve Context tracking.  Unobserved computations
-stay lazy."
+TEST optionally compares old and new values; consumers of an unchanged
+result do not re-run.  NAME optionally labels the computed value.  The
+active Scope owns the computed: stopping it releases its dependencies."
   (etaf--assert-not-rendering 'create-computed)
   (unless (functionp getter)
     (signal 'wrong-type-argument (list 'functionp getter)))
   (when (and test (not (functionp test)))
     (signal 'wrong-type-argument (list 'functionp test)))
-  (let ((computed (etaf--computed-create
-                   :getter getter :test test :name name
-                   :subscribers (make-hash-table :test #'eq)
-                   :source-id (cl-incf etaf--source-id-counter))))
-    (setf (etaf-computed-effect computed)
-          (etaf-reactive-effect-create
-           getter
-           :name (or name 'computed)
-           :scheduler
-           (lambda (_effect)
-             (unless (etaf-computed-dirty-p computed)
-               (setf (etaf-computed-dirty-p computed) t)
-               (etaf--dispatch-source computed)))))
-    (setf (etaf-effect-output-source (etaf-computed-effect computed)) computed)
+  (let ((computed (etaf--computed-create :getter getter :test test :name name)))
+    (when (and etaf--active-scope (etaf-effect-scope-active-p etaf--active-scope))
+      (push computed (etaf-effect-scope-effects etaf--active-scope)))
     computed))
+
+(defun etaf--computed-stop (computed)
+  "Release COMPUTED's dependencies; later reads recompute untracked."
+  (when (etaf-computed-active computed)
+    (setf (etaf-computed-active computed) nil
+          (etaf-computed-state computed) 2)
+    (etaf--release-deps computed)))
 
 ;;;###autoload
 (defun etaf-value (source)
   "Read reactive SOURCE and track the read in the current effect."
   (cond
    ((etaf-ref-p source)
-    (etaf--track-source source)
+    (etaf--track source)
     (etaf-ref-value source))
-   ((etaf-computed-p source) (etaf--computed-value source))
+   ((etaf-computed-p source)
+    (unless (= 0 (etaf-computed-state source))
+      (etaf--computed-refresh source))
+    (etaf--track source)
+    (etaf-computed-value source))
    (t (signal 'wrong-type-argument (list 'etaf-reactive-source-p source)))))
 
 (defun etaf--check-value-write (source)
   "Require writable SOURCE outside View rendering."
   (when etaf--render-phase-p
-    (signal 'etaf-render-write-error
-            (list (and (etaf-ref-p source) (etaf-ref-name source)))))
+    (signal 'etaf-render-side-effect-error
+            (list 'write (and (etaf-ref-p source) (etaf-ref-name source)))))
   (unless (etaf-ref-p source)
-    (error "ETAF reactive value is read-only: %S"
-           (if (etaf-computed-p source) (etaf-computed-name source)
-             (type-of source)))))
+    (signal 'etaf-reactive-error
+            (list "Reactive value is read-only"
+                  (if (etaf-computed-p source) (etaf-computed-name source)
+                    (type-of source))))))
+
+(defun etaf--ref-install (ref value)
+  "Store VALUE in REF and bump its version without notifying observers."
+  (setf (etaf-ref-value ref) value)
+  (cl-incf (etaf-ref-version ref)))
+
+(defun etaf--ref-notify (ref)
+  "Notify REF's observers that it changed and settle outside batches."
+  (etaf--notify ref 2)
+  (etaf--settle))
 
 (defun etaf-set-value (source new-value)
   "Set writable reactive SOURCE to NEW-VALUE and return NEW-VALUE."
   (etaf--check-value-write source)
-  (let ((old-value (etaf-ref-value source)))
-    (unless (funcall (etaf--source-test source) old-value new-value)
-      (setf (etaf-ref-value source) new-value)
-      (cl-incf (etaf-ref-version source))
-      (etaf--dispatch-source source)))
+  (unless (funcall (or (etaf-ref-test source) #'etaf--reactive-same-p)
+                   (etaf-ref-value source) new-value)
+    (setf (etaf-ref-value source) new-value)
+    (cl-incf (etaf-ref-version source))
+    (when (etaf-ref-subs source)
+      (etaf--notify source 2)
+      (etaf--settle)))
   new-value)
 
 (gv-define-setter etaf-value (new-value source)
@@ -474,13 +526,14 @@ stay lazy."
 Return the replacement value.  SOURCE must be a writable ref; rendering
 rejects the operation before FUNCTION runs.  FUNCTION runs once and must
 return a replacement without mutating the old value or performing effects.
-An error from FUNCTION leaves SOURCE unchanged.  Publication errors after
-replacement follow `etaf-set-value': the application write is not rolled back.
-This is a shallow update with the ref's existing equality and batching rules."
+An error from FUNCTION leaves SOURCE unchanged."
   (etaf--check-value-write source)
   (unless (functionp function)
     (signal 'wrong-type-argument (list 'functionp function)))
-  (etaf-set-value source (apply function (etaf-value source) arguments)))
+  (etaf-set-value source (apply function (etaf-untracked (etaf-value source))
+                                arguments)))
+
+;;;; Watchers
 
 (defun etaf--watch-getter (source)
   "Return a zero-argument getter for watch SOURCE."
@@ -488,105 +541,92 @@ This is a shallow update with the ref's existing equality and batching rules."
    ((or (etaf-ref-p source) (etaf-computed-p source))
     (lambda () (etaf-value source)))
    ((functionp source) source)
-   (t (error "ETAF watch source must be reactive or callable: %S" source))))
+   (t (signal 'etaf-reactive-error
+              (list "Watch source must be reactive or callable" source)))))
 
-(defun etaf--schedule-watch (job flush)
-  "Schedule JOB in FLUSH through the active Runtime scheduler."
-  (if etaf--watch-scheduler
-      (funcall etaf--watch-scheduler job flush)
-    (funcall job)))
+(defun etaf--flush-phase (flush)
+  "Return the effect phase for watcher FLUSH."
+  (pcase flush
+    ((or 'pre 'sync 'nil) 0)
+    ('post 2)
+    (_ (signal 'etaf-reactive-error (list "Invalid watcher flush" flush)))))
 
 ;;;###autoload
 (cl-defun etaf-watch
     (source callback &key immediate (flush 'pre) test name)
   "Watch SOURCE and call CALLBACK with NEW and OLD values.
 
-IMMEDIATE calls CALLBACK for the initial value.  FLUSH is passed to the
-current Runtime scheduler.  TEST and NAME customize comparison and
-diagnostics.  Return a stop function."
+SOURCE is a ref, computed or zero-argument function.  IMMEDIATE calls
+CALLBACK for the initial value.  FLUSH is `pre' (before Runtimes write their
+buffers) or `post' (after).  TEST compares values; it defaults to the
+source's test.  NAME labels diagnostics.  When CALLBACK returns a function,
+it runs before the next callback and when the watcher stops.  Return a
+zero-argument stop function."
   (etaf--assert-not-rendering 'watch)
   (unless (functionp callback)
     (signal 'wrong-type-argument (list 'functionp callback)))
   (let* ((getter (etaf--watch-getter source))
-         (same-p (or test (and (etaf-ref-p source)
-                               (etaf--source-test source))
-                            (and (etaf-computed-p source)
-                                 (etaf--source-test source))
-                            #'etaf--reactive-same-p))
-         initialized-p
-         old-value
-         cleanup
-         effect
-         job)
-    (setq job
-          (lambda ()
-            (when (etaf-effect-active-p effect)
-              (let ((new-value (etaf-reactive-effect-run effect)))
-                (when (or (not initialized-p)
-                          (not (funcall same-p old-value new-value)))
-                  (let ((previous (and initialized-p old-value)))
-                    (setq old-value new-value initialized-p t)
-                    (when cleanup
-                      (funcall cleanup)
-                      (setq cleanup nil))
-                    (when-let* ((result (funcall callback new-value previous)))
-                      (when (functionp result)
-                        (setq cleanup result)))))))))
+         (same-p (or test
+                     (and (etaf--source-p source) (etaf--source-test source))
+                     #'etaf--reactive-same-p))
+         (initialized nil) old cleanup effect)
     (setq effect
           (etaf-reactive-effect-create
-           getter
-           :name (or name 'watch)
-           :on-stop (lambda () (when cleanup (funcall cleanup)))
-           :scheduler
-           (lambda (_effect) (etaf--schedule-watch job flush))))
-    (if immediate
-        (funcall job)
-      (setq old-value (etaf-reactive-effect-run effect)
-            initialized-p t))
-    (lambda () (etaf--stop-effect effect))))
+           (lambda ()
+             (let ((new (funcall getter)))
+               (etaf-untracked
+                 (if (and initialized (funcall same-p old new))
+                     nil
+                   (let ((previous old) (first (not initialized)))
+                     (setq old new initialized t)
+                     (when (or immediate (not first))
+                       (when cleanup
+                         (let ((f cleanup)) (setq cleanup nil) (funcall f)))
+                       (let ((result (funcall callback new previous)))
+                         (when (functionp result) (setq cleanup result)))))))))
+           :phase (etaf--flush-phase flush)
+           :name (or name 'watch)))
+    (setf (etaf-effect-on-stop effect)
+          (lambda () (when cleanup (let ((f cleanup)) (setq cleanup nil) (funcall f)))))
+    (etaf--effect-run effect)
+    (lambda () (etaf-reactive-effect-stop effect))))
 
 ;;;###autoload
 (cl-defun etaf-watch-effect (function &key (flush 'pre) name)
   "Run FUNCTION immediately and again after a reactive dependency change.
 
-FLUSH selects the Runtime scheduler boundary.  NAME optionally labels the
-effect.  If FUNCTION returns a function, it cleans up the previous run."
+FLUSH is `pre' or `post' as in `etaf-watch'.  NAME optionally labels the
+effect.  If FUNCTION returns a function, it cleans up the previous run and
+runs when the effect stops.  Return a zero-argument stop function."
   (etaf--assert-not-rendering 'watch-effect)
   (unless (functionp function)
     (signal 'wrong-type-argument (list 'functionp function)))
-  (let (cleanup effect job)
-    (setq job
-          (lambda ()
-            (when (etaf-effect-active-p effect)
-              (when cleanup (funcall cleanup) (setq cleanup nil))
-              (when-let* ((result (etaf-reactive-effect-run effect)))
-                (when (functionp result) (setq cleanup result))))))
+  (let (cleanup effect)
     (setq effect
           (etaf-reactive-effect-create
-           function
-           :name (or name 'watch-effect)
-           :on-stop (lambda () (when cleanup (funcall cleanup)))
-           :scheduler
-           (lambda (_effect) (etaf--schedule-watch job flush))))
-    (funcall job)
-    (lambda () (etaf--stop-effect effect))))
+           (lambda ()
+             (when cleanup
+               (let ((f cleanup)) (setq cleanup nil) (etaf-untracked (funcall f))))
+             (let ((result (funcall function)))
+               (when (functionp result) (setq cleanup result))))
+           :phase (etaf--flush-phase flush)
+           :name (or name 'watch-effect)))
+    (setf (etaf-effect-on-stop effect)
+          (lambda () (when cleanup (let ((f cleanup)) (setq cleanup nil) (funcall f)))))
+    (etaf--effect-run effect)
+    (lambda () (etaf-reactive-effect-stop effect))))
+
+;;;; Scopes
 
 ;;;###autoload
-(cl-defun etaf-effect-scope (&key detached name scheduler-context)
-  "Create a Scope named NAME, owned by the current Scope unless DETACHED.
-SCHEDULER-CONTEXT defaults to the parent or dynamically active context."
+(cl-defun etaf-effect-scope (&key detached name)
+  "Create a Scope named NAME, owned by the current Scope unless DETACHED."
   (etaf--assert-not-rendering 'create-scope)
   (let* ((parent (and (not detached) etaf--active-scope))
-         (scheduler-context
-          (or scheduler-context
-              (and parent (etaf-effect-scope-scheduler-context parent))
-              (etaf-scheduler-current-context)))
-         (scope (etaf--effect-scope-create
-                 :parent parent
-                 :scheduler-context
-                 (etaf-scheduler-context-resolve scheduler-context)
-                 :name name)))
+         (scope (etaf--effect-scope-create :parent parent :name name)))
     (when parent
+      (unless (etaf-effect-scope-active-p parent)
+        (signal 'etaf-reactive-error (list "Inactive parent Scope" parent)))
       (push scope (etaf-effect-scope-children parent)))
     scope))
 
@@ -596,17 +636,13 @@ SCHEDULER-CONTEXT defaults to the parent or dynamically active context."
   etaf--active-scope)
 
 ;;;###autoload
-(cl-defun etaf-scope-run
-    (scope function &key (watch-scheduler nil watch-scheduler-p))
-  "Run FUNCTION with active SCOPE and optional WATCH-SCHEDULER."
-  (unless (and (etaf-effect-scope-p scope)
-               (etaf-effect-scope-active-p scope))
-    (error "Cannot enter an inactive ETAF Scope"))
-  (let ((etaf--active-scope scope)
-        (etaf--scheduler-context
-         (etaf-effect-scope-scheduler-context scope))
-        (etaf--watch-scheduler
-         (if watch-scheduler-p watch-scheduler etaf--watch-scheduler)))
+(defun etaf-scope-run (scope function)
+  "Run FUNCTION with SCOPE active and return its value.
+Effects, computeds, watchers, child Scopes and cleanups created by FUNCTION
+belong to SCOPE.  An inactive SCOPE signals `etaf-reactive-error'."
+  (unless (and (etaf-effect-scope-p scope) (etaf-effect-scope-active-p scope))
+    (signal 'etaf-reactive-error (list "Cannot enter an inactive Scope")))
+  (let ((etaf--active-scope scope))
     (funcall function)))
 
 ;;;###autoload
@@ -620,7 +656,8 @@ Cleanup errors are collected by `etaf-scope-stop' without aborting teardown."
     (signal 'wrong-type-argument (list 'functionp function)))
   (unless (and etaf--active-scope
                (etaf-effect-scope-active-p etaf--active-scope))
-    (error "ETAF cleanup registration requires an active Scope"))
+    (signal 'etaf-reactive-error
+            (list "Cleanup registration requires an active Scope")))
   (push function (etaf-effect-scope-cleanups etaf--active-scope))
   function)
 
@@ -630,26 +667,28 @@ Cleanup errors are collected by `etaf-scope-stop' without aborting teardown."
 Stop child Scopes and owned effects, then run registered cleanup functions.
 Errors and quits from cleanup are returned as condition data, not re-signaled;
 remaining cleanup still runs.  Stopping an already stopped Scope returns nil.
-After stopping, SCOPE cannot be entered or accept effects or cleanup.
-Call outside rendering; Component-owned Scopes are stopped automatically."
+After stopping, SCOPE cannot be entered or accept effects or cleanup."
   (etaf--assert-not-rendering 'stop-scope)
-  (when (and (etaf-effect-scope-p scope)
-             (etaf-effect-scope-active-p scope))
+  (when (and (etaf-effect-scope-p scope) (etaf-effect-scope-active-p scope))
     (setf (etaf-effect-scope-active-p scope) nil)
-    (let (errors)
-      (dolist (child (copy-sequence (etaf-effect-scope-children scope)))
+    (let ((children (etaf-effect-scope-children scope))
+          (nodes (etaf-effect-scope-effects scope))
+          errors)
+      (setf (etaf-effect-scope-children scope) nil
+            (etaf-effect-scope-effects scope) nil)
+      (dolist (child children)
         (setq errors (nconc errors (etaf-scope-stop child))))
-      (dolist (effect (copy-sequence (etaf-effect-scope-effects scope)))
+      (dolist (node nodes)
         (condition-case err
-            (etaf--stop-effect effect)
+            (if (etaf-effect-p node)
+                (etaf-reactive-effect-stop node t)
+              (etaf--computed-stop node))
           ((error quit) (push err errors))))
-      (dolist (cleanup (copy-sequence (etaf-effect-scope-cleanups scope)))
+      (dolist (cleanup (etaf-effect-scope-cleanups scope))
         (condition-case err
             (funcall cleanup)
           ((error quit) (push err errors))))
-      (setf (etaf-effect-scope-effects scope) nil
-            (etaf-effect-scope-children scope) nil
-            (etaf-effect-scope-cleanups scope) nil)
+      (setf (etaf-effect-scope-cleanups scope) nil)
       (when-let* ((parent (etaf-effect-scope-parent scope)))
         (setf (etaf-effect-scope-children parent)
               (delq scope (etaf-effect-scope-children parent))))

@@ -82,7 +82,7 @@ Core 不加载 `.etaf` 文件；Playground 将它们作为 inert 结构，由其
 
 ETAF 提供一个独立、按需加载、与具体应用无关的性能记录器。它消费 Runtime
 公共 observer 报告，不使用 advice 或私有跨包探针。Event、Action、mount、flush
-和 unmount 等 Runtime operation 会自动记录；同一 operation 内的 Ebox 渲染与发布、Data、
+和 unmount 等 Runtime operation 会自动记录；同一 operation 内的 Ebox layout 与 buffer 发布、Data、
 Resource 和 SQLite 等 provider 阶段按 sequence 关联到同一条记录。
 
 ```elisp
@@ -100,14 +100,14 @@ Emacs/显示环境、电源来源、低功耗模式、native JIT 状态、系统
 p50/p95/max、每次 operation、GC 增量和有序 provider 阶段；面板 header 也显示
 同一环境信息，避免把整机降频误判成某个包的热点。
 
-`*ETAF Performance*` 面板会显示 operation ID、generation 变化、总耗时、GC
+`*ETAF Performance*` 面板会显示 operation ID、revision 变化、总耗时、GC
 增量，以及 flat provider 阶段的顺序和各自耗时。provider 阶段可能重叠，因此
 不会伪装成 exclusive/self 时间。记录数量由 `etaf-performance-max-records`
 限制；关闭 mode 只会解除当前 Runtime 的 observer，不修改任何函数。
 `etaf-performance-summary` 会按需计算 operation 的 p50/p95/max，
 `etaf-performance-operation-stage-summary` 则按 provider category 汇总单次
 operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage 的防御性
-快照，调用方修改返回值不会改写已保留的历史。
+副本，调用方修改返回值不会改写已保留的历史。
 向 `etaf-performance-records` 传入 observer 报告中的数字 runtime ID，可以隔离
 同名 buffer 重建前后的记录。summary/report 函数省略参数时读取全部历史，
 显式传入 `nil` 时保持空结果。导出的环境是生成报告时的状态，不是每次历史操作
@@ -132,8 +132,6 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 
 - [English Architecture](docs/architecture.md) · [中文架构](docs/architecture.zh-CN.md)
 - [English User Guide](docs/manual.md) · [中文用户指南](docs/manual.zh-CN.md)
-- [English Implementation Plan](docs/architecture.md) · [中文实施计划](docs/architecture.zh-CN.md)
-- [Module-boundary proposal (unimplemented)](docs/architecture.md) · [模块边界提案（未实现）](docs/architecture.zh-CN.md)
 - [English Best-practice Examples](README.md) · [中文示例](README.zh-CN.md)
 
 ## 独立包
@@ -150,10 +148,8 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 ## 加载与验证
 
 先安装 ECSS，再安装 Ebox，最后安装 ETAF。ETAF 直接声明 ECSS 依赖，
-以便主题解析保留延迟层叠值。渲染与 Host final-accept authority 都使用 Ebox
-公共契约。renderer 要求 Ebox framework SPI v3 与 `ebox-publication/v1`；
-provider 缺失、格式错误或不兼容时，ETAF 会在 bootstrap 阶段 fail closed。
-ETAF 为当前 Emacs 进程 snapshot 一个不可变 render port。
+以便主题解析保留延迟层叠值。ETAF 使用 Ebox 作为保留节点、布局、焦点、
+输入和 buffer 引擎；应用只使用 ETAF 公共 API。
 
 开发时先把同级 Ebox 检出目录加入 `load-path`：
 

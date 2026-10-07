@@ -79,37 +79,14 @@ Reserve one clear line at the top of the root View.  Count this padding as
 chrome in page and row-budget constants; on a short window render fewer content
 rows rather than clipping the first line.
 
-To request pending work explicitly, call `(etaf-runtime-flush runtime)`.
-Its return value is now the **integer committed Ebox revision**, replacing the
-previous Ebox-node return type. Busy or batched work may remain pending; the
-returned revision identifies the publication currently visible to readers.
-Calls inside an active Ebox transaction fail before requesting work, since
-that transaction's revision may still be provisional. Ordinary flushes do not
-export a tree or force a Root rebuild.
-
-For a current tree and its matching source facts, request an explicit snapshot:
-
-```elisp
-(let* ((runtime (etaf-runtime-for-buffer "*etaf-hello*"))
-       (snapshot (etaf-runtime-snapshot runtime)))
-  (list (plist-get snapshot :revision)
-        (plist-get snapshot :mount-id)
-        (ebox-render (plist-get snapshot :input))))
-```
-
-The snapshot contains `:input` (a canonical Ebox input), `:revision`, and
-`:mount-id` (the identity of this mount). Exporting costs O(N) and detaches
-ordinary mutable node payload; it does not drain pending work, evaluate
-Components, publish, or increment the revision. The input remains usable after
-later commits or unmount. Opaque capabilities such as callbacks keep their
-identity; the query does not freeze external capabilities or the display
-environment. Unmounted Runtime and active Ebox transaction queries fail.
-
-The obsolete `etaf-runtime-root-node` getter remains read-compatible through
-this O(N) query and returns the current single root. Runtime no longer stores a
-root mirror. Migrate consumers to `etaf-runtime-snapshot` so the canonical input
-retains the root's matching source facts; do not treat the obsolete getter as a
-cheap field read or use it as a mutation target.
+To settle pending work explicitly, call `(etaf-runtime-flush runtime)`.
+It drains the Runtime when no outer batch or render evaluation is active and
+returns the mounted Runtime's committed revision.  `etaf-runtime-revision`
+returns the same monotonic revision without forcing a drain.  The revision
+increments once for each commit that changed the buffer, including retained
+Host content or geometry updates.  Compare revisions when an application needs
+to observe that a publication has reached the buffer; do not treat the value as
+a tree handle or mutation target.
 
 The current core has no direct `.etaf` loader. `etaf-define-component` is the structure/style/behavior unit: use its View for structure, `:styles` for static presentation, and `:bindings` for retained values and `:setup` for lifecycle work. A future `.etaf` SFC belongs to a compiler layer that emits this same Component contract; it is not a second Runtime entry point.
 
@@ -174,7 +151,7 @@ The core `grid` Host is the two-dimensional layout choice:
    (text "Lovelace"))))
 ```
 
-Use `auto`, `min-content`, `max-content`, `(fr FACTOR)`, `(minmax MIN MAX)`, and `(repeat COUNT TRACK-LIST)` in track templates. `:grid-auto-columns` and `:grid-auto-rows` size implicit tracks; `:grid-auto-flow` accepts `row` or `column`. Children may use `:grid-column`, `:grid-row`, `:grid-column-span`, and `:grid-row-span`; Ebox performs measurement, placement, and item/content alignment. The optional native backend falls back to the Elisp Ebox renderer for Grid trees.
+Use `auto`, `min-content`, `max-content`, `(fr FACTOR)`, `(minmax MIN MAX)`, and `(repeat COUNT TRACK-LIST)` in track templates. `:grid-auto-columns` and `:grid-auto-rows` size implicit tracks; `:grid-auto-flow` accepts `row` or `column`. Children may use `:grid-column`, `:grid-row`, `:grid-column-span`, and `:grid-row-span`; Ebox performs measurement, placement, and item/content alignment. The optional native backend falls back to the Elisp Ebox implementation for Grid trees.
 
 Host metadata also feeds the shared Ebox/ECSS selector subjects. `:class` and
 `:id` use Ebox normalization; a non-nil `:role` and every explicitly supplied
@@ -182,7 +159,7 @@ Host metadata also feeds the shared Ebox/ECSS selector subjects. `:class` and
 ARIA nil remains present and compares as `nil`, and t compares as `t`, using ECSS's
 normal attribute formatting. Ebox derives the `disabled` state from a true
 `:disabled` interaction input; nil removes it. These facts follow successful reactive publication and remain unchanged
-when a candidate fails. Structural selectors use the rendered Host tree.
+when an update fails. Structural selectors use the rendered Host tree.
 `:selector-attributes` and `:selector-state` are reserved adapter facts, not View
 properties. Use the semantic properties above to declare Host metadata.
 
@@ -240,7 +217,7 @@ DEFAULT expression on first use by an instance; explicit nil is a supplied
 value. Defaults are resolved in declaration order and may read earlier props.
 A successful publication retains those default values until the instance is
 replaced or unmounted, even if a caller temporarily supplies an override.
-Failed candidates do not publish newly evaluated defaults. Default expressions
+Failed updates do not publish newly evaluated defaults. Default expressions
 must be safe to retry and must not perform external writes; use setup for
 owned resources. Construct mutable defaults with `list` or `vector` rather than
 sharing a quoted object. Pure `etaf-render` has no retained instance and resolves
@@ -268,8 +245,7 @@ Validation uses resolved lexical props on pure rendering, initial mount and
 subsequent input evaluation. Keep it pure and safe to repeat; instance bindings,
 state, slots and lifecycle are unavailable. Check passed reactive handles by
 their public type here, keeping live value reads and value-dependent checks in
-the rendering expressions that use them. Rejected updates retain published
-inputs and callbacks; they do not undo the caller's business ref write.
+the rendering expressions that use them. Rejected updates retain published inputs and callbacks; they do not undo the caller's business ref write.
 `etaf-check-prop` reports the component, property, received value and expectation,
 abbreviating large values. Ordinary helpers outside `:validate` supply its
 optional component name explicitly. See the [public API](../etaf.el) for details.
@@ -315,10 +291,11 @@ Lifecycle callbacks run inside their owning Runtime operation.  Use
 the caller's buffer when `etaf-mount` was given a buffer name.
 
 `:view` and `:render` share compilation, slot projection, and prop validation.
-Declared props are lexical snapshots of each evaluation: a deferred callback
-can directly use `title`, without an extra `let`. Successfully published updates
-install callbacks with the new props; a rejected candidate preserves the old
-callbacks. Setup closures retain initial props. A prop containing a ref keeps
+In a `:view` Component, prop reads in Host properties, `expr` children and
+callbacks are bound to the retained instance inputs.  A deferred callback can
+directly use `title`, without an extra `let`, and reads the current published
+value.  `:render` evaluates with ordinary lexical props each time it runs.
+If an update fails, the old callbacks remain installed.  Setup closures retain initial props. A prop containing a ref keeps
 that exact ref, so `etaf-value` in a callback reads its current value; ordinary
 values are not deep-copied or made reactive.
 Business props and keyed list items use the same shallow equality rule as refs.
@@ -349,11 +326,9 @@ an `etaf-prop` source during setup. Read it explicitly with `etaf-value`:
 
 The source is stable within its Component instance and includes resolved defaults.
 It is read-only and shallow: mutating a supplied object in place does not notify
-subscribers. Candidate rendering reads candidate inputs; later reads use committed
-inputs. Watches receive changes after successful publication, so their callbacks
+subscribers. During an input update, tracked prop sources read the pending inputs; later reads use the committed inputs. Watches receive changes after successful publication, so their callbacks
 can inspect the updated buffer. An immediate watch still runs initially in setup.
-A rejected update restores committed input and derived dependency tracking; it does
-not undo writes to application refs. The Component owns the source and its setup
+A rejected update restores the committed input and derived dependency tracking; it does not undo writes to application refs. The Component owns the source and its setup
 computations/watches; unmount stops them, and reading the prop source after disposal
 signals an error. Plain setup prop variables continue to capture initial values.
 
@@ -531,8 +506,7 @@ child keeps its state and focus while present in the same output group;
 removing that child releases its instance. Returning nil removes the output
 without unmounting the Component that produced it.
 
-Slot expressions keep their author's props, state, and Context throughout the
-projected subtree. Components created inside that subtree still own their own
+Slot expressions keep their author's props, state, and Context throughout the supplied subtree. Components created inside that subtree still own their own
 props, state, styles, and Scope; they inherit Context from the slot author's
 environment. A receiving Component does not inject its own Context into caller
 content. Its fallback, ordinary children, and View-producing callbacks use its
@@ -558,10 +532,9 @@ named footer slot:
 ## 7. Styles and themes
 
 Ordinary property expressions can construct ECSS declaration values. Box layout
-configuration and outer display are projected by Ebox; `ecss-important`,
+configuration and outer display are handled by Ebox; `ecss-important`,
 `ecss-wide-value` and `ecss-var` values reach layout after cascade computation.
-Reactive property replacements use the same path and invalid candidates preserve
-the committed display. This does not execute constructors in static `.ecss` data.
+Reactive property replacements use the same path and invalid updates preserve the committed display. This does not execute constructors in static `.ecss` data.
 Context-dependent shorthand substitution retains Ebox's documented limitations.
 
 ```elisp
@@ -641,7 +614,7 @@ For a light/dark application palette, keep the semantic roles in one palette
 plist and resolve it explicitly with
 `(etaf-theme-resolve-palette palette 'light)` or `'dark`. This keeps an app
 Theme toggle independent from the Emacs frame. The palette is ordinary
-application-owned data; no global registry or renderer palette names are needed.
+application-owned data; no global registry or lower-layer palette names are needed.
 Pass the resolved Theme plist to `etaf-theme-provide`, including the `:ui-*`
 tokens used by the UI catalog.
 
@@ -722,9 +695,7 @@ For a reusable installer, reserve `:install` for the cleanup-producing part of t
 
 Pass `etaf-current-behavior-context` to `etaf-behavior-context-info` inside
 an installer to obtain its Runtime, effective Host reference and semantic
-installation properties. The context is an installation snapshot, not a live
-Host lookup or proof of successful publication. It remains readable during and
-after cleanup. Query committed properties with `etaf-runtime-host-props-for`
+installation properties. The context is an installation copy, not a live Host lookup or proof of successful publication. It remains readable during and after cleanup. Query committed properties with `etaf-runtime-host-props-for`
 and the returned Runtime/reference after publication; do not use installation
 facts to activate provisional input. The returned containers are fresh, while
 contained values retain identity and must be treated as read-only.
@@ -733,11 +704,7 @@ Behavior equality keeps function and reactive-value identity with `eq`; a new
 installer closure requests replacement. A stable specification and Host
 reference reuse the installation even when unrelated Host properties change;
 its context keeps the original installation facts. Replacement resources are
-staged and become authoritative only when the generation commits. Old cleanup
-runs after successful publication; rollback cleans the candidate and preserves
-the old installation. Return cleanup from the installer for every acquired
-resource, and release it on replacement, rollback or unmount. Behavior-owned
-resources must not receive input from a candidate before publication.
+held aside until the owner commits. Old cleanup runs after successful publication; a failed update cleans the new resource and preserves the old installation. Return cleanup from the installer for every acquired resource, and release it on replacement, failed update or unmount. Behavior-owned resources must not receive input before their owner is committed.
 
 <a id="interaction-migration"></a>
 
@@ -817,7 +784,7 @@ Use a callback or prop to expose the handle deliberately:
 ```
 
 A list `:key` preserves the Component instance, including its local handles,
-across reorder. The handle does not contain a business value. A failed candidate
+across reorder. The handle does not contain a business value. A failed update
 keeps its committed Host target; removal makes bounds and position queries return
 nil. Recreating a disposed Component allocates new handles even with the same key.
 A handle must identify only one mounted Host. Explicit literal `:ref` symbols
@@ -955,73 +922,27 @@ avoids mirroring an application's `x/y/width/height` refs while preserving the
 same edge constraints, cancellation and logical-unit delta conversion.
 
 Keep reactive geometry reads in the Host property expressions that use them,
-as in the `movable-panel` example. Mounting and ordinary publication prepare the
-registered reactive primitive bindings before later input; unused computations
-are not evaluated for preparation. Related geometry, color, background,
-hover-content, class, border color, font weight, visibility and sole-expression
-text changes can share one prepared publication. Use `etaf-batch` for related writes;
-ordinary refs, computed values and View properties remain the authoring API.
-ETAF manages the reusable execution plans. Unsupported geometry, changed
-dependencies and structural changes retain the ordinary publication path.
-A prepared Host binding publishes only when Ebox can address the Host in a
-retained scene.  That scene is anchored at an absolutely positioned Host with
-inline `left`/`top`/`z-index`; the changed Host must sit at or below the
-anchor in the Ebox tree, and the chain between them must not pass another
-absolutely positioned Host, because the first absolute ancestor is chosen as
-the anchor.  A screen whose controls or rows should update in place therefore
-belongs in a relative stage with absolutely positioned panels, and each fast
-Host inside one of those panels; ordinary flex and box nesting below the
-panel is fine, including a Component subtree.  The rendering Component must
-not read the reactive source itself: pass the ref or computed object down as
-a property and read it inside the Host expression.  A source read during the
-Component render subscribes the render, so the write repaints the view and the
-prepared binding is never reached.  Keep display-only state in separate
-sources next to the aggregate state that drives structure.  A prepared
-binding also needs a value whose declaration already exists in the published
-source: an absent paint or visibility declaration (a background the Host
-never set, say) cannot acquire a slot, so give the Host a concrete default
-when it must switch between two values.  The first
-publication that needs a panel's scene builds it (tens of milliseconds); each
-later change in the same scene publishes prepared bindings, and an ordinary
-publication of that buffer invalidates the scene, so a control that should
-stay fast must not also write state the view renders.  A prepared publication
-advances the committed generation without rebuilding a semantic candidate,
-which is what an application benchmark can measure to tell it apart from the
-fallback.  Hang the retained panels directly on the root plane, or on a plane
-whose composition the ledger records: a canvas is prepared from those planes,
-and an anchor below an intermediate flow plane that the ledger does not
-record cannot be prepared once another canvas has published.  Keep the
-anchors' flow ancestors as simple as the screen allows.
-A reactive Theme does not block preparation: Theme tokens and component
-style sources guard the binding by version, so a Host styled through
-`etaf-theme-token` keeps its prepared geometry, paint and visibility
-bindings; changing the Theme itself repaints through ordinary publication.
-A `:color` or `:background-color` expression may return an `etaf-theme-token`
-(for example an active/inactive accent): the prepared write publishes the
-token's paint slot once ordinary publication has painted that token.
-A Host property expression keeps its prepared binding only while it reads
-the same reactive sources on every evaluation: read every source first, then
-branch on the values, rather than letting `cond` or `and` short-circuit past
-a source, because a dependency set that differs from the prepared one
-falls back to ordinary publication.
-Text may change width inside a fixed allocation admitted by
-[Ebox's prepared-update contract](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/ebox.el);
-text or rich-text changes whose allocation and ownership cannot be proved use
-ordinary publication. Known finite class values, border-color changes that keep
-the same width/style, and normal/bold changes can participate when Ebox proves
-their selector and measured geometry constraints. New class values and
-unsupported paint changes retain ordinary publication. Class strings, symbols
-and nested lists keep their ordinary meaning and their raw public Host value.
-Inline and reactive native hover-content changes preserve Component update hooks,
-which run once per successful publication after all members are visible.
-Semantic Host properties and Ebox geometry commit together, and rejected values
-leave the previous display queryable while application refs keep their writes.
-Use `etaf-runtime-generation` or `etaf-runtime-flush` for committed revision
-checks; the opaque current generation object can retain its identity during
-geometry updates. Explicit `etaf-runtime-snapshot` exports remain detached.
+as in the `movable-panel` example.  ETAF turns each reactive Host property or
+text expression into its own retained binding.  When a source changes, only the
+binding that read it re-runs, patches its Ebox node, and participates in the
+next batch commit.  Use `etaf-batch` for related writes; ordinary refs,
+computed values and View properties remain the authoring API.
 
-Create these controlled Behaviors once in a retained `:bindings` owner (or in
-another retained owner), and pass the resulting spec through the View.  Do not
+A binding owns one target: a Host property set, a Text payload, or a dynamic
+child region.  Structural changes such as adding or removing children patch the
+region that produced them, while style, geometry and text changes patch the
+retained Host node directly.  Ebox decides how far layout propagates and writes
+only the damaged buffer lines during the commit.  Component `updated` hooks run
+after the visible commit for owners whose retained nodes changed.
+
+Semantic Host properties and Ebox geometry commit together.  Rejected values
+leave the previous display queryable while application refs keep their writes.
+Use `etaf-runtime-flush` to settle pending work and compare
+`etaf-runtime-revision` values when a benchmark or application needs to observe
+that the buffer changed.
+
+Create controlled Behaviors once in a retained `:bindings` owner (or in another
+retained owner), and pass the resulting spec through the View.  Do not
 construct one in `:render`: each render creates new callback closures, so the
 runtime correctly treats it as a new Behavior lifecycle.  If a parent renders
 after a move publishes geometry, that new spec has no active gesture origin and
@@ -1033,19 +954,15 @@ cannot safely be inferred from handler source or closure contents.
 An application that owns aggregate geometry can use
 `etaf-runtime-update-host-geometry` for a high-frequency display projection.
 It takes a mounted Runtime, a committed ETAF Host reference, and Ebox geometry
-facts such as `:left`, `:top`, `:width`, `:height`, and `:z-index`.  ETAF resolves
-the Host's retained provider region and performs the typed incremental Ebox
-publication; it does not implement drag policy or replace the caller's state.
-Update the controlled state first and ensure the next ordinary ETAF render
-supplies the same geometry.  A stale or removed Host can be recovered by the
-caller's normal state publication path; invalid geometry signals
-`etaf-runtime-error` without a partial update.
-Use `etaf-runtime-update-host-geometries` with an alist when several Hosts,
-such as the old and new focused windows, must change in one Ebox publication.
-A single-Host update uses Ebox's retained prepared geometry and is the fast
-path for repeated moves; it resolves the Host's Ebox region by the `:id`
-string the caller published, so name it (`:id` mirrors `:ref`).  Multi-Host
-updates fall back to the ordinary geometry batch.
+facts such as `:left`, `:top`, `:width`, `:height`, and `:z-index`.  ETAF
+resolves the Host's retained node and patches it in one Ebox batch; it does not
+implement drag policy or replace the caller's state.  Update the controlled
+state first and ensure the next ordinary ETAF binding supplies the same
+geometry.  A stale or removed Host can be recovered by the caller's normal
+state publication path; invalid geometry signals `etaf-runtime-error` without a
+partial update.  Use `etaf-runtime-update-host-geometries` with an alist when
+several Hosts, such as the old and new focused windows, must change in one Ebox
+batch.
 
 ```elisp
 (etaf-runtime-update-host-geometry
@@ -1219,8 +1136,7 @@ while retaining the memory source's mutation and identity behavior:
 ;; Later: (etaf-data-stop controller)
 ```
 
-Use lexical binding for retained callbacks. The snapshot is a fresh plist, not
-another store or a second owner. Keep the provider's disposal callback and do
+Use lexical binding for retained callbacks. The source description is a fresh plist, not another store or a second owner. Keep the provider's disposal callback and do
 not give the original and adapted source separate Controllers. Preserve v1/v2
 mutation results; only a provider with evidence may declare a write rolled back.
 
@@ -1537,7 +1453,7 @@ environment.
 
 The recorder only consumes public Runtime observer reports and installs no
 advice.  Runtime Event, Action, mount, flush, and unmount boundaries create
-bounded operation records.  Ebox rendering and publication, Data, Resource, and SQLite may contribute
+bounded operation records.  Ebox layout and buffer publication, Data, Resource, and SQLite may contribute
 flat provider stages, ordered by sequence, inside the same operation.  Stages
 may overlap and are therefore not reported as exclusive/self time; failures and
 quits are recorded and then re-signaled unchanged.
@@ -1545,10 +1461,9 @@ quits are recorded and then re-signaled unchanged.
 `etaf-performance-summary` calculates grouped p50/p95/max statistics only when
 requested.  `etaf-performance-operation-stage-summary` groups the flat stages
 of one recorded operation by provider category.  `etaf-performance-records`
-returns defensive operation and stage snapshots; caller mutation cannot alter
-retained history.
+returns defensive operation and stage copies; caller mutation cannot alter retained history.
 Its optional numeric runtime ID selects the identity from observer reports,
-including history from a retired mount whose buffer name has since been reused.
+including history from a disposed mount whose buffer name has since been reused.
 For automated consumers, `etaf-performance-report-data` returns the portable
 plist directly. Select the required operations by their runtime/buffer identity
 without clearing unrelated recordings; keep overlapping provider totals separate.
@@ -1609,8 +1524,7 @@ Host, so a caller can fit the canvas to a measured region.  Each image is
 shared by one slice per canvas row,
 so adjacent text stays on normal-height lines. Frames update the retained
 Text Host inside the fixed canvas rather than replacing the canvas subtree.
-The content boundary preserves image display properties and can reuse a
-prepared Text update while its layout conditions remain valid.
+The content boundary preserves image display properties and updates the retained Text Host while its layout conditions remain valid.
 
 `:display-fps' caps presentation independently of the source frame rate.
 The newest complete frame wins; slower presentation never queues old frames.
@@ -1663,7 +1577,7 @@ seconds and calling `etaf-video-seek' on `end' implements scrubbing.
 
 | API family | Main entry points | Use it when |
 | --- | --- | --- |
-| View and Runtime | `etaf-view`, `etaf-render`, `etaf-mount`, `etaf-unmount`, `etaf-runtime-flush`, `etaf-runtime-snapshot` | Build, render, mount, flush, or explicitly export the committed application |
+| View and Runtime | `etaf-view`, `etaf-render`, `etaf-mount`, `etaf-unmount`, `etaf-runtime-flush`, `etaf-runtime-revision` | Build, render, mount, flush, or observe the committed revision |
 | Components | `etaf-define-component`, `etaf-current-prop`, `etaf-current-slots`, `etaf-component-set-styles`, `etaf-component-redefine-run` | Share a View, retain local state, style an authoring surface, or deliberately reload code |
 | Reactive state | `etaf-ref`, `etaf-value`, `etaf-set-value`, `etaf-computed` | Store or derive state |
 | Reactive effects | `etaf-watch`, `etaf-watch-effect`, `etaf-effect-scope`, `etaf-scope-run` | Observe state or synchronize external resources |
@@ -1700,8 +1614,7 @@ Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, 
 Ordinary applications define and mount Components from lexical-binding `.el`
 files. The optional Playground uses inert `.etaf` structure plus an explicitly
 registered `.el` companion; core does not discover or execute that pair.
-Reactive writes within a batch publish one generation. Failed publication is
-retryable, and a non-converging effect is reported instead of keeping the UI busy.
+Reactive writes within a batch settle into one commit. Failed publication is retryable, and a non-converging effect is reported instead of keeping the UI busy.
 
 ## Example patterns
 
@@ -1775,12 +1688,9 @@ scenarios live in their respective example repositories:
   remains `required` and `foreground_latency` remains `not-certified`.
   Its `etaf-gui-verifier-measure-action` entry records
   callback wall/CPU/GC time and GUI conditions without taking application focus.
-- `benchmark-ebox-resize.el` drives continuous pixel-width sweeps of any
-  existing mounted Ebox buffer, including ETAF apps, without taking over its
-  observer. See the existing-server entry below.
 - The legacy isolated runner `run-emacs-gui-verification.sh` owns one named daemon, explicit load paths,
   external application activation, recorder lifecycle, driver loading, report
-  generation, and exact cleanup.
+  creation, and exact cleanup.
 - `record-emacs-window.swift` uses macOS 15 ScreenCaptureKit to record only the
   frame owned by the supplied Emacs PID. It follows replacement window IDs and
   rejects changed pixel mappings. Its desktop-independent window filter works
@@ -1887,72 +1797,26 @@ records explicitly to summary/export functions: an empty selection stays empty.
 Check operation IDs/counts as well as runtime ID when sampling the same mounted
 instance again; the recorder's bounded history is not a per-run sample store.
 
-## Continuous resize on the existing server
+## Measuring resize
 
-Use this entry for resize performance investigations.
-First show the intended buffer in the user's existing foreground GUI frame.
-Preserve its font and chrome. Compile changed product modules before loading
-them; `make compile` in this repository also compiles the benchmark tool.
+Resize latency is measured through the workspace performance tool, not a
+separate driver.  `benchmarks/performance-scenarios.el` registers
+`gate.resize.400` (viewport refit of a 400-row flex view),
+`retained.resize.native.corner` and `retained.resize.native.sweep` (native
+drag of the retained resize example) and the `retained.resize.*` geometry
+routes.  List and run them from the workspace root:
 
 ```sh
-emacsclient --eval '(progn
-  (load "/path/to/etaf/benchmarks/benchmark-ebox-resize.elc" nil t t)
-  (ebox-resize-benchmark-start "*Your app*" 480 1400
-    :step 32 :rounds 3 :output "/tmp/resize-run-1.eldata"))'
+python3 scripts/performance.py list --scenario 'resize'
+python3 scripts/performance.py run --mode batch --scenario 'gate\.resize\.400'
+python3 scripts/performance.py run --mode gui --server NAME --scenario 'retained\.resize\.native\..*'
 ```
 
-The bounds are outer-frame pixels. Every round goes from narrow to wide and
-back, including both endpoints even when the step does not divide the range.
-The last measured request returns to the initial width. Consecutive equal
-widths are omitted because they request no resize; no warmup or slow sample is
-dropped. The function returns immediately. Poll or cancel this owned run with:
-
-```elisp
-(ebox-resize-benchmark-status)
-(ebox-resize-benchmark-cancel)
-```
-
-`:delay` (default 0.01 seconds) runs between completed publications;
-`:timeout` (default 5 seconds) bounds startup, publication and final settling.
-The tool waits for a preceding render's GC lease to end before recording the
-baseline, and for its own run's lease to end before accepting the final result.
-Unsupported sizes,
-changed targets/focus/font/height, publication failures and cancellation produce
-invalid/incomplete evidence. Advice and timers are removed on success, error,
-quit and timeout. Failure leaves the last applied width; it does not fight a
-user's subsequent window changes. No server, frame, application buffer, observer, profiler
-or GC policy is created/replaced to make the benchmark pass.
-
-Use a **new output path** each time. UTF-8 `.eldata` reports retain all requests,
-all completed samples, actual published dimensions, node/text counts, GC,
-per-operation CPU time, code origins and hashes. Optional `:phases '(FUNCTIONS…)`
-records inclusive phase durations for loaded `ebox-` and `etaf-` provider
-functions. The driver and outer publication boundary cannot be selected as
-phases; nested durations must not be summed.
-Publication timing ends when the real public Ebox viewport call returns.
-Request→publication also includes event-loop delivery. Neither metric proves
-compositor presentation, absence of flicker, or every interaction's correctness;
-use the existing visual scenario/capture tools for those claims.
-
-`:valid t` requires complete correctly attributed publication coverage.
-`:within-limit t` additionally requires **every** request→publication sample to
-meet `:limit-ms` (default 50). Inspect p95 **and** max, including GC samples.
-Compare payload counts at matching widths before making speedup claims. A
-different page size/content or loaded version is a different baseline.
-
-Code origins and disk hashes alone cannot establish when a running function was
-loaded. After recompilation, `:reload-files '("/checkout/ebox/ebox-viewport.elc" …)`
-explicitly loads the chosen fresh bytecode before instrumentation. `:code`
-contains every explicitly loaded file's canonical path, source/bytecode hashes
-and load result, plus observed core function and benchmark driver origins;
-matching origins are marked `:reloaded t`. Choose the affected modules; do not reload
-application component declarations blindly. Without this option, report code
-origin observations separately from independent evidence of a fresh GUI load.
-
-Run the tool's regression checks with `make test`; they also
-run in the full `make check` gate. Application-specific data setup and interaction
-assertions remain in the example repositories, not this resize driver.
+The tool's latency, trace, CPU and allocation passes and baseline comparison
+are described in the workspace manual.  A batch result does not certify GUI
+presentation; check resize in the application's real frame as described in
+[GUI verification tools](#gui-verification-tools).
 
 ## Provider contracts
 
-ETAF selects its renderer through the public [Ebox framework SPI](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.md#framework-integration-contract). Ebox owns that interface contract; application Components use the ETAF View and lifecycle APIs documented here.
+ETAF uses Ebox as its retained node, layout and buffer engine. Ebox owns that lower-layer contract; application Components use the ETAF View and lifecycle APIs documented here.
