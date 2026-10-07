@@ -1,4 +1,4 @@
-# ETAF
+<h1 align="center"><img src="design/etaf-logo.svg" alt="ETAF — Emacs Text Application Framework" width="480"></h1>
 
 Source layout: add the repository root to `load-path` and use
 `(require 'etaf)`. The supported API and usage notes are in

@@ -1,4 +1,4 @@
-# ETAF
+<h1 align="center"><img src="design/etaf-logo.svg" alt="ETAF — Emacs 文本应用框架" width="480"></h1>
 
 源码布局：将仓库根目录加入 `load-path`，然后 require 与包同名的入口。
 入口 Commentary 列出公共 API 及用法；内部实现位于 `lisp/`。
