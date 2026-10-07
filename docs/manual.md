@@ -666,7 +666,7 @@ Native primary-button presses publish `:active` while held. Component styles
 can declare `("&:active" :color "#ff0000")` alongside their ordinary rules.
 Ebox owns the state and keeps it through reactive drag updates; release clears
 it before `:on-press` runs. Keyboard activation and explicit dispatch do not
-create held-pointer state. See [Ebox interaction semantics](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction).
+create held-pointer state. See [Ebox interaction semantics](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.md#native-node-interaction).
 
 The Runtime stores handlers by Host reference. Tests and integrations can dispatch directly:
 
@@ -844,7 +844,7 @@ when requesting help. Hover accepts Ebox color and text-decoration paint;
 geometry remains ordinary style. Omitted capabilities inherit, while explicit
 nil blocks inheritance. These capabilities work on non-activating text too.
 They follow Ebox native ownership and do not add a hover callback or selector
-state in ETAF. See the [Ebox native capability contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction) for values and painting boundaries.
+state in ETAF. See the [Ebox native capability contract](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.md#native-node-interaction) for values and painting boundaries.
 
 ETAF lowers `:tab-index` and `:disabled` to Ebox's committed interaction facts.
 `etaf-focus`, `etaf-focused-host-ref` and next/previous navigation operate Ebox's
@@ -872,7 +872,7 @@ Point follows layout only while it remains at the target's first visible
 character. After manual movement, Ebox retains the numeric position clamped to
 the accessible buffer. Publication rejection restores focus and point. Each
 buffer has its own focus, shared by its windows; operations do not select one.
-Unmount releases the shared focus. See the [Ebox interaction contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction).
+Unmount releases the shared focus. See the [Ebox interaction contract](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.md#native-node-interaction).
 
 Mounted buffers use Ebox's `ebox-buffer-mode` for TAB and Shift-TAB/backtab
 cyclic navigation and RET/return activation. Ebox also chooses logical focus
@@ -911,7 +911,7 @@ unmounted Hosts no longer receive application callbacks. Ebox owns target
 retention, window coordinates and the native tracking loop; ETAF stores none
 of those facts. With both `:on-press` and `:on-drag`, press handles keyboard
 activation and drag owns the primary mouse sequence. See the
-[Ebox gesture contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el)
+[Ebox gesture contract](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/ebox.el)
 for payload fields and the same-window GUI support boundary.
 
 Reusable geometry Behaviors apply the same gesture to caller-owned reactive
@@ -1005,7 +1005,7 @@ branch on the values, rather than letting `cond` or `and` short-circuit past
 a source, because a dependency set that differs from the prepared one
 falls back to ordinary publication.
 Text may change width inside a fixed allocation admitted by
-[Ebox's prepared-update contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el);
+[Ebox's prepared-update contract](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/ebox.el);
 text or rich-text changes whose allocation and ownership cannot be proved use
 ordinary publication. Known finite class values, border-color changes that keep
 the same width/style, and normal/bold changes can participate when Ebox proves
@@ -1072,7 +1072,7 @@ propagate. Ebox cancels a result whose mounted target is no longer valid and
 restores focus when possible. The function requires an active Host event and
 cannot run while rendering; no Runtime lookup, manual focus flag or second
 input registry is needed. UI TextInput, NumberInput and Select use this path.
-See the [Ebox native interaction contract](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction).
+See the [Ebox native interaction contract](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.md#native-node-interaction).
 
 Native in-place editing uses an input session instead of a reader in another
 window. `etaf-input-begin`, `etaf-input-text`, `etaf-input-end` and
@@ -1311,7 +1311,7 @@ is the currently supported backend, using the explicit `etaf-sqlite-*` API:
 
 The SQLite backend uses Emacs' built-in SQLite support. Database backends
 produce the existing `etaf-data-source` capabilities; ETAF DB does not add a
-second controller or ORM. See the [ETAF DB manual](https://gitea.gklazycat.heiyu.space/geekinney/etaf-db/src/branch/main/docs/manual.md)
+second controller or ORM. See the [ETAF DB manual](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-db/src/branch/main/docs/manual.md)
 for its supported storage workflow.
 
 A list that changes slowly is better shown from a cache and revalidated in the
@@ -1955,4 +1955,4 @@ assertions remain in the example repositories, not this resize driver.
 
 ## Provider contracts
 
-ETAF selects its renderer through the public [Ebox framework SPI](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#framework-integration-contract). Ebox owns that interface contract; application Components use the ETAF View and lifecycle APIs documented here.
+ETAF selects its renderer through the public [Ebox framework SPI](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.md#framework-integration-contract). Ebox owns that interface contract; application Components use the ETAF View and lifecycle APIs documented here.

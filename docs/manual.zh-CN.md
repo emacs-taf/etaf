@@ -613,7 +613,7 @@ Theme。ETAF 会在 lowering 样式作用域时解析它，使重复的 retained
 原生主按钮按住期间会发布 `:active`。组件可在普通 `:styles` 规则中声明
 `("&:active" :color "#ff0000")`。Ebox 负责产生状态并在响应式拖动更新中保持它，
 释放时先清除状态再调用 `:on-press`。键盘激活与显式 dispatch 不产生按住状态。
-完整语义见 [Ebox 原生交互](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.zh-CN.md)。
+完整语义见 [Ebox 原生交互](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.zh-CN.md)。
 
 Runtime 会按 Host 引用保存 handler。测试和集成可以直接 dispatch：
 
@@ -760,7 +760,7 @@ Host 与组件根属性也支持 Ebox 的 `:help-echo`、`:pointer` 和 `:hover-
 `(window object position)` 函数，由 Emacs 在请求帮助时调用。悬停支持 Ebox 的颜色
 与文本装饰绘制，几何仍使用普通样式。省略能力时继承，显式 nil 阻止继承；普通
 非交互文本也可使用。这些能力遵循 Ebox 原生所有权，不产生 ETAF 悬停回调或
-选择器状态。取值与绘制范围见 [Ebox 原生能力契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.zh-CN.md#native-node-interaction)。
+选择器状态。取值与绘制范围见 [Ebox 原生能力契约](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.zh-CN.md#native-node-interaction)。
 
 ETAF 把 `:tab-index` 与 `:disabled` 转为 Ebox 已提交的交互事实。`etaf-focus`、
 `(etaf-focus-within runtime panel)` 选择面板已提交子树中的首个有效停靠点。
@@ -781,7 +781,7 @@ ETAF 把 `:tab-index` 与 `:disabled` 转为 Ebox 已提交的交互事实。`et
 显式焦点，也不会清空存续目标。point 仍在目标首个可见字符时才跟随布局；手动移开后，
 Ebox 保留其数值位置并限制在可访问范围内。发布被拒绝时恢复焦点和 point。每个 buffer
 有独立焦点，同一 buffer 的窗口共享它；操作不选择窗口。卸载释放共享焦点，详见
-[Ebox 交互契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.zh-CN.md#native-node-interaction)。
+[Ebox 交互契约](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.zh-CN.md#native-node-interaction)。
 
 挂载 buffer 使用 Ebox 的 `ebox-buffer-mode` 提供 TAB 与 Shift-TAB/backtab 循环
 导航、RET/return 激活。位置重合时，Ebox 为生成的激活绑定选择逻辑焦点；鼠标事件
@@ -815,7 +815,7 @@ Ebox 保留其数值位置并限制在可访问范围内。发布被拒绝时恢
 最后的取消阶段，移除或卸载后不再调用应用回调。Ebox 管理目标保持、窗口坐标
 和原生跟踪，ETAF 不保存这些事实。同时声明 `:on-press` 与 `:on-drag` 时，
 press 处理键盘激活，drag 持有主鼠标按钮序列。字段和同一 GUI 窗口的支持边界
-见 [Ebox 手势契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el)。
+见 [Ebox 手势契约](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/ebox.el)。
 
 可复用的几何 Behavior 可以把同一手势接到调用方持有的响应式值上。这样 UI
 组件和应用可以共享移动、调整大小的交互，而窗口策略仍由应用负责：
@@ -862,7 +862,7 @@ hover-content、class、边框颜色、字重、visibility 与单表达式文本
 每次求值都读取相同的响应式来源时才保持预备绑定：先读取全部来源再按值分支，
 不要让 `cond` 或 `and` 短路跳过某个来源，否则依赖集合与预备时不同会回退到
 普通发布。Text 可以在
-[Ebox 预备更新契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/ebox.el)
+[Ebox 预备更新契约](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/ebox.el)
 获准的固定分配中改变宽度；无法证明分配范围和所有权的文本或富文本变化使用
 普通发布。已知有限 class 值、保持宽度/样式的边框颜色变化，以及 normal/bold
 变化可在 Ebox 证明选择器与实际度量约束后进入同一批次。新 class 值及不支持的
@@ -917,7 +917,7 @@ Runtime、已提交的 ETAF Host 引用，以及 `:left`、`:top`、`:width`、`
 reader 管理原生编辑，调用返回后再应用结果。错误与 quit 继续传播；所属挂载
 目标失效时 Ebox 取消结果，入口有效时恢复焦点。该接口需要活动 Host 事件，
 不能在渲染时调用。UI TextInput、NumberInput 和 Select 共用此路径。详细所有权
-见 [Ebox 原生交互契约](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.md#native-node-interaction)。
+见 [Ebox 原生交互契约](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.md#native-node-interaction)。
 
 原生原地编辑使用输入会话，而不是切到另一个窗口的 reader。`etaf-input-begin`、
 `etaf-input-text`、`etaf-input-end` 与 `etaf-input-active-p` 在已挂载 Host 上
@@ -1141,7 +1141,7 @@ DataGrid 要求 `:row-key` 对每一行返回非 nil 的稳定标量。它通过
 
 SQLite 后端使用 Emacs 内置 SQLite 能力。数据库后端提供既有的
 `etaf-data-source` capability；ETAF DB 不增加第二套 Controller 或 ORM。
-支持的存储流程见 [ETAF DB 手册](https://gitea.gklazycat.heiyu.space/geekinney/etaf-db/src/branch/main/docs/manual.zh-CN.md)。
+支持的存储流程见 [ETAF DB 手册](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-db/src/branch/main/docs/manual.zh-CN.md)。
 
 变化很慢的列表适合先用缓存展示、在后台再验证。`etaf-list-cache` 掌管这套策略，让每个应用用同一种方式刷新：
 
@@ -1504,4 +1504,4 @@ Playground 使用 inert `.etaf` 结构与显式注册的 `.el` companion；core 
 
 ## 提供方契约
 
-ETAF 通过公共 [Ebox framework SPI](https://gitea.gklazycat.heiyu.space/geekinney/ebox/src/branch/main/docs/manual.zh-CN.md#框架集成契约) 选择渲染能力，该契约由 Ebox 维护。应用 Component 使用本手册中的 ETAF View 和生命周期 API。
+ETAF 通过公共 [Ebox framework SPI](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.zh-CN.md#框架集成契约) 选择渲染能力，该契约由 Ebox 维护。应用 Component 使用本手册中的 ETAF View 和生命周期 API。
