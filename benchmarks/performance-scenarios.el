@@ -127,7 +127,7 @@ ROUTE `runtime' writes reactive props; `geometry' calls
     (let ((selected-route route) (selected-axis axis))
       (taf-benchmark-register
        (format "retained.resize.%s.%s" route axis)
-       :version 2 :modes '(batch gui) :isolation 'series :required-providers '(etaf ebox)
+       :version 2 :modes '(batch gui) :isolation 'series :required-providers '(ebox)
        :budget-ms 10 :impact 'local
        :description (format "Two native panels, fixed text %s crop via %s" axis route)
        :setup (lambda (_mode) (etaf-resize-benchmark--fixture selected-route selected-axis))))))
@@ -203,10 +203,8 @@ ROUTE `runtime' writes reactive props; `geometry' calls
 ;;; ---------------------------------------------------------------------------
 
 ;; A fixed-height row whose paint and weight change is the smallest possible
-;; update; it must cost about the same in a 30-row and a 400-row scene.  The
-;; scenario gates the complete incremental commit, not just native layout.
-;; Unchanged layout and publication metadata must remain retained: expanding
-;; or validating the whole frame can dominate even a dirty-owner layout.
+;; update; it must cost about the same in a 30-row and a 400-row scene.  Only
+;; the bound row is restyled and only its buffer line is rewritten.
 
 (etaf-define-component etaf-row-update-benchmark--probe (&key rows marked)
   "Render ROWS fixed-height rows; row 1's paint follows MARKED."
@@ -241,8 +239,11 @@ The runtime stays mounted until the driver calls the returned `:cleanup'."
     (list
      :buffer buffer
      :invoke (lambda (_sample)
-               (etaf-set-value marked (not (etaf-value marked)))
-               (etaf-runtime-flush runtime))
+               (etaf-performance-call-operation
+                runtime 'benchmark "row-update"
+                (lambda ()
+                  (etaf-set-value marked (not (etaf-value marked)))
+                  (etaf-runtime-flush runtime))))
      :verify
      (lambda ()
        (with-current-buffer buffer
@@ -289,10 +290,8 @@ The runtime stays mounted until the driver calls the returned `:cleanup'."
              count)
      :setup (lambda (_mode) (etaf-row-update-benchmark--fixture count nil)))))
 
-;; A keyed list append must cost like a one-row change.  The native retained
-;; patch path proves equal-length replacements only, so an inserted row falls
-;; back to re-encoding the whole frame; these scenarios guard the incremental
-;; path for growing lists.
+;; A keyed list append must cost like a one-row change: the keyed region
+;; inserts one retained row and the buffer receives one inserted line.
 
 (etaf-define-component etaf-list-append-benchmark--probe (&key rows)
   "Render ROWS one-line rows keyed by their number."
@@ -320,10 +319,13 @@ The runtime stays mounted until the driver calls the returned `:cleanup'."
      :environment (lambda () (list :rows rows :viewport-rows 40))
      :invoke (lambda (_sample)
                (cl-incf appended)
-               (etaf-set-value rows-ref
-                               (append (etaf-value rows-ref)
-                                       (list (+ rows appended))))
-               (etaf-runtime-flush runtime))
+               (etaf-performance-call-operation
+                runtime 'benchmark "list-append"
+                (lambda ()
+                  (etaf-set-value rows-ref
+                                  (append (etaf-value rows-ref)
+                                          (list (+ rows appended))))
+                  (etaf-runtime-flush runtime))))
      :verify
      (lambda ()
        (with-current-buffer buffer

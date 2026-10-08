@@ -1452,9 +1452,12 @@ native-JIT state, and system load alongside the ordinary Emacs/display
 environment.
 
 The recorder only consumes public Runtime observer reports and installs no
-advice.  Runtime Event, Action, mount, flush, and unmount boundaries create
-bounded operation records.  Ebox layout and buffer publication, Data, Resource, and SQLite may contribute
-flat provider stages, ordered by sequence, inside the same operation.  Stages
+advice.  Runtime Event, Action, mount and refit boundaries create bounded
+operation records; a write followed by `etaf-runtime-flush` outside those
+boundaries is recorded only when wrapped in `etaf-performance-call-operation`.
+Ebox flushes (`:provider ebox :stage flush`, with the flush strategy and the
+lines written), Data, Resource, and SQLite contribute flat provider stages,
+ordered by sequence, inside the same operation.  Stages
 may overlap and are therefore not reported as exclusive/self time; failures and
 quits are recorded and then re-signaled unchanged.
 

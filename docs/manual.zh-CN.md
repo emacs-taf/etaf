@@ -1279,9 +1279,10 @@ Resource 示例的稳定 GUI 流程位于 `scripts/resource-gui-scenarios.el`。
 负载。这两种报告都可以直接发送给分析者。
 
 记录器只消费 Runtime 的公共 observer 报告，不安装 advice。Runtime 的 Event、
-Action、mount、flush 和 unmount 会创建有界 operation 记录；同一 operation 内，
-Ebox 渲染与发布、Data、Resource 与 SQLite 可以贡献按 sequence 排列的 flat provider
-阶段。阶段可能重叠，因此不声称 exclusive/self 时间；error 和 quit 会先被记录，
+Action、mount 和 refit 会创建有界 operation 记录；这些边界之外的写入加
+`etaf-runtime-flush` 只有包在 `etaf-performance-call-operation` 中才会被记录。同一
+operation 内，Ebox flush（`:provider ebox :stage flush`，带刷新策略和写入行数）、
+Data、Resource 与 SQLite 可以贡献按 sequence 排列的 flat provider 阶段。阶段可能重叠，因此不声称 exclusive/self 时间；error 和 quit 会先被记录，
 再保持原条件继续抛出。
 
 `etaf-performance-summary` 只在请求时计算分组后的 p50/p95/max；

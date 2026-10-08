@@ -87,8 +87,8 @@ with its explicit companion registration handling executable Elisp.
 
 ETAF provides an independent, opt-in, application-neutral timing recorder.  It
 consumes public Runtime observer reports without advice or private cross-package
-probes.  Runtime operations such as Event, Action, mount, flush, and unmount are
-recorded automatically; Ebox layout and buffer publication, Data, Resource, and SQLite stages
+probes.  Runtime operations such as Event, Action, mount, and refit are
+recorded automatically; Ebox flushes, Data, Resource, and SQLite stages
 inside the same operation are correlated by sequence.
 
 ```elisp
