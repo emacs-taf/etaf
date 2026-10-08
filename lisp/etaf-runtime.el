@@ -64,7 +64,7 @@ segments own an Ebox NODE; the others group their KIDS."
 
 (etaf--defstruct (etaf--host (:constructor etaf--host-make) (:copier nil))
   "Mounted state of one Host segment."
-  id ref gref reg props eprops behaviors keymap payload text txn)
+  id ref gref reg props eprops rprops theme behaviors keymap payload text txn)
 
 (etaf--defstruct (etaf--instance (:constructor etaf--instance-make) (:copier nil))
   "One retained Component instance."
@@ -1063,23 +1063,67 @@ disposed.  When SEG is live its nodes are moved into place."
          (name (etaf--view-node-name item))
          (ctx (etaf--seg-ctx seg))
          (runtime (etaf--ictx-runtime ctx))
-         (props (etaf--resolve-property-plist (etaf--view-node-props item)))
-         (props (if (plist-get props :use)
-                    (etaf--merge-behavior-props props name)
-                  (etaf--validate-semantic-properties props)))
+         (resolved (etaf--resolve-property-plist (etaf--view-node-props item)))
          (theme (etaf--ctx-theme-value ctx))
-         (ref (or (plist-get props :ref) (etaf--host-generated-ref seg)))
-         (eprops (etaf--compute-eprops name props ctx theme runtime host ref))
          (node (etaf--seg-node seg)))
-    (setf (etaf--host-props host) (etaf--resolve-theme-plist props theme)
-          (etaf--host-ref host) ref)
-    (unless (equal eprops (etaf--host-eprops host))
-      (let ((old (etaf--host-eprops host)))
-        (setf (etaf--host-eprops host) eprops)
-        (when node
-          (etaf--node-set-props node eprops old)
-          (etaf--runtime-changed runtime))))
-    (when node (etaf--host-commit seg))))
+    (unless (and node (etaf--host-restyle host name resolved theme node runtime))
+      (let* ((props (if (plist-get resolved :use)
+                        (etaf--merge-behavior-props resolved name)
+                      (etaf--validate-semantic-properties resolved)))
+             (ref (or (plist-get props :ref) (etaf--host-generated-ref seg)))
+             (eprops (etaf--compute-eprops name props ctx theme runtime host ref)))
+        (setf (etaf--host-props host) (etaf--resolve-theme-plist props theme)
+              (etaf--host-ref host) ref
+              (etaf--host-rprops host) resolved
+              (etaf--host-theme host) theme)
+        (unless (equal eprops (etaf--host-eprops host))
+          (let ((old (etaf--host-eprops host)))
+            (setf (etaf--host-eprops host) eprops)
+            (when node
+              (etaf--node-set-props node eprops old)
+              (etaf--runtime-changed runtime))))
+        (when node (etaf--host-commit seg))))))
+
+(defsubst etaf--plain-style-key-p (key)
+  "Return non-nil when Host property KEY passes to Ebox as a plain style."
+  (not (or (memq key '(:key :styles :content :use))
+           (etaf--semantic-property-p key)
+           (memq key etaf--rejected-host-props))))
+
+(defun etaf--host-restyle (host name props theme node runtime)
+  "Apply resolved PROPS to mounted HOST when only plain style values changed.
+NAME is the Host name, THEME the current Theme and NODE HOST's Ebox node.
+Return non-nil when PROPS were applied, or nil when they need the full
+property computation: keys, metadata, Behaviors or the Theme changed."
+  (let ((old (etaf--host-rprops host))
+        (eprops (etaf--host-eprops host)))
+    (when (and old eprops (not (eq name 'image))
+               (eq theme (etaf--host-theme host)))
+      (let ((a old) (b props) (ok t) changed)
+        (while (and ok a b)
+          (let ((key (car b)) (value (cadr b)))
+            (cond
+             ((not (eq key (car a))) (setq ok nil))
+             ((equal value (cadr a)))
+             ((not (etaf--plain-style-key-p key)) (setq ok nil))
+             (t
+              (when (etaf-theme-token-p value)
+                (setq value (etaf--theme-token-resolve-from-theme value theme)))
+              ;; A nil value drops its key from the Ebox properties.
+              (if (and value (plist-get eprops key))
+                  (push (cons key value) changed)
+                (setq ok nil)))))
+          (setq a (cddr a) b (cddr b)))
+        (when (and ok (null a) (null b))
+          (setf (etaf--host-rprops host) props)
+          (when changed
+            (let ((new (copy-sequence eprops)))
+              (dolist (entry changed) (plist-put new (car entry) (cdr entry)))
+              (setf (etaf--host-props host) (etaf--resolve-theme-plist props theme)
+                    (etaf--host-eprops host) new)
+              (etaf--node-set-props node new eprops)
+              (etaf--runtime-changed runtime)))
+          t)))))
 
 (defun etaf--host-bind-props (seg)
   "Bind Host SEG's properties, retaining an effect when they are dynamic."
@@ -1884,23 +1928,37 @@ Host's `:ref' and to Host query, focus or event APIs."
 When a pre or render effect failed, first roll back the transaction so
 only work committed before it remains."
   (let ((txn etaf--txn))
-    (setq etaf--txn nil etaf--run-log nil)
-    (when txn
-      (if etaf--drain-failed
-          (progn (setq etaf--drain-failed nil)
-                 (etaf--txn-rollback txn))
-        (etaf--txn-commit txn)))
-    (prog1
-        (when etaf--dirty-runtimes
-          (let ((runtimes (nreverse etaf--dirty-runtimes)))
-            (setq etaf--dirty-runtimes nil)
-            (dolist (runtime runtimes)
-              (setf (etaf-runtime-dirty runtime) nil)
-              (when (etaf-runtime-mounted-p runtime)
-                (etaf--runtime-commit runtime)))
-            t))
-      (setq etaf--txn (etaf--txn-begin)
-            etaf--run-log (etaf--txn-ran etaf--txn)))))
+    (if (and txn (null etaf--dirty-runtimes) (not etaf--drain-failed)
+             (etaf--txn-pristine-p txn))
+        ;; Nothing ran since the last commit; keep its transaction.
+        nil
+      (etaf--drain-commit-1 txn))))
+
+(defun etaf--txn-pristine-p (txn)
+  "Return non-nil when TXN recorded nothing since it began."
+  (not (or (car (etaf--txn-ran txn)) (etaf--txn-undo txn) (etaf--txn-cells txn)
+           (etaf--txn-created txn) (etaf--txn-stopped txn) (etaf--txn-installs txn)
+           (etaf--txn-instances txn) (etaf--txn-deferred txn))))
+
+(defun etaf--drain-commit-1 (txn)
+  "Finish TXN, commit every dirty Runtime and begin the next transaction."
+  (setq etaf--txn nil etaf--run-log nil)
+  (when txn
+    (if etaf--drain-failed
+        (progn (setq etaf--drain-failed nil)
+               (etaf--txn-rollback txn))
+      (etaf--txn-commit txn)))
+  (prog1
+      (when etaf--dirty-runtimes
+        (let ((runtimes (nreverse etaf--dirty-runtimes)))
+          (setq etaf--dirty-runtimes nil)
+          (dolist (runtime runtimes)
+            (setf (etaf-runtime-dirty runtime) nil)
+            (when (etaf-runtime-mounted-p runtime)
+              (etaf--runtime-commit runtime)))
+          t))
+    (setq etaf--txn (etaf--txn-begin)
+          etaf--run-log (etaf--txn-ran etaf--txn))))
 
 (defun etaf--drain-around (loop)
   "Run the drain LOOP in one Ebox batch and one transaction per commit."
