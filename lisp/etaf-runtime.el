@@ -2206,10 +2206,18 @@ refit waits, returning nil, until the session ends."
       (signal 'wrong-type-argument (list 'numberp viewport-height)))
     (etaf--assert-not-rendering 'runtime-refit)
     (setf (etaf-runtime-fixed-viewport runtime) (cons viewport-width viewport-height))
-    (when (ebox-mount-set-viewport (etaf-runtime-buffer runtime)
-                                   viewport-width viewport-height)
-      (cl-incf (etaf-runtime-rev runtime))
-      t)))
+    (etaf--runtime-relayout runtime viewport-width viewport-height)))
+
+(defun etaf--runtime-relayout (runtime width height)
+  "Relayout RUNTIME for viewport WIDTH and HEIGHT as an observed operation.
+Nil WIDTH and HEIGHT follow the displaying window.  Return non-nil when the
+layout changed, which advances the revision."
+  (etaf--runtime-run-operation
+   runtime 'refit "refit"
+   (lambda ()
+     (when (ebox-mount-set-viewport (etaf-runtime-buffer runtime) width height)
+       (cl-incf (etaf-runtime-rev runtime))
+       t))))
 
 ;;;###autoload
 (defun etaf-refit (&optional runtime window)
@@ -2222,8 +2230,7 @@ showing it.  Mounted Runtimes follow window resizes automatically."
     (when (and (etaf-runtime-p runtime) (etaf-runtime-mounted-p runtime)
                (window-live-p window))
       (setf (etaf-runtime-fixed-viewport runtime) (cons nil nil))
-      (when (ebox-mount-set-viewport buffer nil nil)
-        (cl-incf (etaf-runtime-rev runtime)))
+      (etaf--runtime-relayout runtime nil nil)
       (ebox-mount-viewport buffer))))
 
 ;;;; Host queries

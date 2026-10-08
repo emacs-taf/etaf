@@ -444,6 +444,11 @@
       "purpose": "A refit that changes the viewport commits a revision; an equal one does not."
     },
     {
+      "name": "etaf-view-refit-reports-an-observed-operation",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "A refit reaches the mount observer as a refit operation together with its flush."
+    },
+    {
       "name": "etaf-view-batches-writes-into-one-commit",
       "file": "tests/etaf-view-tests.el",
       "purpose": "Writes inside one batch become visible together in one revision."

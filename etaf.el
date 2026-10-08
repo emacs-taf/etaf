@@ -1166,7 +1166,9 @@
 ;; Refit mounted RUNTIME to VIEWPORT-WIDTH pixels and VIEWPORT-HEIGHT lines.
 ;; The fixed viewport replaces window-size tracking: viewport units and
 ;; viewport-dependent layout are re-resolved and the changed region rewritten.
-;; Return non-nil when the layout changed.  While a native input session owns
+;; Return non-nil when the layout changed.  The refit is one Runtime operation:
+;; a mount `:observer' and `etaf-performance-mode' receive it as kind `refit'
+;; with its Ebox flush report.  While a native input session owns
 ;; the buffer text the refit waits and returns nil; ending the session applies
 ;; it.  A non-mounted Runtime signals `etaf-runtime-error' and non-positive
 ;; sizes signal `wrong-type-argument'.

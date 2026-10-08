@@ -82,6 +82,9 @@
   regions instead of rebuilding the application tree.  This improves ordinary
   text, style and geometry update latency and keeps Ebox as ETAF's internal
   retained node engine.
+- `etaf-runtime-refit` and `etaf-refit` advance the revision when the layout
+  changes and run as an observed Runtime operation of kind `refit`, so mount
+  observers and `etaf-performance-mode` see resize work and its Ebox flush.
 - Data reconciliation success is now `reconciled` instead of `projected`;
   update consumers that compare `etaf-data-reconciliation-state` symbols.
 - Migration: use `etaf-runtime-revision` or the value returned by

@@ -60,6 +60,26 @@
       (should-not (etaf-runtime-refit runtime 400 40))
       (should (= (etaf-runtime-revision runtime) (1+ revision))))))
 
+(ert-deftest etaf-view-refit-reports-an-observed-operation ()
+  "A refit reaches the mount observer as a refit operation with its flush."
+  (let (reports)
+    (etaf-test-with-mount (runtime (etaf-view (row (text "left") (text "right")))
+                                   (list :viewport-width 800 :viewport-height 40
+                                         :observer (lambda (report) (push report reports))))
+      (setq reports nil)
+      (should (etaf-runtime-refit runtime 400 40))
+      (should (cl-find-if (lambda (report)
+                            (and (eq (plist-get report :stage) 'runtime-operation)
+                                 (eq (plist-get report :kind) 'refit)
+                                 (eq (plist-get report :status) 'success)
+                                 (> (plist-get report :revision-after)
+                                    (plist-get report :revision-before))))
+                          reports))
+      (should (cl-find-if (lambda (report)
+                            (and (eq (plist-get report :provider) 'ebox)
+                                 (plist-get report :ranges)))
+                          reports)))))
+
 (ert-deftest etaf-view-batches-writes-into-one-commit ()
   "Writes inside one batch become visible together in one revision."
   (let ((a (etaf-ref "a")) (b (etaf-ref "b")))
