@@ -676,9 +676,9 @@ HOST and REF are non-nil for a mounted Host, which receives a keymap."
           (when (etaf-theme-token-p value)
             (setq value (etaf--theme-token-resolve-from-theme value theme)))
           (when value (push key result) (push value result))))))
-    (setq result (nreverse result))
+    ;; RESULT is built in reverse: each pair pushes its key, then its value.
     (when attributes
-      (setq result (append result (list :attributes (nreverse attributes)))))
+      (push :attributes result) (push (nreverse attributes) result))
     (when (etaf--interaction-boundary-p props)
       (let* ((disabled (plist-get props :disabled))
              (press (functionp (plist-get props :on-press)))
@@ -686,29 +686,29 @@ HOST and REF are non-nil for a mounted Host, which receives a keymap."
              (map (and runtime (or press drag) (not disabled)
                        (etaf--activation-keymap runtime host ref press drag
                                           (plist-get props :drag-lock-modifier)))))
-        (when map (setq result (append result (list :keymap map))))
+        (when map (push :keymap result) (push map result))
         (when (plist-get props :tab-index)
-          (setq result (append result (list :tab-index (plist-get props :tab-index)))))
-        (when disabled (setq result (append result (list :disabled t))))
+          (push :tab-index result) (push (plist-get props :tab-index) result))
+        (when disabled (push :disabled result) (push t result))
         (when (and (or press drag) (not disabled) (not (plist-member props :pointer)))
-          (setq result (append result (list :pointer 'hand))))))
+          (push :pointer result) (push 'hand result))))
     (dolist (key etaf--affordance-props)
       (when (plist-member props key)
-        (setq result (append result (list key (plist-get props key))))))
+        (push key result) (push (plist-get props key) result)))
     (unless image-p
       (when-let* ((defaults (etaf--theme-host-defaults theme name)))
-        (setq result (append result (list :defaults defaults)))))
+        (push :defaults result) (push defaults result)))
     (when-let* ((owner (etaf--ictx-owner ctx))
                 (scope (or (etaf--instance-style-scope owner)
                            (and (etaf--component-spec-styles
                                  (etaf--instance-spec owner))
                                 (setf (etaf--instance-style-scope owner)
                                       (ebox-style-scope-create nil))))))
-      (setq result (append result (list :ecss-scopes (list scope))))
+      (push :ecss-scopes result) (push (list scope) result)
       (when (etaf--ictx-root-p ctx)
-        (setq result (append result
-                             (list :ecss-scope-roots
-                                   (list (etaf--instance-rules owner theme)))))))
+        (push :ecss-scope-roots result)
+        (push (list (etaf--instance-rules owner theme)) result)))
+    (setq result (nreverse result))
     (if (not image-p)
         result
       (append (cl-loop for (key value) on result by #'cddr

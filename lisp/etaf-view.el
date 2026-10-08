@@ -217,13 +217,18 @@ disposing the old Runtime.")
     value))
 
 (defun etaf--resolve-property-plist (props)
-  "Resolve all lazy values in PROPS while preserving its keys."
-  (let ((copy nil)
-        (tail props))
-    (while tail
-      (push (pop tail) copy)
-      (push (etaf--resolve-property-value (pop tail)) copy))
-    (nreverse copy)))
+  "Resolve all lazy values in PROPS while preserving its keys.
+PROPS itself is returned when it holds no lazy value; callers do not modify
+the result."
+  (if (not (cl-loop for (_key value) on props by #'cddr
+                    thereis (etaf--expr-p value)))
+      props
+    (let ((copy nil)
+          (tail props))
+      (while tail
+        (push (pop tail) copy)
+        (push (etaf--resolve-property-value (pop tail)) copy))
+      (nreverse copy))))
 
 (defun etaf--property-domain-key (property)
   "Return PROPERTY's canonical Host-domain key."
@@ -885,15 +890,21 @@ Return `(BUSINESS ATTRS)'.  `:key' remains framework-owned input metadata."
   value)
 
 (defun etaf--validate-code-children (children context)
-  "Return a detached CHILDREN spine after typed validation for CONTEXT."
+  "Return a detached CHILDREN spine after typed validation for CONTEXT.
+CONTEXT is a node tag symbol or a string naming the children's owner."
   (unless (proper-list-p children)
     (etaf--component-error "%s children must be a proper list: %S"
-                           context children))
+                           (etaf--children-context context) children))
   (dolist (child children)
     (unless (etaf--typed-view-child-p child)
       (etaf--component-error
-       "%s child must be nil, string, or typed View: %S" context child)))
+       "%s child must be nil, string, or typed View: %S"
+       (etaf--children-context context) child)))
   (copy-sequence children))
+
+(defun etaf--children-context (context)
+  "Return CONTEXT, a node tag symbol or owner string, as message text."
+  (if (symbolp context) (format "Node %S" context) context))
 
 (defun etaf--validate-code-slots (slots)
   "Return typed named SLOTS as internal slot inputs."
@@ -933,8 +944,7 @@ alist from stable slot symbols to typed child lists."
           (plist-put props :key
                      (etaf--validate-key (plist-get props :key)))))
   (let* ((entry (gethash tag etaf--view-registry))
-         (children (etaf--validate-code-children children
-                                                (format "Node %S" tag)))
+         (children (etaf--validate-code-children children tag))
          (slot-inputs (etaf--validate-code-slots named-slots)))
     (when (and slot-inputs (eq entry etaf--host-marker))
       (etaf--component-error "Host %S does not accept named slots" tag))

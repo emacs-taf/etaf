@@ -308,13 +308,19 @@ When FAILED is non-nil the run did not complete: keep old dependencies too."
   (setf (etaf-effect-state effect) 0
         (etaf-effect-running effect) t)
   (when etaf--run-log (push effect (car etaf--run-log)))
-  (unwind-protect
-      (etaf--with-observer effect
-        (funcall (etaf-effect-fn effect)))
-    (setf (etaf-effect-running effect) nil)
-    ;; A dependency changed while the effect ran: run it again.
-    (when (and (/= 0 (etaf-effect-state effect)) (etaf-effect-active effect))
-      (etaf--enqueue effect))))
+  ;; One unwind form both records the dependencies and ends the run.
+  (let ((etaf--observer effect)
+        (etaf--observed nil)
+        (etaf--observe-stamp (cl-incf etaf--stamp))
+        (ok nil) result)
+    (unwind-protect
+        (setq result (funcall (etaf-effect-fn effect)) ok t)
+      (etaf--set-deps effect (nreverse etaf--observed) (not ok))
+      (setf (etaf-effect-running effect) nil)
+      ;; A dependency changed while the effect ran: run it again.
+      (when (and (/= 0 (etaf-effect-state effect)) (etaf-effect-active effect))
+        (etaf--enqueue effect)))
+    result))
 
 (defun etaf--effect-update (effect)
   "Run queued EFFECT if a dependency really changed."
