@@ -537,6 +537,30 @@ layout, style or interaction change."
         (when (etaf-runtime-for-buffer buffer) (etaf-unmount (cdr mounted)))
         (kill-buffer buffer)))))
 
+(defun etaf-gate-benchmark--observed (fixture)
+  "Return FIXTURE with an :observe hook for the GUI gate's diff twin.
+Each sample must flush the mounted buffer at most once; the hook passes that
+flush's Ebox report, whose :ranges let the gate replay the same edit on a
+plain buffer."
+  (let* ((buffer (plist-get fixture :buffer))
+         (invoke (plist-get fixture :invoke))
+         (sink nil))
+    (append
+     (list :invoke
+           (lambda (sample)
+             (if (null sink)
+                 (funcall invoke sample)
+               (let ((before (ebox-mount-flush-count buffer)))
+                 (funcall invoke sample)
+                 (pcase (- (ebox-mount-flush-count buffer) before)
+                   (0 nil)
+                   (1 (funcall sink buffer (ebox-buffer-update-report buffer)))
+                   (n (error "Sample %d flushed %d times" sample n))))))
+           :observe (lambda (function)
+                      (setq sink function)
+                      (lambda () (setq sink nil))))
+     fixture)))
+
 (defun etaf-gate-benchmark--row-fixture (rows kind)
   "Mount ROWS rows and change row 1 by KIND: paint, text or text-width."
   (let* ((marked (etaf-ref nil))
@@ -703,40 +727,53 @@ layout, style or interaction change."
          :budget-ms (if (eq kind 'paint) 0.2 0.2)
          :description (format "Row 1 %s change in a %d-row scene; must not scale with the scene"
                               kind count)
-         :setup (lambda (_mode) (etaf-gate-benchmark--row-fixture count selected)))))
+         :gate '(:class local :twin diff)
+         :setup (lambda (_mode)
+                  (etaf-gate-benchmark--observed
+                   (etaf-gate-benchmark--row-fixture count selected))))))
     (taf-benchmark-register
      (format "gate.flex-text.%d" count)
      :version 1 :modes '(batch gui) :isolation 'series :impact 'local :budget-ms 0.2
      :description (format "Auto-width Flex text change in row 1 of %d rows" count)
-     :setup (lambda (_mode) (etaf-gate-benchmark--flex-fixture count)))
+     :gate '(:class propagate :twin diff)
+     :setup (lambda (_mode)
+              (etaf-gate-benchmark--observed (etaf-gate-benchmark--flex-fixture count))))
     (taf-benchmark-register
      (format "gate.append.%d" count)
      :version 1 :modes '(batch gui) :isolation 'series :impact 'local
      :budget-ms (if (>= count 10000) 2 0.3)
      :description (format "Snapshot append of one keyed row to %d rows" count)
-     :setup (lambda (_mode) (etaf-gate-benchmark--append-fixture count)))
+     :gate '(:class snapshot :twin diff)
+     :setup (lambda (_mode)
+              (etaf-gate-benchmark--observed (etaf-gate-benchmark--append-fixture count))))
     (taf-benchmark-register
      (format "gate.data-append.%d" count)
      :version 1 :modes '(batch gui) :isolation 'series :impact 'local :budget-ms 0.3
      :description (format "Data insert of one item into %d loaded items" count)
-     :setup (lambda (_mode) (etaf-gate-benchmark--data-fixture count)))
+     :gate '(:class structure :twin diff)
+     :setup (lambda (_mode)
+              (etaf-gate-benchmark--observed (etaf-gate-benchmark--data-fixture count))))
     (taf-benchmark-register
      (format "gate.mount.%d" count)
      :version 1 :modes '(batch gui) :isolation 'series :impact 'global
      :budget-ms (* 0.04 count)
      :description (format "Mount %d fixed rows (40 us per row)" count)
+     :gate '(:class rows)
      :setup (lambda (_mode) (etaf-gate-benchmark--mount-fixture count)))))
 
 (taf-benchmark-register
  "gate.counter"
  :version 1 :modes '(batch gui) :isolation 'series :impact 'local :budget-ms 0.03
  :description "Increment a minimal reactive counter"
- :setup (lambda (_mode) (etaf-gate-benchmark--counter-fixture)))
+ :gate '(:class counter :twin diff)
+ :setup (lambda (_mode)
+          (etaf-gate-benchmark--observed (etaf-gate-benchmark--counter-fixture))))
 
 (taf-benchmark-register
  "gate.resize.400"
  :version 1 :modes '(batch gui) :isolation 'series :impact 'global :budget-ms 16
  :description "Rewrap 400 stretch-width paragraphs after a viewport width change"
+ :gate '(:class resize)
  :setup (lambda (_mode) (etaf-gate-benchmark--resize-fixture 400)))
 
 ;;; performance-scenarios.el ends here
