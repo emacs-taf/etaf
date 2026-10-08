@@ -174,6 +174,12 @@ During development, load the sibling Ebox checkout before ETAF:
 (require 'etaf)
 ```
 
+For interactive speed, run `make native` in the Ebox and ETAF checkouts after
+each update. Each target byte-compiles its package and stores native code in
+your `eln-cache`, which Emacs loads in place of the bytecode without further
+configuration, even when JIT native compilation is disabled. A source file
+edited later runs as bytecode until the next `make native`.
+
 Run the complete local gate:
 
 ```sh

@@ -160,6 +160,11 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 (require 'etaf)
 ```
 
+为了交互速度，每次更新后在 Ebox 和 ETAF 检出目录中运行 `make native`。它会字节
+编译对应的包，并把原生代码存入你的 `eln-cache`；即使关闭了 JIT 原生编译，Emacs
+也会自动用它代替字节码，无需额外配置。之后修改过的源文件在下次 `make native`
+前以字节码运行。
+
 运行完整本地门禁：
 
 ```sh

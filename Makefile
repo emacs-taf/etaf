@@ -8,13 +8,17 @@ SOURCES += lisp/etaf-video-source.el lisp/etaf-video-audio.el lisp/etaf-video-se
 EXAMPLES = examples/etaf-counter-example.el examples/etaf-data-example.el examples/etaf-resource-example.el examples/etaf-retained-resize.el
 TESTS = $(filter-out tests/etaf-docs-tests.el,$(wildcard tests/*-tests.el))
 
-.PHONY: compile load checkdoc docs-check metadata-check check clean
+.PHONY: compile native load checkdoc docs-check metadata-check check clean
 
 compile: clean
 	$(EMACS) -Q --batch $(LOAD_PATH) \
 		--eval "(setq load-prefer-newer t byte-compile-error-on-warn t byte-compile-warnings '(not obsolete))" \
 		--eval "(load-file \"etaf.el\")" \
 		--eval "(dolist (file '($(foreach file,$(SOURCES) $(EXAMPLES),\"$(file)\"))) (unless (byte-compile-file file) (error \"Compilation failed: %s\" file)))"
+
+native: compile
+	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" --eval "(require 'etaf)" \
+		--eval "(dolist (file '($(foreach file,$(filter lisp/% etaf.el,$(SOURCES)),\"$(file)\"))) (native-compile (expand-file-name file)))"
 
 load: compile
 	$(EMACS) -Q --batch $(LOAD_PATH) --eval "(setq load-prefer-newer t)" --eval "(require 'etaf)" --eval "(princ \"ETAF load OK\\n\")"

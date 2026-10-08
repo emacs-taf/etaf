@@ -4,6 +4,8 @@
 
 ### Added
 
+- `make native` byte-compiles ETAF and stores native code in the user's
+  `eln-cache`, which Emacs loads in place of the bytecode.
 - `etaf-runtime-revision` reports the mounted Runtime's committed revision
   without forcing a flush.
 
