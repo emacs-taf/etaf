@@ -1407,7 +1407,8 @@ stays proportional to the change."
     ;; Matching leading rows.  Rows still showing the same item are
     ;; skipped with one unchecked slot read each.
     (while (and otail itail (eq (etaf--row-src (car otail)) (car itail)))
-      (setq last-cell otail otail (cdr otail) itail (cdr itail) plen (1+ plen)))
+      (setq last-cell otail otail (cdr otail) itail (cdr itail)))
+    (when last-cell (setq plen (- (length old) (length otail))))
     (while (and otail itail
                 (etaf--row-matches-p (car otail) (car itail) keyfn))
       (unless (eq (etaf--seg-src (car otail)) (car itail))
