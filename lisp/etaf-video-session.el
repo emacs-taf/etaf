@@ -192,7 +192,11 @@ step flag set would make the next tick pause after one frame."
           (etaf-video--session-notify session))
       (etaf-video--session-stop-source session)
       (etaf-video--session-stop-audio session)
-      (etaf-video--session-notify session)))
+      (setf (etaf-video--session-base session) target
+            (etaf-video--session-ended session) nil
+            (etaf-video--session-finished session) nil)
+      ;; A paused canvas shows the frame at the new position.
+      (etaf-video-session-step session)))
   t)
 
 (defun etaf-video-session-set-speed (session speed)

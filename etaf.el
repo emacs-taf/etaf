@@ -1372,7 +1372,8 @@
 ;;
 ;; Function: etaf-video-seek (handle seconds)
 ;;;###autoload (autoload 'etaf-video-seek "etaf" nil nil)
-;; Move the mounted video identified by HANDLE to SECONDS.
+;; Move the mounted video identified by HANDLE to SECONDS.  A playing video
+;; continues from there; a paused video presents that frame and stays paused.
 ;;
 ;; Function: etaf-video-set-speed (handle speed)
 ;;;###autoload (autoload 'etaf-video-set-speed "etaf" nil nil)

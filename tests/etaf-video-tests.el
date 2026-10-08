@@ -305,8 +305,9 @@ JPEG, so a layout built for a graphical frame still works in a terminal."
 
 (ert-deftest etaf-video-tests-controls-pause-step-seek-speed ()
   "Pause, step, seek and speed keep the reported state honest.
-A paused position freezes, a step presents exactly one more frame, and the
-next producer starts with the documented seek, rate and read-rate arguments."
+A paused position freezes, a step presents exactly one more frame, a paused
+seek presents the frame at its target, and the next producer starts with the
+documented seek, rate and read-rate arguments."
   (let ((name " *etaf-video-controls*")
         (log (etaf-video-tests--log)))
     (unwind-protect
@@ -328,8 +329,16 @@ next producer starts with the documented seek, rate and read-rate arguments."
               (should-not (plist-get (etaf-video-tests--state handle) :playing))
               ;; A step closes its producer deliberately; that is not the end.
               (should-not (plist-get (etaf-video-tests--state handle) :ended)))
+            (let ((presented (etaf-video-tests--presented handle)))
+              (etaf-video-seek handle 1.0)
+              (should (= 1.0 (plist-get (etaf-video-tests--state handle) :position)))
+              ;; A paused seek shows the frame at its new position.
+              (should (etaf-video-tests--wait
+                       (lambda () (> (etaf-video-tests--presented handle) presented))))
+              (should (equal "1.0" (etaf-video-tests--argument
+                                    (car (last (etaf-video-tests--runs log))) "-ss")))
+              (should-not (plist-get (etaf-video-tests--state handle) :playing)))
             (etaf-video-seek handle 1.0)
-            (should (= 1.0 (plist-get (etaf-video-tests--state handle) :position)))
             (etaf-video-toggle-playback handle)
             (should (plist-get (etaf-video-tests--state handle) :playing))
             (should (etaf-video-tests--wait
@@ -473,6 +482,37 @@ with the documented scale, keeping paused playback paused."
             (should (= 32 (plist-get (etaf-video-tests--state handle) :width)))
             (should (= 8 (plist-get (etaf-video-tests--state handle) :height)))
             (should-not (plist-get (etaf-video-tests--state handle) :playing))))
+      (etaf-video-tests--cleanup name)
+      (ignore-errors (delete-file log)))))
+
+(ert-deftest etaf-video-tests-ended-video-redraws-at-new-size ()
+  "Resizing an ended video presents its last frame at the new canvas size.
+The rebuilt producer starts one source frame before the end, so the canvas
+never keeps a picture of the old size."
+  (let ((name " *etaf-video-ended-resize*")
+        (log (etaf-video-tests--log))
+        (columns (etaf-ref 8))
+        (handle (make-symbol "etaf-video-ended-resize-test")))
+    (unwind-protect
+        (etaf-video-tests--with-fixture
+            log '("FAKE_FFMPEG_FRAMES=2" "FAKE_FFMPEG_INTERVAL=0.01")
+          (etaf-mount
+           name
+           (lambda ()
+             (etaf-node 'etaf-video
+                        (list :handle handle :src etaf-video-tests--input
+                              :mode 'ascii :columns (etaf-value columns) :rows 2
+                              :autoplay t)
+                        nil)))
+          (should (etaf-video-tests--wait
+                   (lambda () (plist-get (etaf-video-tests--state handle) :ended))))
+          (etaf-set-value columns 12)
+          (should (etaf-video-tests--wait
+                   (lambda () (equal (etaf-video-tests--columns-grid 12 2)
+                                     (etaf-video-tests--grid name 2)))))
+          (should (equal "1.96" (etaf-video-tests--argument
+                                 (car (last (etaf-video-tests--runs log))) "-ss")))
+          (should-not (plist-get (etaf-video-tests--state handle) :playing)))
       (etaf-video-tests--cleanup name)
       (ignore-errors (delete-file log)))))
 

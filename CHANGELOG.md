@@ -130,6 +130,11 @@
 
 ### Fixed
 
+- A paused `etaf-video` presents the frame at a `etaf-video-seek` target
+  instead of keeping the old picture, a source change starts the new source
+  at its beginning, and resizing an ended video redraws its last frame at the
+  new canvas size.
+
 - A settled window size change no longer refits a mounted Runtime when an
   active minibuffer, a completion popup, or a message in the echo area borrowed
   the display window's height.  A frame resize still refits, and

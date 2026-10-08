@@ -399,9 +399,11 @@ session starts playing; a paused session presents one frame instead."
 
 (defun etaf-video--instance-apply (instance inputs)
   "Apply new tracked INPUTS to INSTANCE.
-A source, size, mode, ramp or device pixel ratio change rebuilds the session
-at the current position; speed, volume and audio changes update the running
-session in place."
+A source change rebuilds the session at the start of the new source.  A size,
+mode, ramp or device pixel ratio change rebuilds it at the current position,
+or at the last frame of an ended video, so a paused canvas shows a frame of
+its new size; speed, volume and audio changes update the running session in
+place."
   (let ((old (etaf-video--instance-applied instance)))
     (unless (equal old inputs)
       (let ((structural
@@ -417,8 +419,17 @@ session in place."
         (setf (etaf-video--instance-applied instance) inputs)
         (if structural
             (when-let* ((session (etaf-video--instance-session instance)))
-              (let ((position (etaf-video-session-position session))
-                    (playing (etaf-video--session-playing session)))
+              (let* ((state (etaf-video-session-state session))
+                     (duration (plist-get state :duration))
+                     (playing (plist-get state :playing))
+                     (position
+                      (cond ((not (equal (plist-get old :src) (plist-get inputs :src))) 0)
+                            ((and (not playing) duration
+                                  (or (plist-get state :ended)
+                                      (>= (plist-get state :position) duration)))
+                             (max 0 (- duration
+                                       (/ 1.0 (or (plist-get state :source-fps) 25)))))
+                            (t (plist-get state :position)))))
                 (etaf-video-session-destroy session)
                 (setf (etaf-video--instance-session instance) nil)
                 (when (etaf-video--instance-runtime instance)
@@ -584,7 +595,7 @@ A finished video restarts from its beginning."
 (defun etaf-video-seek (handle seconds)
   "Move the mounted video identified by HANDLE to SECONDS.
 A playing video restarts its producer at the new position; a paused video
-keeps the position for the next play or step."
+presents the frame there and stays paused."
   (etaf-video-session-seek (etaf-video--session-for handle) seconds)
   t)
 

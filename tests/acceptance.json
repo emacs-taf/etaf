@@ -391,7 +391,7 @@
     {
       "name": "etaf-video-tests-controls-pause-step-seek-speed",
       "file": "tests/etaf-video-tests.el",
-      "purpose": "Pause freezes the position, step presents one more frame, and seek, playback and speed restart the producer with the documented arguments."
+      "purpose": "Pause freezes the position, step presents one more frame, a paused seek presents its target frame, and seek, playback and speed restart the producer with the documented arguments."
     },
     {
       "name": "etaf-video-tests-finishes-and-restarts",
@@ -412,6 +412,11 @@
       "name": "etaf-video-tests-restarts-on-input-change",
       "file": "tests/etaf-video-tests.el",
       "purpose": "A canvas size change republishes the canvas and rebuilds the session with the new scale at the same paused position."
+    },
+    {
+      "name": "etaf-video-tests-ended-video-redraws-at-new-size",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "Resizing an ended video presents its last frame at the new canvas size instead of keeping the old picture."
     },
     {
       "name": "etaf-video-tests-unmount-releases-runtime-and-handle",
