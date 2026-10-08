@@ -666,6 +666,8 @@
 ;; Function: etaf-host-ref-bounds (runtime host-ref)
 ;;;###autoload (autoload 'etaf-host-ref-bounds "etaf" nil nil)
 ;; Return live Ebox bounds for HOST-REF in mounted RUNTIME.
+;; The (START . END) span runs from the Host's first visible painted cell to
+;; the end of its last painted row, or is nil when the Host is not painted.
 ;;
 ;; Function: etaf-host-ref-size (runtime host-ref)
 ;;;###autoload (autoload 'etaf-host-ref-size "etaf" nil nil)
@@ -1043,6 +1045,7 @@
 ;; Function: etaf-runtime-flush (&optional runtime)
 ;;;###autoload (autoload 'etaf-runtime-flush "etaf" nil nil)
 ;; Settle mounted RUNTIME's pending reactive work and return its revision.
+;; Work that a failed update discarded is retried with it.
 ;; Inside `etaf-call-with-batch' or a running commit the pending work stays
 ;; deferred to that boundary and the current revision is returned.
 ;; RUNTIME defaults to the Runtime of the current buffer.
@@ -1162,8 +1165,10 @@
 ;; Refit mounted RUNTIME to VIEWPORT-WIDTH pixels and VIEWPORT-HEIGHT lines.
 ;; The fixed viewport replaces window-size tracking: viewport units and
 ;; viewport-dependent layout are re-resolved and the changed region rewritten.
-;; Return non-nil when the layout changed.  A non-mounted Runtime signals
-;; `etaf-runtime-error' and non-positive sizes signal `wrong-type-argument'.
+;; Return non-nil when the layout changed.  While a native input session owns
+;; the buffer text the refit waits and returns nil; ending the session applies
+;; it.  A non-mounted Runtime signals `etaf-runtime-error' and non-positive
+;; sizes signal `wrong-type-argument'.
 ;;
 ;; Function: etaf-runtime-viewport (&optional runtime)
 ;;;###autoload (autoload 'etaf-runtime-viewport "etaf" nil nil)

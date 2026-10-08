@@ -18,6 +18,14 @@
        :on-press (lambda () (etaf-update-value clicks #'1+))
     (text (expr (format "%s=%d" name (etaf-value clicks))))))
 
+(defvar etaf-view-test--mounted nil
+  "Names whose `etaf-view-test-mounted-row' mount hook ran.")
+
+(etaf-define-component etaf-view-test-mounted-row (&key name)
+  "Render NAME and record it once its row is committed."
+  :setup (progn (etaf-on-mounted (lambda () (push name etaf-view-test--mounted))) nil)
+  :view (etaf-view-test-counter-row :name name))
+
 (etaf-define-component etaf-view-test-frame (&key title)
   "Render TITLE above default content and a named footer slot."
   :view
@@ -119,6 +127,43 @@
       (should (equal (etaf-test-lines) '("head" "foot")))
       (etaf-set-value items '(9))
       (should (equal (etaf-test-lines) '("head" "item 9" "foot"))))))
+
+(ert-deftest etaf-view-failed-update-keeps-committed-ui-until-retry ()
+  "A failing site discards its whole update; the next write retries all of it."
+  (let ((label (etaf-ref "a")) (mode (etaf-ref 'a))
+        (names (etaf-ref '("x"))) (broken (etaf-ref nil))
+        (etaf-view-test--mounted nil))
+    (etaf-test-with-mount (runtime
+                           (etaf-view (column
+                                        (text (expr (etaf-value label)))
+                                        (text :if (eq (etaf-value mode) 'b) "arm b")
+                                        (etaf-view-test-mounted-row
+                                         :for (name (etaf-value names)) :key name
+                                         :name name)
+                                        (text (expr (if (etaf-value broken)
+                                                        (error "Broken site")
+                                                      "ok"))))))
+      (etaf-dispatch-event runtime 'row-x 'press)
+      (should (equal (etaf-test-lines) '("a" "x=1" "ok")))
+      (should (equal etaf-view-test--mounted '("x")))
+      (let ((revision (etaf-runtime-revision runtime)))
+        (should-error (etaf-batch
+                        (etaf-set-value label "A")
+                        (etaf-set-value mode 'b)
+                        (etaf-set-value names '("y" "x"))
+                        (etaf-set-value broken t)))
+        (should (equal (etaf-test-lines) '("a" "x=1" "ok")))
+        (should (= (etaf-runtime-revision runtime) revision))
+        (should-not (etaf-runtime-host-props-for runtime 'row-y))
+        (should (equal etaf-view-test--mounted '("x")))
+        ;; Later work retries the discarded update, so it waits for the fix too.
+        (should-error (etaf-dispatch-event runtime 'row-x 'press))
+        (should (equal (etaf-test-lines) '("a" "x=1" "ok")))
+        (should (= (etaf-runtime-revision runtime) revision))
+        (etaf-set-value broken nil)
+        (should (equal (etaf-test-lines) '("A" "arm b" "y=0" "x=2" "ok")))
+        (should (= (etaf-runtime-revision runtime) (1+ revision)))
+        (should (equal etaf-view-test--mounted '("y" "x")))))))
 
 (ert-deftest etaf-view-rejects-duplicate-list-keys ()
   "Duplicate keys signal and keep the previous committed rows."

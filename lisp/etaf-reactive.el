@@ -110,6 +110,13 @@ It returns non-nil when it took ownership of the condition.")
 (defvar etaf--drain-errors nil
   "Conditions collected by the current drain.")
 
+(defvar etaf--drain-failed nil
+  "Non-nil when a pre or render effect failed since the last drain commit.
+The commit function reads and clears it to discard that work.")
+
+(defvar etaf--run-log nil
+  "When non-nil, a cons whose car collects every effect that runs.")
+
 (defun etaf--assert-not-rendering (operation)
   "Reject detectable side-effect OPERATION during pure render."
   (when etaf--render-phase-p
@@ -300,6 +307,7 @@ When FAILED is non-nil the run did not complete: keep old dependencies too."
   "Run EFFECT now, tracking its dependencies; return its function's value."
   (setf (etaf-effect-state effect) 0
         (etaf-effect-running effect) t)
+  (when etaf--run-log (push effect (car etaf--run-log)))
   (unwind-protect
       (etaf--with-observer effect
         (funcall (etaf-effect-fn effect)))
@@ -370,8 +378,11 @@ When KEEP-SCOPE is nil, also remove EFFECT from its owning Scope."
           (etaf--effect-update effect)
         ((error quit)
          (setf (etaf-effect-state effect) 0)
+         ;; A failed dependency refresh never reached the run itself.
+         (when etaf--run-log (push effect (car etaf--run-log)))
          (unless (and etaf--effect-error-function
                       (funcall etaf--effect-error-function effect err))
+           (when (< phase 2) (setq etaf--drain-failed t))
            (push err etaf--drain-errors)))))))
 
 (defun etaf--drain-loop ()
@@ -389,7 +400,8 @@ When KEEP-SCOPE is nil, also remove EFFECT from its owning Scope."
   "Run queued effects until the graph is settled; re-signal the first error."
   (unless etaf--draining
     (let ((etaf--draining t)
-          (etaf--drain-errors nil))
+          (etaf--drain-errors nil)
+          (etaf--drain-failed nil))
       (if etaf--drain-around-function
           (funcall etaf--drain-around-function #'etaf--drain-loop)
         (etaf--drain-loop))

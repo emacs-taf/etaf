@@ -464,6 +464,11 @@
       "purpose": "Appending to and clearing a keyed list matches a fresh render."
     },
     {
+      "name": "etaf-view-failed-update-keeps-committed-ui-until-retry",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "A failing site discards the whole update, keeping committed output, revision and mount callbacks, and the next write retries it."
+    },
+    {
       "name": "etaf-view-rejects-duplicate-list-keys",
       "file": "tests/etaf-view-tests.el",
       "purpose": "Duplicate keys signal and keep the previous committed rows."

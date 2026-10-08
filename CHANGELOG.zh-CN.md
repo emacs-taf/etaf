@@ -16,11 +16,15 @@
 
 ### Changed
 
-- 渲染要求 Ebox framework SPI v3 与 `ebox-publication/v1`。Host final-accept
-  authority 与 committed query guard 均使用 Ebox transaction。
-  请先升级 Ebox，再升级 ETAF，重启 Emacs 以加载同一套 provider 与 render port。
-  性能报告通过 `:publication-transaction-id` 将 `ebox-publication` stage 与
-  Ebox 渲染关联。
+- Runtime 改用细粒度保留架构：`etaf-view` 编译为保留区段，Host 属性与文本读取
+  成为逐绑定 effect，Ebox 节点保持挂载，提交只修补 buffer 的局部区域，不再重建
+  整棵应用树。普通文本、样式和几何更新的延迟因此下降，Ebox 仍是 ETAF 内部的保留
+  节点引擎。
+- 迁移：用 `etaf-runtime-revision` 或 `etaf-runtime-flush` 的返回值代替代际 API，
+  比较 revision 以确认一次更新已写入 buffer。
+- 失败的绑定会丢弃整次更新：buffer、revision 和挂载回调保持上次提交的状态，已写入
+  的 ref 保留新值。下一次写入或 `etaf-runtime-flush` 会重试被丢弃的工作，因此在
+  修复失败之前，后续更新也会等待。
 
 ### 修复
 

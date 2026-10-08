@@ -60,18 +60,18 @@
   "One retained View segment.
 KIND is host, frag, expr, branch, list, row, comp, slot or root.  Only Host
 segments own an Ebox NODE; the others group their KIDS."
-  kind parent kids node ctx effect src key data live)
+  kind parent kids node ctx effect src key data live txn)
 
 (etaf--defstruct (etaf--host (:constructor etaf--host-make) (:copier nil))
   "Mounted state of one Host segment."
-  id ref gref reg props eprops behaviors keymap payload text)
+  id ref gref reg props eprops behaviors keymap payload text txn)
 
 (etaf--defstruct (etaf--instance (:constructor etaf--instance-make) (:copier nil))
   "One retained Component instance."
   id runtime spec seg ctx pctx scope cells slots-ref call attrs state setup-p
   context style-scope style-key style-revision local-refs prop-sources
   mounted-hooks updated-hooks unmounted-hooks input-effect defaults
-  dead mounted-p updated-p view)
+  dead mounted-p updated-p view txn)
 
 ;;;; Dynamic state
 
@@ -106,6 +106,195 @@ segments own an Ebox NODE; the others group their KIDS."
   (when runtime
     (setf (etaf-runtime-changed runtime) t)
     (etaf--runtime-touch runtime)))
+
+;;;; Transactions
+;;
+;; A drain applies effects directly to retained segments and Ebox nodes.  The
+;; transaction of the current drain journals every change to state that
+;; existed before it, so a failed pre or render effect can restore exactly
+;; what was committed.  The cost is proportional to the touched state.
+;; Objects created by the transaction carry it in their `txn' slot and are
+;; not journaled; on rollback they are released instead.  Cleanup of
+;; committed resources waits until the transaction commits.
+
+(etaf--defstruct (etaf--txn (:constructor etaf--txn-make) (:copier nil))
+  "Undo journal of one drain's uncommitted work."
+  undo cells created ran stopped installs instances deferred dirty)
+
+(defvar etaf--txn nil
+  "Transaction of the current drain, or nil outside a drain.")
+
+(defvar etaf--parked-effects nil
+  "Effects whose output a rollback discarded; they re-run with later work.")
+
+(defvar etaf--retry-parked nil
+  "Non-nil when the next drain must re-run parked effects.")
+
+(defsubst etaf--jaset (obj offset value stamp)
+  "Set slot OFFSET of record OBJ to VALUE, journaling the old value.
+STAMP is the offset of OBJ's creating transaction, or nil."
+  (let ((txn etaf--txn))
+    (when (and txn (not (and stamp (eq (aref obj stamp) txn))))
+      (push (cons obj (cons offset (aref obj offset))) (etaf--txn-undo txn))))
+  (aset obj offset value))
+
+(defmacro etaf--journal-setters (struct stamp &rest slots)
+  "Journal `setf' of STRUCT's SLOTS (all slots when nil) in a transaction.
+STAMP names the slot holding an object's creating transaction, or nil."
+  (let ((stamp-offset (and stamp (cl-struct-slot-offset struct stamp))))
+    `(progn
+       ,@(mapcar
+          (lambda (slot)
+            (let ((offset (cl-struct-slot-offset struct slot)))
+              `(gv-define-setter ,(intern (format "%s-%s" struct slot)) (value obj)
+                 (list 'etaf--jaset obj ,offset value ,stamp-offset))))
+          (or slots
+              (delq stamp (mapcar #'car (cdr (cl-struct-slot-info struct)))))))))
+
+(etaf--journal-setters etaf--seg txn)
+(etaf--journal-setters etaf--host txn)
+(etaf--journal-setters etaf--instance txn)
+(etaf--journal-setters etaf-runtime nil
+                       new-instances updated-instances retired-instances
+                       root-dirty changed)
+
+(defun etaf--journal (function)
+  "Record FUNCTION to undo a change when the transaction rolls back."
+  (when etaf--txn (push function (etaf--txn-undo etaf--txn))))
+
+(defun etaf--jputhash (key value table)
+  "Put KEY to VALUE in TABLE, journaling the old entry."
+  (when etaf--txn
+    (let ((old (gethash key table 'etaf--absent)))
+      (push (if (eq old 'etaf--absent)
+                (lambda () (remhash key table))
+              (lambda () (puthash key old table)))
+            (etaf--txn-undo etaf--txn))))
+  (puthash key value table))
+
+(defun etaf--jremhash (key table)
+  "Remove KEY from TABLE, journaling the old entry."
+  (when etaf--txn
+    (let ((old (gethash key table 'etaf--absent)))
+      (unless (eq old 'etaf--absent)
+        (push (lambda () (puthash key old table)) (etaf--txn-undo etaf--txn)))))
+  (remhash key table))
+
+(defun etaf--cell-install (cell value)
+  "Install VALUE in internal CELL and notify its observers, journaling it."
+  (when etaf--txn
+    (push (cons cell (etaf-ref-value cell)) (etaf--txn-cells etaf--txn)))
+  (etaf--ref-install cell value)
+  (etaf--notify cell 2))
+
+(defun etaf--node-set-props (node props old)
+  "Give NODE PROPS; OLD restores it on rollback."
+  (etaf--journal (lambda () (ebox-node-set-props node old)))
+  (ebox-node-set-props node props))
+
+(defun etaf--node-set-text (node text old)
+  "Give text NODE TEXT; OLD restores it on rollback."
+  (etaf--journal (lambda () (ebox-node-set-text node old)))
+  (ebox-node-set-text node text))
+
+(defun etaf--node-insert (parent node index)
+  "Insert NODE into PARENT at INDEX."
+  (etaf--journal (lambda () (ebox-node-remove node)))
+  (ebox-node-insert parent node index))
+
+(defun etaf--node-remove (node)
+  "Remove NODE from its parent."
+  (when etaf--txn
+    (let ((parent (ebox-node-parent node)) (index (ebox-node-index node)))
+      (when parent
+        (etaf--journal (lambda () (ebox-node-insert parent node index))))))
+  (ebox-node-remove node))
+
+(defun etaf--node-move (node index)
+  "Move NODE to INDEX among its siblings."
+  (when etaf--txn
+    (let ((old (ebox-node-index node)))
+      (etaf--journal (lambda () (ebox-node-move node old)))))
+  (ebox-node-move node index))
+
+(defun etaf--txn-fresh-p (effect)
+  "Return non-nil when EFFECT was created by the current transaction."
+  (and etaf--txn (eq (etaf-effect-data effect) etaf--txn)))
+
+(defun etaf--txn-defer (function)
+  "Run FUNCTION when the transaction commits, or now outside one."
+  (if etaf--txn
+      (push function (etaf--txn-deferred etaf--txn))
+    (funcall function)))
+
+(defun etaf--txn-begin ()
+  "Return a new transaction for the work after the last commit."
+  (etaf--txn-make :ran (list nil)
+                  :dirty (cons etaf--dirty-runtimes
+                               (mapcar #'etaf-runtime-dirty etaf--dirty-runtimes))))
+
+(defun etaf--txn-commit (txn)
+  "Run TXN's deferred cleanup of replaced committed resources."
+  (let ((etaf--txn nil))
+    (dolist (function (reverse (etaf--txn-deferred txn)))
+      (funcall function))))
+
+(defun etaf--park (effect)
+  "Keep EFFECT for a later retry."
+  (when (etaf-effect-active effect)
+    (setf (etaf-effect-state effect) 0)
+    (unless (memq effect etaf--parked-effects)
+      (push effect etaf--parked-effects))))
+
+(defun etaf--txn-rollback (txn)
+  "Restore everything TXN changed and release what it created."
+  (let ((etaf--txn nil) (etaf--render-phase-p nil))
+    (dolist (entry (etaf--txn-undo txn))
+      (if (functionp entry)
+          (funcall entry)
+        (aset (car entry) (cadr entry) (cddr entry))))
+    (dolist (effect (etaf--txn-created txn))
+      (etaf-reactive-effect-stop effect t))
+    (dolist (state (etaf--txn-installs txn))
+      (when-let* ((cleanup (cddr state)))
+        (ignore-errors (etaf-untracked (funcall cleanup)))))
+    (dolist (inst (etaf--txn-instances txn))
+      (when-let* ((scope (etaf--instance-scope inst)))
+        (etaf-scope-stop scope)))
+    (dolist (effect (etaf--txn-stopped txn))
+      (unless (etaf-effect-active effect)
+        (setf (etaf-effect-active effect) t)
+        (etaf--park effect)))
+    ;; Post effects observed committed output; only earlier phases re-run.
+    (dolist (effect (car (etaf--txn-ran txn)))
+      (when (< (etaf-effect-phase effect) 2)
+        (etaf--park effect)))
+    (let (cells)
+      (dolist (entry (etaf--txn-cells txn))
+        (etaf--ref-install (car entry) (cdr entry))
+        (push (car entry) cells))
+      (dolist (cell cells) (etaf--notify cell 2)))
+    ;; Work queued by the restored cells waits with the parked effects.
+    (dotimes (phase 2)
+      (dolist (effect (aref etaf--queues phase))
+        (etaf--park effect))
+      (aset etaf--queues phase nil))
+    (dolist (runtime etaf--dirty-runtimes)
+      (setf (etaf-runtime-dirty runtime) nil))
+    (let ((dirty (etaf--txn-dirty txn)))
+      (setq etaf--dirty-runtimes (car dirty))
+      (cl-loop for runtime in (car dirty) for flag in (cdr dirty)
+               do (setf (etaf-runtime-dirty runtime) flag)))))
+
+(defun etaf--requeue-parked ()
+  "Queue the parked effects to run again."
+  (let ((parked (nreverse etaf--parked-effects)))
+    (setq etaf--parked-effects nil)
+    (dolist (effect parked)
+      (when (etaf-effect-active effect)
+        (let ((old (etaf-effect-state effect)))
+          (setf (etaf-effect-state effect) 2)
+          (when (= old 0) (etaf--enqueue effect)))))))
 
 ;;;; Evaluation contexts
 
@@ -175,7 +364,8 @@ QUIET, each later run records an update of CTX's Component instance."
                    (setq first nil)
                  (unless quiet (etaf--note-update ctx)))
                (etaf--ctx-call ctx function))
-             :phase 1 :owner owner :scope nil)))
+             :phase 1 :owner owner :scope nil :data etaf--txn)))
+      (when etaf--txn (push effect (etaf--txn-created etaf--txn)))
       (condition-case err
           (etaf-reactive-effect-run effect)
         ((error quit)
@@ -192,8 +382,11 @@ QUIET, each later run records an update of CTX's Component instance."
     (etaf-reactive-effect-run effect)))
 
 (defun etaf--stop (effect)
-  "Stop EFFECT when non-nil."
-  (when effect (etaf-reactive-effect-stop effect t)))
+  "Stop EFFECT when non-nil; a rollback revives a committed effect."
+  (when (and effect (etaf-effect-active effect))
+    (when (and etaf--txn (not (etaf--txn-fresh-p effect)))
+      (push effect (etaf--txn-stopped etaf--txn)))
+    (etaf-reactive-effect-stop effect t)))
 
 ;;;; Host properties
 
@@ -668,12 +861,12 @@ For a Host SEG, place its kids' nodes from the start of its node."
             (cond
              ((and (eq at parent) (= (ebox-node-index node) index)))
              ((eq at parent)
-              (ebox-node-move node (if (< (ebox-node-index node) index)
-                                       (1- index) index))
+              (etaf--node-move node (if (< (ebox-node-index node) index)
+                                        (1- index) index))
               (setq changed t))
              (t
-              (when at (ebox-node-remove node))
-              (ebox-node-insert parent node index)
+              (when at (etaf--node-remove node))
+              (etaf--node-insert parent node index)
               (setq changed t))))
           (setq index (1+ (ebox-node-index node))))
         (when changed (etaf--runtime-changed runtime))))))
@@ -685,7 +878,7 @@ For a Host SEG, place its kids' nodes from the start of its node."
     (when runtime
       (if (or (null parent) (eq parent (etaf-runtime-wrapper runtime)))
           (etaf--root-dirty runtime)
-        (ebox-node-remove node)
+        (etaf--node-remove node)
         (etaf--runtime-changed runtime)))))
 
 
@@ -763,7 +956,7 @@ A failure disposes the segments already built."
   "Build and return the segment of View ITEM with KEY under PARENT in CTX.
 A failure disposes everything the segment acquired and re-signals."
   (let ((seg (etaf--seg-make :kind (etaf--item-kind item) :parent parent
-                             :ctx ctx :src item :key key)))
+                             :ctx ctx :src item :key key :txn etaf--txn)))
     (condition-case err
         (progn
           (pcase (etaf--seg-kind seg)
@@ -878,13 +1071,14 @@ disposed.  When SEG is live its nodes are moved into place."
          (ref (or (plist-get props :ref) (etaf--host-generated-ref seg)))
          (eprops (etaf--compute-eprops name props ctx theme runtime host ref))
          (node (etaf--seg-node seg)))
-    (setf (etaf--host-props host) props
+    (setf (etaf--host-props host) (etaf--resolve-theme-plist props theme)
           (etaf--host-ref host) ref)
     (unless (equal eprops (etaf--host-eprops host))
-      (setf (etaf--host-eprops host) eprops)
-      (when node
-        (ebox-node-set-props node eprops)
-        (etaf--runtime-changed runtime)))
+      (let ((old (etaf--host-eprops host)))
+        (setf (etaf--host-eprops host) eprops)
+        (when node
+          (etaf--node-set-props node eprops old)
+          (etaf--runtime-changed runtime))))
     (when node (etaf--host-commit seg))))
 
 (defun etaf--host-bind-props (seg)
@@ -909,10 +1103,11 @@ disposed.  When SEG is live its nodes are moved into place."
   "Show TEXT in Text Host SEG."
   (let ((host (etaf--seg-data seg)))
     (unless (equal-including-properties text (etaf--host-text host))
-      (setf (etaf--host-text host) text)
-      (when-let* ((node (etaf--seg-node seg)))
-        (ebox-node-set-text node text)
-        (etaf--runtime-changed (etaf--seg-runtime seg))))))
+      (let ((old (etaf--host-text host)))
+        (setf (etaf--host-text host) text)
+        (when-let* ((node (etaf--seg-node seg)))
+          (etaf--node-set-text node text old)
+          (etaf--runtime-changed (etaf--seg-runtime seg)))))))
 
 (defun etaf--text-bind (seg)
   "Bind Text Host SEG's payload."
@@ -936,7 +1131,8 @@ disposed.  When SEG is live its nodes are moved into place."
   (let* ((item (etaf--seg-src seg))
          (name (etaf--view-node-name item))
          (ctx (etaf--seg-ctx seg))
-         (host (etaf--host-make :id (etaf--next-id (etaf--ictx-runtime ctx)))))
+         (host (etaf--host-make :id (etaf--next-id (etaf--ictx-runtime ctx))
+                               :txn etaf--txn)))
     (setf (etaf--seg-data seg) host)
     (unless (memq name '(text box row column flex grid image))
       (signal 'etaf-renderer-error
@@ -984,7 +1180,7 @@ disposed.  When SEG is live its nodes are moved into place."
     (let* ((hosts (etaf-runtime-hosts runtime))
            (seg (gethash ref hosts)))
       (when (and seg (eq (etaf--seg-data seg) host))
-        (remhash ref hosts)))
+        (etaf--jremhash ref hosts)))
     (setf (etaf--host-reg host) nil)))
 
 (defun etaf--host-commit (seg)
@@ -996,12 +1192,12 @@ disposed.  When SEG is live its nodes are moved into place."
           (progn
             (unless (equal ref (etaf--host-reg host))
               (etaf--host-unregister runtime host)
-              (puthash ref seg (etaf-runtime-hosts runtime))
+              (etaf--jputhash ref seg (etaf-runtime-hosts runtime))
               (setf (etaf--host-reg host) ref))
-            (puthash (etaf--seg-node seg) seg (etaf-runtime-nodes runtime)))
+            (etaf--jputhash (etaf--seg-node seg) seg (etaf-runtime-nodes runtime)))
         (when (etaf--host-reg host)
           (etaf--host-unregister runtime host)
-          (remhash (etaf--seg-node seg) (etaf-runtime-nodes runtime))))
+          (etaf--jremhash (etaf--seg-node seg) (etaf-runtime-nodes runtime))))
       (etaf--host-sync-behaviors seg))))
 
 ;;;; Behaviors
@@ -1014,7 +1210,20 @@ disposed.  When SEG is live its nodes are moved into place."
                            (etaf-behavior-spec-attributes right))))
 
 (defun etaf--behavior-cleanup (runtime states)
-  "Run the cleanups of Behavior STATES, recording failures on RUNTIME."
+  "Run the cleanups of Behavior STATES, recording failures on RUNTIME.
+States installed by the current transaction are cleaned now; committed
+states are cleaned when the transaction commits."
+  (when etaf--txn
+    (let ((fresh (etaf--txn-installs etaf--txn)) now later)
+      (dolist (state states)
+        (if (memq state fresh)
+            (progn (setq fresh (delq state fresh)) (push state now))
+          (push state later)))
+      (setf (etaf--txn-installs etaf--txn) fresh)
+      (when later
+        (setq later (nreverse later))
+        (etaf--txn-defer (lambda () (etaf--behavior-cleanup runtime later))))
+      (setq states (nreverse now))))
   (dolist (state states)
     (when-let* ((cleanup (cddr state)))
       (condition-case err
@@ -1054,7 +1263,7 @@ disposed.  When SEG is live its nodes are moved into place."
                                           (equal (cadr state) ref)))
                                    old)))
             (when state
-              (setq old (delq state old))
+              (setq old (remq state old))
               (push state kept))
             (push (cons spec state) wanted)))
         (etaf--behavior-cleanup runtime old)
@@ -1062,9 +1271,12 @@ disposed.  When SEG is live its nodes are moved into place."
           (condition-case err
               (dolist (entry (nreverse wanted))
                 (push (or (cdr entry)
-                          (cons (car entry)
-                                (cons ref (etaf--behavior-install
-                                           runtime (car entry) props ref))))
+                          (let ((state (cons (car entry)
+                                             (cons ref (etaf--behavior-install
+                                                        runtime (car entry) props ref)))))
+                            (when etaf--txn
+                              (push state (etaf--txn-installs etaf--txn)))
+                            state))
                       states))
             ((error quit)
              (setf (etaf--host-behaviors host)
@@ -1108,7 +1320,7 @@ disposed.  When SEG is live its nodes are moved into place."
   (let* ((ctx (etaf--seg-ctx seg))
          (cell (etaf--ref-create :value item))
          (row (etaf--seg-make :kind 'row :parent seg :ctx ctx :src item
-                              :key key :data cell)))
+                              :key key :data cell :txn etaf--txn)))
     (condition-case err
         (progn
           (setf (etaf--seg-kids row)
@@ -1208,18 +1420,19 @@ stays proportional to the change."
         (let* ((row (car entry)) (item (cdr entry)) (cell (etaf--seg-data row)))
           (setf (etaf--seg-src row) item)
           (unless (eq (etaf-ref-value cell) item)
-            (etaf--ref-install cell item)
-            (etaf--notify cell 2))))
+            (etaf--cell-install cell item))))
       (dolist (row mid-old)
         (when (gethash row mid-old-set)
-          (remhash (etaf--seg-key row) table)
+          (etaf--jremhash (etaf--seg-key row) table)
           (etaf--dispose row live)))
-      (dolist (row fresh) (puthash (etaf--seg-key row) row table))
+      (dolist (row fresh) (etaf--jputhash (etaf--seg-key row) row table))
       (unless (and (null mid-old) (null mid-rows))
         (setf (etaf--seg-kids seg)
               (cond
                ((and (null mid-old) (null suffix) (null otail) last-cell)
                 ;; Pure append: the retained prefix is the whole old list.
+                (let ((cell last-cell))
+                  (etaf--journal (lambda () (setcdr cell nil))))
                 (setcdr last-cell mid-rows)
                 old)
                (t (append (take plen old) mid-rows suffix)))))
@@ -1246,12 +1459,12 @@ stays proportional to the change."
               (cond
                ((and (eq at parent) (= (ebox-node-index node) index)))
                ((eq at parent)
-                (ebox-node-move node (if (< (ebox-node-index node) index)
-                                         (1- index) index))
+                (etaf--node-move node (if (< (ebox-node-index node) index)
+                                          (1- index) index))
                 (setq changed t))
                (t
-                (when at (ebox-node-remove node))
-                (ebox-node-insert parent node index)
+                (when at (etaf--node-remove node))
+                (etaf--node-insert parent node index)
                 (setq changed t))))
             (setq index (1+ (ebox-node-index node)))))
         (when changed (etaf--runtime-changed runtime))))))
@@ -1311,8 +1524,7 @@ stays proportional to the change."
              do (let ((value (plist-get props (etaf--component-prop-key name)))
                       (cell (aref cells index)))
                   (unless (etaf--reactive-same-p (etaf-ref-value cell) value)
-                    (etaf--ref-install cell value)
-                    (etaf--notify cell 2))))))
+                    (etaf--cell-install cell value))))))
 
 (defun etaf--comp-bind-inputs (inst)
   "Bind INST's business props, retaining an effect when they are dynamic."
@@ -1412,13 +1624,11 @@ stays proportional to the change."
          (names (etaf--component-spec-props spec))
          (inst (etaf--instance-make
                 :id id :runtime runtime :spec spec :seg seg :pctx pctx :call call
+                :txn etaf--txn
                 :cells (vconcat (list names)
                                 (mapcar (lambda (_) (etaf--ref-create)) names))
                 :slots-ref (and runtime (etaf--ref-create
                                          :value (etaf--component-call-slots call))))))
-    (when (and setup (null runtime))
-      (signal 'etaf-renderer-error
-              (list "Stateful Component requires `etaf-mount'")))
     (setf (etaf--seg-data seg) inst
           (etaf--instance-ctx inst)
           (etaf--ictx-make
@@ -1428,8 +1638,15 @@ stays proportional to the change."
                                               :owner-id id)
                       (etaf--ictx-context pctx))
            :theme (if setup 'unset (etaf--ictx-theme pctx))))
-    (when runtime (puthash id inst (etaf-runtime-instances runtime)))
+    (when runtime
+      (etaf--jputhash id inst (etaf-runtime-instances runtime))
+      (when etaf--txn (push inst (etaf--txn-instances etaf--txn))))
+    ;; Inputs are validated first, so invalid props report the same error
+    ;; with or without a Runtime.
     (etaf--comp-bind-inputs inst)
+    (when (and setup (null runtime))
+      (signal 'etaf-renderer-error
+              (list "Stateful Component requires `etaf-mount'")))
     (when setup (etaf--comp-setup inst))
     (etaf--comp-bind-render seg)
     (when runtime
@@ -1450,8 +1667,7 @@ stays proportional to the change."
       (setf (etaf--instance-input-effect inst) nil)
       (etaf--comp-bind-inputs inst))
     (when (and ref (not (eq slots (etaf-ref-value ref))))
-      (etaf--ref-install ref slots)
-      (etaf--notify ref 2))
+      (etaf--cell-install ref slots))
     (unless (etaf--value-same-p (etaf--component-call-attrs old)
                                 (etaf--component-call-attrs call))
       (etaf--comp-show seg (etaf--instance-view inst)))))
@@ -1466,12 +1682,17 @@ stays proportional to the change."
       (setf (etaf--instance-dead inst) t)
       (let ((runtime (etaf--instance-runtime inst)))
         (when-let* ((scope (etaf--instance-scope inst)))
-          (let ((errors (let ((etaf--render-phase-p nil)) (etaf-scope-stop scope))))
-            (when runtime
-              (setf (etaf-runtime-errors runtime)
-                    (append errors (etaf-runtime-errors runtime))))))
+          (let ((stop (lambda ()
+                        (let ((errors (let ((etaf--render-phase-p nil))
+                                        (etaf-scope-stop scope))))
+                          (when runtime
+                            (setf (etaf-runtime-errors runtime)
+                                  (append errors (etaf-runtime-errors runtime))))))))
+            (if (and etaf--txn (not (eq (etaf--instance-txn inst) etaf--txn)))
+                (etaf--txn-defer stop)
+              (funcall stop))))
         (when runtime
-          (remhash (etaf--instance-id inst) (etaf-runtime-instances runtime))
+          (etaf--jremhash (etaf--instance-id inst) (etaf-runtime-instances runtime))
           (when (etaf--instance-mounted-p inst)
             (push inst (etaf-runtime-retired-instances runtime))
             (etaf--runtime-touch runtime)))))))
@@ -1490,7 +1711,7 @@ stays proportional to the change."
          (when runtime
            (etaf--host-unregister runtime host)
            (when (etaf--seg-node seg)
-             (remhash (etaf--seg-node seg) (etaf-runtime-nodes runtime)))
+             (etaf--jremhash (etaf--seg-node seg) (etaf-runtime-nodes runtime)))
            (let ((states (etaf--host-behaviors host)))
              (setf (etaf--host-behaviors host) nil)
              (etaf--behavior-cleanup runtime states))))
@@ -1659,18 +1880,40 @@ Host's `:ref' and to Host query, focus or event APIs."
       (etaf--run-hooks runtime (etaf--instance-unmounted-hooks inst)))))
 
 (defun etaf--drain-commit ()
-  "Commit every dirty Runtime; return non-nil when one was committed."
-  (when etaf--dirty-runtimes
-    (let ((runtimes (nreverse etaf--dirty-runtimes)))
-      (setq etaf--dirty-runtimes nil)
-      (dolist (runtime runtimes)
-        (setf (etaf-runtime-dirty runtime) nil)
-        (when (etaf-runtime-mounted-p runtime)
-          (etaf--runtime-commit runtime)))
-      t)))
+  "Commit every dirty Runtime; return non-nil when one was committed.
+When a pre or render effect failed, first roll back the transaction so
+only work committed before it remains."
+  (let ((txn etaf--txn))
+    (setq etaf--txn nil etaf--run-log nil)
+    (when txn
+      (if etaf--drain-failed
+          (progn (setq etaf--drain-failed nil)
+                 (etaf--txn-rollback txn))
+        (etaf--txn-commit txn)))
+    (prog1
+        (when etaf--dirty-runtimes
+          (let ((runtimes (nreverse etaf--dirty-runtimes)))
+            (setq etaf--dirty-runtimes nil)
+            (dolist (runtime runtimes)
+              (setf (etaf-runtime-dirty runtime) nil)
+              (when (etaf-runtime-mounted-p runtime)
+                (etaf--runtime-commit runtime)))
+            t))
+      (setq etaf--txn (etaf--txn-begin)
+            etaf--run-log (etaf--txn-ran etaf--txn)))))
+
+(defun etaf--drain-around (loop)
+  "Run the drain LOOP in one Ebox batch and one transaction per commit."
+  (when (and etaf--parked-effects
+             (or etaf--retry-parked (aref etaf--queues 0) (aref etaf--queues 1)))
+    (etaf--requeue-parked))
+  (let* ((etaf--txn (etaf--txn-begin))
+         (etaf--run-log (etaf--txn-ran etaf--txn))
+         (etaf--retry-parked nil))
+    (ebox-call-with-batch loop)))
 
 (setq etaf--drain-commit-function #'etaf--drain-commit
-      etaf--drain-around-function #'ebox-call-with-batch)
+      etaf--drain-around-function #'etaf--drain-around)
 
 ;;;; Mounting
 
@@ -1712,7 +1955,9 @@ provide `:viewport-width' in pixels, `:viewport-height' in lines and
 `:observer', a one-argument report sink installed before the first render."
   (etaf--assert-not-rendering 'mount-runtime)
   (setq options (etaf--validate-mount-options options))
-  (let* ((buffer (get-buffer-create buffer-or-name))
+  (let* ((etaf--txn nil)
+         (etaf--run-log nil)
+         (buffer (get-buffer-create buffer-or-name))
          (old (gethash buffer etaf--runtimes)))
     (when old (etaf--runtime-unmount-now old))
     (let* ((runtime (etaf--runtime-make
@@ -1756,7 +2001,9 @@ See `etaf-runtime-mount'."
     (setf (etaf-runtime-mounted-p runtime) nil)
     (let ((buffer (etaf-runtime-buffer runtime))
           (root (etaf-runtime-root runtime))
-          (etaf--render-phase-p nil))
+          (etaf--render-phase-p nil)
+          (etaf--txn nil)
+          (etaf--run-log nil))
       (when (eq (gethash buffer etaf--runtimes) runtime)
         (remhash buffer etaf--runtimes))
       (when root (etaf--dispose root nil))
@@ -1827,7 +2074,8 @@ Signal `etaf-runtime-error' when none is mounted."
   "Settle mounted RUNTIME's pending work and return its revision."
   (let ((runtime (etaf-runtime-require-mounted runtime)))
     (unless (or etaf--draining (> etaf--batch-depth 0) etaf--render-phase-p)
-      (etaf--drain))
+      (let ((etaf--retry-parked t))
+        (etaf--drain)))
     (etaf-runtime-rev runtime)))
 
 ;;;; Observation and operations
@@ -1948,7 +2196,8 @@ FINISHER receives RUNTIME and runs before a press on another Host."
 ;;;###autoload
 (defun etaf-runtime-refit (runtime viewport-width &optional viewport-height)
   "Fix RUNTIME's viewport to VIEWPORT-WIDTH pixels and VIEWPORT-HEIGHT lines.
-Return non-nil when the layout changed."
+Return non-nil when the layout changed.  During a native input session the
+refit waits, returning nil, until the session ends."
   (let ((runtime (etaf-runtime-require-mounted runtime)))
     (unless (and (numberp viewport-width) (> viewport-width 0))
       (signal 'wrong-type-argument (list 'numberp viewport-width)))

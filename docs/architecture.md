@@ -115,6 +115,20 @@ nodes changed.  Ebox then writes only damaged buffer regions.  The Runtime's
 mounted buffer.  `etaf-runtime-flush` drains pending work for a mounted Runtime
 when possible and returns that revision.
 
+Each commit is atomic.  While pre and render effects run, every change they
+make to retained state is recorded in an undo journal proportional to the work
+touched: segment, Host and instance slot writes, Host and instance index
+entries, internal prop and row cells, and Ebox node edits.  Objects created in
+the same transaction are not journaled; their creation is undone by stopping
+them.  Cleanup of replaced committed resources (Behavior installations,
+Component Scopes, stopped effects) is deferred until the commit succeeds.  If
+a pre or render effect fails, the journal is replayed backwards, new effects,
+Scopes and installations are released, and the effects that ran are parked.
+The buffer, revision and post watchers then remain as before the update.
+Application refs keep their written values.  The next drain with queued work,
+or an explicit `etaf-runtime-flush`, re-runs parked effects together with the
+new work, so a persistent failure keeps the last committed UI until it is fixed.
+
 Scopes own effects, computeds, watchers and cleanup.  Disposing a Component
 Scope stops child Scopes and effects before cleanup runs.  A stopped Scope
 cannot accept new work.
@@ -196,7 +210,8 @@ recreate the View tree to resize the buffer.
    retained Ebox node tree.  Host/node maps are indexes into that tree, not a
    second authority.
 2. **One visible write boundary.**  A Runtime commit performs at most one Ebox
-   flush, and that flush writes changed buffer regions once.
+   flush, and that flush writes changed buffer regions once.  A failed pre or
+   render effect discards the whole transaction before any buffer write.
 3. **Binding ownership.**  Each fine-grained binding owns exactly one Host node
    property set, one text payload or one dynamic child region.  It may read many
    reactive sources but may patch only its own target.

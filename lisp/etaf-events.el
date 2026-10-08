@@ -228,10 +228,12 @@ RUNTIME defaults to the Runtime in the current buffer."
       (ebox-input-active-p (etaf-runtime-buffer runtime)))))
 
 (defun etaf-host-ref-bounds (runtime host-ref)
-  "Return live Ebox bounds for HOST-REF in mounted RUNTIME."
+  "Return live Ebox bounds for HOST-REF in mounted RUNTIME.
+The (START . END) span runs from the Host's first visible painted cell to
+the end of its last painted row, or is nil when the Host is not painted."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (when-let* ((node (etaf-runtime-host-node runtime host-ref)))
-    (ebox-node-bounds node)))
+    (ebox-node-bounds node t)))
 
 ;;;###autoload
 (defun etaf-host-ref-size (runtime host-ref)

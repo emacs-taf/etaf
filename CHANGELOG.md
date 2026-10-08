@@ -87,6 +87,10 @@
 - Migration: use `etaf-runtime-revision` or the value returned by
   `etaf-runtime-flush` instead of generation APIs.  Compare revisions to
   observe that a publication reached the buffer.
+- A failing binding discards its whole update: the buffer, revision and mount
+  callbacks stay as last committed while written refs keep their values.  The
+  next write or `etaf-runtime-flush` retries the discarded work, so later
+  updates wait until the failure is fixed.
 
 - Video image frames share row-sized slices of one Retina-resolution image,
   keeping adjacent text at normal line height. Each frame updates the retained
