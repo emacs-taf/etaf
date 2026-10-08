@@ -1054,7 +1054,8 @@
 ;;;###autoload (autoload 'etaf-runtime-revision "etaf" nil nil)
 ;; Return RUNTIME's committed revision, an integer that increases once for
 ;; every commit that changed its buffer (ordinary reactive work, Host content
-;; or geometry updates and refits).  Tests and benchmarks compare revisions
+;; or geometry updates, and `etaf-runtime-refit' or `etaf-refit' calls that
+;; changed the layout).  Tests and benchmarks compare revisions
 ;; to observe that a change was published.
 ;;
 ;; Function: etaf-runtime-set-input-finisher (runtime finisher)

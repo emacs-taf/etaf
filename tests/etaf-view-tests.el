@@ -50,6 +50,16 @@
         (should (equal (etaf-test-lines) '("header" "second")))
         (should (> (etaf-runtime-revision runtime) revision))))))
 
+(ert-deftest etaf-view-refit-advances-revision-only-on-layout-change ()
+  "A refit that changes the viewport commits a revision; an equal one does not."
+  (etaf-test-with-mount (runtime (etaf-view (row (text "left") (text "right"))))
+    (let ((revision (etaf-runtime-revision runtime)))
+      (should (etaf-runtime-refit runtime 400 40))
+      (should (equal (etaf-runtime-viewport runtime) '(400 . 40)))
+      (should (= (etaf-runtime-revision runtime) (1+ revision)))
+      (should-not (etaf-runtime-refit runtime 400 40))
+      (should (= (etaf-runtime-revision runtime) (1+ revision))))))
+
 (ert-deftest etaf-view-batches-writes-into-one-commit ()
   "Writes inside one batch become visible together in one revision."
   (let ((a (etaf-ref "a")) (b (etaf-ref "b")))

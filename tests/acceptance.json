@@ -439,6 +439,11 @@
       "purpose": "A mounted View paints static text and updates an expression in place."
     },
     {
+      "name": "etaf-view-refit-advances-revision-only-on-layout-change",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "A refit that changes the viewport commits a revision; an equal one does not."
+    },
+    {
       "name": "etaf-view-batches-writes-into-one-commit",
       "file": "tests/etaf-view-tests.el",
       "purpose": "Writes inside one batch become visible together in one revision."
