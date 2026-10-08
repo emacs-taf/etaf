@@ -34,6 +34,16 @@
                          :columns 2 :rows 2)))))))
     (should (equal "..\n.." text))))
 
+(ert-deftest etaf-image-test-accepts-image-descriptors ()
+  "An image descriptor is a source; undecodable data becomes a placeholder."
+  (let ((text (substring-no-properties
+               (ebox-render
+                (etaf-render
+                 (etaf-view
+                  (image :src '(image :type png :data "not a png")
+                         :columns 3 :rows 2)))))))
+    (should (equal "...\n..." text))))
+
 (ert-deftest etaf-image-test-inside-layout-keeps-its-grid ()
   "An image inside a Row keeps its own cell size next to ordinary text."
   (let ((text (substring-no-properties
@@ -50,6 +60,9 @@
   "Invalid source, size, adapter and children are reported before publication."
   (should-error
    (etaf-render (etaf-view (image :src 42 :columns 4 :rows 2)))
+   :type 'etaf-renderer-error)
+  (should-error
+   (etaf-render (etaf-view (image :src '(image :type png) :columns 4 :rows 2)))
    :type 'etaf-renderer-error)
   (should-error
    (etaf-render (etaf-view (image :src "/tmp/x.png" :columns 0 :rows 2)))

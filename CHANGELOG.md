@@ -4,6 +4,12 @@
 
 ### Added
 
+- Hosts accept `:sticky 'top`: the Host's row stays pinned in the window's
+  header line once the window scrolls past it, and header clicks run its
+  press bindings, so app bars and back buttons remain reachable.
+- `image :src` also accepts an Emacs image descriptor with `:type` and
+  `:data` or `:file`, so in-memory thumbnails and generated SVG render
+  without temporary files.
 - `etaf-selector` returns a keyed membership reader over a reactive source,
   so moving a selection across a long list re-renders only the previous and
   the new row instead of every row.

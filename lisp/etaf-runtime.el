@@ -50,7 +50,7 @@
   (nodes (make-hash-table :test #'eq))
   (rev 0) dirty changed new-instances updated-instances retired-instances
   errors observer (event-depth 0) (next-operation-id 0) mount-id
-  fixed-viewport view (next-id 0))
+  fixed-viewport view (next-id 0) sticky)
 
 (etaf--defstruct (etaf--ictx (:constructor etaf--ictx-make) (:copier nil))
   "Evaluation context of one Component instance: owner, Context and theme."
@@ -429,6 +429,10 @@ QUIET, each later run records an update of CTX's Component instance."
              (unless (memq value '(nil t))
                (signal 'etaf-renderer-error
                        (list ":disabled must be boolean"))))
+            ((eq property :sticky)
+             (unless (memq value '(nil top))
+               (signal 'etaf-renderer-error
+                       (list ":sticky must be `top' or nil"))))
             ((eq property :tab-index)
              (unless (or (null value) (integerp value))
                (signal 'etaf-renderer-error
@@ -636,9 +640,15 @@ with only a reference or accessibility label remains part of its parent."
         (columns (plist-get props :columns))
         (rows (plist-get props :rows))
         (adapter (or (plist-get props :adapter) 'auto)))
-    (unless (stringp src)
+    (unless (or (stringp src)
+                (and (consp src) (eq (car src) 'image)
+                     (proper-list-p (cdr src))
+                     (symbolp (plist-get (cdr src) :type))
+                     (or (stringp (plist-get (cdr src) :data))
+                         (stringp (plist-get (cdr src) :file)))))
       (signal 'etaf-renderer-error
-              (list (format "Image :src must be a file path string: %S" src))))
+              (list (format "Image :src must be a file path or an image descriptor with :type and :data or :file: %S"
+                            src))))
     (dolist (pair (list (cons :columns columns) (cons :rows rows)))
       (unless (and (integerp (cdr pair)) (> (cdr pair) 0))
         (signal 'etaf-renderer-error
@@ -1245,6 +1255,12 @@ property computation: keys, metadata, Behaviors or the Theme changed."
         (when (etaf--host-reg host)
           (etaf--host-unregister runtime host)
           (etaf--jremhash (etaf--seg-node seg) (etaf-runtime-nodes runtime))))
+      (when (if (plist-get (etaf--host-props host) :sticky)
+                (not (equal ref (etaf-runtime-sticky runtime)))
+              (equal ref (etaf-runtime-sticky runtime)))
+        (setf (etaf-runtime-sticky runtime)
+              (and (plist-get (etaf--host-props host) :sticky) ref))
+        (etaf--runtime-changed runtime))
       (etaf--host-sync-behaviors seg))))
 
 ;;;; Behaviors
@@ -1909,7 +1925,8 @@ Host's `:ref' and to Host query, focus or event APIs."
   (when (etaf-runtime-changed runtime)
     (setf (etaf-runtime-changed runtime) nil)
     (ebox-flush)
-    (cl-incf (etaf-runtime-rev runtime)))
+    (cl-incf (etaf-runtime-rev runtime))
+    (etaf--sticky-refresh runtime))
   (let ((mounted (etaf-runtime-new-instances runtime))
         (updated (etaf-runtime-updated-instances runtime))
         (retired (etaf-runtime-retired-instances runtime)))
@@ -2139,6 +2156,136 @@ Signal `etaf-runtime-error' when none is mounted."
       (let ((etaf--retry-parked t))
         (etaf--drain)))
     (etaf-runtime-rev runtime)))
+
+;;;; Sticky Host
+;;
+;; A `:sticky top' Host stays visible while its buffer scrolls: once a
+;; window's start reaches the Host, its first row is mirrored into that
+;; window's header line and the window starts after the Host, so the row
+;; neither duplicates nor shifts the content.  Header clicks run the
+;; mirrored cell's primary binding at its buffer position.
+
+(defvar-local etaf--sticky-span nil
+  "(START . NEXT) of the sticky Host's lines, or nil.")
+
+(defvar-local etaf--sticky-string nil
+  "Header line string mirroring the sticky Host's first row.")
+(put 'etaf--sticky-string 'risky-local-variable t)
+
+(defvar-local etaf--sticky-remap nil
+  "Face remapping cookie of the sticky header line, or nil.")
+
+(defun etaf--sticky-span-of (runtime)
+  "Return (START . NEXT) of RUNTIME's sticky Host lines, or nil."
+  (when-let* ((ref (etaf-runtime-sticky runtime))
+              (seg (gethash ref (etaf-runtime-hosts runtime)))
+              ((plist-get (etaf--host-props (etaf--seg-data seg)) :sticky))
+              (node (etaf--seg-node seg))
+              (bounds (ebox-node-bounds node t)))
+    (save-excursion
+      (goto-char (car bounds))
+      (let ((start (line-beginning-position)))
+        (goto-char (cdr bounds))
+        (forward-line 1)
+        (cons start (point))))))
+
+(defun etaf--sticky-click (buffer position map)
+  "Return a header keymap running MAP's primary binding at POSITION in BUFFER."
+  (let ((header (make-sparse-keymap)))
+    (define-key header [header-line down-mouse-1] #'ignore)
+    (define-key header [header-line mouse-1]
+                (lambda ()
+                  (interactive)
+                  (when (buffer-live-p buffer)
+                    (with-current-buffer buffer
+                      (when-let* ((command (lookup-key map [mouse-1]))
+                                  ((commandp command)))
+                        (save-excursion
+                          (goto-char position)
+                          (funcall command)))))))
+    header))
+
+(defun etaf--sticky-header (span)
+  "Return the header string mirroring the first row of SPAN."
+  (let* ((start (car span))
+         (end (save-excursion (goto-char start) (line-end-position)))
+         (text (buffer-substring start end))
+         (position 0))
+    (while (< position (length text))
+      (let ((next (next-single-property-change position 'keymap text (length text)))
+            (map (get-text-property position 'keymap text)))
+        (when (and (keymapp map) (lookup-key map [mouse-1]))
+          (put-text-property position next 'keymap
+                             (etaf--sticky-click (current-buffer)
+                                                 (+ start position) map)
+                             text))
+        (setq position next)))
+    text))
+
+(defun etaf--sticky-window-update (window)
+  "Show or hide WINDOW's sticky header line and keep the Host out of its body."
+  (with-current-buffer (window-buffer window)
+    (let ((span etaf--sticky-span)
+          (start (window-start window))
+          (point (window-point window))
+          (shown nil))
+      (when (and span (>= start (car span))
+                 (not (and (>= point (car span)) (< point (cdr span)))))
+        (setq shown t)
+        (when (< start (cdr span))
+          (set-window-start window (cdr span) t)))
+      (unless (eq (not shown)
+                  (eq (window-parameter window 'header-line-format) 'none))
+        (set-window-parameter window 'header-line-format (unless shown 'none))
+        (force-mode-line-update)))))
+
+(defun etaf--sticky-scroll (window _start)
+  "Update WINDOW's sticky header after it scrolled."
+  (etaf--sticky-window-update window))
+
+(defun etaf--sticky-point ()
+  "Update the selected window's sticky header after a command."
+  (when (eq (window-buffer) (current-buffer))
+    (etaf--sticky-window-update (selected-window))))
+
+(defun etaf--sticky-windows ()
+  "Update every window showing the current buffer."
+  (dolist (window (get-buffer-window-list nil nil t))
+    (etaf--sticky-window-update window)))
+
+(defun etaf--sticky-refresh (runtime)
+  "Mirror RUNTIME's sticky Host into its buffer's header line."
+  (let ((buffer (etaf-runtime-buffer runtime)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (let ((span (etaf--sticky-span-of runtime)))
+          (cond
+           (span
+            (unless etaf--sticky-remap
+              (setq etaf--sticky-remap
+                    (face-remap-add-relative
+                     'header-line '(:inherit default :box nil :underline nil
+                                    :overline nil :inverse-video nil)))
+              (setq-local header-line-format 'etaf--sticky-string)
+              (add-hook 'window-scroll-functions #'etaf--sticky-scroll nil t)
+              (add-hook 'post-command-hook #'etaf--sticky-point nil t)
+              (add-hook 'window-configuration-change-hook
+                        #'etaf--sticky-windows nil t))
+            (setq etaf--sticky-span span
+                  etaf--sticky-string (etaf--sticky-header span))
+            (etaf--sticky-windows))
+           (etaf--sticky-remap
+            (face-remap-remove-relative etaf--sticky-remap)
+            (kill-local-variable 'header-line-format)
+            (remove-hook 'window-scroll-functions #'etaf--sticky-scroll t)
+            (remove-hook 'post-command-hook #'etaf--sticky-point t)
+            (remove-hook 'window-configuration-change-hook
+                         #'etaf--sticky-windows t)
+            (setq etaf--sticky-remap nil
+                  etaf--sticky-span nil
+                  etaf--sticky-string nil)
+            (dolist (window (get-buffer-window-list nil nil t))
+              (set-window-parameter window 'header-line-format nil)))))))))
 
 ;;;; Observation and operations
 

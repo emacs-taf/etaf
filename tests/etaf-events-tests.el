@@ -202,6 +202,28 @@
         (should (> (car size) 0)))
       (should-not (etaf-host-ref-bounds runtime 'missing)))))
 
+(ert-deftest etaf-events-sticky-host-mirrors-header-line ()
+  "A `:sticky top' Host owns the header line and forwards header clicks."
+  (let ((sticky (etaf-ref 'top)) (presses 0))
+    (etaf-test-with-mount (runtime (etaf-view
+                                    (column
+                                     (row :sticky (etaf-value sticky)
+                                          (box :on-press (lambda () (cl-incf presses))
+                                               "Back")
+                                          " Title")
+                                     "Body")))
+      ;; Batch Emacs formats no mode lines; read the construct's value.
+      (should (symbolp header-line-format))
+      (let* ((header (symbol-value header-line-format))
+             (map (get-text-property 0 'keymap header)))
+        (should (equal (string-trim header) "Back Title"))
+        (funcall (lookup-key map [header-line mouse-1]))
+        (should (= presses 1)))
+      (etaf-set-value sticky nil)
+      (should-not (local-variable-p 'header-line-format))
+      (should-error (etaf-render (etaf-view (box :sticky 'bottom "x")))
+                    :type 'etaf-renderer-error))))
+
 (ert-deftest etaf-events-retained-host-updates ()
   "Retained content and geometry updates change one Host and bump the revision."
   (etaf-test-with-mount (runtime (etaf-view (column (text :ref 'frame "frame 0")

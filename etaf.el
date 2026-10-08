@@ -717,6 +717,16 @@
 ;; explicit nil blocks inheritance. Ebox validates and paints them. They do
 ;; not create an activation boundary or an ETAF hover event/state.
 ;;
+;; A Host with `:sticky top' (or nil) stays reachable while its buffer
+;; scrolls, like a CSS sticky app bar.  Once a window's start reaches the
+;; Host, the Host's first row is mirrored into that window's header line and
+;; the window body starts after the Host, so content neither duplicates nor
+;; shifts; while point is inside the Host it shows in place instead.  A
+;; primary click on a mirrored cell runs that cell's press binding at its
+;; buffer position.  One Host per Runtime is sticky (the last committed one
+;; wins); the Runtime owns `header-line-format' in its buffer only while a
+;; sticky Host is mounted.  Keep sticky Hosts to a single row.
+;;
 ;; Error: etaf-observer-error
 ;; Invalid ETAF observer operation
 ;; Catch this condition with condition-case; failed calls do not return a value.
@@ -1457,9 +1467,13 @@
 ;; Inside a `text' Host, an expression must return one string.
 ;;
 ;; The core Hosts are `text', `box', `row', `column', `flex', `grid' and
-;; `image'.  `image' renders one local media file as a fixed cell grid and
-;; takes :src (a file path), :columns and :rows (positive integers) plus an
-;; optional :adapter (`auto', `text' or `placeholder').  Unreadable or
+;; `image'.  `image' renders one local media source as a fixed cell grid and
+;; takes :src (a file path, or an image descriptor such as `create-image'
+;; returns with :type and :data or :file, for in-memory thumbnails and
+;; generated SVG), :columns and :rows (positive integers) plus an optional
+;; :adapter (`auto', `text' or `placeholder').  The source is scaled to fill
+;; the grid exactly; callers preserve aspect ratios by choosing the grid.
+;; Unreadable or
 ;; undecodable sources become a placeholder instead of failing the render, and
 ;; the image owns its size, clipping and wrapping; wrap it in ordinary Boxes
 ;; for spacing, paint and interaction.

@@ -269,6 +269,11 @@
       "purpose": "Host queries report committed props, handlers, bounds and size."
     },
     {
+      "name": "etaf-events-sticky-host-mirrors-header-line",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "A sticky Host mirrors its first row into the header line and header clicks run its press handler."
+    },
+    {
       "name": "etaf-events-retained-host-updates",
       "file": "tests/etaf-events-tests.el",
       "purpose": "Retained content and geometry updates change one Host and bump the revision."
@@ -287,6 +292,11 @@
       "name": "etaf-image-test-missing-file-falls-back-to-placeholder",
       "file": "tests/etaf-image-tests.el",
       "purpose": "An unreadable image source becomes a placeholder instead of failing the render."
+    },
+    {
+      "name": "etaf-image-test-accepts-image-descriptors",
+      "file": "tests/etaf-image-tests.el",
+      "purpose": "An image descriptor is an image source; undecodable data becomes a placeholder."
     },
     {
       "name": "etaf-image-test-inside-layout-keeps-its-grid",
