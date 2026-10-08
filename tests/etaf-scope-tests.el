@@ -74,5 +74,35 @@
       (etaf-scope-stop scope)))
   (should-error (etaf-on-scope-dispose #'ignore)))
 
+(ert-deftest etaf-selector-notifies-only-the-changed-keys ()
+  "A selector reader re-runs only when its own key's membership changes."
+  (let ((scope (etaf-effect-scope :detached t))
+        (cursor (etaf-ref 'a))
+        (runs (make-hash-table)))
+    (unwind-protect
+        (etaf-scope-run
+         scope
+         (lambda ()
+           (let ((selected (etaf-selector cursor)))
+             (dolist (key '(a b c d))
+               (etaf-watch-effect
+                (lambda ()
+                  (push (funcall selected key) (gethash key runs)))))
+             (should (equal (gethash 'a runs) '(t)))
+             (should (equal (gethash 'c runs) '(nil)))
+             (setf (etaf-value cursor) 'c)
+             (should (equal (gethash 'a runs) '(nil t)))
+             (should (equal (gethash 'c runs) '(t nil)))
+             (should (equal (gethash 'b runs) '(nil)))
+             (should (equal (gethash 'd runs) '(nil)))
+             (setf (etaf-value cursor) 'z)
+             (should (equal (gethash 'c runs) '(nil t nil)))
+             (should (equal (gethash 'b runs) '(nil)))
+             (should-not (funcall selected 'q))
+             (should-error (etaf-selector cursor :test #'string=)))))
+      (etaf-scope-stop scope))
+    (setf (etaf-value cursor) 'a)
+    (should (equal (gethash 'a runs) '(nil t)))))
+
 (provide 'etaf-scope-tests)
 ;;; etaf-scope-tests.el ends here

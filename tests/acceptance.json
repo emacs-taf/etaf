@@ -244,6 +244,16 @@
       "purpose": "Activation at point dispatches the enclosing Host's press callback."
     },
     {
+      "name": "etaf-selector-notifies-only-the-changed-keys",
+      "file": "tests/etaf-scope-tests.el",
+      "purpose": "Moving a keyed selection notifies only the previous and the new key's readers."
+    },
+    {
+      "name": "etaf-events-host-ref-at-maps-positions-to-rows",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "A buffer position resolves to the explicit ref of its innermost enclosing Host."
+    },
+    {
       "name": "etaf-events-behaviors-toggle-and-drag",
       "file": "tests/etaf-events-tests.el",
       "purpose": "Toggleable and draggable Behaviors update caller-owned refs."

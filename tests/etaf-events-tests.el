@@ -143,6 +143,22 @@
       (etaf-activate runtime)
       (should pressed))))
 
+(ert-deftest etaf-events-host-ref-at-maps-positions-to-rows ()
+  "A position resolves to the explicit ref of its innermost enclosing Host."
+  (etaf-test-with-mount (runtime (etaf-view (column
+                                              (text "header")
+                                              (row :ref 'row-1 (box :ref 'cell "one") (text " a"))
+                                              (row :ref 'row-2 (text "two")))))
+    (let ((cell (etaf-host-ref-position runtime 'cell))
+          (two (etaf-host-ref-position runtime 'row-2)))
+      (should (eq (etaf-host-ref-at runtime cell) 'cell))
+      (should (eq (etaf-host-ref-at runtime cell
+                                    (lambda (ref) (memq ref '(row-1 row-2))))
+                  'row-1))
+      (goto-char two)
+      (should (eq (etaf-host-ref-at runtime) 'row-2))
+      (should-not (etaf-host-ref-at runtime (point-min))))))
+
 (ert-deftest etaf-events-behaviors-toggle-and-drag ()
   "Toggleable and draggable Behaviors update caller-owned refs."
   (let ((on (etaf-ref nil)) (x (etaf-ref 10)))

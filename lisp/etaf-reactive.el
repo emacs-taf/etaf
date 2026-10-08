@@ -634,6 +634,51 @@ runs when the effect stops.  Return a zero-argument stop function."
     (etaf--effect-run effect)
     (lambda () (etaf-reactive-effect-stop effect))))
 
+;;;###autoload
+(cl-defun etaf-selector (source &key (test 'equal) name)
+  "Return a keyed membership reader over reactive SOURCE.
+The result is a function of one KEY returning non-nil while SOURCE's value
+equals KEY under TEST, a hash table test (`eq', `eql' or `equal').  Each
+reader depends only on its own KEY, so changing SOURCE notifies the readers
+of the previous and the new value instead of every reader.  The active Scope
+owns the watcher; NAME labels diagnostics."
+  (etaf--assert-not-rendering 'selector)
+  (unless (memq test '(eq eql equal))
+    (signal 'wrong-type-argument (list '(member eq eql equal) test)))
+  (let* ((cells (make-hash-table :test test))
+         (current (etaf-untracked (etaf-value source)))
+         (sweep 256))
+    (etaf-watch
+     source
+     (lambda (new _old)
+       (let ((previous current))
+         (setq current new)
+         (when (> (hash-table-count cells) sweep)
+           (let (idle)
+             (maphash (lambda (key cell)
+                        (unless (cl-some (lambda (node)
+                                           (etaf--node-live-p node cell))
+                                         (etaf--source-subs cell))
+                          (push key idle)))
+                      cells)
+             (dolist (key idle) (remhash key cells))
+             (setq sweep (max 256 (* 2 (hash-table-count cells))))))
+         (etaf-batch
+           (when-let* ((cell (gethash previous cells)))
+             (etaf-set-value cell nil))
+           (when-let* ((cell (gethash new cells)))
+             (etaf-set-value cell t)))))
+     :test (lambda (a b) (funcall test a b))
+     :name (or name 'selector))
+    (lambda (key)
+      (let ((cell (gethash key cells)))
+        (unless cell
+          (setq cell (etaf--ref-create
+                      :value (and (funcall test key current) t)
+                      :name (or name 'selector)))
+          (puthash key cell cells))
+        (etaf-value cell)))))
+
 ;;;; Scopes
 
 ;;;###autoload

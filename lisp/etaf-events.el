@@ -237,6 +237,25 @@ its blank slot; the result is nil when the Host owns no cells."
     (ebox-node-bounds node t)))
 
 ;;;###autoload
+(defun etaf-host-ref-at (runtime &optional position predicate)
+  "Return the explicit Host reference painted at POSITION in mounted RUNTIME.
+Walk from the innermost Host covering POSITION (default point) outwards and
+return the first `:ref' an application supplied; with PREDICATE, the first
+one PREDICATE accepts.  Return nil when no such Host encloses POSITION."
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (with-current-buffer (etaf-runtime-buffer runtime)
+    (let ((node (ebox-node-at (or position (point))))
+          (nodes (etaf-runtime-nodes runtime))
+          found)
+      (while (and node (not found))
+        (let* ((seg (gethash node nodes))
+               (ref (and seg (plist-get (etaf--host-props (etaf--seg-data seg)) :ref))))
+          (if (and ref (or (null predicate) (funcall predicate ref)))
+              (setq found ref)
+            (setq node (ebox-node-parent node)))))
+      found)))
+
+;;;###autoload
 (defun etaf-host-ref-size (runtime host-ref)
   "Return HOST-REF's committed painted size as (PIXELS . ROWS).
 RUNTIME must be mounted.  Return nil for an absent or wholly hidden Host.

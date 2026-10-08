@@ -4,6 +4,12 @@
 
 ### Added
 
+- `etaf-selector` returns a keyed membership reader over a reactive source,
+  so moving a selection across a long list re-renders only the previous and
+  the new row instead of every row.
+- `etaf-host-ref-at` maps a buffer position to the explicit `:ref` of its
+  innermost enclosing Host, optionally filtered by a predicate, so point-driven
+  selection and row commands do not need private buffer properties.
 - `etaf-runtime-refit` accepts a nil width, which keeps that dimension
   following the window while the height stays fixed.
 - `make native` byte-compiles ETAF and stores native code in the user's

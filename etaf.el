@@ -670,6 +670,14 @@
 ;; the end of its last painted row.  A `:visibility hidden' Host in flow
 ;; reports its blank slot; the result is nil when the Host owns no cells.
 ;;
+;; Function: etaf-host-ref-at (runtime &optional position predicate)
+;;;###autoload (autoload 'etaf-host-ref-at "etaf" nil nil)
+;; Return the explicit `:ref' of the innermost Host painted at POSITION
+;; (default point) in mounted RUNTIME, walking outwards to enclosing Hosts.
+;; PREDICATE, when non-nil, selects the first reference it accepts, so a list
+;; can map point to its row (`etaf-host-ref-position' is the inverse).
+;; Generated references are never returned; nil means no matching Host.
+;;
 ;; Function: etaf-host-ref-size (runtime host-ref)
 ;;;###autoload (autoload 'etaf-host-ref-size "etaf" nil nil)
 ;; Return the committed painted border-box size as (WIDTH-PIXELS . HEIGHT-ROWS).
@@ -1463,6 +1471,15 @@
 ;; Error: etaf-view-syntax-error
 ;; Invalid ETAF View syntax
 ;; Catch this condition with condition-case; failed calls do not return a value.
+;;
+;; Function: etaf-selector (source &key (test 'equal) name)
+;;;###autoload (autoload 'etaf-selector "etaf" nil nil)
+;; Return a function of KEY that is non-nil while reactive SOURCE equals KEY.
+;; TEST is a hash table test (eq, eql or equal).  A reader depends only on its
+;; own KEY, so moving a selection across a long list notifies the two affected
+;; rows instead of every row.  Create it during Component setup or bindings;
+;; the Scope owns its watcher.  Read it inside the View property or render it
+;; updates, for example :background-color (if (funcall selected id) ...).
 ;;
 ;; Function: etaf-watch (source callback &key immediate (flush 'pre) test name)
 ;;;###autoload (autoload 'etaf-watch "etaf" nil nil)
