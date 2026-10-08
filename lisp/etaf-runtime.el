@@ -1104,8 +1104,11 @@ property computation: keys, metadata, Behaviors or the Theme changed."
           (let ((key (car b)) (value (cadr b)))
             (cond
              ((not (eq key (car a))) (setq ok nil))
-             ((equal value (cadr a)))
+             ((eq value (cadr a)))
+             ;; Callbacks and metadata compare by identity: a new closure
+             ;; over equal contents must still replace the committed one.
              ((not (etaf--plain-style-key-p key)) (setq ok nil))
+             ((equal value (cadr a)))
              (t
               (when (etaf-theme-token-p value)
                 (setq value (etaf--theme-token-resolve-from-theme value theme)))

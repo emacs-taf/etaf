@@ -214,6 +214,11 @@
       "purpose": "A press callback runs in a batch and publishes its writes once."
     },
     {
+      "name": "etaf-events-press-uses-callback-over-equal-new-item",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "A new prop object replaces the committed press callback even when its contents are equal."
+    },
+    {
       "name": "etaf-events-rejects-disabled-and-missing-handlers",
       "file": "tests/etaf-events-tests.el",
       "purpose": "Disabled Hosts and Hosts without a handler signal `etaf-event-error'."

@@ -42,6 +42,25 @@
         (should (eq seen 'data))
         (should (equal (etaf-test-lines) '("count 4" "add")))))))
 
+(defvar etaf-events-test-pressed nil
+  "Item reported by `etaf-events-test-row'.")
+
+(etaf-define-component etaf-events-test-row (&key item)
+  "Render a row reporting ITEM when pressed."
+  :render (etaf-node 'box (list :ref 'row
+                                :on-press (lambda () (setq etaf-events-test-pressed item)))
+                     (list "row")))
+
+(ert-deftest etaf-events-press-uses-callback-over-equal-new-item ()
+  "A new prop object replaces the committed callback even when `equal'."
+  (let* ((item (etaf-ref (list :id 1 :name "Row")))
+         (replacement (copy-sequence (etaf-value item)))
+         (etaf-events-test-pressed nil))
+    (etaf-test-with-mount (runtime (etaf-view (etaf-events-test-row :item (etaf-value item))))
+      (etaf-set-value item replacement)
+      (etaf-dispatch-event runtime 'row 'press)
+      (should (eq etaf-events-test-pressed replacement)))))
+
 (ert-deftest etaf-events-rejects-disabled-and-missing-handlers ()
   "Disabled Hosts and Hosts without a handler signal `etaf-event-error'."
   (let ((disabled (etaf-ref t)) (presses 0))
