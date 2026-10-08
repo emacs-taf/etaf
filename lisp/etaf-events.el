@@ -230,7 +230,8 @@ RUNTIME defaults to the Runtime in the current buffer."
 (defun etaf-host-ref-bounds (runtime host-ref)
   "Return live Ebox bounds for HOST-REF in mounted RUNTIME.
 The (START . END) span runs from the Host's first visible painted cell to
-the end of its last painted row, or is nil when the Host is not painted."
+the end of its last painted row.  A `:visibility hidden' Host in flow reports
+its blank slot; the result is nil when the Host owns no cells."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (when-let* ((node (etaf-runtime-host-node runtime host-ref)))
     (ebox-node-bounds node t)))
