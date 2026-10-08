@@ -148,7 +148,7 @@ Host 元数据也会传给共享的 Ebox/ECSS selector subject。`:class` 与 `:
 Ebox 归一化；非 nil 的 `:role` 和显式提供的每个 `:aria-*` 属性成为选择器属性。
 值保留 Elisp 语义：ARIA nil 仍是存在的属性，按 ECSS 属性格式化规则与 `nil`
 比较，t 与 `t` 比较。Ebox 从同一交互输入 `:disabled` 派生 `disabled` 状态，nil 移除状态。
-这些事实随成功的响应式发布更新，失败候选保留旧事实。结构选择器使用渲染的
+这些事实随成功的响应式发布更新，更新失败时保持不变。结构选择器使用渲染的
 Host 树。`:selector-attributes` 与 `:selector-state` 是保留的适配事实，不是
 View 属性；通过上述语义属性声明 Host 元数据。
 
@@ -204,7 +204,7 @@ View 属性；通过上述语义属性声明 Host 元数据。
 Props 支持 `(&key NAME (NAME DEFAULT) ...)`。实例首次缺少对应输入时求值
 DEFAULT；显式 nil 属于已传入的值。默认值按声明顺序解析，表达式可读取前面的
 props。成功发布后，实例保留默认值直到替换或卸载，期间调用方暂时传入覆盖值
-不会丢弃默认值。失败候选不发布新求值的默认值，因此表达式必须可以重试，不能
+不会丢弃默认值。更新失败时不发布新求值的默认值，因此表达式必须可以重试，不能
 执行外部写入；有清理需求的资源放在 setup 中。可变默认值用 `list` 或 `vector`
 构造，不要共享引用的常量对象。纯 `etaf-render` 没有保留实例，每次调用重新
 解析默认值。
@@ -270,9 +270,10 @@ props。成功发布后，实例保留默认值直到替换或卸载，期间调
 `etaf-current-runtime` 取得所属 Runtime，再用 `etaf-runtime-buffer` 取得其缓冲区；
 当 `etaf-mount` 接收缓冲区名称时，`current-buffer` 可能仍是调用者的缓冲区。
 
-`:view` 和 `:render` 共用编译、slot 投影与 prop 校验。声明的 props 是每次求值的
-词法快照，延后执行的回调可直接使用 `title`，无需额外的 `let`。更新成功发布后
-安装捕获新 props 的回调；候选失败保留旧回调。Setup 闭包保留初始 props。
+`:view` 和 `:render` 共用编译、slot 投影与 prop 校验。在 `:view` 组件中，Host
+属性、`expr` 子节点和回调里的 prop 读取都绑定到保留实例的输入；延后执行的回调
+可直接使用 `title`，无需额外的 `let`，并读取当前已发布的值。`:render` 每次运行
+时按普通词法 props 求值。更新失败时保留旧回调。Setup 闭包保留初始 props。
 传入的 ref 保留原有身份，在回调中通过 `etaf-value` 读取实时值；普通值不会
 被深复制或自动变成响应式来源。业务 props 和 keyed 列表项与 ref 使用同一浅比较
 规则：替换列表、向量、函数或其他对象，即使内容相等，也会更新保留的子组件。
@@ -299,8 +300,8 @@ key 保留子组件的状态与焦点，不保留指向旧输入对象的回调�
 ```
 
 来源在组件实例内保持同一身份，包含解析后的默认值。它是只读、浅响应式的：
-原地修改传入对象不会通知订阅者。候选渲染读取候选输入，其他时刻读取已提交
-输入。watch 在成功发布后收到变化，回调可以查询更新后的 buffer；设置立即
+原地修改传入对象不会通知订阅者。输入更新期间，可跟踪 prop 来源读取待提交
+输入，之后读取已提交输入。watch 在成功发布后收到变化，回调可以查询更新后的 buffer；设置立即
 执行的 watch 仍会在 setup 首次运行。更新失败恢复已提交输入及派生依赖，
 不会撤销业务 ref 的写入。组件拥有来源及 setup 中的计算与 watch；卸载会
 停止它们，释放后读取 prop 来源会报错。普通 setup prop 变量仍捕获初始值。
@@ -491,7 +492,7 @@ Table/Grid 的 cell callback 同样使用消费它的 Table/Grid 所在位置的
 
 普通属性表达式可构造 ECSS 声明值。Box 布局配置与 outer display 由 Ebox 投影；
 `ecss-important`、`ecss-wide-value` 和 `ecss-var` 值经过层叠计算后才进入布局。
-响应式属性替换使用同一路径，无效候选保留已提交显示。静态 `.ecss` 数据不会因此
+响应式属性替换使用同一路径，无效更新保留已提交显示。静态 `.ecss` 数据不会因此
 执行构造函数；依赖上下文的简写替换仍受 Ebox 已记录的限制约束。
 
 ```elisp
@@ -644,7 +645,7 @@ Behavior 用来打包可复用的非视觉属性和 cleanup：
 
 Installer 内将 `etaf-current-behavior-context` 交给 `etaf-behavior-context-info`，
 即可查询 Runtime、实际 Host 引用和安装时的语义属性。上下文是安装快照，
-不是实时 Host 查询，也不证明候选已经发布；清理期间及之后仍可读取。发布后
+不是实时 Host 查询，也不证明已成功发布；清理期间及之后仍可读取。发布后
 用返回的 Runtime/引用调用 `etaf-runtime-host-props-for` 查询已提交属性，不能用安装信息提前激活输入。返回的容器是新建的，其中的值保持身份并应视为只读。
 
 Behavior equality 对 function 和 reactive value 使用 `eq`，新 installer 闭包
@@ -714,7 +715,7 @@ Focus 和 hit testing 是 Runtime 操作：
     (etaf-focus (etaf-runtime-for-buffer buffer) target)))
 ```
 
-列表 `:key` 在重排时保留组件实例及其局部句柄；句柄不保存业务状态。候选
+列表 `:key` 在重排时保留组件实例及其局部句柄；句柄不保存业务状态。更新
 失败保留已提交 Host 目标，移除后 bounds/position 查询返回 nil。已释放的
 组件重新创建时，即使 key 相同，也会得到新句柄。一个句柄只能指向一个已
 挂载 Host。显式字面量 `:ref` 符号仍是应用地址，在同一 Runtime 内必须唯一。
