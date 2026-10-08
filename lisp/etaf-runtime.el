@@ -2258,10 +2258,12 @@ FINISHER receives RUNTIME and runs before a press on another Host."
 ;;;###autoload
 (defun etaf-runtime-refit (runtime viewport-width &optional viewport-height)
   "Fix RUNTIME's viewport to VIEWPORT-WIDTH pixels and VIEWPORT-HEIGHT lines.
-Return non-nil when the layout changed.  During a native input session the
-refit waits, returning nil, until the session ends."
+A nil dimension follows the displaying window.  Return non-nil when the
+layout changed.  During a native input session the refit waits, returning
+nil, until the session ends."
   (let ((runtime (etaf-runtime-require-mounted runtime)))
-    (unless (and (numberp viewport-width) (> viewport-width 0))
+    (when (and viewport-width
+               (not (and (numberp viewport-width) (> viewport-width 0))))
       (signal 'wrong-type-argument (list 'numberp viewport-width)))
     (when (and viewport-height
                (not (and (numberp viewport-height) (> viewport-height 0))))

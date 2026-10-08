@@ -4,6 +4,8 @@
 
 ### Added
 
+- `etaf-runtime-refit` accepts a nil width, which keeps that dimension
+  following the window while the height stays fixed.
 - `make native` byte-compiles ETAF and stores native code in the user's
   `eln-cache`, which Emacs loads in place of the bytecode.
 - `etaf-runtime-revision` reports the mounted Runtime's committed revision

@@ -1165,8 +1165,11 @@
 ;; Function: etaf-runtime-refit (runtime viewport-width &optional viewport-height)
 ;;;###autoload (autoload 'etaf-runtime-refit "etaf" nil nil)
 ;; Refit mounted RUNTIME to VIEWPORT-WIDTH pixels and VIEWPORT-HEIGHT lines.
-;; The fixed viewport replaces window-size tracking: viewport units and
-;; viewport-dependent layout are re-resolved and the changed region rewritten.
+;; A fixed dimension replaces window-size tracking for that dimension; a nil
+;; dimension follows the displaying window, so an application that needs a
+;; custom line count keeps an adaptive width with `(etaf-runtime-refit RUNTIME
+;; nil LINES)'.  Viewport units and viewport-dependent layout are re-resolved
+;; and the changed region rewritten.
 ;; Return non-nil when the layout changed.  The refit is one Runtime operation:
 ;; a mount `:observer' and `etaf-performance-mode' receive it as kind `refit'
 ;; with its Ebox flush report.  While a native input session owns

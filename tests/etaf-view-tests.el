@@ -60,6 +60,17 @@
       (should-not (etaf-runtime-refit runtime 400 40))
       (should (= (etaf-runtime-revision runtime) (1+ revision))))))
 
+(ert-deftest etaf-view-refit-nil-width-follows-the-display ()
+  "A nil refit width returns that dimension to display tracking."
+  (etaf-test-with-mount (runtime (etaf-view (row (text "left") (text "right")))
+                                 (list :viewport-height 40))
+    (let ((tracked (car (etaf-runtime-viewport runtime))))
+      (etaf-runtime-refit runtime (+ tracked 300) 40)
+      (should (equal (etaf-runtime-viewport runtime) (cons (+ tracked 300) 40)))
+      (etaf-runtime-refit runtime nil 20)
+      (should (equal (etaf-runtime-viewport runtime) (cons tracked 20)))
+      (should-error (etaf-runtime-refit runtime 0 20) :type 'wrong-type-argument))))
+
 (ert-deftest etaf-view-refit-reports-an-observed-operation ()
   "A refit reaches the mount observer as a refit operation with its flush."
   (let (reports)

@@ -449,6 +449,11 @@
       "purpose": "A mounted View paints static text and updates an expression in place."
     },
     {
+      "name": "etaf-view-refit-nil-width-follows-the-display",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "A nil refit width returns that dimension to display tracking while the height stays fixed."
+    },
+    {
       "name": "etaf-view-refit-advances-revision-only-on-layout-change",
       "file": "tests/etaf-view-tests.el",
       "purpose": "A refit that changes the viewport commits a revision; an equal one does not."
