@@ -1674,13 +1674,14 @@ Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, 
   children.  A nested Flex child fills the row's main axis, leaving the parent's
   `:justify-content` no free space to distribute, so a row that centres a bare
   box does not centre the same boxes wrapped in an extra `(flex ...)`; justify
-  that wrapper instead, or drop it.- An absolutely positioned child with `:width 'stretch` fills its containing
+  that wrapper instead, or drop it.
+- An absolutely positioned child with `:width 'stretch'` fills its containing
   block's padding box: inside a padded parent it is wider than the content and
   starts at the padding edge, so the last control in such a row can lose its
   final column to the window edge (a clipped `换一批`).  Size absolute stages
   explicitly instead.  The symptom, the fix and the responsive-layout recipe
-  live in the `etaf-app-dev` skill reference, section "响应式布局"; keep them
-  there and link here rather than repeating them.
+  have one authoritative home in the `etaf-app-dev` skill reference, section
+  "响应式布局"; this manual links to it instead of repeating the text.
 
 
 Ordinary applications define and mount Components from lexical-binding `.el`
