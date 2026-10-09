@@ -79,7 +79,7 @@
 Product Components such as Button belong to `etaf-ui'; they are not added to
 this list merely to make a demo convenient.  `image' renders one fixed-size
 local media block through the Ebox image protocol; see the `etaf--image-node'
-lowering for its :src, :columns, :rows and :adapter properties.")
+lowering for its :src, :columns, :rows, :adapter and :inset properties.")
 
 (defconst etaf--host-marker 'etaf--host
   "Value stored in the View registry for a built-in Host.")

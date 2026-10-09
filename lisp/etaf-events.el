@@ -87,6 +87,18 @@ panel from one on the surface around it.  Outside an event callback signal
         (and (member host-ref (etaf-runtime-host-ancestor-refs runtime target))
              t))))
 
+(defun etaf-event-pointer-p ()
+  "Return non-nil when the current event came from a pointer button.
+Call from an event callback.  A press activated by a mouse or trackpad click
+returns non-nil; keyboard activation (RET or SPC) and explicit dispatch of a
+non-mouse input return nil.  Click-only policies such as dismissing a modal
+from its backdrop use it so the keyboard never triggers them by accident.
+Outside an event callback signal `etaf-event-error'."
+  (unless etaf--current-event
+    (signal 'etaf-event-error
+            (list "Event source lookup requires a Host event callback")))
+  (and (mouse-event-p last-input-event) t))
+
 (defun etaf-event-kind (kind)
   "Normalize event KIND to a non-keyword symbol."
   (let ((name (cond
@@ -107,17 +119,19 @@ panel from one on the surface around it.  Outside an event callback signal
 
 (defun etaf--maybe-finish-input-session (runtime host-ref)
   "Finish RUNTIME's native input session when HOST-REF supersedes it.
-A press on the session's own Host keeps editing.  The Runtime's registered
-finisher receives RUNTIME and runs inside the press batch, so the session's
-own publication stays deferred until the batch ends and the superseding
-callback sees a settled buffer."
+A press on the session's own Host, inside it, or on the nearest Host that
+frames it keeps editing.  The Runtime's registered
+finisher receives RUNTIME and runs inside the press batch, so its
+publication settles before the superseding callback runs."
   (when-let* ((finisher (etaf-runtime-input-finisher runtime))
               (session (ebox-input-active-p (etaf-runtime-buffer runtime)))
               (session-ref (etaf-runtime-node-host-ref
                             runtime (ebox-input-session-node session))))
     (unless (or (equal host-ref session-ref)
                 (member session-ref
-                        (etaf-runtime-host-ancestor-refs runtime host-ref)))
+                        (etaf-runtime-host-ancestor-refs runtime host-ref))
+                (equal host-ref
+                       (car (etaf-runtime-host-ancestor-refs runtime session-ref))))
       (funcall finisher runtime))))
 
 ;;;###autoload
@@ -191,33 +205,32 @@ otherwise call the local callback with no arguments."
       (funcall run))))
 
 ;;;###autoload
-(defun etaf-input-begin (runtime host-ref)
-  "Begin native editing of HOST-REF's published text in mounted RUNTIME.
-Return a session for `etaf-input-text' and `etaf-input-end'.  While it is
-active ETAF defers this Runtime's publications and Ebox refuses them, so the
-user's keystrokes, point, selection and undo stay untouched in the real
-buffer.  The framework stores no application value: call the session API from
-an event callback or command, mirror edits into application state through the
-component's own change callback, and publish the accepted value after
-`etaf-input-end'.
+(defun etaf-input-begin (runtime host-ref &rest options)
+  "Begin native editing of text HOST-REF in mounted RUNTIME; return a session.
+The Host's text becomes the session value.  Keys typed in the Runtime's
+buffer edit it with their ordinary Emacs commands, undo and input methods
+while the Host keeps its layout and shows each edit at once.  OPTIONS are
+those of `ebox-input-begin': :on-change receives each new value, :on-leave
+runs when a click lands outside the Host's box, :keymap holds bindings
+consulted first and :local-variables configures the editing commands.
 
-Visible changes made meanwhile remain pending and are published when the
-session ends.  A missing Host, an unmounted Runtime and a second session on
-the same buffer are errors."
+Publications continue during the session.  Publishing the session value into
+the Host is a no-op, so :on-change may write it to application state; another
+value replaces the session text.  A missing Host, an unmounted Runtime and a
+second session on the same buffer are errors."
   (setq runtime (etaf-runtime-require-mounted runtime))
-  (ebox-input-begin (etaf-runtime-buffer runtime)
-                    (or (etaf-runtime-host-node runtime host-ref)
-                        (signal 'etaf-event-error
-                                (list "No committed Host reference" host-ref)))))
+  (apply #'ebox-input-begin (etaf-runtime-buffer runtime)
+         (or (etaf-runtime-host-node runtime host-ref)
+             (signal 'etaf-event-error
+                     (list "No committed Host reference" host-ref)))
+         options))
 
 (defun etaf-input-text (session)
-  "Return SESSION's current property-free user text."
+  "Return SESSION's current property-free value, or nil once it ended."
   (ebox-input-text session))
 
 (defun etaf-input-end (session)
-  "End SESSION, restore its published text, and return the user's text.
-The caller publishes the new value afterwards, normally by updating
-application state and calling `etaf-runtime-flush'."
+  "End SESSION and return its value; the Host keeps displaying it."
   (ebox-input-end session))
 
 (defun etaf-input-active-p (&optional runtime)
@@ -273,6 +286,41 @@ Use this read-only query to prepare resources after layout, not per frame."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (when-let* ((node (etaf-runtime-host-node runtime host-ref)))
     (ebox-node-position node)))
+
+(defun etaf--scroll-node (runtime host-ref)
+  "Return the Ebox node of HOST-REF in mounted RUNTIME or signal an error."
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (or (etaf-runtime-host-node runtime host-ref)
+      (error "ETAF Host %S is not mounted" host-ref)))
+
+(defun etaf-scroll-offset (runtime host-ref)
+  "Return the scroll offset in lines of HOST-REF in mounted RUNTIME."
+  (ebox-node-scroll-offset (etaf--scroll-node runtime host-ref)))
+
+(defun etaf-scroll-to (runtime host-ref offset)
+  "Scroll HOST-REF in mounted RUNTIME to OFFSET and return the applied offset.
+OFFSET is a line count, `start' or `end'; it is clamped to the content.
+Reaching the end pins a `:scroll-anchor end' Host so it follows new content."
+  (ebox-node-set-scroll (etaf--scroll-node runtime host-ref)
+                        (pcase offset
+                          ('start 0)
+                          ('end most-positive-fixnum)
+                          ((pred integerp) offset)
+                          (_ (signal 'wrong-type-argument
+                                     (list '(or integer (member start end)) offset))))))
+
+(defun etaf-scroll-by (runtime host-ref delta)
+  "Scroll HOST-REF in mounted RUNTIME by DELTA lines; return the new offset."
+  (let ((node (etaf--scroll-node runtime host-ref)))
+    (ebox-node-set-scroll node (+ (ebox-node-scroll-offset node) delta))))
+
+(defun etaf-scroll-into-view (runtime host-ref &optional align)
+  "Scroll the scrolling Hosts around HOST-REF in RUNTIME so it shows.
+Each enclosing scroller moves the least distance; return HOST-REF.
+ALIGN `start' or `end' aligns the Host's top with a scroller's first line
+or its bottom with the last line instead."
+  (ebox-node-scroll-into-view (etaf--scroll-node runtime host-ref) align)
+  host-ref)
 
 (defun etaf--dispatch-activation (runtime host-ref)
   "Dispatch an enabled committed HOST-REF activation in RUNTIME."

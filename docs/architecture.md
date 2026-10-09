@@ -163,10 +163,10 @@ input sessions.  ETAF translates public operations such as `etaf-activate`,
 `etaf-focus`, `etaf-focus-next`, `etaf-call-with-input` and `etaf-input-begin`
 into Ebox operations after validating the Runtime and Host reference.
 
-`ebox-input-begin` defers this Runtime's visible flushes while native editing is
-active, so Emacs owns the text, point, selection and undo for the session.  When
-the session ends, application state is updated through ordinary ETAF refs and the
-next flush publishes the accepted value.
+`ebox-input-begin` edits a text Host's value in Ebox's hidden editing buffer, so
+Emacs owns its keys, point, selection and undo while the Host keeps its layout.
+Publications continue during the session: a component mirrors each value into a
+ref from `:on-change`, and publishing that same value into the Host is a no-op.
 
 ## 8. Data, Resource and reconciliation
 

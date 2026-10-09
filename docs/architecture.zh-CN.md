@@ -94,7 +94,7 @@ text Host 只包含一个文本 payload。ETAF 校验 payload 并保存语义 Ho
 
 Ebox 负责原生定位、point 保持、焦点顺序、drag 跟踪和输入会话。ETAF 在校验 Runtime 与 Host 引用后，把 `etaf-activate`、`etaf-focus`、`etaf-focus-next`、`etaf-call-with-input` 和 `etaf-input-begin` 等公共操作转换为 Ebox 操作。
 
-`ebox-input-begin` 会在原生编辑期间延迟该 Runtime 的可见 flush，使 Emacs 持有会话中的文本、point、selection 与 undo。会话结束后，应用通过普通 ETAF ref 更新状态，下一次 flush 发布接受的值。
+`ebox-input-begin` 在 Ebox 的隐藏编辑 buffer 中编辑 text Host 的值，使 Emacs 持有按键、point、selection 与 undo，同时 Host 保持自身布局。会话期间发布照常进行：组件在 `:on-change` 中把每个值同步到 ref，把同一个值发布回 Host 不产生任何效果。
 
 ## 8. Data、Resource 与 reconciliation
 

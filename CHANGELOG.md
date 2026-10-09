@@ -4,6 +4,30 @@
 
 ### Added
 
+- `image` Hosts accept `:inset (TOP . BOTTOM)`, pixels under one line height
+  left blank inside the first and last rows, for a small gap between an
+  image and adjacent text.
+- Box Hosts accept Ebox's `:border-radius` and fractional block padding such
+  as `:padding-block '(lh 0.5)` for rounded pills and bubbles.
+- `etaf-scroll-offset`, `etaf-scroll-to`, `etaf-scroll-by` and
+  `etaf-scroll-into-view` scroll an `:overflow 'scroll` Host by `:ref`.  With
+  `:scroll-anchor 'end` a chat or log Host opens at its newest row and follows
+  new rows until the user scrolls away.
+- Hosts accept `:on-swipe`: a horizontal two-finger trackpad gesture calls the
+  nearest enabled handler once with `left` or `right`.
+- Scrolling Hosts accept `:on-scroll`, called with the new line offset after
+  the user or an `etaf-scroll-*` call scrolls them, for infinite histories.
+- `etaf-next-tick` runs a function after pending reactive work is written to
+  the buffers, for example to scroll to a row a callback just added.
+- `etaf-scroll-into-view` takes an optional `start` or `end` alignment.
+- `etaf-event-pointer-p` tells, from an event callback, whether a press came
+  from a mouse or trackpad click rather than RET or SPC, so backdrop clicks
+  can dismiss a modal without the keyboard doing the same.
+- `etaf-runtime-viewport` is a reactive read: a render or computed that sizes
+  content to the window reruns after a resize or refit.
+- `etaf-input-begin` accepts `:on-change`, `:on-leave`, `:keymap` and
+  `:local-variables`.  Typed keys edit the Host's value natively while the
+  Host keeps its layout, and publications continue during the session.
 - Hosts accept `:sticky 'top`: the Host's row stays pinned in the window's
   header line once the window scrolls past it, and header clicks run its
   press bindings, so app bars and back buttons remain reachable.

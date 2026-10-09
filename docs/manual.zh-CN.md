@@ -660,7 +660,11 @@ wrapper 附加的 callback，最后是按声明顺序运行的 Behavior。每个
 观察回调随后运行。callback 报错会 short-circuit 剩余回调；UI 回滚不会撤销外部
 业务写入。`:on-press-capture` 是显式的祖先钩子：目标 `press` 成功后，ETAF 会从最近
 的已提交 Host 向根调用 capture handler。它适合窗口置前这类 Shell 策略；普通
-`:on-press` 不会隐式 bubble。
+`:on-press` 不会隐式 bubble。在 capture 回调里，`(etaf-event-target-within-p 'panel)`
+判断被按下的 Host 是否是 `panel` 或其后代，因此 Shell 根可以在按下落在别处时关闭
+打开的面板。根 `:on-press` 覆盖其非交互表面上的按下，此时目标就是根本身。光标停在
+这类表面上时按 RET 或 SPC 也会触发它；背景点击关闭这类只针对点击的策略应以
+`(etaf-event-pointer-p)` 守卫，它只在鼠标或触控板点击时返回非 nil。
 
 wrapper 的 `:use` 列表顺序连接，重复 Behavior name 在任何 installer 运行前报错。
 非事件 Behavior 默认值仍由 Host 优先、其余 first-wins；`:disabled` 则取 OR。
@@ -721,6 +725,26 @@ Focus 和 hit testing 是 Runtime 操作：
 挂载 Host。显式字面量 `:ref` 符号仍是应用地址，在同一 Runtime 内必须唯一。
 
 `etaf-host-ref-bounds` 和 `etaf-host-ref-position` 暴露公共的 Ebox hit-test 边界。`etaf-dispatch-event` 支持可选 payload 标记，用于给 callback 传入一个参数。
+
+### 滚动 Host
+
+带 `:overflow 'scroll` 且高度固定或相对 viewport 的 Host 只滚动自己的内容，应用其余部分保持不动。
+用显式 `:ref` 定位它。`etaf-scroll-offset`、`etaf-scroll-to`（行号、`'start` 或 `'end`）和
+`etaf-scroll-by` 读取和移动滚动位置；`etaf-scroll-into-view` 在一层或多层嵌套 scroller 中显示某一行。
+会话和日志视图加上 `:scroll-anchor 'end`：Host 初始显示最后一行，并跟随新增行，直到用户滚离末尾；
+滚回末尾会重新固定。
+
+```elisp
+(etaf-view
+ (column :height '(vh 100)
+   (text "Header")
+   (box :ref 'messages :flex-grow 1 :overflow 'scroll :scroll-anchor 'end
+        (column (text :for (m (etaf-value messages)) :key (car m)
+                      (expr (cdr m)))))
+   (text "Composer")))
+;; 跳到最新消息：
+(etaf-scroll-to runtime 'messages 'end)
+```
 
 启用的 press handler 以 Ebox 原生节点 keymap 发布，支持 RET、SPC 和主鼠标按键。
 `ebox-activate` 与 Ebox 交互导航可以直接操作这些 Host。禁用或无回调控件发布显式
@@ -789,6 +813,36 @@ Ebox 保留其数值位置并限制在可访问范围内。发布被拒绝时恢
 和原生跟踪，ETAF 不保存这些事实。同时声明 `:on-press` 与 `:on-drag` 时，
 press 处理键盘激活，drag 持有主鼠标按钮序列。字段和同一 GUI 窗口的支持边界
 见 [Ebox 手势契约](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/ebox.el)。
+
+声明 `:on-swipe` 的 Host 在自身或后代上每完成一次水平两指触控板手势就收到一次
+调用，参数为手指方向 `left` 或 `right`。最近的启用 `:on-swipe` Host 处理该手势，
+惯性事件被吸收，因此内层页面可以先于外层外壳处理滑动。`:on-swipe` 不会让 Host
+变为可激活，也不改变指针：
+
+```elisp
+(etaf-view
+  (box :on-swipe (lambda (direction)
+                   (when (eq direction 'right) (go-back)))
+    (text "Chat")))
+```
+
+带 `:on-scroll` 的 `:overflow 'scroll` Host 在滚轮、滚动键或 `etaf-scroll-*` 调用
+改变其偏移后收到新的行偏移。固定在末尾的 `:scroll-anchor 'end` Host 随内容增长
+保持在末尾时不算滚动。历史记录到达偏移 0 时加载更早的行；新行写入后（`etaf-next-tick`
+在更新发布后运行）把原来的第一行对齐到顶部，使阅读位置保持不变：
+
+```elisp
+(box :ref 'history :overflow 'scroll :scroll-anchor 'end :flex-grow 1
+     :on-scroll (lambda (offset)
+                  (when (zerop offset)
+                    (let ((runtime (etaf-current-runtime))
+                          (first (load-older-messages)))
+                      (etaf-next-tick
+                       (lambda ()
+                         (etaf-scroll-into-view runtime first 'start))))))
+  (message-row :for (message (etaf-value messages))
+               :key (plist-get message :id) :message message))
+```
 
 可复用的几何 Behavior 可以把同一手势接到调用方持有的响应式值上。这样 UI
 组件和应用可以共享移动、调整大小的交互，而窗口策略仍由应用负责：
@@ -861,13 +915,14 @@ reader 管理原生编辑，调用返回后再应用结果。错误与 quit 继�
 见 [Ebox 原生交互契约](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/docs/manual.md#native-node-interaction)。
 
 原生原地编辑使用输入会话，而不是切到另一个窗口的 reader。`etaf-input-begin`、
-`etaf-input-text`、`etaf-input-end` 与 `etaf-input-active-p` 在已挂载 Host 上
-包装 Ebox 会话。应从事件回调或命令中开始。会话期间 ETAF 让该 Runtime 的更新
-保持待处理，不发布也不报错，Ebox 拒绝发布该 buffer，用户的按键、point、选区和
-撤销都保留在真实 buffer 中。框架不保存应用值：应用通过组件自己的变更回调把接受
-的编辑同步进状态，交互结束时调用 `etaf-input-end`，再用返回的文本更新状态并
-调用 `etaf-runtime-flush` 发布。会话期间可见的更新保持待处理，在会话结束后发布。
-Host 缺失、Runtime 未挂载以及同一 buffer 上的第二个会话都是错误。
+`etaf-input-text`、`etaf-input-end` 与 `etaf-input-active-p` 在已挂载的 text Host
+上包装 Ebox 会话。应从事件回调或命令中开始。之后输入的按键用普通 Emacs 命令、撤销、
+region 与输入法编辑 Host 的值，同时 Host 保持 padding、边框与换行，并随值增长。
+选项传给 `ebox-input-begin`：`:on-change` 接收每个新值，`:on-leave` 在点击落在 Host
+盒子外时调用，`:keymap` 是优先查找的绑定，`:local-variables` 配置编辑命令（例如补全）。
+会话期间发布照常进行；把会话值发布回 Host 不产生任何效果，因此变更回调可以把它写入
+ref，而其他值会替换会话文本。Host 缺失、Runtime 未挂载以及同一 buffer 上的第二个会话
+都是错误。
 
 ```elisp
 (etaf-define-component editable-title ()
@@ -879,15 +934,16 @@ Host 缺失、Runtime 未挂载以及同一 buffer 上的第二个会话都是�
     (text :ref 'edit :tab-index 0
           :on-press (lambda ()
                       (setf (etaf-value session)
-                            (etaf-input-begin (etaf-current-runtime) 'title)))
+                            (etaf-input-begin
+                             (etaf-current-runtime) 'title
+                             :on-change (lambda (text)
+                                          (setf (etaf-value title) text)))))
           "编辑")
     (text :ref 'accept :tab-index 0
           :on-press (lambda ()
                       (when-let* ((active (etaf-value session)))
-                        (setf (etaf-value title) (etaf-input-text active))
                         (etaf-input-end active)
-                        (setf (etaf-value session) nil)
-                        (etaf-runtime-flush)))
+                        (setf (etaf-value session) nil)))
           "接受"))
    (text :ref 'title (expr (etaf-value title)))))
 ```
@@ -1360,6 +1416,7 @@ View，resize 也保留最新值。
 | 生命周期 | `etaf-on-mounted`、`etaf-on-updated`、`etaf-on-unmounted` | 绑定 Component 生命周期工作 |
 | Context | `etaf-provide`、`etaf-inject`、`etaf-theme-provide`、`etaf-theme-token`、`etaf-theme-resolve-palette`、`etaf-theme-current-mode` | 跨层级共享依赖并解析语义 Theme palette |
 | 事件与 focus | `etaf-dispatch-event`、`etaf-activate`、`etaf-focus`、`etaf-focus-next`、`etaf-focus-previous` | 进入交互 Runtime |
+| 滚动 | `etaf-scroll-to`、`etaf-scroll-by`、`etaf-scroll-offset`、`etaf-scroll-into-view`、`:scroll-anchor 'end` | 移动 `:overflow 'scroll` Host，或让会话停在最新行 |
 | Action | `etaf-action-define`、`etaf-dispatch` | 命名和复用业务变更 |
 | Behavior | `etaf-behavior-create`、`etaf-define-behavior`、`etaf-current-behavior-context`、`etaf-focusable`、`etaf-toggleable` | 复用非视觉交互 bundle |
 | Data | `etaf-data-source`、`etaf-data-controller`、`etaf-data-memory-source`、`etaf-data-*` | 查询、分页、变更、选择、解析选中项和停止数据 |

@@ -113,6 +113,17 @@
 ;; asynchronous callbacks must establish their own batch. No resource or
 ;; Runtime ownership is transferred to the batch.
 ;;
+;; Function: etaf-next-tick (function)
+;;;###autoload (autoload 'etaf-next-tick "etaf" nil nil)
+;; Call zero-argument FUNCTION after pending reactive work is published and
+;; return nil. Inside a batch, event callback or effect, FUNCTION runs once
+;; the outermost batch drained and mounted Runtimes wrote their buffers, so
+;; Hosts created by earlier writes have positions and scroll ranges; use it
+;; to scroll to or focus a row that a callback just added. Outside a batch
+;; FUNCTION runs immediately. Queued functions run in order, also after a
+;; failed drain; the first error they signal is re-signaled. Not during
+;; rendering.
+;;
 ;; Error: etaf-component-call-error
 ;; Invalid ETAF Component call
 ;; Catch this condition with condition-case; failed calls do not return a value.
@@ -558,6 +569,15 @@
 ;; Generated pointer gestures publish Ebox :active state through component
 ;; styles while held; pointer activation clears it before invoking :on-press.
 ;; Explicit event dispatch and keyboard activation do not create pointer state.
+;; :on-swipe receives `left' or `right', the finger direction of one horizontal
+;; two-finger trackpad gesture over the Host or its descendants; the nearest
+;; enabled Host with :on-swipe handles it and momentum is absorbed (see
+;; `ebox-wheel-swipe').  It does not make the Host activatable or change its
+;; pointer.  :on-scroll on an `:overflow scroll' Host receives the new line
+;; offset after the wheel, scroll keys or an `etaf-scroll-*' call changes it,
+;; for example to load older rows when a history reaches offset 0; content
+;; growth that keeps a pinned `:scroll-anchor end' Host at its end is not a
+;; scroll.
 ;; Callbacks follow the current committed Host. A retained disabled Host can
 ;; receive native cancellation; removed or unmounted Hosts receive no more
 ;; application callbacks. Their Component scopes clean up normally. Other
@@ -578,6 +598,14 @@
 ;; its committed Host ancestors, so a root shell can tell a press inside an open
 ;; panel from one on the surface around it.  Outside an event callback signal
 ;; `etaf-event-error'.
+;;
+;; Function: etaf-event-pointer-p ()
+;;;###autoload (autoload 'etaf-event-pointer-p "etaf" nil nil)
+;; Return non-nil when the current event came from a pointer button: a press
+;; activated by a mouse or trackpad click.  Keyboard activation (RET or SPC)
+;; returns nil.  Click-only policies, such as dismissing a modal when its
+;; backdrop is clicked, use it so a key pressed while the modal has focus never
+;; triggers them.  Outside an event callback signal `etaf-event-error'.
 ;;
 ;; Function: etaf-effect-scope (&key detached name)
 ;;;###autoload (autoload 'etaf-effect-scope "etaf" nil nil)
@@ -643,21 +671,23 @@
 ;;
 ;;
 ;;
-;; Function: etaf-input-begin (runtime host-ref)
+;; Function: etaf-input-begin (runtime host-ref &rest options)
 ;;;###autoload (autoload 'etaf-input-begin "etaf" nil nil)
-;; Start native editing of a mounted Host's published text; return a session.
-;; While the session is active Ebox keeps this buffer's tree changes and
-;; writes them when the session ends, so keystrokes, point, selection and undo
-;; stay native in the real buffer. Host, Runtime, window and single-session rules are errors.
+;; Start native editing of a mounted text Host's value; return a session.
+;; Typed keys edit the value with ordinary Emacs commands, undo and input
+;; methods while the Host keeps its layout, padding and borders and shows
+;; each edit at once. OPTIONS are `ebox-input-begin''s :on-change, :on-leave,
+;; :keymap and :local-variables. Publications continue; publishing the
+;; session value into the Host is a no-op and another value replaces it.
+;; Host, Runtime and single-session rules are errors.
 ;;
 ;; Function: etaf-input-text (session)
 ;;;###autoload (autoload 'etaf-input-text "etaf" nil nil)
-;; Return a session's current property-free user text.
+;; Return a session's current property-free value, or nil once it ended.
 ;;
 ;; Function: etaf-input-end (session)
 ;;;###autoload (autoload 'etaf-input-end "etaf" nil nil)
-;; End a session, restore the published text, and return the user's text.
-;; Update application state with the accepted value and flush afterwards.
+;; End a session and return its value; the Host keeps displaying it.
 ;;
 ;; Function: etaf-input-active-p (&optional runtime)
 ;;;###autoload (autoload 'etaf-input-active-p "etaf" nil nil)
@@ -689,6 +719,31 @@
 ;; Function: etaf-host-ref-position (runtime host-ref)
 ;;;###autoload (autoload 'etaf-host-ref-position "etaf" nil nil)
 ;; Return the first live Ebox position for HOST-REF in RUNTIME.
+;;
+;; Function: etaf-scroll-offset (runtime host-ref)
+;;;###autoload (autoload 'etaf-scroll-offset "etaf" nil nil)
+;; Return the scroll offset in lines of a Host with `:overflow scroll'.
+;; RUNTIME must be mounted; an unknown HOST-REF signals an error.
+;;
+;; Function: etaf-scroll-to (runtime host-ref offset)
+;;;###autoload (autoload 'etaf-scroll-to "etaf" nil nil)
+;; Scroll a Host to OFFSET lines, `start' or `end'; return the clamped offset.
+;; Combine `end' with the `:scroll-anchor end' style for chat and log views:
+;; the Host then starts at and follows its last line until the user scrolls
+;; away, and scrolling back to the end pins it again.
+;;
+;; Function: etaf-scroll-by (runtime host-ref delta)
+;;;###autoload (autoload 'etaf-scroll-by "etaf" nil nil)
+;; Scroll a Host by DELTA lines (negative scrolls up); return the new offset.
+;;
+;; Function: etaf-scroll-into-view (runtime host-ref &optional align)
+;;;###autoload (autoload 'etaf-scroll-into-view "etaf" nil nil)
+;; Scroll every scrolling Host around HOST-REF by the least distance that
+;; shows it, for example a keyboard-selected row; return HOST-REF.  ALIGN
+;; `start' or `end' puts the Host's top on a scroller's first line or its
+;; bottom on the last line instead, for example to keep the reader's row in
+;; place after older rows are prepended.  Window scrolling and point stay
+;; with the caller.
 ;;
 ;; Function: etaf-inject (key &optional default (required-p nil required-p-supplied-p))
 ;;;###autoload (autoload 'etaf-inject "etaf" nil nil)
@@ -1081,10 +1136,11 @@
 ;;;###autoload (autoload 'etaf-runtime-set-input-finisher "etaf" nil nil)
 ;; Set mounted RUNTIME's native input session finisher to FINISHER or nil.
 ;; The catalog's in-place text input registers a function while its session
-;; is open; the framework runs it before a `press' dispatches to another
-;; Host, so a superseded editing session finishes instead of deferring every
-;; publication forever.  FINISHER receives RUNTIME and should finish the
-;; session with the application's own keep/edit policy.  Setting nil removes
+;; is open; the framework runs it before a `press' dispatches to a Host
+;; other than the edited Host, its descendants and the nearest Host framing
+;; it, so a press elsewhere leaves the editing session.  FINISHER receives
+;; RUNTIME and should finish the session with the application's own
+;; keep/edit policy.  Setting nil removes
 ;; it.  A non-mounted Runtime or a non-function FINISHER signals an error.
 ;;
 ;; Function: etaf-runtime-input-finisher (x)
@@ -1202,7 +1258,9 @@
 ;; display-safe window size and follows `etaf-runtime-refit', including the
 ;; automatic refit after a window size change.  RUNTIME defaults to the Runtime
 ;; in the current buffer, and a non-mounted Runtime signals
-;; `etaf-runtime-error'.
+;; `etaf-runtime-error'.  The read is reactive: a render, computed or effect
+;; that reads it reruns after the viewport changes, so a Component can size
+;; fixed-grid content such as images and video to the window.
 ;;
 ;; Function: etaf-scope-run (scope function)
 ;;;###autoload (autoload 'etaf-scope-run "etaf" nil nil)
@@ -1473,6 +1531,9 @@
 ;; generated SVG), :columns and :rows (positive integers) plus an optional
 ;; :adapter (`auto', `text' or `placeholder').  The source is scaled to fill
 ;; the grid exactly; callers preserve aspect ratios by choosing the grid.
+;; :inset (TOP . BOTTOM), pixels under one line height, leaves a graphics
+;; image that much empty space inside its first and last rows, showing the
+;; surrounding background, for a sub-line gap from adjacent text.
 ;; Unreadable or
 ;; undecodable sources become a placeholder instead of failing the render, and
 ;; the image owns its size, clipping and wrapping; wrap it in ordinary Boxes

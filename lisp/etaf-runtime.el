@@ -50,7 +50,7 @@
   (nodes (make-hash-table :test #'eq))
   (rev 0) dirty changed new-instances updated-instances retired-instances
   errors observer (event-depth 0) (next-operation-id 0) mount-id
-  fixed-viewport view (next-id 0) sticky)
+  fixed-viewport view (next-id 0) sticky viewport-ref)
 
 (etaf--defstruct (etaf--ictx (:constructor etaf--ictx-make) (:copier nil))
   "Evaluation context of one Component instance: owner, Context and theme."
@@ -64,7 +64,7 @@ segments own an Ebox NODE; the others group their KIDS."
 
 (etaf--defstruct (etaf--host (:constructor etaf--host-make) (:copier nil))
   "Mounted state of one Host segment."
-  id ref gref reg props eprops rprops theme behaviors keymap payload text txn)
+  id ref gref reg props eprops rprops theme behaviors keymap relays payload text txn)
 
 (etaf--defstruct (etaf--instance (:constructor etaf--instance-make) (:copier nil))
   "One retained Component instance."
@@ -557,6 +557,23 @@ with only a reference or accessibility label remains part of its parent."
         (setf (etaf--host-keymap host) (cons key map))
         map))))
 
+(defun etaf--relay-dispatcher (runtime host ref kind)
+  "Return HOST's stable Ebox function dispatching KIND events of REF in RUNTIME.
+KIND is `swipe' or `scroll'.  The function identity stays constant across
+renders, so a re-rendered `:on-swipe' or `:on-scroll' callback does not
+invalidate layout."
+  (let ((cached (assq kind (etaf--host-relays host))))
+    (if (and cached (eq (cadr cached) ref))
+        (cddr cached)
+      (let ((fn (lambda (value)
+                  (when (and (etaf-runtime-mounted-p runtime)
+                             (cdr (assq kind (etaf-runtime-handler-for runtime ref))))
+                    (etaf-dispatch-event runtime ref kind value t)))))
+        (setf (etaf--host-relays host)
+              (cons (cons kind (cons ref fn))
+                    (assq-delete-all kind (etaf--host-relays host))))
+        fn))))
+
 ;;;; Theme
 
 (defvar etaf--theme-host-default-cache
@@ -639,7 +656,8 @@ with only a reference or accessibility label remains part of its parent."
   (let ((src (plist-get props :src))
         (columns (plist-get props :columns))
         (rows (plist-get props :rows))
-        (adapter (or (plist-get props :adapter) 'auto)))
+        (adapter (or (plist-get props :adapter) 'auto))
+        (inset (plist-get props :inset)))
     (unless (or (stringp src)
                 (and (consp src) (eq (car src) 'image)
                      (proper-list-p (cdr src))
@@ -658,7 +676,12 @@ with only a reference or accessibility label remains part of its parent."
       (signal 'etaf-renderer-error
               (list (format "Image :adapter must be auto, text or placeholder: %S"
                             adapter))))
-    (ebox-image-prepare src columns rows :adapter adapter)))
+    (unless (or (null inset)
+                (and (consp inset) (natnump (car inset)) (natnump (cdr inset))))
+      (signal 'etaf-renderer-error
+              (list (format "Image :inset must be nil or (TOP . BOTTOM) pixels: %S"
+                            inset))))
+    (ebox-image-prepare src columns rows :adapter adapter :inset inset)))
 
 (defun etaf--compute-eprops (name props ctx theme runtime host ref)
   "Return the Ebox properties of Host NAME with resolved PROPS.
@@ -681,7 +704,7 @@ HOST and REF are non-nil for a mounted Host, which receives a keymap."
          ((etaf--aria-property-p key)
           (push (cons (etaf--attribute-name key) value) attributes))
          ((or (etaf--semantic-property-p key) (eq key :styles)) nil)
-         ((and image-p (memq key '(:src :columns :rows :adapter))) nil)
+         ((and image-p (memq key '(:src :columns :rows :adapter :inset))) nil)
          (t
           (when (etaf-theme-token-p value)
             (setq value (etaf--theme-token-resolve-from-theme value theme)))
@@ -702,6 +725,14 @@ HOST and REF are non-nil for a mounted Host, which receives a keymap."
         (when disabled (push :disabled result) (push t result))
         (when (and (or press drag) (not disabled) (not (plist-member props :pointer)))
           (push :pointer result) (push 'hand result))))
+    (when (and runtime (functionp (plist-get props :on-swipe))
+               (not (plist-get props :disabled)))
+      (push :swipe result)
+      (push (etaf--relay-dispatcher runtime host ref 'swipe) result))
+    (when (and runtime (functionp (plist-get props :on-scroll))
+               (not (plist-get props :disabled)))
+      (push :scroll result)
+      (push (etaf--relay-dispatcher runtime host ref 'scroll) result))
     (dolist (key etaf--affordance-props)
       (when (plist-member props key)
         (push key result) (push (plist-get props key) result)))
@@ -2398,9 +2429,30 @@ FINISHER receives RUNTIME and runs before a press on another Host."
 
 ;;;###autoload
 (defun etaf-runtime-viewport (&optional runtime)
-  "Return mounted RUNTIME's viewport as (WIDTH . HEIGHT) in pixels and lines."
-  (let ((runtime (etaf-runtime-require-mounted runtime)))
-    (ebox-mount-viewport (etaf-runtime-buffer runtime))))
+  "Return mounted RUNTIME's viewport as (WIDTH . HEIGHT) in pixels and lines.
+A reactive reader, such as a render or computed, depends on the viewport and
+reruns after it changes."
+  (let* ((runtime (etaf-runtime-require-mounted runtime))
+         (buffer (etaf-runtime-buffer runtime))
+         ;; The first render runs before its tree is mounted, so it reads
+         ;; the viewport the mount is about to take.
+         (viewport (or (ebox-mount-viewport buffer)
+                       (let ((fixed (etaf-runtime-fixed-viewport runtime)))
+                         (ebox-viewport-measure buffer (car fixed) (cdr fixed)))))
+         (cell (or (etaf-runtime-viewport-ref runtime)
+                   (setf (etaf-runtime-viewport-ref runtime)
+                         (etaf--ref-create :value viewport :test #'equal
+                                           :name "viewport")))))
+    (etaf-value cell)
+    viewport))
+
+(defun etaf--runtime-viewport-changed (buffer)
+  "Publish BUFFER's new viewport to readers of its Runtime's viewport."
+  (when-let* ((runtime (etaf-runtime-for-buffer buffer))
+              (cell (etaf-runtime-viewport-ref runtime)))
+    (etaf-set-value cell (ebox-mount-viewport buffer))))
+
+(add-hook 'ebox-viewport-change-functions #'etaf--runtime-viewport-changed)
 
 ;;;###autoload
 (defun etaf-runtime-refit (runtime viewport-width &optional viewport-height)

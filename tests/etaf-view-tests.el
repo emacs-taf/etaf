@@ -39,6 +39,14 @@
   :view (column (box :class "title" "styled"))
   :styles ((".title" :font-weight bold)))
 
+(etaf-define-component etaf-view-test-viewport-rows ()
+  "Render one row per viewport line above three."
+  :render
+  (let ((lines (cdr (etaf-runtime-viewport))))
+    (etaf-node 'column nil
+               (cl-loop repeat (- lines 2)
+                        collect (etaf-node 'text nil (list (format "r%d" lines)))))))
+
 (ert-deftest etaf-view-mounts-static-and-expression-text ()
   "A mounted View paints static text and updates an expression in place."
   (let ((label (etaf-ref "first")))
@@ -59,6 +67,17 @@
       (should (= (etaf-runtime-revision runtime) (1+ revision)))
       (should-not (etaf-runtime-refit runtime 400 40))
       (should (= (etaf-runtime-revision runtime) (1+ revision))))))
+
+(ert-deftest etaf-view-viewport-reads-follow-a-refit ()
+  "Text and renders reading the viewport show its new size after a refit."
+  (etaf-test-with-mount (runtime (etaf-view
+                                  (column
+                                   (text (expr (format "w%d" (car (etaf-runtime-viewport)))))
+                                   (etaf-view-test-viewport-rows)))
+                                 (list :viewport-width 400 :viewport-height 3))
+    (should (equal (etaf-test-lines) '("w400" "r3")))
+    (etaf-runtime-refit runtime 600 4)
+    (should (equal (etaf-test-lines) '("w600" "r4" "r4")))))
 
 (ert-deftest etaf-view-refit-nil-width-follows-the-display ()
   "A nil refit width returns that dimension to display tracking."

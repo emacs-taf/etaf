@@ -95,6 +95,9 @@
 (defvar etaf--queues (vector nil nil nil)
   "Pending effects for the pre, render and post phases.")
 
+(defvar etaf--ticks nil
+  "Functions queued by `etaf-next-tick', most recent first.")
+
 (defvar etaf--drain-commit-function nil
   "Function called when the pre and render queues are empty.
 It returns non-nil when it did work, which restarts the drain loop.")
@@ -403,17 +406,34 @@ When KEEP-SCOPE is nil, also remove EFFECT from its owning Scope."
                  ((aref queues 2) (etaf--run-phase 2) t)))))
 
 (defun etaf--drain ()
-  "Run queued effects until the graph is settled; re-signal the first error."
+  "Run queued effects until the graph is settled; re-signal the first error.
+Functions queued by `etaf-next-tick' run afterwards."
   (unless etaf--draining
-    (let ((etaf--draining t)
-          (etaf--drain-errors nil)
-          (etaf--drain-failed nil))
-      (if etaf--drain-around-function
-          (funcall etaf--drain-around-function #'etaf--drain-loop)
-        (etaf--drain-loop))
-      (when etaf--drain-errors
-        (let ((first (car (last etaf--drain-errors))))
-          (signal (car first) (cdr first)))))))
+    (unwind-protect
+        (let ((etaf--draining t)
+              (etaf--drain-errors nil)
+              (etaf--drain-failed nil))
+          (if etaf--drain-around-function
+              (funcall etaf--drain-around-function #'etaf--drain-loop)
+            (etaf--drain-loop))
+          (when etaf--drain-errors
+            (let ((first (car (last etaf--drain-errors))))
+              (signal (car first) (cdr first)))))
+      (etaf--run-ticks))))
+
+(defun etaf--run-ticks ()
+  "Run queued `etaf-next-tick' functions in order; re-signal the first error.
+Functions queued while these run join the same pass."
+  (let (failure)
+    (while etaf--ticks
+      (let ((ticks (nreverse etaf--ticks)))
+        (setq etaf--ticks nil)
+        (dolist (fn ticks)
+          (condition-case err
+              (funcall fn)
+            ((error quit) (unless failure (setq failure err)))))))
+    (when failure
+      (signal (car failure) (cdr failure)))))
 
 (defun etaf--settle ()
   "Drain queued effects unless a batch or drain is active."
@@ -442,6 +462,21 @@ Use outside rendering on the main Emacs event loop."
             (etaf--drain)
           (ignore-errors (etaf--drain)))))
     result))
+
+;;;###autoload
+(defun etaf-next-tick (function)
+  "Call zero-argument FUNCTION once pending reactive work is published.
+Inside a batch, an event callback or an effect, FUNCTION runs after the
+outermost batch has drained and every mounted Runtime has written its
+buffer, so new Hosts have positions and scroll ranges.  Outside one,
+nothing is pending and FUNCTION runs immediately.  Return nil."
+  (etaf--assert-not-rendering 'next-tick)
+  (unless (functionp function)
+    (signal 'wrong-type-argument (list 'functionp function)))
+  (if (or (> etaf--batch-depth 0) etaf--draining)
+      (push function etaf--ticks)
+    (funcall function))
+  nil)
 
 (defmacro etaf-batch (&rest body)
   "Evaluate BODY with deferred reactive notifications and return its result.

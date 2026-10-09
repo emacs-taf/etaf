@@ -229,6 +229,11 @@
       "purpose": "Ancestor press-capture callbacks run after the target and see it."
     },
     {
+      "name": "etaf-events-pointer-p-separates-clicks-from-keys",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "A press reports a pointer source only for a mouse click."
+    },
+    {
       "name": "etaf-events-actions-dispatch-through-runtime",
       "file": "tests/etaf-events-tests.el",
       "purpose": "Named Actions receive the Runtime and run in an event batch."
@@ -254,6 +259,21 @@
       "purpose": "A buffer position resolves to the explicit ref of its innermost enclosing Host."
     },
     {
+      "name": "etaf-events-scroll-api-anchors-and-reveals-hosts",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "Hosts report and set scroll offsets, an end-anchored Host follows appended rows until scrolled away, and a row scrolls into view."
+    },
+    {
+      "name": "etaf-events-on-scroll-loads-older-rows-in-place",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "A scrolling Host's :on-scroll receives changed offsets, so a history can load older rows at offset 0 and, after etaf-next-tick, align its previous first row to the top to stay in place; scroll-into-view also aligns to the end."
+    },
+    {
+      "name": "etaf-events-swipe-reaches-the-nearest-handler-once",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "A horizontal trackpad gesture calls the nearest Host's :on-swipe once with the finger direction, without making the Host clickable."
+    },
+    {
       "name": "etaf-events-behaviors-toggle-and-drag",
       "file": "tests/etaf-events-tests.el",
       "purpose": "Toggleable and draggable Behaviors update caller-owned refs."
@@ -261,7 +281,7 @@
     {
       "name": "etaf-events-native-input-session",
       "file": "tests/etaf-events-tests.el",
-      "purpose": "An input session edits a Host's text and restores it on end."
+      "purpose": "Typed keys edit a text Host's value through a session; state echoing it is a no-op and another value replaces it."
     },
     {
       "name": "etaf-events-host-queries",
@@ -467,6 +487,11 @@
       "name": "etaf-view-mounts-static-and-expression-text",
       "file": "tests/etaf-view-tests.el",
       "purpose": "A mounted View paints static text and updates an expression in place."
+    },
+    {
+      "name": "etaf-view-viewport-reads-follow-a-refit",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "Text expressions and Component renders that read the Runtime viewport show the new size after a refit."
     },
     {
       "name": "etaf-view-refit-nil-width-follows-the-display",
