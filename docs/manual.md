@@ -721,7 +721,10 @@ callbacks do not bubble implicitly. Inside a capture callback,
 `(etaf-event-target-within-p 'panel)` tells whether the pressed Host is the
 `panel` Host or one of its descendants, so a shell root can close an open
 panel when the press landed anywhere else. A root `:on-press` covers presses
-on its non-interactive surface; there the target is the root itself.
+on its non-interactive surface; there the target is the root itself. Such a
+surface press also fires for RET or SPC while point rests on it; guard
+click-only policies, such as backdrop dismissal, with `(etaf-event-pointer-p)`,
+which is non-nil only for a mouse or trackpad click.
 
 Wrapper `:use` lists concatenate; duplicate Behavior names fail before any
 installer runs. Non-event Behavior defaults retain first-wins order after Host
@@ -791,6 +794,29 @@ A handle must identify only one mounted Host. Explicit literal `:ref` symbols
 remain application-wide addresses and must be unique within the Runtime.
 
 `etaf-host-ref-bounds` and `etaf-host-ref-position` expose the public Ebox hit-test boundary. `etaf-dispatch-event` accepts an optional payload flag when the callback needs one argument.
+
+### Scrolling Hosts
+
+A Host with `:overflow 'scroll` and a fixed or viewport-relative height
+scrolls its own content; the rest of the application stays in place. Address
+it by an explicit `:ref`. `etaf-scroll-offset`, `etaf-scroll-to` (a line,
+`'start` or `'end`) and `etaf-scroll-by` read and move it;
+`etaf-scroll-into-view` reveals a row inside one or more nested scrollers.
+For chat and log views add `:scroll-anchor 'end`: the Host opens at its last
+line and follows new rows until the user scrolls away; scrolling back to the
+end pins it again.
+
+```elisp
+(etaf-view
+ (column :height '(vh 100)
+   (text "Header")
+   (box :ref 'messages :flex-grow 1 :overflow 'scroll :scroll-anchor 'end
+        (column (text :for (m (etaf-value messages)) :key (car m)
+                      (expr (cdr m)))))
+   (text "Composer")))
+;; A jump-to-newest command:
+(etaf-scroll-to runtime 'messages 'end)
+```
 
 Mounted enabled press handlers publish Ebox native node keymaps for RET, SPC
 and primary mouse activation. `ebox-activate` and Ebox interaction navigation
@@ -880,6 +906,39 @@ of those facts. With both `:on-press` and `:on-drag`, press handles keyboard
 activation and drag owns the primary mouse sequence. See the
 [Ebox gesture contract](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/ebox.el)
 for payload fields and the same-window GUI support boundary.
+
+A Host with `:on-swipe` receives one call per horizontal two-finger trackpad
+gesture over it or its descendants, with the finger direction `left` or
+`right`. The nearest enabled Host with `:on-swipe` handles the gesture and its
+momentum is absorbed, so nested screens can take swipes before an outer shell.
+`:on-swipe` neither makes a Host activatable nor changes its pointer:
+
+```elisp
+(etaf-view
+  (box :on-swipe (lambda (direction)
+                   (when (eq direction 'right) (go-back)))
+    (text "Chat")))
+```
+
+An `:overflow 'scroll` Host with `:on-scroll` receives its new line offset
+whenever the wheel, scroll keys or an `etaf-scroll-*` call changes it.  Content
+growth that keeps a pinned `:scroll-anchor 'end` Host at its end is not a
+scroll.  Load older rows when a history reaches offset 0, then keep the reader
+in place by aligning the previous first row to the top once the new rows are
+written (`etaf-next-tick` runs after the update is published):
+
+```elisp
+(box :ref 'history :overflow 'scroll :scroll-anchor 'end :flex-grow 1
+     :on-scroll (lambda (offset)
+                  (when (zerop offset)
+                    (let ((runtime (etaf-current-runtime))
+                          (first (load-older-messages)))
+                      (etaf-next-tick
+                       (lambda ()
+                         (etaf-scroll-into-view runtime first 'start))))))
+  (message-row :for (message (etaf-value messages))
+               :key (plist-get message :id) :message message))
+```
 
 Reusable geometry Behaviors apply the same gesture to caller-owned reactive
 values.  They are useful to UI components and applications that need a common
@@ -993,17 +1052,18 @@ See the [Ebox native interaction contract](https://gitea.gklazycat.heiyu.space/e
 
 Native in-place editing uses an input session instead of a reader in another
 window. `etaf-input-begin`, `etaf-input-text`, `etaf-input-end` and
-`etaf-input-active-p` wrap an Ebox session over one mounted Host. Start it from
-an event callback or command. While the session is active, ETAF keeps this
-Runtime's publications pending, without publishing or failing, and Ebox
-refuses to publish that buffer, so the user's keystrokes, point, selection and
-undo stay native in the real buffer. The framework stores no application
-value: mirror the accepted edits into application state through the
-component's own change callback, call `etaf-input-end` when the interaction
-finishes, update state with the returned text and publish it with
-`etaf-runtime-flush`. Visible changes made meanwhile remain pending and are
-published after the session ends. A missing Host, an unmounted Runtime and a
-second session on the same buffer are errors.
+`etaf-input-active-p` wrap an Ebox session over one mounted text Host. Start
+it from an event callback or command. Typed keys then edit the Host's value
+with their ordinary Emacs commands, undo, the region and input methods, while
+the Host keeps its padding, borders and wrapping and grows as the value does.
+Options are passed to `ebox-input-begin`: `:on-change` receives each new value,
+`:on-leave` runs when a click lands outside the Host's box, `:keymap` holds
+bindings consulted first and `:local-variables` configures the editing
+commands, for example completion. Publications continue during the session;
+publishing the session value into the Host is a no-op, so the change callback
+can write it to a ref, while another value replaces the session text. A
+missing Host, an unmounted Runtime and a second session on the same buffer are
+errors.
 
 ```elisp
 (etaf-define-component editable-title ()
@@ -1015,15 +1075,16 @@ second session on the same buffer are errors.
     (text :ref 'edit :tab-index 0
           :on-press (lambda ()
                       (setf (etaf-value session)
-                            (etaf-input-begin (etaf-current-runtime) 'title)))
+                            (etaf-input-begin
+                             (etaf-current-runtime) 'title
+                             :on-change (lambda (text)
+                                          (setf (etaf-value title) text)))))
           "Edit")
     (text :ref 'accept :tab-index 0
           :on-press (lambda ()
                       (when-let* ((active (etaf-value session)))
-                        (setf (etaf-value title) (etaf-input-text active))
                         (etaf-input-end active)
-                        (setf (etaf-value session) nil)
-                        (etaf-runtime-flush)))
+                        (setf (etaf-value session) nil)))
           "Accept"))
    (text :ref 'title (expr (etaf-value title)))))
 ```
@@ -1587,6 +1648,7 @@ seconds and calling `etaf-video-seek' on `end' implements scrubbing.
 | Lifecycle | `etaf-on-mounted`, `etaf-on-updated`, `etaf-on-unmounted` | Attach Component lifecycle work |
 | Context | `etaf-provide`, `etaf-inject`, `etaf-theme-provide`, `etaf-theme-token`, `etaf-theme-resolve-palette`, `etaf-theme-current-mode` | Share ambient dependencies and resolve semantic Theme palettes |
 | Events and focus | `etaf-dispatch-event`, `etaf-activate`, `etaf-focus`, `etaf-focus-next`, `etaf-focus-previous` | Enter interactive Runtime behavior |
+| Scrolling | `etaf-scroll-to`, `etaf-scroll-by`, `etaf-scroll-offset`, `etaf-scroll-into-view`, `:scroll-anchor 'end` | Move an `:overflow 'scroll` Host or keep a chat at its newest row |
 | Actions | `etaf-action-define`, `etaf-dispatch` | Name and reuse business mutations |
 | Behaviors | `etaf-behavior-create`, `etaf-define-behavior`, `etaf-current-behavior-context`, `etaf-focusable`, `etaf-toggleable` | Reuse non-visual interaction bundles |
 | Data | `etaf-data-source`, `etaf-data-controller`, `etaf-data-memory-source`, `etaf-data-*` | Query, paginate, mutate, select, resolve the selected item, and stop data |
@@ -1612,7 +1674,14 @@ Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, 
   children.  A nested Flex child fills the row's main axis, leaving the parent's
   `:justify-content` no free space to distribute, so a row that centres a bare
   box does not centre the same boxes wrapped in an extra `(flex ...)`; justify
-  that wrapper instead, or drop it.
+  that wrapper instead, or drop it.- An absolutely positioned child with `:width 'stretch` fills its containing
+  block's padding box: inside a padded parent it is wider than the content and
+  starts at the padding edge, so the last control in such a row can lose its
+  final column to the window edge (a clipped `换一批`).  Size absolute stages
+  explicitly instead.  The symptom, the fix and the responsive-layout recipe
+  live in the `etaf-app-dev` skill reference, section "响应式布局"; keep them
+  there and link here rather than repeating them.
+
 
 Ordinary applications define and mount Components from lexical-binding `.el`
 files. The optional Playground uses inert `.etaf` structure plus an explicitly
