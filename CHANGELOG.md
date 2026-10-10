@@ -5,7 +5,8 @@
 ### Added
 
 - Hosts accept `:keys`, scoped `(KEY COMMAND [LABEL])` bindings of keys or
-  key sequences such as `C-c C-u` that work while focus is inside them and
+  key sequences such as `C-c C-u` that work while focus is inside them (or
+  point, once a command moves point out of the focused Host) and
   run their commands exactly like keymap bindings, `:focus-group` to make a list, toolbar or grid
   one Tab stop navigated with arrows, `:focus-scope 'modal` to confine keys
   and focus to an open dialog, `:on-dismiss` for Escape and `C-g`, and

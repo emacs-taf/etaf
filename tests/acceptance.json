@@ -314,6 +314,11 @@
       "purpose": "A Host's :keys work while focus is inside it and the nearest Host binding a key shadows outer ones."
     },
     {
+      "name": "etaf-keys-follow-point-moved-out-of-the-focus",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "When a command moves point out of the focused Host, the keys of the Host at point answer."
+    },
+    {
       "name": "etaf-keys-modal-scope-hides-outer-keys-and-escape-dismisses",
       "file": "tests/etaf-keys-tests.el",
       "purpose": "An open :focus-scope modal Host hides outer keys, ignores unbound letters, and Escape or C-g dispatch its :on-dismiss."

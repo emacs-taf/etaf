@@ -39,6 +39,23 @@
       (etaf-keys-test-press "x")
       (should (equal (nreverse log) '(app-n app-x pane-n app-x))))))
 
+(ert-deftest etaf-keys-follow-point-moved-out-of-the-focus ()
+  "Point moved into another Host by a command selects that Host's keys."
+  (let (log)
+    (etaf-test-with-mount (runtime (etaf-view
+                                    (row
+                                     (column :ref 'list
+                                             :keys (list (list "n" (lambda () (push 'list-n log))))
+                                             (box :ref 'row :tab-index 0 "row"))
+                                     (column :ref 'chat
+                                             :keys (list (list "n" (lambda () (push 'chat-n log))))
+                                             (box :ref 'message "message")))))
+      (etaf-focus runtime 'row)
+      (etaf-keys-test-press "n")
+      (goto-char (etaf-host-ref-position runtime 'message))
+      (etaf-keys-test-press "n")
+      (should (equal (nreverse log) '(list-n chat-n))))))
+
 (ert-deftest etaf-keys-sequences-are-scoped-and-share-prefixes ()
   "A prefix sequence works inside its Host and falls back to the buffer's map."
   (let (log)

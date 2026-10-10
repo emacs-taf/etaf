@@ -810,7 +810,8 @@
 ;; `etaf-palette'.  COMMAND runs like a keymap binding, outside any batch:
 ;; each write publishes, so it can move to or begin input on a Host it just
 ;; revealed; wrap several writes in `etaf-batch' to publish them once.  A key works while focus, or point
-;; when nothing is focused, is inside the Host; the nearest Host binding it
+;; when nothing is focused or a command moved point out of the focused Host,
+;; is inside the Host; the nearest Host binding it
 ;; wins, disabled Hosts contribute nothing, and Host keys precede the buffer's
 ;; own keymaps, including application emulation maps.  Keys fall through to
 ;; them when no Host binds them or a native input session is

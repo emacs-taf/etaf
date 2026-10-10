@@ -159,10 +159,17 @@ Each Host containing NODE but not PREVIOUS is entered, nearest first."
     (and seg (etaf--host-props (etaf--seg-data seg)))))
 
 (defun etaf--keys-chain (runtime)
-  "Return RUNTIME's key scope: Host references from the focus outward."
+  "Return RUNTIME's key scope: Host references from the focus outward.
+Focus answers while point lies inside it; once a command moves point
+elsewhere, the node at point answers instead."
   (let* ((buffer (etaf-runtime-buffer runtime))
          (scope (ebox-focus-scope buffer))
-         (node (or (ebox-focused-node buffer) (ebox-node-at (point) buffer)))
+         (focus (ebox-focused-node buffer))
+         (here (ebox-node-at (point) buffer))
+         (node (if (and focus (or (null here) (eq here focus)
+                                  (ebox-node-ancestor-p focus here)))
+                   focus
+                 (or here focus)))
          (node (if (and node (or (eq node scope) (ebox-node-ancestor-p scope node)))
                    node
                  scope))

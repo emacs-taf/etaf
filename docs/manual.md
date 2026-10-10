@@ -827,8 +827,9 @@ of installing keymaps in the application:
   publishes and the command can move point to or begin input on a Host it just
   revealed. Wrap several writes in `etaf-batch` to publish them once. LABEL
   lists the key in the palette.
-- A key works while focus is inside the Host, or point when nothing is
-  focused. The nearest Host that binds the key wins, so a pane can override
+- A key works while focus is inside the Host. Point decides instead when
+  nothing is focused or a command moved point out of the focused Host, so an
+  application that moves point into another pane gets that pane's keys. The nearest Host that binds the key wins, so a pane can override
   an application key. Host keys precede the buffer's own keymaps, including
   emulation maps installed by the application. Disabled Hosts contribute nothing. Unbound keys, and all
   keys during a native input session, fall through to the buffer's keymaps.
