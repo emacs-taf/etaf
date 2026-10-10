@@ -2544,6 +2544,26 @@ showing it.  Mounted Runtimes follow window resizes automatically."
       (etaf--runtime-relayout runtime nil nil)
       (ebox-mount-viewport buffer))))
 
+;;;###autoload
+(defun etaf-transient-space-borrowed-p (window committed-rows)
+  "Return non-nil when transient UI borrows lines from WINDOW.
+COMMITTED-ROWS is the body height WINDOW's caller last laid out for.  The
+minibuffer and the echo area keep one body line at rest; while one of them
+is taller (an active completion session, a wrapped prompt or message) its
+extra lines are borrowed from the display windows.  While they are and
+WINDOW is shorter than COMMITTED-ROWS, a caller that laid out for
+COMMITTED-ROWS keeps that layout instead of recomputing one for the
+borrowed height.  Growth, a nil commitment and a shorter window with no
+transient UI are real geometry, so they return nil and the caller follows
+the window."
+  (and (window-live-p window)
+       (integerp committed-rows)
+       (< (window-body-height window) committed-rows)
+       (let* ((frame (window-frame window))
+              (minibuffer (and (frame-live-p frame) (minibuffer-window frame))))
+         (and (window-live-p minibuffer)
+              (> (window-body-height minibuffer) 1)))))
+
 ;;;; Host queries
 
 (defun etaf--runtime-host-seg (runtime ref)

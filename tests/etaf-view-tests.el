@@ -68,6 +68,36 @@
       (should-not (etaf-runtime-refit runtime 400 40))
       (should (= (etaf-runtime-revision runtime) (1+ revision))))))
 
+(ert-deftest etaf-view-transient-space-borrow-detection ()
+  "A taller minibuffer marks the shortened window as borrowed geometry."
+  (let ((config (current-window-configuration))
+        (window (selected-window))
+        (minibuffer (minibuffer-window (selected-frame))))
+    (unwind-protect
+        (let ((committed (window-body-height window)))
+          (should-not (etaf-transient-space-borrowed-p window committed))
+          ;; The minibuffer grows and takes real lines from the window.
+          (window-resize minibuffer 4 nil t)
+          (should (< (window-body-height window) committed))
+          (should (etaf-transient-space-borrowed-p window committed))
+          ;; A commitment to the borrowed height is not a borrow, and neither
+          ;; is a missing commitment.
+          (should-not (etaf-transient-space-borrowed-p window (window-body-height window)))
+          (should-not (etaf-transient-space-borrowed-p window nil))
+          ;; The minibuffer releases the lines when it returns to one row.
+          (window-resize minibuffer -4 nil t)
+          (should (= (window-body-height window) committed))
+          (should-not (etaf-transient-space-borrowed-p window committed))
+          ;; A shorter window with no transient UI is real geometry too.
+          (let ((other (split-window window 4)))
+            (unwind-protect
+                (progn
+                  (should (window-live-p other))
+                  (should (< (window-body-height window) committed))
+                  (should-not (etaf-transient-space-borrowed-p window committed)))
+              (delete-window other))))
+      (set-window-configuration config))))
+
 (ert-deftest etaf-view-viewport-reads-follow-a-refit ()
   "Text and renders reading the viewport show its new size after a refit."
   (etaf-test-with-mount (runtime (etaf-view

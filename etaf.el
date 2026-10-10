@@ -1445,6 +1445,23 @@
 ;; the same keys.  Put move and resize Behaviors on separate Hosts, since one Host's
 ;; :on-drag handlers all receive every gesture.
 ;;
+;; Function: etaf-transient-space-borrowed-p (window committed-rows)
+;;;###autoload (autoload 'etaf-transient-space-borrowed-p "etaf" nil nil)
+;; Return non-nil when transient UI borrows lines from WINDOW.
+;; COMMITTED-ROWS is the body height WINDOW's caller last laid out for.  The
+;; minibuffer and the echo area keep one body line at rest; while one of them
+;; is taller (an active completion session, a wrapped prompt or message) its
+;; extra lines are borrowed from the display windows.  While they are and
+;; WINDOW is shorter than COMMITTED-ROWS, a caller that laid out for
+;; COMMITTED-ROWS keeps that layout instead of recomputing one for the borrowed
+;; height.  Growth, a nil commitment and a shorter window with no transient UI
+;; are real geometry, so they return nil and the caller follows the window.
+;;
+;; Use this in a `window-size-change-functions' handler that fits application
+;; layout state to its window, so a completion popup or prompt does not shrink
+;; the application; the framework's own canvas already keeps its committed
+;; viewport for the same borrow.
+;;
 ;; Function: etaf-unmount (&optional runtime)
 ;;;###autoload (autoload 'etaf-unmount "etaf" nil nil)
 ;; Unmount RUNTIME, defaulting to the active or `current-buffer' Runtime.

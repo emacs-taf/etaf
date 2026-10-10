@@ -549,6 +549,11 @@
       "purpose": "Text expressions and Component renders that read the Runtime viewport show the new size after a refit."
     },
     {
+      "name": "etaf-view-transient-space-borrow-detection",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "A taller minibuffer marks the shortened window as borrowed so a caller keeps its committed rows; released lines, real shrinks and a missing commitment are not borrowed."
+    },
+    {
       "name": "etaf-view-refit-nil-width-follows-the-display",
       "file": "tests/etaf-view-tests.el",
       "purpose": "A nil refit width returns that dimension to display tracking while the height stays fixed."
