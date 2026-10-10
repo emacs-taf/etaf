@@ -75,6 +75,18 @@
   :setup (etaf-theme-provide theme)
   :view (column (etaf-component-test-themed)))
 
+(etaf-define-component etaf-component-test-hover-themed ()
+  "Hover with a Theme token nested in a :hover-style plist."
+  :view (column (box :ref 'hoverer :class "hoverer"
+                     :hover-style (list :background-color
+                                        (etaf-theme-token :tint "#DCE7FA"))
+                     "hover")))
+
+(etaf-define-component etaf-component-test-hover-root (&key theme)
+  "Provide THEME to a hover token child."
+  :setup (etaf-theme-provide theme)
+  :view (column (etaf-component-test-hover-themed)))
+
 (etaf-define-component etaf-component-test-local (&key on-ref)
   "Expose a local Host reference to ON-REF."
   :bindings ((target (etaf-local-ref 'target)))
@@ -160,6 +172,28 @@
                      "#FF0000"))
       (etaf-set-value theme '(:accent "#00FF00"))
       (should (equal (etaf-test-face-attribute (etaf-test-face-at "swatch") :foreground)
+                     "#00FF00")))))
+
+(ert-deftest etaf-component-hover-style-token-resolves-from-provided-theme ()
+  "A token inside :hover-style resolves to the provided Theme colour.
+Ebox turns the plist into a native mouse face; an unresolved token is an
+invalid face attribute and the hover paint is lost."
+  (let ((theme (etaf-ref '(:tint "#FF0000"))))
+    (etaf-test-with-mount (runtime (etaf-view (etaf-component-test-hover-root :theme theme)))
+      (should (equal (plist-get (plist-get (etaf-runtime-host-props-for runtime 'hoverer)
+                                           :hover-style)
+                                :background-color)
+                     "#FF0000"))
+      (save-excursion
+        (goto-char (point-min))
+        (should (search-forward "hover" nil t))
+        (should (equal (plist-get (get-text-property (match-beginning 0) 'mouse-face)
+                                  :background)
+                       "#FF0000")))
+      (etaf-set-value theme '(:tint "#00FF00"))
+      (should (equal (plist-get (plist-get (etaf-runtime-host-props-for runtime 'hoverer)
+                                           :hover-style)
+                                :background-color)
                      "#00FF00")))))
 
 (ert-deftest etaf-component-local-ref-resolves-committed-host ()

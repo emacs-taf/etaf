@@ -608,15 +608,30 @@ invalidate layout."
   (let ((source (etaf--ctx-theme ctx)))
     (etaf--theme-source-value source nil t)))
 
+(defun etaf--theme-hover-token-p (value)
+  "Return non-nil when a `:hover-style' plist VALUE carries a Theme token."
+  (and (proper-list-p value)
+       (cl-loop for (_key item) on value by #'cddr
+                thereis (etaf-theme-token-p item))))
+
 (defun etaf--resolve-theme-plist (props theme)
-  "Return PROPS with Theme tokens resolved from THEME."
-  (if (not (cl-loop for (_key value) on props by #'cddr
-                    thereis (etaf-theme-token-p value)))
+  "Return PROPS with Theme tokens resolved from THEME.
+Tokens nested in a `:hover-style' plist resolve too: Ebox turns that plist
+into a native mouse face, where an unresolved token is an invalid attribute
+and the hover paint is lost."
+  (if (not (cl-loop for (key value) on props by #'cddr
+                    thereis (or (etaf-theme-token-p value)
+                                (and (eq key :hover-style)
+                                     (etaf--theme-hover-token-p value)))))
       props
     (cl-loop for (key value) on props by #'cddr
-             append (list key (if (etaf-theme-token-p value)
-                                  (etaf--theme-token-resolve-from-theme value theme)
-                                value)))))
+             append (list key
+                          (cond
+                           ((etaf-theme-token-p value)
+                            (etaf--theme-token-resolve-from-theme value theme))
+                           ((eq key :hover-style)
+                            (etaf--resolve-theme-plist value theme))
+                           (t value))))))
 
 ;;;; Component styles
 
@@ -735,7 +750,13 @@ HOST and REF are non-nil for a mounted Host, which receives a keymap."
       (push (etaf--relay-dispatcher runtime host ref 'scroll) result))
     (dolist (key etaf--affordance-props)
       (when (plist-member props key)
-        (push key result) (push (plist-get props key) result)))
+        (let ((value (plist-get props key)))
+          ;; A hover style is a plist Ebox turns into a native mouse face;
+          ;; resolve its tokens like any other Host style value.
+          (when (and (eq key :hover-style)
+                     (etaf--theme-hover-token-p value))
+            (setq value (etaf--resolve-theme-plist value theme)))
+          (push key result) (push value result))))
     (unless image-p
       (when-let* ((defaults (etaf--theme-host-defaults theme name)))
         (push :defaults result) (push defaults result)))
@@ -1153,6 +1174,9 @@ property computation: keys, metadata, Behaviors or the Theme changed."
              (t
               (when (etaf-theme-token-p value)
                 (setq value (etaf--theme-token-resolve-from-theme value theme)))
+              (when (and (eq key :hover-style)
+                         (etaf--theme-hover-token-p value))
+                (setq value (etaf--resolve-theme-plist value theme)))
               ;; A nil value drops its key from the Ebox properties.
               (if (and value (plist-get eprops key))
                   (push (cons key value) changed)

@@ -114,6 +114,11 @@
       "purpose": "Theme tokens in Component rules resolve from the provided Theme."
     },
     {
+      "name": "etaf-component-hover-style-token-resolves-from-provided-theme",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "A Theme token nested in a :hover-style plist resolves to the provided colour in the painted mouse face."
+    },
+    {
       "name": "etaf-component-local-ref-resolves-committed-host",
       "file": "tests/etaf-component-tests.el",
       "purpose": "A local Host reference supports focus and position queries."

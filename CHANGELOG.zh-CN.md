@@ -28,6 +28,9 @@
 
 ### 修复
 
+- `:hover-style` plist 里嵌套的 Theme token 现在和其他 Host 样式值一样按
+  当前提供的 Theme 解析，目录组件悬停时能正常着色，不再把未解析的 token
+  泄漏进原生 mouse face。
 - 当有活动的 minibuffer、补全弹窗或 echo area 消息占用显示窗口高度时，窗口
   尺寸结算不再把这段借用高度当成 resize 去重排已挂载的 Runtime。frame 自身
   尺寸变化仍会重排，借用的空间释放后由 `minibuffer-exit-hook` 对账补回。

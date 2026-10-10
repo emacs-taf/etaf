@@ -168,6 +168,9 @@
 
 ### Fixed
 
+- A Theme token nested in a `:hover-style' plist resolves from the
+  provided Theme like any other Host style value, so catalog rows tint on
+  hover instead of leaking the deferred token into the native mouse face.
 - A paused `etaf-video` presents the frame at a `etaf-video-seek` target
   instead of keeping the old picture, a source change starts the new source
   at its beginning, and resizing an ended video redraws its last frame at the
