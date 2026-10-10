@@ -96,6 +96,8 @@ Ebox 负责原生定位、point 保持、焦点顺序、drag 跟踪和输入会�
 
 `ebox-input-begin` 在 Ebox 的隐藏编辑 buffer 中编辑 text Host 的值，使 Emacs 持有按键、point、selection 与 undo，同时 Host 保持自身布局。会话期间发布照常进行：组件在 `:on-change` 中把每个值同步到 ref，把同一个值发布回 Host 不产生任何效果。
 
+键盘输入由 `etaf-keys` 中的作用域按键层处理。每个 Runtime buffer 持有一个 emulation keymap，包含所有已提交 Host 在 `:keys` 中列出的事件；每个绑定是按键时才解析的 menu-item filter。解析从 Ebox 焦点（或 point）开始；起点不在最内层可见的 `:focus-scope modal` 节点内时改从该节点开始，然后由近及远遍历已提交的 Host 祖先，并在第一个 modal Host 之后停止。第一个启用的条目胜出；否则应用框架默认值（Escape/`C-g` 交给最近的 `:on-dismiss`，`?` 打开命令面板，方向键交给已聚焦 separator 或 slider 的 `:on-drag`），其余按键继续落到其他 keymap。这一遍历是唯一的向外按键传播；普通回调仍然不冒泡。焦点组、modal 限制和空间方向导航由 Ebox 负责，按键层本身从不移动焦点。键盘拖拽通过 `etaf-drag-step` 复用指针 `:on-drag` 路径，使 Behavior 只保留一种手势实现。
+
 ## 8. Data、Resource 与 reconciliation
 
 Data 是 ETAF 核心能力。Data Source 提供 `:load`、可选 `:mutate` 和可选 `:dispose`。Data 与 Resource 共用异步 start、completion、cancellation、timeout 与 late-result protection。

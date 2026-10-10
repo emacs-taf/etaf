@@ -309,6 +309,51 @@
       "purpose": "The performance recorder captures observed event operations."
     },
     {
+      "name": "etaf-keys-resolve-from-focus-outward-and-nearest-wins",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "A Host's :keys work while focus is inside it and the nearest Host binding a key shadows outer ones."
+    },
+    {
+      "name": "etaf-keys-modal-scope-hides-outer-keys-and-escape-dismisses",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "An open :focus-scope modal Host hides outer keys, ignores unbound letters, and Escape or C-g dispatch its :on-dismiss."
+    },
+    {
+      "name": "etaf-keys-behaviors-move-and-resize-from-the-keyboard",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "Draggable and resizable Behaviors move with M-arrows and resize with M-S-arrows within their bounds."
+    },
+    {
+      "name": "etaf-keys-drag-step-and-arrows-step-a-focused-separator",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "etaf-drag-step sends keyboard drag gestures and arrows along a focused separator's axis step it."
+    },
+    {
+      "name": "etaf-keys-sequences-are-scoped-and-share-prefixes",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "A Host key sequence runs inside its Host, shares its prefix with buffer keymaps and falls back to them outside the Host."
+    },
+    {
+      "name": "etaf-keys-commands-act-on-hosts-they-reveal",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "A Host key command runs like a keymap binding, so it can locate and focus a Host its own write just revealed."
+    },
+    {
+      "name": "etaf-keys-focus-enter-runs-when-focus-moves-into-a-host",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "Tab and explicit focus run :on-focus-enter on each Host focus enters from outside, nearest first, and not for moves inside it."
+    },
+    {
+      "name": "etaf-keys-palette-lists-labelled-keys-and-controls",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "The ? palette offers labelled keys and named controls, runs a key and focuses and presses a control."
+    },
+    {
+      "name": "etaf-keys-reject-invalid-bindings",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "Malformed :keys, :focus-group and :focus-scope values signal render errors."
+    },
+    {
       "name": "etaf-image-test-placeholder-grid-has-exact-cell-size",
       "file": "tests/etaf-image-tests.el",
       "purpose": "A placeholder image occupies exactly its columns by rows character cells."

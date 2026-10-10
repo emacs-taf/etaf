@@ -12,6 +12,9 @@
 (require 'cl-lib)
 (require 'etaf-behavior)
 
+(declare-function etaf--keys-move-bindings "etaf-keys" (axis))
+(declare-function etaf--keys-resize-bindings "etaf-keys" (edges))
+
 (defun etaf--controlled-geometry-values (read required)
   "Read and validate geometry plist from READ for REQUIRED keys."
   (unless (functionp read)
@@ -48,6 +51,7 @@ origin while a gesture is active and does not retain application state."
   (let (origin effective-axis)
     (etaf-behavior-create
      'draggable-controlled
+     :keys (etaf--keys-move-bindings axis)
      :on-drag
      (lambda (gesture)
        (let ((phase (plist-get gesture :phase)))
@@ -100,7 +104,9 @@ geometry state."
   (unless (functionp on-change)
     (signal 'etaf-behavior-error
             (list "Controlled resizable ON-CHANGE must be a function")))
-  (let* ((edges (if (symbolp edges) (list edges) (or edges '(right bottom))))
+  (let* ((edges (cond ((null edges) (list 'right 'bottom))
+                           ((symbolp edges) (list edges))
+                           (t edges)))
          (edges (copy-sequence edges)))
     (unless (and (proper-list-p edges) edges
                  (cl-every (lambda (edge) (memq edge '(left right top bottom))) edges)
@@ -126,6 +132,7 @@ geometry state."
     (let (origin)
       (etaf-behavior-create
        'resizable-controlled
+       :keys (etaf--keys-resize-bindings edges)
        :on-drag
        (lambda (gesture)
          (let ((phase (plist-get gesture :phase)))

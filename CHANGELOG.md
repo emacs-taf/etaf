@@ -4,6 +4,17 @@
 
 ### Added
 
+- Hosts accept `:keys`, scoped `(KEY COMMAND [LABEL])` bindings of keys or
+  key sequences such as `C-c C-u` that work while focus is inside them and
+  run their commands exactly like keymap bindings, `:focus-group` to make a list, toolbar or grid
+  one Tab stop navigated with arrows, `:focus-scope 'modal` to confine keys
+  and focus to an open dialog, `:on-dismiss` for Escape and `C-g`, and
+  `:on-focus-enter`, which runs when focus moves into a Host.
+- `?` opens `etaf-palette`, which runs labelled keys and presses any
+  focusable control by name.
+- `etaf-draggable` and `etaf-resizable` (and their controlled variants) move
+  with `M-<arrow>` and resize with `M-S-<arrow>`; focused separators and
+  sliders step with arrows; `etaf-drag-step` drives any `:on-drag` from keys.
 - `image` Hosts accept `:inset (TOP . BOTTOM)`, pixels under one line height
   left blank inside the first and last rows, for a small gap between an
   image and adjacent text.

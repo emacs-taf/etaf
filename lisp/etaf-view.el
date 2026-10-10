@@ -90,7 +90,7 @@ lowering for its :src, :columns, :rows, :adapter and :inset properties.")
 (defconst etaf--semantic-props
   '(:class :id :role :disabled :tab-index :ref :use
     :help-echo :pointer :hover-style :hover-content :drag-lock-modifier
-    :hover-group :sticky)
+    :hover-group :sticky :keys :focus-group :focus-scope)
   "ETAF Host metadata outside the Ebox style schema.")
 
 (defun etaf--aria-property-p (property)
@@ -345,6 +345,13 @@ COMPONENT-NAME labels diagnostics."
                 (etaf--plist-set
                  result key
                  (etaf--lazy-merge #'etaf--merge-use-input
+                                   (plist-get result key) value))))
+         ((eq key :keys)
+          ;; The caller's bindings come first so they shadow the root's.
+          (setq result
+                (etaf--plist-set
+                 result key
+                 (etaf--lazy-merge (lambda (inner outer) (append outer inner))
                                    (plist-get result key) value))))
          ((eq key :disabled)
           (setq result

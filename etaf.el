@@ -584,10 +584,21 @@
 ;; :on-* names require explicit dispatch and do not imply native event support.
 ;; `:on-press-capture' is the one explicit ancestor hook: after a target press
 ;; callback succeeds, committed ancestor capture handlers run nearest-first.
-;; Ordinary :on-press callbacks never bubble implicitly.
+;; Ordinary :on-press callbacks never bubble implicitly.  `:on-focus-enter'
+;; runs with no arguments on every enabled Host that focus moves into from
+;; outside it, nearest first, whether by Tab, arrows, a press or `etaf-focus'.
 ;;
 ;;   When PAYLOAD-P is non-nil, pass PAYLOAD as the callback's only argument;
 ;; otherwise call the local callback with no arguments.
+;;
+;; Function: etaf-drag-step (runtime host-ref columns rows)
+;;;###autoload (autoload 'etaf-drag-step "etaf" nil nil)
+;; Drag HOST-REF in mounted RUNTIME (nil: current) by COLUMNS and ROWS from the
+;; keyboard and return HOST-REF.  Dispatch one `start' and one `end' gesture to
+;; its :on-drag with a pixel delta of COLUMNS character widths and ROWS line
+;; heights, so every pointer drag handler, including the draggable and
+;; resizable Behaviors, also works from keys.  The gestures carry `:keyboard'
+;; t.  Non-numeric steps or a missing Host signal etaf-event-error.
 ;;
 ;; Function: etaf-event-target-within-p (host-ref)
 ;;;###autoload (autoload 'etaf-event-target-within-p "etaf" nil nil)
@@ -625,6 +636,16 @@
 ;; Error: etaf-event-error
 ;; Invalid ETAF Event
 ;; Catch this condition with condition-case; failed calls do not return a value.
+;;
+;; Function: etaf-palette (&optional runtime)
+;;;###autoload (autoload 'etaf-palette "etaf" nil t)
+;; Choose and run a command or control of mounted RUNTIME by name.
+;; Candidates are the labelled :keys the current focus reaches, Close when an
+;; :on-dismiss Host is in scope, then every focusable control in the modal
+;; scope, named by :aria-label or its painted text.  Choosing a key runs its
+;; command; choosing a control focuses it and dispatches its press.  `?' opens
+;; the palette in a Runtime buffer unless a Host or the buffer binds `?'.  An
+;; empty palette signals user-error.
 ;;
 ;; Function: etaf-focus (&optional runtime host-ref)
 ;;;###autoload (autoload 'etaf-focus "etaf" nil t)
@@ -781,6 +802,34 @@
 ;; buffer position.  One Host per Runtime is sticky (the last committed one
 ;; wins); the Runtime owns `header-line-format' in its buffer only while a
 ;; sticky Host is mounted.  Keep sticky Hosts to a single row.
+;;
+;; Keyboard operation is declared on Hosts.  `:keys' is a list of
+;; (KEY COMMAND [LABEL]) entries: KEY is a key or key sequence as a `kbd'
+;; string or vector, COMMAND a function called with no
+;; arguments (interactively when it is a command), and LABEL names it in
+;; `etaf-palette'.  COMMAND runs like a keymap binding, outside any batch:
+;; each write publishes, so it can move to or begin input on a Host it just
+;; revealed; wrap several writes in `etaf-batch' to publish them once.  A key works while focus, or point
+;; when nothing is focused, is inside the Host; the nearest Host binding it
+;; wins, disabled Hosts contribute nothing, and Host keys precede the buffer's
+;; own keymaps, including application emulation maps.  Keys fall through to
+;; them when no Host binds them or a native input session is
+;; active.  A sequence such as "C-c C-u" shares its prefix with the buffer's
+;; maps; it may not start with a printing key, and one key cannot both run a
+;; command and start a sequence anywhere in the Runtime (a render error).
+;; Component root `:keys' put the caller's entries first.
+;; `:focus-scope modal' confines Tab, arrows and :keys to an open Host such as
+;; a dialog; outer keys are unreachable while it is visible, and printing
+;; keys nothing in it binds are ignored instead of reaching the buffer's
+;; keymaps.  `:on-dismiss'
+;; runs for Escape or C-g when no nearer Host binds them; it is the one
+;; callback that the key layer searches for outward.  `:focus-group' vertical,
+;; horizontal or grid makes its focusable descendants one Tab stop; arrows and
+;; C-n/C-p/C-b/C-f move within it and then spatially to the nearest stop, and
+;; entering it returns to the remembered or aria-selected member.  Arrow keys
+;; on a focused Host with role separator or slider and :on-drag step it by
+;; one cell along its :aria-orientation.  `:on-focus-enter' lets a region
+;; such as a window activate when keyboard focus enters it.
 ;;
 ;; Error: etaf-observer-error
 ;; Invalid ETAF observer operation
@@ -1377,6 +1426,9 @@
 ;; the normal reactive boundary; Ebox retains the gesture target and ETAF owns
 ;; no window or pointer state.  Optional callbacks receive the source gesture;
 ;; move/end run after writes and cancel leaves the last accepted values.
+;; The Behavior also binds M-<arrow> keys (Move left/right/up/down along AXIS)
+;; through `etaf-drag-step' so the Host moves one cell per key press;
+;; `etaf-draggable-controlled' binds the same keys.
 ;;
 ;; Function: etaf-resizable (&key x y width height edges min-width max-width min-height max-height delta on-start on-resize on-end on-cancel)
 ;;;###autoload (autoload 'etaf-resizable "etaf" nil nil)
@@ -1387,6 +1439,10 @@
 ;; before publication.  Optional callbacks receive the source gesture and
 ;; resize/end run after refs are updated.  This Behavior has no desktop-window
 ;; policy and does not call Ebox private APIs.
+;; It binds M-S-<arrow> keys (Wider, Narrower, Taller, Shorter) that grow or
+;; shrink the dragged EDGES by one cell; `etaf-resizable-controlled' binds
+;; the same keys.  Put move and resize Behaviors on separate Hosts, since one Host's
+;; :on-drag handlers all receive every gesture.
 ;;
 ;; Function: etaf-unmount (&optional runtime)
 ;;;###autoload (autoload 'etaf-unmount "etaf" nil nil)
@@ -1734,6 +1790,7 @@
 (require 'etaf-actions)
 (require 'etaf-list-cache)
 (require 'etaf-events)
+(require 'etaf-keys)
 (require 'etaf-performance)
 (require 'etaf-video-component)
 

@@ -1,0 +1,434 @@
+;;; etaf-keys.el --- Scoped Host keys and the command palette -*- lexical-binding: t; -*-
+
+;; SPDX-License-Identifier: GPL-3.0-or-later
+
+;;; Commentary:
+
+;; A Host declares `:keys', a list of (KEY COMMAND [LABEL]) entries, and the
+;; key works while focus (or point) is inside that Host.  Each Runtime buffer
+;; owns one emulation keymap holding every key any Host has declared; each
+;; binding is a menu-item filter that resolves the key when it is pressed:
+;;
+;; 1. The scope starts at the focused Host, else the Host at point.  When a
+;;    visible `:focus-scope modal' Host does not contain it, the scope starts
+;;    at that modal Host instead.
+;; 2. The registered Host and its ancestors are searched nearest first; the
+;;    search stops after the first `:focus-scope modal' Host, so keys outside
+;;    an open dialog are unreachable.  A disabled Host contributes no keys.
+;; 3. The first entry matching the key wins.  Without one, the framework
+;;    defaults apply: Escape and C-g dispatch the nearest `:on-dismiss', `?'
+;;    opens `etaf-palette' unless the buffer binds it, arrows step
+;;    a focused separator or slider that has `:on-drag', and an open modal scope ignores unbound
+;;    printing keys so they never reach the application behind it.
+;; 4. Otherwise the key falls through to the buffer's other keymaps.  Keys
+;;    also fall through while a native input session edits the buffer.
+
+;;; Code:
+
+(require 'cl-lib)
+(require 'subr-x)
+(require 'ebox)
+(require 'etaf-reactive)
+(require 'etaf-runtime)
+(require 'etaf-events)
+
+(defvar etaf--current-runtime)
+(defvar etaf--current-event)
+
+(defvar-local etaf--keys-alist nil
+  "Emulation keymap alist holding the Runtime's scoped key bindings.")
+(put 'etaf--keys-alist 'permanent-local t)
+
+(add-to-list 'emulation-mode-map-alists 'etaf--keys-alist)
+
+(defconst etaf--keys-dismiss-events (list [escape] [?\C-g])
+  "Events that dismiss the nearest Host with `:on-dismiss'.")
+
+(defconst etaf--keys-step-events
+  `(([left] . (-1 . 0)) ([right] . (1 . 0)) ([up] . (0 . -1)) ([down] . (0 . 1))
+    ([?\C-b] . (-1 . 0)) ([?\C-f] . (1 . 0)) ([?\C-p] . (0 . -1)) ([?\C-n] . (0 . 1)))
+  "Events that step a focused separator or slider, with their column/row step.")
+
+(defconst etaf--keys-printing-events
+  (mapcar #'vector (number-sequence ?\s ?~))
+  "Printing events an open modal scope swallows when nothing binds them.")
+
+(defun etaf--keys-event (key)
+  "Return the event vector of KEY, a `kbd' string or a key vector."
+  (vconcat (if (stringp key) (kbd key) key)))
+
+(defun etaf--keys-validate (keys)
+  "Signal `etaf-renderer-error' unless KEYS is a valid `:keys' value."
+  (unless (proper-list-p keys)
+    (signal 'etaf-renderer-error (list ":keys must be a list of (KEY COMMAND [LABEL])")))
+  (dolist (entry keys)
+    (unless (and (proper-list-p entry) (<= 2 (length entry) 3)
+                 (or (stringp (car entry)) (vectorp (car entry)))
+                 (functionp (nth 1 entry))
+                 (or (null (nth 2 entry)) (stringp (nth 2 entry))))
+      (signal 'etaf-renderer-error
+              (list (format ":keys entry must be (KEY COMMAND [LABEL]): %S" entry))))
+    (let ((events (etaf--keys-event (car entry))))
+      (when (= (length events) 0)
+        (signal 'etaf-renderer-error
+                (list (format ":keys entry binds no key: %S" entry))))
+      ;; Printing keys are single-key commands (and modal guards), so they
+      ;; cannot also start a sequence.
+      (when (and (> (length events) 1)
+                 (member (vector (aref events 0)) etaf--keys-printing-events))
+        (signal 'etaf-renderer-error
+                (list (format ":keys sequence %s starts with a printing key"
+                              (key-description events)))))))
+  keys)
+
+(defvar etaf--keys-sequences (make-hash-table :test #'eq :weakness 'key)
+  "Map from a Runtime key map to the key sequences defined in it.")
+
+(defun etaf--keys-prefix-p (prefix sequence)
+  "Return non-nil when PREFIX is a proper prefix of SEQUENCE."
+  (and (< (length prefix) (length sequence))
+       (equal prefix (substring sequence 0 (length prefix)))))
+
+(defun etaf--keys-define (map event)
+  "Bind key sequence EVENT in MAP to its dynamic scoped resolution, once.
+A sequence that extends or prefixes another bound sequence is a render error:
+one key cannot both run a command and start a longer sequence."
+  (let ((defined (gethash map etaf--keys-sequences)))
+    (unless (member event defined)
+      (when (cl-find-if (lambda (other)
+                          (or (etaf--keys-prefix-p other event)
+                              (etaf--keys-prefix-p event other)))
+                        defined)
+        (signal 'etaf-renderer-error
+                (list (format ":keys sequence %s conflicts with a prefix binding"
+                              (key-description event)))))
+      (puthash map (cons event defined) etaf--keys-sequences)
+      (define-key map event
+                  (list 'menu-item "" nil
+                        :filter (lambda (_binding) (etaf--keys-binding event)))))))
+
+(defun etaf--keys-install (runtime)
+  "Give RUNTIME's buffer its scoped key map with the framework defaults."
+  (let ((map (make-sparse-keymap)))
+    (dolist (event (append etaf--keys-dismiss-events (list [??])
+                           (mapcar #'car etaf--keys-step-events)
+                           etaf--keys-printing-events))
+      (etaf--keys-define map event))
+    (setf (etaf-runtime-keymap runtime) map)
+    (with-current-buffer (etaf-runtime-buffer runtime)
+      (add-hook 'ebox-focus-change-functions #'etaf--keys-focus-enter nil t)
+      (setq etaf--keys-alist (list (cons t map)))
+      ;; Host keys are the most specific bindings, so they precede any
+      ;; emulation map the application installed in this buffer.
+      (setq-local emulation-mode-map-alists
+                  (cons 'etaf--keys-alist
+                        (remq 'etaf--keys-alist emulation-mode-map-alists))))))
+
+(defun etaf--keys-uninstall (runtime)
+  "Remove RUNTIME's scoped key map from its buffer."
+  (setf (etaf-runtime-keymap runtime) nil)
+  (let ((buffer (etaf-runtime-buffer runtime)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (remove-hook 'ebox-focus-change-functions #'etaf--keys-focus-enter t)
+        (kill-local-variable 'etaf--keys-alist)))))
+
+(defun etaf--keys-focus-enter (previous node)
+  "Dispatch `:on-focus-enter' on the Hosts focus entered moving PREVIOUS to NODE.
+Each Host containing NODE but not PREVIOUS is entered, nearest first."
+  (when-let* ((runtime (etaf-runtime-for-buffer (current-buffer)))
+              (ref (and node (etaf-runtime-node-host-ref runtime node))))
+    (let* ((old (and previous (etaf-runtime-node-host-ref runtime previous)))
+           (left (and old (cons old (etaf-runtime-host-ancestor-refs runtime old)))))
+      (dolist (each (cons ref (etaf-runtime-host-ancestor-refs runtime ref)))
+        (unless (member each left)
+          (let ((props (etaf--keys-props runtime each)))
+            (when (and (functionp (plist-get props :on-focus-enter))
+                       (not (plist-get props :disabled)))
+              (etaf-dispatch-event runtime each 'focus-enter))))))))
+
+(defun etaf--keys-register (runtime keys)
+  "Add the events of a Host's KEYS to RUNTIME's scoped key map."
+  (when-let* ((map (etaf-runtime-keymap runtime)))
+    (dolist (entry keys)
+      (etaf--keys-define map (etaf--keys-event (car entry))))))
+
+(defun etaf--keys-props (runtime ref)
+  "Return RUNTIME's committed semantic props of Host REF without copying."
+  (let ((seg (etaf--runtime-host-seg runtime ref)))
+    (and seg (etaf--host-props (etaf--seg-data seg)))))
+
+(defun etaf--keys-chain (runtime)
+  "Return RUNTIME's key scope: Host references from the focus outward."
+  (let* ((buffer (etaf-runtime-buffer runtime))
+         (scope (ebox-focus-scope buffer))
+         (node (or (ebox-focused-node buffer) (ebox-node-at (point) buffer)))
+         (node (if (and node (or (eq node scope) (ebox-node-ancestor-p scope node)))
+                   node
+                 scope))
+         (ref (and node (etaf-runtime-node-host-ref runtime node)))
+         chain)
+    (when ref
+      (catch 'done
+        (dolist (each (cons ref (etaf-runtime-host-ancestor-refs runtime ref)))
+          (push each chain)
+          (when (eq (plist-get (etaf--keys-props runtime each) :focus-scope) 'modal)
+            (throw 'done nil)))))
+    (nreverse chain)))
+
+(defun etaf--keys-entries (runtime chain)
+  "Return the effective ((REF . ENTRY) ...) of CHAIN in RUNTIME.
+Entries are ordered nearest first; a key bound by a nearer Host shadows the
+same key further out."
+  (let (seen result)
+    (dolist (ref chain)
+      (let ((props (etaf--keys-props runtime ref)))
+        (unless (plist-get props :disabled)
+          (dolist (entry (plist-get props :keys))
+            (let ((event (etaf--keys-event (car entry))))
+              (unless (member event seen)
+                (push event seen)
+                (push (cons ref entry) result)))))))
+    (nreverse result)))
+
+(defun etaf--keys-run (runtime ref command)
+  "Run key COMMAND for Host REF in RUNTIME like a keymap binding.
+No batch surrounds COMMAND, so it sees each of its writes published: it can
+move point to or begin input on a Host it just revealed, exactly as when a
+keymap or M-x runs it."
+  (unless (etaf-runtime-mounted-p runtime)
+    (user-error "The ETAF Runtime is no longer mounted"))
+  (when (symbolp command) (setq this-command command))
+  (let ((etaf--current-runtime runtime)
+        (etaf--current-event (list :runtime runtime :host-ref ref
+                                   :kind 'key :payload nil)))
+    (etaf-runtime-event-begin runtime)
+    (unwind-protect
+        (if (commandp command)
+            (call-interactively command)
+          (funcall command))
+      (etaf-runtime-event-end runtime))))
+
+(defun etaf--keys-command (runtime ref command)
+  "Return an interactive command running COMMAND for Host REF in RUNTIME."
+  (lambda ()
+    (interactive)
+    (etaf--keys-run runtime ref command)))
+
+(defun etaf--keys-dismiss-ref (runtime chain)
+  "Return the nearest enabled Host in CHAIN with a dismiss handler."
+  (cl-find-if (lambda (ref)
+                (let ((props (etaf--keys-props runtime ref)))
+                  (and (functionp (plist-get props :on-dismiss))
+                       (not (plist-get props :disabled)))))
+              chain))
+
+(defun etaf--keys-step-ref (runtime event)
+  "Return the focused separator or slider that EVENT steps, or nil."
+  (when-let* ((step (cdr (assoc event etaf--keys-step-events)))
+              (node (ebox-focused-node (etaf-runtime-buffer runtime)))
+              (ref (etaf-runtime-node-host-ref runtime node))
+              (props (etaf--keys-props runtime ref)))
+    (let ((role (format "%s" (plist-get props :role)))
+          (orientation (format "%s" (plist-get props :aria-orientation))))
+      (and (member role '("separator" "slider"))
+           (functionp (plist-get props :on-drag))
+           (not (plist-get props :disabled))
+           ;; A vertical rule moves sideways; a horizontal one moves up/down.
+           (cond ((equal orientation "vertical") (/= (car step) 0))
+                 ((equal orientation "horizontal") (/= (cdr step) 0))
+                 (t t))
+           ref))))
+
+(defun etaf--keys-unbound-p (event)
+  "Return non-nil when only self-insertion binds EVENT outside Host keys."
+  (let* ((etaf--keys-alist nil)
+         (command (key-binding event t)))
+    (memq command '(nil undefined self-insert-command))))
+
+(defun etaf--keys-binding (event)
+  "Return the command EVENT runs in the current Runtime buffer, or nil."
+  (let ((runtime (etaf-runtime-for-buffer (current-buffer))))
+    (when (and runtime (not (ebox-input-active-p (current-buffer))))
+      (let* ((chain (etaf--keys-chain runtime))
+             (found (cl-find event (etaf--keys-entries runtime chain)
+                             :key (lambda (item) (etaf--keys-event (cadr item)))
+                             :test #'equal)))
+        (cond
+         (found (etaf--keys-command runtime (car found) (nth 2 found)))
+         ((member event etaf--keys-dismiss-events)
+          (when-let* ((ref (etaf--keys-dismiss-ref runtime chain)))
+            (lambda ()
+              (interactive)
+              (etaf-dispatch-event runtime ref 'dismiss))))
+         ((and (equal event [??]) (etaf--keys-unbound-p event))
+          #'etaf-palette)
+         ((etaf--keys-step-ref runtime event)
+          (let ((ref (etaf--keys-step-ref runtime event))
+                (step (cdr (assoc event etaf--keys-step-events))))
+            (lambda ()
+              (interactive)
+              (etaf-drag-step runtime ref (car step) (cdr step)))))
+         ;; An open dialog keeps typed letters from reaching the application
+         ;; behind it, including keymaps that are not Host `:keys'.
+         ((and (member event etaf--keys-printing-events)
+               (eq (plist-get (etaf--keys-props runtime (car (last chain)))
+                              :focus-scope)
+                   'modal))
+          #'ignore))))))
+
+;;;###autoload
+(defun etaf-drag-step (runtime host-ref columns rows)
+  "Drag HOST-REF in mounted RUNTIME by COLUMNS and ROWS from the keyboard.
+Dispatch one `start' and one `end' gesture to the Host's `:on-drag' with
+a delta of COLUMNS character widths and ROWS line heights in pixels, the
+units of a pointer drag, so every drag handler also works from the keyboard.
+The gestures carry `:keyboard' t.  Return HOST-REF."
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (unless (and (numberp columns) (numberp rows))
+    (signal 'etaf-event-error (list "Drag step COLUMNS and ROWS must be numbers")))
+  (let* ((buffer (etaf-runtime-buffer runtime))
+         (node (or (etaf-runtime-host-node runtime host-ref)
+                   (signal 'etaf-event-error
+                           (list "No committed Host reference" host-ref))))
+         (window (or (get-buffer-window buffer) (selected-window)))
+         (frame (window-frame window))
+         (delta (cons (* columns (frame-char-width frame))
+                      (* rows (frame-char-height frame))))
+         (base (list :event last-input-event :node node :window window
+                     :buffer buffer :start (cons 0 0) :reason nil :keyboard t)))
+    (etaf-dispatch-event runtime host-ref 'drag
+                         (append (list :phase 'start :position (cons 0 0)
+                                       :delta (cons 0 0))
+                                 base)
+                         t)
+    (etaf-dispatch-event runtime host-ref 'drag
+                         (append (list :phase 'end :position delta :delta delta)
+                                 base)
+                         t)
+    host-ref))
+
+(defun etaf--keys-current-step (columns rows)
+  "Drag the Host whose `:keys' entry is running by COLUMNS and ROWS."
+  (let ((runtime (plist-get etaf--current-event :runtime))
+        (ref (plist-get etaf--current-event :host-ref)))
+    (unless (and runtime ref)
+      (signal 'etaf-event-error (list "Keyboard drag requires a Host key event")))
+    (etaf-drag-step runtime ref columns rows)))
+
+(defun etaf--keys-move-bindings (axis)
+  "Return the `:keys' moving a draggable Host along AXIS with M-arrows."
+  (let (keys)
+    (when (memq axis '(nil x both))
+      (push (list "M-<left>" (lambda () (etaf--keys-current-step -1 0)) "Move left") keys)
+      (push (list "M-<right>" (lambda () (etaf--keys-current-step 1 0)) "Move right") keys))
+    (when (memq axis '(nil y both))
+      (push (list "M-<up>" (lambda () (etaf--keys-current-step 0 -1)) "Move up") keys)
+      (push (list "M-<down>" (lambda () (etaf--keys-current-step 0 1)) "Move down") keys))
+    (nreverse keys)))
+
+(defun etaf--keys-resize-bindings (edges)
+  "Return the `:keys' resizing a Host with EDGES by M-S-arrows.
+Right and down grow the Host and left and up shrink it, whichever edge
+the Host drags."
+  (let ((dx (cond ((memq 'right edges) 1) ((memq 'left edges) -1)))
+        (dy (cond ((memq 'bottom edges) 1) ((memq 'top edges) -1)))
+        keys)
+    (when dx
+      (push (list "M-S-<right>" (lambda () (etaf--keys-current-step dx 0)) "Wider") keys)
+      (push (list "M-S-<left>" (lambda () (etaf--keys-current-step (- dx) 0)) "Narrower")
+            keys))
+    (when dy
+      (push (list "M-S-<down>" (lambda () (etaf--keys-current-step 0 dy)) "Taller") keys)
+      (push (list "M-S-<up>" (lambda () (etaf--keys-current-step 0 (- dy))) "Shorter")
+            keys))
+    (nreverse keys)))
+
+;;;; Command palette
+
+(defun etaf--keys-control-label (runtime ref node)
+  "Return the palette label of control NODE registered as REF in RUNTIME."
+  (let* ((props (and ref (etaf--keys-props runtime ref)))
+         (label (plist-get props :aria-label))
+         (bounds (and (not label) (ebox-node-bounds node t)))
+         (text (or (and label (format "%s" label))
+                   (and bounds
+                        (buffer-substring-no-properties (car bounds) (cdr bounds))))))
+    (when text
+      (setq text (string-trim (replace-regexp-in-string "[ \t\n\r]+" " " text)))
+      (unless (string-empty-p text)
+        (truncate-string-to-width text 60 nil nil "…")))))
+
+(defun etaf--keys-palette-candidates (runtime)
+  "Return palette entries (LABEL ANNOTATION FUNCTION) for RUNTIME."
+  (let* ((buffer (etaf-runtime-buffer runtime))
+         (chain (etaf--keys-chain runtime))
+         candidates)
+    (dolist (item (etaf--keys-entries runtime chain))
+      (let ((ref (car item)) (entry (cdr item)))
+        (when (nth 2 entry)
+          (push (list (nth 2 entry) (key-description (etaf--keys-event (car entry)))
+                      (lambda () (etaf--keys-run runtime ref (nth 1 entry))))
+                candidates))))
+    (when-let* ((ref (etaf--keys-dismiss-ref runtime chain)))
+      (unless (cl-find [escape] (etaf--keys-entries runtime chain)
+                       :key (lambda (item) (etaf--keys-event (cadr item)))
+                       :test #'equal)
+        (push (list "Close" "<escape>"
+                    (lambda () (etaf-dispatch-event runtime ref 'dismiss)))
+              candidates)))
+    (dolist (node (ebox-focus-stops buffer))
+      (let* ((ref (etaf-runtime-node-host-ref runtime node))
+             (label (etaf--keys-control-label runtime ref node))
+             (props (and ref (etaf--keys-props runtime ref)))
+             (role (plist-get props :role)))
+        (when label
+          (push (list label (if role (format "%s" role) "control")
+                      (lambda ()
+                        (ebox-focus node buffer)
+                        (when (and (functionp (plist-get props :on-press))
+                                   (not (plist-get props :disabled)))
+                          (etaf-dispatch-event runtime ref 'press))))
+                candidates))))
+    (nreverse candidates)))
+
+;;;###autoload
+(defun etaf-palette (&optional runtime)
+  "Choose and run a command or control of mounted RUNTIME by name.
+The candidates are the labelled `:keys' that the current focus reaches,
+Close when an `:on-dismiss' Host is in scope, and every focusable control
+in the modal scope, named by its `:aria-label' or painted text.  Choosing a
+key runs its command; choosing a control focuses and presses it.  `?' opens
+the palette in every Runtime buffer whose own keymaps leave `?' unbound."
+  (interactive)
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (with-current-buffer (etaf-runtime-buffer runtime)
+    (let* ((candidates (etaf--keys-palette-candidates runtime))
+           (table (make-hash-table :test #'equal))
+           names)
+      (unless candidates (user-error "No ETAF command is reachable here"))
+      (dolist (candidate candidates)
+        (let* ((base (car candidate)) (name base) (count 1))
+          (while (gethash name table)
+            (setq count (1+ count) name (format "%s <%d>" base count)))
+          (puthash name candidate table)
+          (push name names)))
+      (setq names (nreverse names))
+      (let* ((completion-extra-properties
+              (list :annotation-function
+                    (lambda (name)
+                      (when-let* ((candidate (gethash name table)))
+                        (concat "  " (propertize (nth 1 candidate)
+                                                 'face 'completions-annotations))))))
+             (choice (completing-read
+                      "Command: "
+                      (lambda (string predicate action)
+                        (if (eq action 'metadata)
+                            '(metadata (display-sort-function . identity))
+                          (complete-with-action action names string predicate)))
+                      nil t)))
+        (funcall (nth 2 (gethash choice table)))))))
+
+(provide 'etaf-keys)
+
+;;; etaf-keys.el ends here

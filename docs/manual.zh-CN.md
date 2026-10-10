@@ -726,6 +726,65 @@ Focus 和 hit testing 是 Runtime 操作：
 
 `etaf-host-ref-bounds` 和 `etaf-host-ref-position` 暴露公共的 Ebox hit-test 边界。`etaf-dispatch-event` 支持可选 payload 标记，用于给 callback 传入一个参数。
 
+### 键盘操作
+
+每个交互都必须能用键盘完成。在 Host 上声明，而不是在应用里安装 keymap：
+
+```elisp
+(etaf-define-component note-list (&key notes on-open on-delete on-close)
+  :view
+  (column
+   :focus-scope 'modal
+   :on-dismiss on-close
+   :keys (list (list "d" on-delete "Delete note")
+               (list "g" (lambda () (message "Refreshing")) "Refresh"))
+   (column
+    :focus-group 'vertical
+    (for (note notes :key (plist-get note :id))
+      (box :role 'option :tab-index 0
+           :aria-selected (expr (plist-get note :current))
+           :on-press (lambda () (funcall on-open note))
+           (text (expr (plist-get note :title))))))))
+```
+
+- `:keys` 是 `(KEY COMMAND [LABEL])` 列表。KEY 是按键或按键序列（`"d"`、
+  `"M-<up>"`、`[escape]`、`"C-c C-u"`）。序列与 buffer 自身 keymap 共享前缀，
+  因此 Host 的 `C-c C-u` 旁边 mode map 的 `C-c C-k` 仍然可用。序列不能以可打印
+  字符开头，同一 Runtime 中一个键也不能既运行命令又作为序列前缀；两者都是渲染
+  错误。COMMAND 以无参数调用（是 command 时交互调用），行为与 keymap 绑定完全
+  相同：外面没有 batch，每次写入立即发布，因此命令可以把 point 移到或开始编辑它刚
+  显示出来的 Host。多次写入需要合并发布时用 `etaf-batch` 包住。LABEL 让按键出现在
+  命令面板中。
+- 焦点位于 Host 内（无焦点时以 point 为准）时按键生效。最近的绑定该键的 Host
+  胜出，因此窗格可以覆盖应用级按键。Host 按键优先于 buffer 自身的 keymap，包括应用
+  安装的 emulation map。禁用 Host 不提供按键。未绑定的键以及原生
+  输入会话期间的所有键都会落到 buffer 的其他 keymap。
+- `:focus-scope 'modal` 把 Tab、方向键和 `:keys` 限制在打开的对话框、菜单或
+  查看器中；它被移除之前外部按键不可达，其内未绑定的可打印按键会被忽略，
+  不会落到应用自身的 keymap。
+- 没有更近 Host 绑定 Escape 或 `C-g` 时，它们运行 `:on-dismiss`。这是按键层唯一
+  向外查找的回调；用它关闭对话框、弹出层和查看器。
+- `:focus-group`（`vertical`、`horizontal` 或 `grid`）让列表、工具栏或网格成为
+  一个 Tab 停靠点。方向键和 `C-n`/`C-p`/`C-b`/`C-f` 先在组内移动，再在空间上移到
+  该方向最近的可聚焦 Host，因此复杂布局无需额外的导航键。进入组时回到上次聚焦的
+  成员，否则回到带 `:aria-selected`、`:aria-current` 或 `:aria-checked` 的成员。
+- 焦点从外部移入某个 Host 时（Tab、方向键、点击或 `etaf-focus`），该 Host 的
+  `:on-focus-enter` 运行。用它在键盘到达时激活区域，例如提升窗口，使键盘和指针
+  用户看到相同的激活状态。
+- `?` 打开 `etaf-palette`，列出作用域内带标签的按键、可关闭时的 Close，
+  以及按 `:aria-label` 或文本命名的所有可聚焦控件。Host 或 buffer keymap 绑定了
+  `?` 时保留其绑定。
+- 指针拖拽都有键盘等价操作。`etaf-draggable` 绑定 `M-<方向键>`，`etaf-resizable`
+  绑定 `M-S-<方向键>`（右/下增大、左/上缩小），每次一个单元格；受控变体相同。
+  角色为 `separator` 或 `slider` 且带 `:on-drag` 的已聚焦 Host 用普通方向键沿
+  `:aria-orientation` 步进。自定义命令调用
+  `(etaf-drag-step runtime host-ref columns rows)`，它以指针像素单位发送带
+  `:keyboard t` 的 start 与 end 手势。移动与缩放 Behavior 放在不同 Host 上：同一
+  Host 的所有 `:on-drag` 处理器都会收到每个手势。
+
+高频操作优先用普通字母和方向键，几何调整用 `M-` 组合键，避免功能键。每个只有
+图标的控件都要提供 `:aria-label`，让命令面板和读屏器能为它命名。
+
 ### 滚动 Host
 
 带 `:overflow 'scroll` 且高度固定或相对 viewport 的 Host 只滚动自己的内容，应用其余部分保持不动。

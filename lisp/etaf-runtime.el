@@ -29,6 +29,10 @@
 (define-error 'etaf-renderer-error "ETAF rendering error")
 
 (declare-function etaf--dispatch-activation "etaf-events" (runtime host-ref))
+(declare-function etaf--keys-validate "etaf-keys" (keys))
+(declare-function etaf--keys-register "etaf-keys" (runtime keys))
+(declare-function etaf--keys-install "etaf-keys" (runtime))
+(declare-function etaf--keys-uninstall "etaf-keys" (runtime))
 (declare-function etaf-dispatch-event "etaf-events"
                   (runtime host-ref kind &optional payload payload-p))
 (defvar etaf--drag-cancel-p)
@@ -50,7 +54,7 @@
   (nodes (make-hash-table :test #'eq))
   (rev 0) dirty changed new-instances updated-instances retired-instances
   errors observer (event-depth 0) (next-operation-id 0) mount-id
-  fixed-viewport view (next-id 0) sticky viewport-ref)
+  fixed-viewport view (next-id 0) sticky viewport-ref keymap)
 
 (etaf--defstruct (etaf--ictx (:constructor etaf--ictx-make) (:copier nil))
   "Evaluation context of one Component instance: owner, Context and theme."
@@ -437,6 +441,16 @@ QUIET, each later run records an update of CTX's Component instance."
              (unless (or (null value) (integerp value))
                (signal 'etaf-renderer-error
                        (list ":tab-index must be an integer or nil"))))
+            ((eq property :focus-group)
+             (unless (memq value '(nil vertical horizontal grid))
+               (signal 'etaf-renderer-error
+                       (list ":focus-group must be vertical, horizontal, grid or nil"))))
+            ((eq property :focus-scope)
+             (unless (memq value '(nil modal))
+               (signal 'etaf-renderer-error
+                       (list ":focus-scope must be `modal' or nil"))))
+            ((eq property :keys)
+             (etaf--keys-validate value))
             ((eq property :use)
              (unless (or (etaf--behavior-source-p value)
                          (and (proper-list-p value)
@@ -500,6 +514,10 @@ QUIET, each later run records an update of CTX's Component instance."
               (setq merged (etaf--merge-host-attrs
                             merged (list key value) tag
                             (etaf-behavior-spec-name spec))))
+             ((eq key :keys)
+              ;; The Host's own bindings shadow its Behaviors' bindings.
+              (setq merged (etaf--plist-set
+                            merged :keys (append (plist-get merged :keys) value))))
              ((not (plist-member merged key))
               (setq merged (append merged (list key value)))))))))
     merged))
@@ -716,6 +734,8 @@ HOST and REF are non-nil for a mounted Host, which receives a keymap."
           (when value (push key result) (push value result)))
          ((eq key :role)
           (when value (push (cons "role" value) attributes)))
+         ((memq key '(:focus-group :focus-scope))
+          (when value (push key result) (push value result)))
          ((etaf--aria-property-p key)
           (push (cons (etaf--attribute-name key) value) attributes))
          ((or (etaf--semantic-property-p key) (eq key :styles)) nil)
@@ -1306,7 +1326,9 @@ property computation: keys, metadata, Behaviors or the Theme changed."
               (etaf--host-unregister runtime host)
               (etaf--jputhash ref seg (etaf-runtime-hosts runtime))
               (setf (etaf--host-reg host) ref))
-            (etaf--jputhash (etaf--seg-node seg) seg (etaf-runtime-nodes runtime)))
+            (etaf--jputhash (etaf--seg-node seg) seg (etaf-runtime-nodes runtime))
+            (when-let* ((keys (plist-get (etaf--host-props host) :keys)))
+              (etaf--keys-register runtime keys)))
         (when (etaf--host-reg host)
           (etaf--host-unregister runtime host)
           (etaf--jremhash (etaf--seg-node seg) (etaf-runtime-nodes runtime))))
@@ -2107,6 +2129,7 @@ provide `:viewport-width' in pixels, `:viewport-height' in lines and
       (puthash buffer runtime etaf--runtimes)
       (with-current-buffer buffer
         (add-hook 'kill-buffer-hook #'etaf--runtime-buffer-killed nil t))
+      (etaf--keys-install runtime)
       (condition-case err
           (etaf--runtime-run-operation
            runtime 'mount "mount"
@@ -2156,6 +2179,7 @@ See `etaf-runtime-mount'."
       (when (buffer-live-p buffer)
         (with-current-buffer buffer
           (remove-hook 'kill-buffer-hook #'etaf--runtime-buffer-killed t)
+          (etaf--keys-uninstall runtime)
           (when (etaf-runtime-observer runtime)
             (ebox-buffer-set-observer buffer nil))
           (ebox-unmount-buffer buffer)))))

@@ -795,6 +795,77 @@ remain application-wide addresses and must be unique within the Runtime.
 
 `etaf-host-ref-bounds` and `etaf-host-ref-position` expose the public Ebox hit-test boundary. `etaf-dispatch-event` accepts an optional payload flag when the callback needs one argument.
 
+### Keyboard operation
+
+Every interaction must also work from the keyboard. Declare it on Hosts instead
+of installing keymaps in the application:
+
+```elisp
+(etaf-define-component note-list (&key notes on-open on-delete on-close)
+  :view
+  (column
+   :focus-scope 'modal
+   :on-dismiss on-close
+   :keys (list (list "d" on-delete "Delete note")
+               (list "g" (lambda () (message "Refreshing")) "Refresh"))
+   (column
+    :focus-group 'vertical
+    (for (note notes :key (plist-get note :id))
+      (box :role 'option :tab-index 0
+           :aria-selected (expr (plist-get note :current))
+           :on-press (lambda () (funcall on-open note))
+           (text (expr (plist-get note :title))))))))
+```
+
+- `:keys` is a list of `(KEY COMMAND [LABEL])`. KEY is a key or key sequence
+  (`"d"`, `"M-<up>"`, `[escape]`, `"C-c C-u"`). A sequence shares its prefix
+  with the buffer's own maps, so `C-c C-k` from a mode map keeps working beside
+  a Host's `C-c C-u`. A sequence may not start with a printing key, and one key
+  cannot both run a command and start a sequence in the same Runtime; both are
+  render errors. COMMAND runs with no arguments (interactively when it is a
+  command) exactly like a keymap binding: no batch surrounds it, so each write
+  publishes and the command can move point to or begin input on a Host it just
+  revealed. Wrap several writes in `etaf-batch` to publish them once. LABEL
+  lists the key in the palette.
+- A key works while focus is inside the Host, or point when nothing is
+  focused. The nearest Host that binds the key wins, so a pane can override
+  an application key. Host keys precede the buffer's own keymaps, including
+  emulation maps installed by the application. Disabled Hosts contribute nothing. Unbound keys, and all
+  keys during a native input session, fall through to the buffer's keymaps.
+- `:focus-scope 'modal` confines Tab, arrows and `:keys` to an open dialog,
+  menu or viewer. Keys outside it are unreachable until it is removed, and
+  printing keys that nothing in it binds are ignored rather than reaching the
+  application's own keymaps.
+- `:on-dismiss` runs for Escape or `C-g` when no nearer Host binds them. It is
+  the only callback the key layer searches for outward; close dialogs,
+  popovers and viewers with it.
+- `:focus-group` (`vertical`, `horizontal` or `grid`) makes a list, toolbar or
+  grid one Tab stop. Arrows and `C-n`/`C-p`/`C-b`/`C-f` move within it and then
+  spatially to the nearest focusable Host in that direction, so complex
+  layouts need no extra navigation keys. Entering a group returns to its last
+  focused member, else to the member with `:aria-selected`, `:aria-current` or
+  `:aria-checked`.
+- `:on-focus-enter` runs on each Host that focus moves into from outside it,
+  by Tab, arrows, a press or `etaf-focus`. Use it to activate a region when
+  the keyboard reaches it, such as raising a window, so keyboard and pointer
+  users see the same active state.
+- `?` opens `etaf-palette`, which lists the labelled keys in scope,
+  Close when `:on-dismiss` applies, and every focusable control by its
+  `:aria-label` or text. A Host or buffer keymap that binds `?` keeps it.
+- Pointer drags have keyboard equivalents. `etaf-draggable` binds
+  `M-<arrow>` and `etaf-resizable` binds `M-S-<arrow>` (grow right/down,
+  shrink left/up), one cell per press; the controlled variants do the same.
+  A focused Host with role `separator` or `slider` and `:on-drag` steps with
+  plain arrows along its `:aria-orientation`. Custom commands call
+  `(etaf-drag-step runtime host-ref columns rows)`, which sends a start and
+  end gesture with `:keyboard t` in pointer pixel units. Put move and resize
+  Behaviors on separate Hosts: one Host's `:on-drag` handlers all receive
+  every gesture.
+
+Prefer plain letters and arrows for frequent actions and `M-` chords for
+geometry; avoid function keys. Give every icon-only control an `:aria-label`
+so the palette and screen readers can name it.
+
 ### Scrolling Hosts
 
 A Host with `:overflow 'scroll` and a fixed or viewport-relative height

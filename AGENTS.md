@@ -17,6 +17,7 @@ grouped by the theme you are chasing:
 | Mounted lifetime, retained Host tree, fine-grained bindings, commit, direct Ebox writes | `etaf-runtime` |
 | Reactive state, derived values, effects, batches, Scopes | `etaf-reactive` |
 | Events, activation, focus, input identity | `etaf-events` |
+| Scoped Host keys, keyboard drags, command palette | `etaf-keys` |
 | Behaviors and named Actions | `etaf-behavior`, `etaf-controlled-behavior`, `etaf-actions` |
 | Inherited Context and Theme resolution | `etaf-context` |
 | Data controllers, Resources, shared async completion | `etaf-data`, `etaf-resource`, `etaf-async` |

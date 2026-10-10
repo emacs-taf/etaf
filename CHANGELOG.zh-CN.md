@@ -4,6 +4,16 @@
 
 ### Added
 
+- Host 新增 `:keys`：焦点位于其内时生效的 `(KEY COMMAND [LABEL])` 作用域按键，
+  KEY 可以是 `C-c C-u` 这样的按键序列，命令的运行方式与 keymap 绑定完全相同；
+  `:focus-group` 让列表、工具栏或网格成为一个用方向键导航的 Tab 停靠点；
+  `:focus-scope 'modal` 把按键和焦点限制在打开的对话框内；`:on-dismiss` 响应
+  Escape 与 `C-g`；焦点移入 Host 时运行其 `:on-focus-enter`。
+- `?` 打开 `etaf-palette`，按名称运行带标签的按键或按下任意可聚焦控件。
+- `etaf-draggable`、`etaf-resizable` 及其受控变体用 `M-<方向键>` 移动、
+  `M-S-<方向键>` 缩放；已聚焦的 separator 与 slider 用方向键步进；
+  `etaf-drag-step` 让任何 `:on-drag` 都能由按键驱动。
+
 - 新增 `etaf-list-cache`：给变化很慢的列表提供 stale-while-revalidate 策略。
   每个列表按 key 缓存并记录到达时间，应用先展示缓存、在后台与最新回复对比；
   `etaf-list-cache-next` 一次挑一个列表（最旧的过期项优先，其次是从未加载过的），

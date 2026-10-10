@@ -13,6 +13,9 @@
 (require 'cl-lib)
 (require 'etaf-reactive)
 
+(declare-function etaf--keys-move-bindings "etaf-keys" (axis))
+(declare-function etaf--keys-resize-bindings "etaf-keys" (edges))
+
 (define-error 'etaf-behavior-error "Invalid ETAF Behavior")
 
 (cl-defstruct (etaf-behavior-spec
@@ -226,7 +229,8 @@ ref for the selected axis is an error."
     (let (origin)
       (apply #'etaf-behavior-create
              'draggable
-             (list :on-drag
+             (list :keys (etaf--keys-move-bindings axis)
+                   :on-drag
                    (lambda (gesture)
                      (pcase (plist-get gesture :phase)
                        ('start
@@ -277,7 +281,9 @@ incremental render.  ON-START, ON-RESIZE,
 ON-END and ON-CANCEL receive the original gesture plist; resize and end run
 after the refs are updated.  Cancellation leaves the last accepted geometry
 unchanged."
-  (let* ((edges (if (symbolp edges) (list edges) (or edges '(right bottom))))
+  (let* ((edges (cond ((null edges) (list 'right 'bottom))
+                           ((symbolp edges) (list edges))
+                           (t edges)))
          (edges (copy-sequence edges)))
     (unless (and (proper-list-p edges) edges
                  (cl-every (lambda (edge) (memq edge '(left right top bottom)))
@@ -315,7 +321,8 @@ unchanged."
     (let (origin)
       (apply #'etaf-behavior-create
              'resizable
-             (list :on-drag
+             (list :keys (etaf--keys-resize-bindings edges)
+                   :on-drag
                    (lambda (gesture)
                      (pcase (plist-get gesture :phase)
                        ('start
