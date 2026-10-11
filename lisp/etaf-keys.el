@@ -79,6 +79,24 @@ Escape, the region selector entry, native quit, the help key, Tab and the
 direction keys are framework-owned; applications express direction behavior
 through `:on-direction' instead of binding these keys.")
 
+(defun etaf-keymap-reserved-events (keymap)
+  "Return the framework-reserved events bound at the top level of KEYMAP.
+Escape, the region selector entry, native quit, `?', Tab and the direction
+keys are framework-owned: no application or component scope may override
+them, and direction behavior is expressed through `:on-direction' instead.
+Return a list of event vectors in binding order, or nil when KEYMAP is nil,
+not a keymap, or free of conflicts.  Component authors use this to reject a
+caller-supplied `:keymap' during validation."
+  (when (keymapp keymap)
+    (let (conflicts)
+      (map-keymap
+       (lambda (event _binding)
+         (let ((sequence (vector event)))
+           (when (member sequence etaf--keys-reserved-events)
+             (push sequence conflicts))))
+       keymap)
+      (nreverse conflicts))))
+
 (defvar etaf-direction-scheme 'arrows
   "Direction scheme of the key layer: `arrows' or `vim'.
 `arrows' uses the physical arrow keys and leaves `h', `j', `k' and `l' to

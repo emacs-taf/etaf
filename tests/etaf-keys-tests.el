@@ -343,4 +343,24 @@
     (should-error (etaf-test-with-mount (_runtime (etaf-node 'box props (list "x"))))
                   :type 'etaf-renderer-error)))
 
+(ert-deftest etaf-keys-keymap-reserved-events-scan ()
+  "The public scanner reports reserved events and accepts clean keymaps."
+  (let ((clean (let ((map (make-sparse-keymap)))
+                 (define-key map (kbd "C-c C-j") #'ignore)
+                 (define-key map (kbd "RET") #'ignore)
+                 (define-key map (kbd "M-p") #'ignore)
+                 map))
+        (dirty (let ((map (make-sparse-keymap)))
+                 (define-key map (kbd "TAB") #'ignore)
+                 (define-key map (kbd "<left>") #'ignore)
+                 (define-key map (kbd "C-g") #'ignore)
+                 map)))
+    (should-not (etaf-keymap-reserved-events nil))
+    (should-not (etaf-keymap-reserved-events clean))
+    (let ((found (etaf-keymap-reserved-events dirty)))
+      (should (= (length found) 3))
+      (should (member (vconcat (kbd "TAB")) found))
+      (should (member (vconcat (kbd "<left>")) found))
+      (should (member (vconcat (kbd "C-g")) found)))))
+
 ;;; etaf-keys-tests.el ends here

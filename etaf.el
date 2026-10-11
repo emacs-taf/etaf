@@ -777,6 +777,16 @@
 ;; at its numeric position clamped to the accessible buffer. Rejection restores
 ;; focus and point. No window is selected.
 ;;
+;; Function: etaf-keymap-reserved-events (keymap)
+;;;###autoload (autoload 'etaf-keymap-reserved-events "etaf" nil nil)
+;; Return the framework-reserved events bound at the top level of KEYMAP.
+;; Escape, the region selector entry, native quit, `?', Tab and the direction
+;; keys are framework-owned and no application or component scope may
+;; override them; direction behavior uses `:on-direction' instead.  The
+;; result is a list of event vectors in binding order, or nil when KEYMAP is
+;; nil, not a keymap, or free of conflicts.  Component authors use this to
+;; reject a caller-supplied `:keymap' during validation.
+;;
 ;; Function: etaf-direction (direction &optional runtime)
 ;;;###autoload (autoload 'etaf-direction "etaf" nil t)
 ;; Move DIRECTION in mounted RUNTIME and return the focused Host reference.

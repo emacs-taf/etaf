@@ -389,6 +389,11 @@
       "purpose": "Malformed :keys, :focus-group and :focus-scope values signal render errors."
     },
     {
+      "name": "etaf-keys-keymap-reserved-events-scan",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "The public keymap scanner reports framework-reserved events and accepts clean keymaps."
+    },
+    {
       "name": "etaf-image-test-placeholder-grid-has-exact-cell-size",
       "file": "tests/etaf-image-tests.el",
       "purpose": "A placeholder image occupies exactly its columns by rows character cells."

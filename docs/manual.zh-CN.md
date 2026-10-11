@@ -792,7 +792,8 @@ Focus 和 hit testing 是 Runtime 操作：
   release 或没有处理器时，已聚焦的 separator 或 slider 先步进，然后焦点在当前区域内移动，
   到达边界时进入相邻区域；没有区域时沿用 Ebox 的空间移动与边缘滚动。`Tab` 与 `S-Tab`
   在模态作用域的停靠点之间移动；方向键、`Tab`、`?`、`Escape`、`M-g` 与 `C-g` 是框架保留
-  入口，`:keys` 不能绑定。`etaf-direction` 为 Lisp 调用方执行同样的顺序，
+  入口，`:keys` 不能绑定；`etaf-keymap-reserved-events` 把同一保留集报告给组件，
+  让组件在验证期拒绝调用方传入的保留键 `:keymap`。`etaf-direction` 为 Lisp 调用方执行同样的顺序，
   `etaf-set-direction-scheme` 在报告冲突的 Host 与区域提示后，在方向键方案与 `vim`
   方案（`h`/`j`/`k`/`l`）之间切换。
 - `:region` 在 Host 上声明一个用户可直接寻址的功能范围——侧栏、结果列表、详情区

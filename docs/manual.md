@@ -875,7 +875,9 @@ of installing keymaps in the application:
   without a region the Ebox spatial movement and edge scrolling apply.
   `Tab` and `S-Tab` move between the focus stops of the modal scope, and the
   arrows, `Tab`, `?`, `Escape`, `M-g' and `C-g' are framework-reserved:
-  `:keys' cannot bind them.  `etaf-direction` runs this order for Lisp
+  `:keys' cannot bind them, and `etaf-keymap-reserved-events` reports the same
+  reserved set for a keymap so components reject a caller-supplied `:keymap'.
+  `etaf-direction` runs this order for Lisp
   callers, and `etaf-set-direction-scheme` switches between the arrow scheme
   and the `vim' scheme (`h'/`j'/`k'/`l') after reporting conflicting Hosts
   and region hints.
