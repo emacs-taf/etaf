@@ -784,6 +784,11 @@
       "purpose": "Multiline input, clearing and undo keep exactly one footer while the full theatre's animations continue."
     },
     {
+      "name": "etaf-animation-theatre-pad-stays-editable-in-small-windows",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "The pad keeps focus, native input and its toolbar at narrow and short viewports, and a leaked session never blocks a new one."
+    },
+    {
       "name": "etaf-animation-theatre-reflows-and-fills-its-viewport",
       "file": "tests/etaf-animation-tests.el",
       "purpose": "The animation rail spans the viewport and all twenty panels reflow between one and four columns while controls remain mounted."

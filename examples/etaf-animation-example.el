@@ -735,6 +735,14 @@
 
 (defun etaf-animation-example--edit ()
   "Start native editing of the pad text."
+  ;; A stored session whose Runtime is gone or that already ended must not
+  ;; block a new one: reopening the theatre reuses this state.
+  (let ((runtime (or (etaf-current-runtime)
+                     (etaf-runtime-for-buffer (current-buffer))))
+        (stored (etaf-value etaf-animation-example-session)))
+    (when (and stored
+               (not (eq stored (etaf-input-active-p runtime))))
+      (setf (etaf-value etaf-animation-example-session) nil)))
   (unless (etaf-value etaf-animation-example-session)
     (setf (etaf-value etaf-animation-example-session)
           (etaf-input-begin
@@ -754,7 +762,9 @@
   "End the pad's native input session when one is active."
   (interactive)
   (when-let* ((session (etaf-value etaf-animation-example-session)))
-    (etaf-input-end session)
+    (condition-case nil
+        (etaf-input-end session)
+      (error nil))
     (setf (etaf-value etaf-animation-example-session) nil)))
 
 (defun etaf-animation-example--clear-draft ()
@@ -812,16 +822,13 @@
                                         (etaf-animation-example--advance rail))))
              (columns (etaf-computed
                        (lambda () (max 1 (min 4 (floor (/ (car (etaf-viewport)) 260.0)))))))
-             (minimum-grid-height
-              (etaf-computed
-               (lambda ()
-                 (let ((rows (ceiling (/ 20.0 (etaf-value columns)))))
-                   (+ (* rows 6) (1- rows))))))
              (rail-width
               (etaf-computed
                (lambda ()
-                 (max 11 (ceiling (/ (car (etaf-viewport))
-                                     (float (frame-char-width))))))))
+                 ;; One extra cell keeps the track under the line end after
+                 ;; rounding; the rail box clips the excess.
+                 (max 12 (1+ (ceiling (/ (car (etaf-viewport))
+                                         (float (frame-char-width)))))))))
              (theme (etaf-computed
                      (lambda ()
                        (etaf-theme-resolve-palette
@@ -852,8 +859,8 @@
              etaf-animation-speed (nth 1 clock-settings)
              etaf-animation-frame-rate (nth 2 clock-settings)))))
   :view
-  (flex :class "theatre" :flex-direction 'column
-        :min-height (list 'lh (+ 14 (etaf-value minimum-grid-height)))
+  ;; The panel area scrolls; the rail, controls, pad and footer stay put.
+  (flex :class "theatre" :flex-direction 'column :height 'stretch
     (box :class "rail" :ref 'rail :width 'stretch :height '(lh 1)
          :flex-shrink 0 :overflow 'hidden :wrap-mode 'none
       (text :class "rail-dim"
@@ -909,9 +916,9 @@
                           (etaf-value etaf-animation-example-speed)
                           (number-to-string (etaf-value etaf-animation-example-fps))
                           (if (etaf-value etaf-animation-example-paused) "paused" "running")))))
-    (grid :class "panels" :ref 'panels :width 'stretch :height 'stretch
-          :flex-grow 1 :flex-basis '(lh 0) :flex-shrink 0
-          :min-height (list 'lh (etaf-value minimum-grid-height))
+    (grid :class "panels" :ref 'panels :width 'stretch
+          :flex-grow 1 :flex-basis '(lh 0) :min-height '(lh 6)
+          :overflow 'scroll
           :grid-template-columns (make-list (etaf-value columns) '(minmax (px 0) (fr 1)))
           :grid-auto-rows '(minmax (lh 6) (fr 1)) :gap '((lh 1) (ch 1))
       (etaf-animation-example-typewriter-card)
@@ -934,7 +941,11 @@
       (etaf-animation-example-plasma-card)
       (etaf-animation-example-heat-card)
       (etaf-animation-example-rainbow-card))
-    (flex :class "pad" :height '(lh 7) :flex-shrink 0 :overflow 'hidden :flex-direction 'column
+    ;; The whole editing area starts a session on press; an empty draft
+    ;; paints nothing, so the text node alone is not clickable.
+    (flex :class "pad" :ref 'pad :height '(lh 7) :flex-shrink 0 :overflow 'hidden
+          :flex-direction 'column :tab-index 0
+          :on-press #'etaf-animation-example--edit
           :gap '((lh 0) (px 0))
       (flex :class "pad-head" :flex-flow '(row wrap) :flex-shrink 0 :gap '((lh 0) (ch 1))
         (text :class "pad-title" "EDIT PAD")
@@ -950,11 +961,10 @@
         (text :class "pad-hint" :if (>= (car (etaf-viewport)) 600)
               (expr (if (etaf-value etaf-animation-example-session)
                         "原生输入 / 选择 / 撤销 · C-c C-c 完成"
-                      "点「编辑」或下方文本开始输入，动画继续在跑"))))
-      (box :class "pad-body" :flex-shrink 0
-        (text :class "pad-text" :ref 'notepad :tab-index 0
-              :on-press #'etaf-animation-example--edit
-              (expr (etaf-value etaf-animation-example-draft)))))
+                      "点这里或「编辑」开始输入，动画继续在跑"))))
+      (text :class "pad-text" :ref 'notepad :tab-index 0
+            :on-press #'etaf-animation-example--edit
+            (expr (etaf-value etaf-animation-example-draft))))
     (flex :class "footer" :ref 'footer :height '(lh 1) :flex-shrink 0 :overflow 'hidden :wrap-mode 'none
       (text :class "footer-shimmer"
             (expr (etaf-animation-example--shimmer
@@ -962,11 +972,13 @@
       (text :class "footer-note"
             " one shared clock · animations never touch keys, focus, point or other buffers")))
   :styles
-  (("&" :width stretch :height stretch :min-width (ch 28)
+  (("&" :width stretch :height stretch :min-width (ch 28) :min-height (lh 20)
     :bgcolor (etaf-theme-token :bg) :color (etaf-theme-token :ink))
    (".rail" :bgcolor (etaf-theme-token :bar))
-   (".rail-dim" :color (etaf-theme-token :dim))
-   (".rail-lit" :color (etaf-theme-token :accent) :font-weight bold)
+   (".rail-dim" :color (etaf-theme-token :dim)
+    :background-color (etaf-theme-token :bar))
+   (".rail-lit" :color (etaf-theme-token :accent) :font-weight bold
+    :background-color (etaf-theme-token :bar))
    (".controls" :bgcolor (etaf-theme-token :bar)
     :padding-left (ch 1) :padding-right (px 0))
    (".controls-gap" :color (etaf-theme-token :bar))

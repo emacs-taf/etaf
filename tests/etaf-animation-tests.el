@@ -432,19 +432,66 @@
             (should (= columns (cdr case)))
             (should (= (car rail) (car case)))
             (should (= (car grid) (car case)))
-            (should (>= (cdr grid) (+ (* rows 6) (1- rows))))
+            ;; The panel area scrolls inside the viewport; the pad and footer
+            ;; stay inside the same viewport height.
+            (should (>= (cdr grid) 6))
+            (should (< (cdr grid) 24))
             (should edit)
-            (etaf-runtime-refit runtime (car case) 80)
-            (let ((position (etaf-host-ref-position runtime 'footer)))
-              (should position)
+            (let ((pad (etaf-host-ref-position runtime 'pad))
+                  (footer (etaf-host-ref-position runtime 'footer)))
+              (should pad)
+              (should footer)
               (with-current-buffer buffer
-                (let ((line (line-number-at-pos position)))
-                  (if (= columns 4)
-                      (should (= line 80))
-                    (should (>= line 80))))))
+                (should (<= (line-number-at-pos pad) 24))
+                (should (<= (line-number-at-pos footer) 24))))
+            ;; The first panel row stays painted; later rows scroll inside the
+            ;; panel area instead of pushing the pad out of the viewport.
             (with-current-buffer buffer
-              (should (string-match-p "RAINBOW" (buffer-substring-no-properties
-                                                (point-min) (point-max)))))))
+              (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+                (should (string-match-p "TYPEWRITER" text))
+                (should (string-match-p "EDIT PAD" text))))))
+      (etaf-unmount runtime)
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest etaf-animation-theatre-pad-stays-editable-in-small-windows ()
+  "The pad keeps focus, native input and its toolbar at narrow or short sizes."
+  (let* ((buffer (etaf-animation-example-open))
+         (runtime (etaf-runtime-for-buffer buffer)))
+    (unwind-protect
+        (save-window-excursion
+          (switch-to-buffer buffer)
+          ;; Editing starts through the button, then the session ends outside
+          ;; the pad's own lifecycle: the stale reference must not block a
+          ;; later session.
+          (etaf-dispatch-event runtime 'edit-button 'press)
+          (execute-kbd-macro "seed")
+          (etaf-input-end (etaf-input-active-p runtime))
+          (dolist (size '((1200 . 44) (700 . 30) (489 . 28) (320 . 20) (1200 . 44)))
+            (etaf-runtime-refit runtime (car size) (cdr size))
+            (etaf-focus runtime 'notepad)
+            (execute-kbd-macro (kbd "RET"))
+            (let ((session (etaf-input-active-p runtime)))
+              (should session)
+              (execute-kbd-macro "ab")
+              (should (string-suffix-p "ab" (etaf-input-text session))))
+            (should (etaf-host-ref-bounds runtime 'edit-button))
+            (etaf-dispatch-event runtime 'finish-button 'press)
+            (should-not (and (etaf-input-active-p runtime) t)))
+          ;; The Edit button reopens after clearing to an empty draft.
+          (etaf-dispatch-event runtime 'clear-button 'press)
+          (etaf-dispatch-event runtime 'edit-button 'press)
+          (should (etaf-input-active-p runtime))
+          ;; An empty draft paints no text, so the pad area itself must start
+          ;; the session: that is where a user clicks to type.
+          (etaf-dispatch-event runtime 'finish-button 'press)
+          (should-not (and (etaf-input-active-p runtime) t))
+          (etaf-dispatch-event runtime 'pad 'press)
+          (should (etaf-input-active-p runtime))
+          (execute-kbd-macro "typed")
+          (should (equal "typed"
+                         (etaf-input-text (etaf-input-active-p runtime)))))
+      (when-let* ((session (etaf-input-active-p runtime)))
+        (etaf-input-end session))
       (etaf-unmount runtime)
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 

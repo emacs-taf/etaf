@@ -206,6 +206,10 @@
 
 ### Fixed
 
+- The animation theatre's editing pad stays focusable and editable in
+  narrow or short windows, and a leaked session from a dead mount can no
+  longer block starting a new one. The pad text keeps its committed Host
+  geometry instead of being wrapped in a plain box.
 - The animation theatre uses a responsive one-to-four-column Grid, wrapping
   controls and vertical scrolling on narrow windows. Its top rail spans the
   viewport instead of ending after a fixed number of characters.
