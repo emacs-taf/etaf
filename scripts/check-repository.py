@@ -131,8 +131,10 @@ def check(root, files=None):
             fail(f, 'correctness tests belong in tests/; tool tests belong in tests/tools/')
         if external or not f.endswith('.md'): continue
         text = (root / f).read_text()
-        # Validate inline and reference-style Markdown links outside fenced code.
+        # Validate inline and reference-style Markdown links outside fenced and
+        # inline code; a code span may show link syntax without being a link.
         plain = re.sub(r'^(`{3,}|~{3,}).*?^\1\s*$', '', text, flags=re.M | re.S)
+        plain = re.sub(r'(?<!`)(`+)(?!`).+?(?<!`)\1(?!`)', '', plain)
         links = re.findall(r'\]\(<?([^\s)>]+)>?(?:\s+"[^"]*")?\)', plain)
         links += re.findall(r'^\s*\[[^\]]+\]:\s*<?([^\s>]+)>?', plain, re.M)
         for link in links:
@@ -225,6 +227,14 @@ def main():
             subprocess.run(['git', '-C', str(args.root), 'checkout-index', '--all',
                             '--prefix', directory + os.sep], check=True)
             snapshot = Path(directory)
+            # Intent-to-add entries (`git add -N`, and the new files of a
+            # colocated jj working copy) are not part of the commit, but
+            # checkout-index writes them as empty files.
+            status = subprocess.check_output(['git', '-C', str(args.root), 'status', '--porcelain=v2',
+                                              '-z', '--untracked-files=no']).decode()
+            for entry in status.split('\0'):
+                if entry.startswith('1 .A '):
+                    (snapshot / entry.split(' ', 8)[8]).unlink(missing_ok=True)
             files = sorted(str(p.relative_to(snapshot)) for p in snapshot.rglob('*') if p.is_file())
             errors = check(snapshot, files)
             if not errors and not (snapshot / 'workspace.json').exists():
