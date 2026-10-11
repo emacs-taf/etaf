@@ -17,6 +17,7 @@ grouped by the theme you are chasing:
 | Mounted lifetime, retained Host tree, fine-grained bindings, commit, direct Ebox writes | `etaf-runtime` |
 | Nested viewport regions: subtree layout region publication and resolution | `etaf-viewport` |
 | Reactive state, derived values, effects, batches, Scopes | `etaf-reactive` |
+| Time-driven values, transitions and frame sequences | `etaf-animation` |
 | Events, activation, focus, input identity | `etaf-events` |
 | Scoped Host keys, keyboard drags, command palette | `etaf-keys` |
 | Named regions: declarations, entry resolution and adjacency | `etaf-regions` |

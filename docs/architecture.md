@@ -145,6 +145,13 @@ provided inside a wrapper would not reach it.  Watchers and effects created in
 setup capture their instance's evaluation context and re-enter it on later
 runs, so a reader keeps its Component environment after reactive reruns.
 
+Animation is time in the same graph.  `etaf-transition` and
+`etaf-animation-frames` publish values through ordinary refs, so a tick is
+one reactive batch, one Runtime commit and one Ebox flush with no second
+paint path.  A shared clock exists only while something runs, and a
+Scope-owned animation stops with its Scope.  A transition watches its target
+and restarts from the displayed value, which makes interruption continuous.
+
 ## 6. Ebox retained engine
 
 ETAF creates each Host's Ebox node once at mount or insertion time.  Ebox keeps

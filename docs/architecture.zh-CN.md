@@ -83,6 +83,12 @@ Context：经 slot 传入的内容保留调用方 Context，包装组件内 prov
 它。在 setup 中创建的 watcher 与 effect 会捕获实例的求值环境并在之后的运行中重
 新进入，因此读取方在响应式重跑后仍持有自己的组件环境。
 
+动画是同一张图里的时间。`etaf-transition` 与 `etaf-animation-frames` 通过
+普通 ref 发布值，因此一个 tick 只产生一次响应式 batch、一次 Runtime commit
+和一次 Ebox flush，不存在第二条绘制路径。共享时钟只在有动画运行时存在，
+归 Scope 所有的动画随 Scope 停止。transition 观察自己的 target 并从当前
+显示值重新开始，所以中断是连续的。
+
 ## 6. Ebox 保留引擎
 
 ETAF 在挂载或插入时为每个 Host 创建一次 Ebox 节点。Ebox 在 Host segment 移除前保留该节点的样式、布局与 buffer 位置。Host 属性与文本变化都是局部节点修改。

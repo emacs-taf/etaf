@@ -4,6 +4,14 @@
 
 ### Added
 
+- 新增 `etaf-transition`：返回一个随时间跟随响应式 target 的 ref，运行中改变
+  target 会从当前显示值重新开始；新增 `etaf-animation-frames`：循环播放帧序列，
+  适合 spinner、跑马灯和打字机效果。两者共用一个显示时钟
+  （`etaf-animation-frame-rate`），通过普通 ref、Runtime commit 和 Ebox flush
+  路径发布，随 Component Scope 停止，并受 `etaf-animation-enabled` 控制。
+  `etaf-animation-stop`、`etaf-animation-finish` 与 `etaf-animation-active-p`
+  用于控制和查询运行状态；`etaf-animation-interpolate`、
+  `etaf-animation-interpolators` 与 `etaf-animation-easings` 负责值转换与曲线。
 - 新增 `etaf-viewport`：读取 Component 子树所在区域的宽高；配合
   `etaf-viewport-region` 把内容包进嵌套 viewport 并向下发布已提交的盒尺寸，
   同一个应用无论放在 buffer、窗口还是窗格里都只读同一个响应式值。

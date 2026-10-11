@@ -1502,7 +1502,55 @@ View，resize 也保留最新值。
 拖动回调提供窗口像素坐标和 `start/move/end/cancel` 阶段，可在 `end` 时调用
 `etaf-video-seek` 完成跳转。
 
-## 15. 公共 API 速查
+## 15. 动画
+
+`etaf-transition` 返回一个随时间跟随响应式 target 的 ref。target 照常写，
+在需要跟随的显示位置读取返回的 ref；每次写入都从当前屏幕上显示的值重新开始
+插值，因此中途打断不会跳变。
+
+```elisp
+(etaf-define-component progress-card (&key progress)
+  "把 0 到 1 的 PROGRESS 显示成一条缓动进度条。"
+  :bindings ((target (etaf-prop 'progress))
+             (shown (etaf-transition target :duration 0.3 :easing 'ease-out)))
+  :view
+  (box :width '(px 200) :height '(lh 1) :bgcolor "#334455"
+       (box :width (list 'px (round (* 200 (etaf-value shown))))
+            :height '(lh 1) :bgcolor "#6CC4A1")))
+
+(etaf-view (progress-card :progress (etaf-value completion)))
+```
+
+`etaf-animation-frames` 改为循环播放固定帧序列，适合 spinner、跑马灯和
+打字机效果：
+
+```elisp
+(etaf-define-component spinner ()
+  :bindings ((frame (etaf-animation-frames '("⠋" "⠙" "⠹" "⠸") :interval 0.1)))
+  :view (text (expr (etaf-value frame))))
+```
+
+两种动画都走普通 ref 路径发布：一个共享时钟采样所有运行中的动画
+（`etaf-animation-frame-rate`，默认每秒 30 帧），每个 tick 只产生一次响应式
+batch、一次 Runtime commit 和一次 Ebox flush，只重写受损行。paint 类变化在
+显示帧率下开销很低；layout 变化更贵，最快的动效优先用颜色和 face。
+
+在 Component setup 或 `:bindings` 中创建时，动画归 Component Scope 所有，
+unmount 时自动停止。`etaf-animation-stop` 冻结当前显示值，
+`etaf-animation-finish` 立即应用 transition 的 target，
+`etaf-animation-active-p` 报告时钟是否正在采样它。Scope 之外的动画由调用方
+显式停止。
+
+`etaf-animation-enabled` 可以整体关掉动效：新 transition 立即应用 target，
+运行中的 transition 跳到 target，运行中的帧序列停在当前值。改回 `t` 不会
+重启已停止的运行。
+
+数字、颜色字符串、等长 list 或 vector 以及注册过的类型对之间可以转换；
+`etaf-animation-interpolate` 描述规则，`etaf-animation-interpolators` 可以扩展
+它，所以 `(lh 2)` 这类 Ebox 值也能原位插值。`etaf-animation-easings` 提供
+现成缓动曲线，`:easing` 也接受任意 progress 0 到 1 的函数。
+
+## 16. 公共 API 速查
 
 | API 家族 | 主要入口 | 何时使用 |
 | --- | --- | --- |
@@ -1520,11 +1568,12 @@ View，resize 也保留最新值。
 | Resource | `etaf-resource`、`etaf-resource-result`、`etaf-error-boundary-run` | 管理 loader 状态和 cleanup |
 | 官方 UI | `require 'etaf-ui`、`etaf-button`、`etaf-checkbox`、`etaf-number-input`、`etaf-label`、`etaf-panel`、`etaf-data-grid` | 使用现成 Component |
 | Playground | `etaf-playground-open`、`etaf-playground-open-ui`、`etaf-playground-close`、`ebox-playground-open`、`ebox-playground-close` | 探索对应层 |
+| 动画 | `etaf-transition`、`etaf-animation-frames`、`etaf-animation-stop`、`etaf-animation-finish`、`etaf-animation-active-p` | 让响应式值或帧序列随时间变化 |
 | 性能分析 | `etaf-performance-start`、`etaf-performance-stop`、`etaf-performance-mode`、`etaf-performance-show`、`etaf-performance-copy-report`、`etaf-performance-export`、`etaf-performance-environment-data`、`etaf-performance-records`、`etaf-performance-summary`、`etaf-performance-operation-stage-summary`、`etaf-performance-call-operation`、`etaf-performance-with-operation` | 通过公共 observer 定位通用 operation 的耗时并分享报告 |
 
 大多数应用一开始只需要 `etaf-view`、`etaf-mount`、`etaf-define-component`、`etaf-ref` 和事件 callback。其余 API 都是可选能力，不是理解核心语法的前置条件。
 
-## 16. 常见错误
+## 17. 常见错误
 
 - 所有属性必须放在第一个子节点之前。
 - 使用 `:font-weight 'bold`，不要使用 `:font-weight :bold`；weight 是 Elisp symbol 值，不是属性 keyword。

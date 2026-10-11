@@ -737,6 +737,36 @@
       "name": "etaf-regions-reject-invalid-declarations-and-duplicates",
       "file": "tests/etaf-regions-tests.el",
       "purpose": "Malformed :region declarations and duplicate ids or hint keys are render errors."
+    },
+    {
+      "name": "etaf-animation-transition-interpolates-and-lands-exactly",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "A transition samples between values, lands exactly and reports completion."
+    },
+    {
+      "name": "etaf-animation-transition-retargets-from-current-value",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "Changing the target mid-run continues from the displayed value without jumping."
+    },
+    {
+      "name": "etaf-animation-stop-and-finish-freeze-or-land",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "Stopping freezes the displayed value; finishing applies the target; later writes stay idle."
+    },
+    {
+      "name": "etaf-animation-scope-and-switch-control-the-clock",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "Unmounting stops the Scope's animation without a clock, and disabling applies at once."
+    },
+    {
+      "name": "etaf-animation-frames-cycle-and-finish",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "A frame sequence cycles, freezes on stop and finishes on its last frame."
+    },
+    {
+      "name": "etaf-animation-interpolation-easings-and-validation",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "Values convert over registered easings; invalid inputs signal."
     }
   ]
 }

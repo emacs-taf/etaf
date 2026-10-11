@@ -1758,7 +1758,60 @@ A drag callback receives `:phase' (`start', `move', `end', `cancel'), `:start',
 `:position' and `:delta' in window pixels; mapping the horizontal delta to
 seconds and calling `etaf-video-seek' on `end' implements scrubbing.
 
-## 15. Public API map
+## 15. Animation
+
+`etaf-transition` returns a ref that follows a reactive target over time.
+Keep writing the target as usual and read the returned ref where the display
+should follow it; every write restarts the interpolation from the value
+currently on screen, so interruption never jumps.
+
+```elisp
+(etaf-define-component progress-card (&key progress)
+  "Show PROGRESS, 0 to 1, as an eased bar."
+  :bindings ((target (etaf-prop 'progress))
+             (shown (etaf-transition target :duration 0.3 :easing 'ease-out)))
+  :view
+  (box :width '(px 200) :height '(lh 1) :bgcolor "#334455"
+       (box :width (list 'px (round (* 200 (etaf-value shown))))
+            :height '(lh 1) :bgcolor "#6CC4A1")))
+
+(etaf-view (progress-card :progress (etaf-value completion)))
+```
+
+`etaf-animation-frames` cycles a fixed sequence instead, for spinners,
+marquees and typewriter effects:
+
+```elisp
+(etaf-define-component spinner ()
+  :bindings ((frame (etaf-animation-frames '("⠋" "⠙" "⠹" "⠸") :interval 0.1)))
+  :view (text (expr (etaf-value frame))))
+```
+
+Both kinds publish through the ordinary ref path.  One shared clock samples
+every running animation (`etaf-animation-frame-rate`, 30 frames per second by
+default); each tick is one reactive batch, one Runtime commit and one Ebox
+flush that rewrites only damaged lines.  Paint changes are cheap at display
+rates; layout changes cost more, so prefer color and face motion for the
+fastest effects.
+
+Created during Component setup or `:bindings`, an animation belongs to the
+Component Scope and stops on unmount.  `etaf-animation-stop` freezes the
+displayed value, `etaf-animation-finish` applies a transition's target at
+once, and `etaf-animation-active-p` reports whether the clock is sampling it.
+Outside a Scope, the caller stops animations explicitly.
+
+`etaf-animation-enabled` turns motion off for the session: new transitions
+apply their target immediately, running transitions snap to the target and
+running frame sequences hold their current value.  Setting it back to `t`
+does not restart stopped runs.
+
+Numbers, color strings, equal-length lists or vectors and registered pairs
+convert between states; `etaf-animation-interpolate` documents the rules and
+`etaf-animation-interpolators` extends them, so Ebox values such as `(lh 2)`
+interpolate in place.  `etaf-animation-easings` names the ready curves, and
+`:easing` also accepts any function from progress 0 to 1.
+
+## 16. Public API map
 
 | API family | Main entry points | Use it when |
 | --- | --- | --- |
@@ -1777,11 +1830,12 @@ seconds and calling `etaf-video-seek' on `end' implements scrubbing.
 | Official UI | `require 'etaf-ui`, `etaf-button`, `etaf-checkbox`, `etaf-number-input`, `etaf-label`, `etaf-panel`, `etaf-data-grid` | Use ready-made Components |
 | Playground | `etaf-playground-open`, `etaf-playground-open-ui`, `etaf-playground-close`, `ebox-playground-open`, `ebox-playground-close` | Explore the corresponding layer interactively |
 | Video | `etaf-video`, `etaf-video-play`, `etaf-video-state`, `etaf-video-source-info` | Place and control a live video canvas |
+| Animation | `etaf-transition`, `etaf-animation-frames`, `etaf-animation-stop`, `etaf-animation-finish`, `etaf-animation-active-p` | Move a reactive value or frame sequence over time |
 | Performance | `etaf-performance-start`, `etaf-performance-stop`, `etaf-performance-mode`, `etaf-performance-show`, `etaf-performance-copy-report`, `etaf-performance-export`, `etaf-performance-environment-data`, `etaf-performance-records`, `etaf-performance-summary`, `etaf-performance-operation-stage-summary`, `etaf-performance-call-operation`, `etaf-performance-with-operation` | Attribute generic operation latency through public observers and share reports |
 
 Most applications need only `etaf-view`, `etaf-mount`, `etaf-define-component`, `etaf-ref`, and event callbacks at first. The remaining APIs are additive capabilities, not prerequisites for understanding the core grammar.
 
-## 16. Common mistakes
+## 17. Common mistakes
 
 - Put every property before the first child.
 - Use `:font-weight 'bold`, not `:font-weight :bold`; the weight is an Elisp symbol value, not a property keyword.

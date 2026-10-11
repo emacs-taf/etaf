@@ -69,6 +69,76 @@
 ;; native activation/navigation targets; disabled or callbackless controls block
 ;; ancestor activation. Ebox owns keyboard focus precedence and target selection.
 ;;
+;; Function: etaf-transition (source &key (duration 0.2) (easing 'ease-out) name on-complete)
+;;;###autoload (autoload 'etaf-transition "etaf" nil nil)
+;; Return a ref that follows reactive SOURCE over DURATION seconds.
+;; SOURCE is a ref, computed or zero-argument function as in `etaf-watch'; the
+;; returned ref starts at SOURCE's current value.  Every later SOURCE change
+;; restarts the interpolation from the value currently shown, so interruption
+;; never jumps.  DURATION of zero applies the target at once.  EASING is a name
+;; from `etaf-animation-easings' or a function.  ON-COMPLETE runs after a run
+;; reaches SOURCE.  Read the returned ref with `etaf-value' wherever the display
+;; follows it.  Created during Component setup or `:bindings', the animation
+;; belongs to its Scope and stops on disposal; otherwise call
+;; `etaf-animation-stop'.  NAME labels diagnostics, and invalid inputs signal
+;; `etaf-animation-error'.
+;;
+;; Function: etaf-animation-frames (frames &key (interval 0.1) (loop t) name on-complete)
+;;;###autoload (autoload 'etaf-animation-frames "etaf" nil nil)
+;; Return a ref cycling through FRAMES every INTERVAL seconds.
+;; FRAMES is a nonempty list or vector shown in order; LOOP nil stops on the
+;; last frame and runs ON-COMPLETE.  Read the returned ref with `etaf-value'
+;; wherever the display follows it.  Scope ownership and `etaf-animation-error'
+;; validation follow `etaf-transition'.
+;;
+;; Function: etaf-animation-stop (source)
+;;;###autoload (autoload 'etaf-animation-stop "etaf" nil nil)
+;; Stop animating SOURCE, a ref returned by `etaf-transition' or
+;; `etaf-animation-frames', and keep its value where it is.  Later writes to a
+;; transition's target no longer animate it.  A non-animated SOURCE signals
+;; `etaf-animation-error'.
+;;
+;; Function: etaf-animation-finish (source)
+;;;###autoload (autoload 'etaf-animation-finish "etaf" nil nil)
+;; Stop animating SOURCE by applying its final value now.
+;; A transition applies its current target and runs its completion callback
+;; when it was running; a frame sequence keeps its current frame.
+;;
+;; Function: etaf-animation-active-p (source)
+;;;###autoload (autoload 'etaf-animation-active-p "etaf" nil nil)
+;; Return non-nil while SOURCE's animation is subscribed to the shared clock.
+;; A resting transition and an unknown source return nil.
+;;
+;; Function: etaf-animation-interpolate (from to progress)
+;;;###autoload (autoload 'etaf-animation-interpolate "etaf" nil nil)
+;; Return the value at PROGRESS (0 to 1) between FROM and TO.
+;; PROGRESS 1 returns TO unchanged.  Numbers convert arithmetically, color
+;; strings blend in RGB, and equal-length lists or vectors convert element-wise
+;; while equal non-numbers stand still, so Ebox length values such as `(lh 2)'
+;; interpolate in place.  Entries in `etaf-animation-interpolators' run first.
+;;
+;; Variable: etaf-animation-enabled
+;; Whether animations interpolate over time.  When nil, new transitions apply
+;; their target immediately, running transitions snap to their target and
+;; running frame sequences hold their current value.  Setting it back to t does
+;; not restart stopped runs.
+;;
+;; Variable: etaf-animation-frame-rate
+;; Display clock rate in frames per second for running animations.
+;; A positive number; one clock serves every running animation.
+;;
+;; Variable: etaf-animation-easings
+;; Alist of (NAME . FUNCTION) easing curves mapping progress 0..1 to eased
+;; progress.  `etaf-transition' accepts a name from this alist or a function.
+;;
+;; Variable: etaf-animation-interpolators
+;; Ordered ((PREDICATE . FUNCTION) ...) consulted before built-in conversion.
+;; PREDICATE takes FROM and TO; FUNCTION takes FROM, TO and PROGRESS.
+;;
+;; Error: etaf-animation-error
+;; Invalid ETAF animation operation
+;; Catch this condition with condition-case; failed calls do not return a value.
+;;
 ;; Function: etaf-behavior-context-info (context)
 ;;;###autoload (autoload 'etaf-behavior-context-info "etaf" nil nil)
 ;; Return CONTEXT's installation facts as a fresh plist.
@@ -1901,6 +1971,7 @@
 (require 'etaf-compiler)
 (require 'etaf-component)
 (require 'etaf-reactive)
+(require 'etaf-animation)
 (require 'etaf-observer)
 (require 'etaf-context)
 (require 'etaf-resource)
@@ -1917,6 +1988,7 @@
 (require 'etaf-viewport)
 (require 'etaf-video-component)
 
+(autoload 'etaf-animation-example-open "examples/etaf-animation-example" nil t)
 (autoload 'etaf-retained-resize-open "examples/etaf-retained-resize" nil t)
 (autoload 'etaf-resource-example-open "examples/etaf-resource-example" nil t)
 (autoload 'etaf-resource-example-close "examples/etaf-resource-example" nil t)

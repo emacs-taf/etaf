@@ -4,6 +4,16 @@
 
 ### Added
 
+- `etaf-transition` returns a ref that follows a reactive target over time and
+  restarts from the displayed value when the target changes mid-run;
+  `etaf-animation-frames` cycles a frame sequence for spinners, marquees and
+  typewriter effects.  Both share one display clock
+  (`etaf-animation-frame-rate`), publish through the normal ref, Runtime commit
+  and Ebox flush path, stop with their Component Scope, and honour
+  `etaf-animation-enabled`.  `etaf-animation-stop`, `etaf-animation-finish` and
+  `etaf-animation-active-p` control and inspect a run;
+  `etaf-animation-interpolate`, `etaf-animation-interpolators` and
+  `etaf-animation-easings` cover value conversion and curves.
 - `etaf-viewport` reads the region a Component subtree lays out into, and
   `etaf-viewport-region` wraps content in a nested viewport that publishes its
   committed box to descendants, so one application lays out for a buffer, a
