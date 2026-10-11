@@ -677,6 +677,36 @@
       "name": "etaf-component-watch-callback-keeps-its-environment",
       "file": "tests/etaf-component-tests.el",
       "purpose": "A two-argument `etaf-watch' callback keeps its Context and Runtime on rerun."
+    },
+    {
+      "name": "etaf-regions-select-focuses-hint-key-and-remembers-entry",
+      "file": "tests/etaf-regions-tests.el",
+      "purpose": "M-g plus a hint key focuses a region and restores its remembered entry."
+    },
+    {
+      "name": "etaf-regions-arrows-cross-siblings-and-climb-parent-exits",
+      "file": "tests/etaf-regions-tests.el",
+      "purpose": "Arrow selection crosses sibling regions and leaves nested regions through parent exits."
+    },
+    {
+      "name": "etaf-regions-unknown-keys-keep-state-and-c-g-quits",
+      "file": "tests/etaf-regions-tests.el",
+      "purpose": "Unknown selection keys change nothing, Escape cancels and C-g quits natively."
+    },
+    {
+      "name": "etaf-regions-modal-scope-confines-the-selector",
+      "file": "tests/etaf-regions-tests.el",
+      "purpose": "Region selection inside a modal scope reaches only its own regions."
+    },
+    {
+      "name": "etaf-regions-disabled-entry-falls-back-to-declared-and-first-stop",
+      "file": "tests/etaf-regions-tests.el",
+      "purpose": "A disabled remembered entry falls back to :enter and then the first eligible stop."
+    },
+    {
+      "name": "etaf-regions-reject-invalid-declarations-and-duplicates",
+      "file": "tests/etaf-regions-tests.el",
+      "purpose": "Malformed :region declarations and duplicate ids or hint keys are render errors."
     }
   ]
 }

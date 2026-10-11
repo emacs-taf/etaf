@@ -222,6 +222,7 @@
   "Malformed :keys, :focus-group and :focus-scope values are render errors."
   (dolist (props (list (list :keys '(("n")))
                        (list :keys (list (list "g g" #'ignore)))
+                       (list :keys (list (list "M-g" #'ignore)))
                        (list :keys (list (list "C-c" #'ignore) (list "C-c n" #'ignore)))
                        (list :keys (list (list "n" #'ignore 'label)))
                        (list :focus-group 'diagonal)

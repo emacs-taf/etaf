@@ -787,6 +787,16 @@ Focus 和 hit testing 是 Runtime 操作：
   一个 Tab 停靠点。方向键和 `C-n`/`C-p`/`C-b`/`C-f` 先在组内移动，再在空间上移到
   该方向最近的可聚焦 Host，因此复杂布局无需额外的导航键。进入组时回到上次聚焦的
   成员，否则回到带 `:aria-selected`、`:aria-current` 或 `:aria-checked` 的成员。
+- `:region` 在 Host 上声明一个用户可直接寻址的功能范围——侧栏、结果列表、详情区
+  或输入区。取值是属性列表
+  `(:id SYMBOL :label STRING :key CHARACTER :enter REF :neighbors PLIST)`：
+  `:id` 是必需的稳定身份，`:key` 是一个提示字符，`:enter` 是默认入口 Host，
+  `:neighbors` 把 `:left`/`:right`/`:up`/`:down` 映射到区域 id。区域按 Host 祖先
+  嵌套，最近的包含它的区域就是父区域。在 Runtime buffer 中按 `M-g` 进入区域选择：
+  提示键聚焦该区域的有效入口（先取最后被接受的焦点位置，再取 `:enter`，最后取
+  区域内第一个可用停靠点）；方向键移到相邻区域（优先声明的 `:neighbors`，否则用
+  已提交几何，逐级向上找出口）；`?` 重发提示，Escape 取消。
+  `(etaf-region-focus 'sidebar runtime)` 供应用自己的直达键执行同样的跳转。
 - 焦点从外部移入某个 Host 时（Tab、方向键、点击或 `etaf-focus`），该 Host 的
   `:on-focus-enter` 运行。用它在键盘到达时激活区域，例如提升窗口，使键盘和指针
   用户看到相同的激活状态。

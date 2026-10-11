@@ -867,6 +867,19 @@ of installing keymaps in the application:
   layouts need no extra navigation keys. Entering a group returns to its last
   focused member, else to the member with `:aria-selected`, `:aria-current` or
   `:aria-checked`.
+- `:region` declares a user-addressable functional range on a Host — a
+  sidebar, result list, detail area or input zone.  It takes a property list
+  `(:id SYMBOL :label STRING :key CHARACTER :enter REF :neighbors PLIST)`:
+  `:id` is the required stable identity, `:key` one hint character, `:enter`
+  the default entry Host, and `:neighbors` maps `:left`/`:right`/`:up`/`:down`
+  to region ids.  Regions nest by Host ancestry; the nearest enclosing region
+  is the parent.  `M-g` opens region selection in a Runtime buffer: a hint key
+  focuses that region's effective entry (its last accepted focus position,
+  then `:enter`, then its first eligible stop), an arrow key moves to the
+  adjacent region (declared `:neighbors` first, committed geometry otherwise,
+  climbing to parent exits), `?` repeats the hint and Escape cancels.
+  `(etaf-region-focus 'sidebar runtime)` performs the same jump for an
+  application's own direct keys.
 - `:on-focus-enter` runs on each Host that focus moves into from outside it,
   by Tab, arrows, a press or `etaf-focus`. Use it to activate a region when
   the keyboard reaches it, such as raising a window, so keyboard and pointer

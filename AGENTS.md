@@ -19,6 +19,7 @@ grouped by the theme you are chasing:
 | Reactive state, derived values, effects, batches, Scopes | `etaf-reactive` |
 | Events, activation, focus, input identity | `etaf-events` |
 | Scoped Host keys, keyboard drags, command palette | `etaf-keys` |
+| Named regions: declarations, entry resolution and adjacency | `etaf-regions` |
 | Behaviors and named Actions | `etaf-behavior`, `etaf-controlled-behavior`, `etaf-actions` |
 | Inherited Context and Theme resolution | `etaf-context` |
 | Data controllers, Resources, shared async completion | `etaf-data`, `etaf-resource`, `etaf-async` |

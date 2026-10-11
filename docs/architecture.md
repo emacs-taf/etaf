@@ -194,6 +194,15 @@ focus groups, modal confinement and spatial arrow navigation, so the key layer
 never moves focus itself.  Keyboard drags reuse the pointer `:on-drag` path
 through `etaf-drag-step`, so Behaviors keep one gesture implementation.
 
+Region navigation adds one layer above the scoped keys.  `etaf-regions` reads
+the committed `:region` declarations (stable id, label, hint key, default
+entry and declared neighbors), derives their Host ancestry, remembers the
+last accepted focus position of each region and resolves arrow adjacency
+from committed geometry when no declared neighbor applies.  `etaf-region-select`
+(`M-g` in a Runtime buffer) reads the selection, and `etaf-region-focus`
+performs the same jump for application keys; Ebox still owns the focus it
+moves.
+
 ## 8. Data, Resource and reconciliation
 
 Data is a core ETAF capability.  A Data Source supplies `:load`, optional

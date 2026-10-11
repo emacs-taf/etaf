@@ -30,6 +30,7 @@
 
 (declare-function etaf--dispatch-activation "etaf-events" (runtime host-ref))
 (declare-function etaf--keys-validate "etaf-keys" (keys))
+(declare-function etaf--region-validate "etaf-regions" (region))
 (declare-function etaf--keys-register "etaf-keys" (runtime keys))
 (declare-function etaf--keys-install "etaf-keys" (runtime))
 (declare-function etaf--keys-uninstall "etaf-keys" (runtime))
@@ -473,6 +474,8 @@ QUIET, each later run records an update of CTX's Component instance."
                        (list ":focus-scope must be `modal' or nil"))))
             ((eq property :keys)
              (etaf--keys-validate value))
+            ((eq property :region)
+             (etaf--region-validate value))
             ((eq property :use)
              (unless (or (etaf--behavior-source-p value)
                          (and (proper-list-p value)

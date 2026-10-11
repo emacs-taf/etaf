@@ -647,6 +647,25 @@
 ;; the palette in a Runtime buffer unless a Host or the buffer binds `?'.  An
 ;; empty palette signals user-error.
 ;;
+;; Function: etaf-region-focus (region-id &optional runtime)
+;;;###autoload (autoload 'etaf-region-focus "etaf" nil nil)
+;; Focus REGION-ID's effective entry in mounted RUNTIME.
+;; The entry is the last accepted focus position remembered inside the
+;; region, then its declared `:enter' Host, then its first eligible stop.
+;; RUNTIME defaults to the active Runtime.  Return the focused Host
+;; reference; signal `etaf-event-error' when the region is unknown or has
+;; no usable entry.
+;;
+;; Function: etaf-region-select (&optional runtime)
+;;;###autoload (autoload 'etaf-region-select "etaf" nil t)
+;; Select a region of mounted RUNTIME from the keyboard.
+;; Show the declared regions of the current focus scope with their hint
+;; keys, then read one key: a hint key focuses that region's effective
+;; entry, an arrow key moves to the sibling region in that direction, `?'
+;; repeats the hint and Escape cancels.  Other keys change nothing and keep
+;; the selector open.  This is the framework's default `M-g' binding in
+;; Runtime buffers.
+;;
 ;; Function: etaf-focus (&optional runtime host-ref)
 ;;;###autoload (autoload 'etaf-focus "etaf" nil t)
 ;; Move focus to HOST-REF in mounted RUNTIME and move point to its position.
@@ -819,6 +838,15 @@
 ;; maps; it may not start with a printing key, and one key cannot both run a
 ;; command and start a sequence anywhere in the Runtime (a render error).
 ;; Component root `:keys' put the caller's entries first.
+;; `:region' declares a user-addressable functional range on a Host: a
+;; plist whose `:id' is the stable identity, `:label' the display name,
+;; `:key' one hint character, `:enter' the default entry Host reference,
+;; and `:neighbors' a plist mapping `:left'/`:right'/`:up'/`:down' to
+;; region ids.  Regions nest by Host ancestry.  `M-g' opens region
+;; selection in a Runtime buffer: a hint key focuses the region's effective
+;; entry and an arrow key moves to the adjacent region; `etaf-region-focus'
+;; performs the same jump for application direct keys.  The selector entry
+;; is framework-reserved and cannot be rebound through `:keys'.
 ;; `:focus-scope modal' confines Tab, arrows and :keys to an open Host such as
 ;; a dialog; outer keys are unreachable while it is visible, and printing
 ;; keys nothing in it binds are ignored instead of reaching the buffer's
@@ -1841,6 +1869,7 @@
 (require 'etaf-list-cache)
 (require 'etaf-events)
 (require 'etaf-keys)
+(require 'etaf-regions)
 (require 'etaf-performance)
 (require 'etaf-viewport)
 (require 'etaf-video-component)

@@ -107,6 +107,8 @@ Ebox 负责原生定位、point 保持、焦点顺序、drag 跟踪和输入会�
 
 键盘输入由 `etaf-keys` 中的作用域按键层处理。每个 Runtime buffer 持有一个 emulation keymap，包含所有已提交 Host 在 `:keys` 中列出的事件；每个绑定是按键时才解析的 menu-item filter。解析从 Ebox 焦点（或 point）开始；起点不在最内层可见的 `:focus-scope modal` 节点内时改从该节点开始，然后由近及远遍历已提交的 Host 祖先，并在第一个 modal Host 之后停止。第一个启用的条目胜出；否则应用框架默认值（Escape/`C-g` 交给最近的 `:on-dismiss`，`?` 打开命令面板，方向键交给已聚焦 separator 或 slider 的 `:on-drag`），其余按键继续落到其他 keymap。这一遍历是唯一的向外按键传播；普通回调仍然不冒泡。焦点组、modal 限制和空间方向导航由 Ebox 负责，按键层本身从不移动焦点。键盘拖拽通过 `etaf-drag-step` 复用指针 `:on-drag` 路径，使 Behavior 只保留一种手势实现。
 
+区域导航是在作用域按键之上加的一层。`etaf-regions` 读取已提交的 `:region` 声明（稳定 id、名称、提示键、默认入口和声明的邻接关系），推导它们的 Host 祖先，记住每个区域最后被接受的焦点位置；没有声明的邻接关系时，用已提交几何解算方向邻接。`etaf-region-select`（Runtime buffer 中的 `M-g`）读取选择，`etaf-region-focus` 为应用键执行同样的跳转；焦点仍由 Ebox 拥有。
+
 ## 8. Data、Resource 与 reconciliation
 
 Data 是 ETAF 核心能力。Data Source 提供 `:load`、可选 `:mutate` 和可选 `:dispose`。Data 与 Resource 共用异步 start、completion、cancellation、timeout 与 late-result protection。

@@ -1,4 +1,4 @@
-;;; etaf-keys.el --- Scoped Host keys and the command palette -*- lexical-binding: t; -*-
+;;; etaf-keys.el --- Scoped Host keys, regions and the command palette -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -16,10 +16,11 @@
 ;;    search stops after the first `:focus-scope modal' Host, so keys outside
 ;;    an open dialog are unreachable.  A disabled Host contributes no keys.
 ;; 3. The first entry matching the key wins.  Without one, the framework
-;;    defaults apply: Escape and C-g dispatch the nearest `:on-dismiss', `?'
-;;    opens `etaf-palette' unless the buffer binds it, arrows step
-;;    a focused separator or slider that has `:on-drag', and an open modal scope ignores unbound
-;;    printing keys so they never reach the application behind it.
+;;    defaults apply: `M-g' opens region selection, Escape and C-g dispatch
+;;    the nearest `:on-dismiss', `?' opens `etaf-palette' unless the buffer
+;;    binds it, arrows step a focused separator or slider that has
+;;    `:on-drag', and an open modal scope ignores unbound printing keys so
+;;    they never reach the application behind it.
 ;; 4. Otherwise the key falls through to the buffer's other keymaps.  Keys
 ;;    also fall through while a native input session edits the buffer.
 
@@ -31,6 +32,7 @@
 (require 'etaf-reactive)
 (require 'etaf-runtime)
 (require 'etaf-events)
+(require 'etaf-regions)
 
 (defvar etaf--current-runtime)
 (defvar etaf--current-event)
@@ -43,6 +45,15 @@
 
 (defconst etaf--keys-dismiss-events (list [escape] [?\C-g])
   "Events that dismiss the nearest Host with `:on-dismiss'.")
+
+(defconst etaf--keys-selector-event [?\M-g]
+  "Event entering region selection; `etaf-region-select' answers it.")
+
+(defconst etaf--keys-reserved-events (list [escape] etaf--keys-selector-event [?\C-g])
+  "Events a Host `:keys' may not bind.
+Escape, the region selector entry and native quit are reserved in the current
+delivery; arrows, `?' during navigation and Tab join this list together with
+their consumer migrations in the workspace keyboard navigation contract.")
 
 (defconst etaf--keys-step-events
   `(([left] . (-1 . 0)) ([right] . (1 . 0)) ([up] . (0 . -1)) ([down] . (0 . 1))
@@ -78,6 +89,11 @@
                  (member (vector (aref events 0)) etaf--keys-printing-events))
         (signal 'etaf-renderer-error
                 (list (format ":keys sequence %s starts with a printing key"
+                              (key-description events)))))
+      (when (cl-loop for event across events
+                     thereis (member (vector event) etaf--keys-reserved-events))
+        (signal 'etaf-renderer-error
+                (list (format ":keys sequence %s binds a framework-reserved key"
                               (key-description events)))))))
   keys)
 
@@ -110,13 +126,15 @@ one key cannot both run a command and start a longer sequence."
 (defun etaf--keys-install (runtime)
   "Give RUNTIME's buffer its scoped key map with the framework defaults."
   (let ((map (make-sparse-keymap)))
-    (dolist (event (append etaf--keys-dismiss-events (list [??])
+    (dolist (event (append etaf--keys-dismiss-events
+                           (list [??] etaf--keys-selector-event)
                            (mapcar #'car etaf--keys-step-events)
                            etaf--keys-printing-events))
       (etaf--keys-define map event))
     (setf (etaf-runtime-keymap runtime) map)
     (with-current-buffer (etaf-runtime-buffer runtime)
       (add-hook 'ebox-focus-change-functions #'etaf--keys-focus-enter nil t)
+      (etaf--regions-install runtime)
       (setq etaf--keys-alist (list (cons t map)))
       ;; Host keys are the most specific bindings, so they precede any
       ;; emulation map the application installed in this buffer.
@@ -131,6 +149,7 @@ one key cannot both run a command and start a longer sequence."
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
         (remove-hook 'ebox-focus-change-functions #'etaf--keys-focus-enter t)
+        (etaf--regions-uninstall runtime)
         (kill-local-variable 'etaf--keys-alist)))))
 
 (defun etaf--keys-focus-enter (previous node)
@@ -263,6 +282,8 @@ keymap or M-x runs it."
                              :test #'equal)))
         (cond
          (found (etaf--keys-command runtime (car found) (nth 2 found)))
+         ((equal event etaf--keys-selector-event)
+          #'etaf-region-select)
          ((member event etaf--keys-dismiss-events)
           (when-let* ((ref (etaf--keys-dismiss-ref runtime chain)))
             (lambda ()
