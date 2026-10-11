@@ -883,4 +883,51 @@ The shared driver owns timing, redisplay and diagnostics."
  :description "200 ms of native keystrokes at full speed with redisplay; animation gaps under 150 ms"
  :setup (lambda (_mode) (etaf-animation-benchmark--fixture nil t)))
 
+(defun etaf-animation-benchmark--multiline-fixture ()
+  "Replace multiline native drafts while the theatre continues animating."
+  (let* ((fixture (etaf-animation-benchmark--fixture nil))
+         (buffer (plist-get fixture :buffer))
+         (runtime (etaf-runtime-for-buffer buffer))
+         (drafts (list (mapconcat #'identity (make-list 12 "line 汉字") "\n")
+                       "" (make-string 400 ?x)))
+         expected)
+    (plist-put fixture :invoke
+               (lambda (sample)
+                 (setq expected (nth (mod sample (length drafts)) drafts))
+                 (etaf-performance-call-operation
+                  runtime 'benchmark "animation-multiline-input"
+                  (lambda ()
+                    (let ((interprogram-cut-function nil)
+                          (interprogram-paste-function nil))
+                      (execute-kbd-macro (kbd "C-x h C-w"))
+                      (unless (string-empty-p expected)
+                        (let* ((kill-ring (list expected))
+                               (kill-ring-yank-pointer kill-ring))
+                          (execute-kbd-macro (kbd "C-y")))))))))
+    (plist-put fixture :verify
+               (lambda ()
+                 (let ((session (etaf-input-active-p runtime)) (footers 0))
+                   (with-current-buffer buffer
+                     (save-excursion
+                       (goto-char (point-min))
+                       (while (search-forward "one shared clock" nil t)
+                         (cl-incf footers))))
+                   (cond ((not (equal (etaf-input-text session) expected))
+                          "Multiline native draft differs from the edited value")
+                         ((/= footers 1) "Multiline editing duplicated or erased the footer")
+                         ((not (etaf-host-ref-bounds runtime 'edit-button))
+                          "Multiline editing collapsed its toolbar")
+                         (t t)))))
+    (plist-put fixture :outcome
+               (lambda () (list :draft-chars (length expected)
+                                 :revision (etaf-runtime-revision runtime))))
+    fixture))
+
+(taf-benchmark-register
+ "animation.theatre.edit.multiline"
+ :version 1 :modes '(batch gui) :isolation 'series :impact 'local :budget-ms 50
+ :required-providers '(ebox)
+ :description "Native multiline paste, empty draft and long-line wrapping with animated neighbours"
+ :setup (lambda (_mode) (etaf-animation-benchmark--multiline-fixture)))
+
 ;;; performance-scenarios.el ends here

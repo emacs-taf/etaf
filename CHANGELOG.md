@@ -206,6 +206,9 @@
 
 ### Fixed
 
+- The animation theatre keeps its editing toolbar visible when a multiline
+  draft exceeds the pad's height. Multiline input, clear and undo are covered
+  alongside animated neighbours by public regressions and a GUI workload.
 - A Theme token nested in a `:hover-style' plist resolves from the
   provided Theme like any other Host style value, so catalog rows tint on
   hover instead of leaking the deferred token into the native mouse face.

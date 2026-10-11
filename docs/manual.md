@@ -1835,8 +1835,10 @@ The maintained `animation.theatre.edit.running` and `.paused` scenarios in
 redisplay through the workspace performance driver. The `.sustained` scenario
 types at full speed for 200 ms per burst and rejects observed gaps over 150 ms
 between visible scene changes. This is an explicit 15 fps workload budget,
-not a guarantee for arbitrary text sizes, callbacks or machine load. Background
-GUI samples are not physical input-to-screen latency certification.
+not a guarantee for arbitrary text sizes, callbacks or machine load. The
+`.multiline` scenario replaces drafts with multiple lines, an empty value and
+a long wrapping line while checking that the animated footer stays unique.
+Background GUI samples are not physical input-to-screen latency certification.
 
 Numbers, color strings, equal-length lists or vectors and registered pairs
 convert between states; `etaf-animation-interpolate` documents the rules and

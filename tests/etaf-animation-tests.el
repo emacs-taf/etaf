@@ -380,5 +380,39 @@
                                        etaf-animation-frame-rate))))
       (when (and buffer (buffer-live-p buffer)) (kill-buffer buffer)))))
 
+(ert-deftest etaf-animation-theatre-multiline-edit-keeps-one-footer ()
+  "Growing, clearing and undoing a multiline draft cannot duplicate animation."
+  (let* ((buffer (etaf-animation-example-open))
+         (runtime (etaf-runtime-for-buffer buffer)))
+    (unwind-protect
+        (save-window-excursion
+          (switch-to-buffer buffer)
+          (etaf-runtime-refit runtime 1200 52)
+          (etaf-dispatch-event runtime 'clear-button 'press)
+          (etaf-dispatch-event runtime 'edit-button 'press)
+          (let ((session (etaf-input-active-p runtime)))
+            (dotimes (_ 3)
+              (execute-kbd-macro
+               (vconcat "one" [return] "two" [return] "three" [return]
+                        "four" [return] "five" [return] "six" [return]
+                        "seven" [return] "eight"))
+              (dolist (keys (list nil (kbd "C-x h C-w") (kbd "C-/") (kbd "C-x h C-w")))
+                (when keys (execute-kbd-macro keys))
+                (let ((revision (etaf-runtime-revision runtime)))
+                  (etaf-animation-test-wait
+                   (lambda () (> (etaf-runtime-revision runtime) (+ revision 1)))))
+                (let ((count 0))
+                  (save-excursion
+                    (goto-char (point-min))
+                    (while (search-forward "one shared clock" nil t) (cl-incf count)))
+                  (should (= count 1)))
+                (let ((toolbar (etaf-host-ref-bounds runtime 'edit-button)))
+                  (should toolbar))
+                (should (string-match-p "EDIT PAD" (buffer-substring-no-properties
+                                                   (point-min) (point-max)))))
+              (should (equal (etaf-input-text session) "")))))
+      (etaf-unmount runtime)
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 (provide 'etaf-animation-tests)
 ;;; etaf-animation-tests.el ends here

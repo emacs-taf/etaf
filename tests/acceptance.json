@@ -779,6 +779,11 @@
       "purpose": "Animation publications preserve native text editing, empty values, undo, selection and unrelated buffers."
     },
     {
+      "name": "etaf-animation-theatre-multiline-edit-keeps-one-footer",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "Multiline input, clearing and undo keep exactly one footer while the full theatre's animations continue."
+    },
+    {
       "name": "etaf-animation-theatre-controls-and-edit-pad",
       "file": "tests/etaf-animation-tests.el",
       "purpose": "The twenty-panel theatre keeps stable lanes and working pause, speed, frame-rate, theme and native editing controls."

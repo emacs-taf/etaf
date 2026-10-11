@@ -921,7 +921,7 @@
         (etaf-animation-example-rainbow-card)))
     (flex :class "pad" :height '(lh 7) :overflow 'hidden :flex-direction 'column
           :gap '((lh 0) (px 0))
-      (flex :class "pad-head" :height '(lh 1) :gap '((lh 0) (ch 1))
+      (flex :class "pad-head" :height '(lh 1) :flex-shrink 0 :gap '((lh 0) (ch 1))
         (text :class "pad-title" "EDIT PAD")
         (etaf-animation-example-control-button
          :ref 'edit-button :label "编辑" :active (and (etaf-value etaf-animation-example-session) t)
@@ -936,9 +936,10 @@
               (expr (if (etaf-value etaf-animation-example-session)
                         "原生输入 / 选择 / 撤销 · C-c C-c 完成"
                       "点「编辑」或下方文本开始输入，动画继续在跑"))))
-      (text :class "pad-text" :ref 'notepad :tab-index 0
-            :on-press #'etaf-animation-example--edit
-            (expr (etaf-value etaf-animation-example-draft))))
+      (box :class "pad-body" :flex-shrink 0
+        (text :class "pad-text" :ref 'notepad :tab-index 0
+              :on-press #'etaf-animation-example--edit
+              (expr (etaf-value etaf-animation-example-draft)))))
     (flex :class "footer" :height '(lh 1) :overflow 'hidden :wrap-mode 'none
       (text :class "footer-shimmer"
             (expr (etaf-animation-example--shimmer
