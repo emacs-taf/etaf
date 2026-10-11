@@ -13,16 +13,37 @@ import sys
 import tempfile
 from urllib.parse import unquote
 
-POLICY_VERSION = 10
+POLICY_VERSION = 11
 DOC_NAMES = {'README.md', 'README.zh-CN.md', 'CHANGELOG.md', 'CHANGELOG.zh-CN.md',
              'AGENTS.md', 'docs/manual.md', 'docs/manual.zh-CN.md',
              'docs/architecture.md', 'docs/architecture.zh-CN.md'}
 WORKSPACE_DOC_NAMES = {'docs/keyboard-navigation.zh-CN.md'}
 DIRS = {'lisp', 'tests', 'examples', 'benchmarks', 'scripts', 'docs', 'native',
-        'dictionaries', 'design', '.github', '.gitea', '.githooks'}
+        'dictionaries', 'design', 'book', '.github', '.gitea', '.githooks'}
+# A reference book is product content rendered by its package: one Markdown
+# chapter per file under book/<language>/, with the same link checks as docs.
+BOOK_CHAPTER = re.compile(r'book/[a-z]{2}(?:-[A-Z][A-Za-z]+)?/[a-z0-9]+(?:-[a-z0-9]+)*\.md')
 SKIP = {'.git', '.jj', '__pycache__', 'target', '.omx', '.worktrees', '.claude'}
 SHARED = ('scripts/check-api.py', 'scripts/check-api.el', 'scripts/api-workspace.json', '.editorconfig', 'scripts/check-repository.py', 'scripts/run-acceptance.py', '.githooks/pre-commit', '.githooks/commit-msg', 'scripts/check-commit-message.py',
           '.github/workflows/structure.yml')
+
+
+def provider_directory(root):
+    """Return the checkout directory holding the sibling provider repositories.
+
+    Providers normally sit beside the repository.  A nested application
+    workspace keeps them one level above its own checkout, so accept the
+    nearest ancestor that holds a provider named by the API registry.
+    """
+    try:
+        names = json.loads((Path(__file__).resolve().parent / 'api-workspace.json').read_text())
+    except (OSError, ValueError):
+        names = {}
+    providers = Path(root).resolve().parent
+    if not any((providers / name).is_dir() for name in names) and any(
+            (providers.parent / name).is_dir() for name in names):
+        providers = providers.parent
+    return providers
 
 
 def git_checkout_p(root):
@@ -95,7 +116,10 @@ def check(root, files=None):
                 fail(f, 'delete native internal unit tests; validate through public package APIs')
         # Preserve upstream dictionary/vendor licensing and resource names.
         external = parts[0] == 'dictionaries' or f.startswith('native/vendor/')
-        if f.endswith('.md') and f not in doc_names and not external and not instructions:
+        chapter = parts[0] == 'book' and f.endswith('.md')
+        if chapter and not BOOK_CHAPTER.fullmatch(f):
+            fail(f, 'book chapters are book/<language>/<lowercase-kebab-slug>.md')
+        if f.endswith('.md') and f not in doc_names and not external and not instructions and not chapter:
             fail(f, 'use README, CHANGELOG, docs/manual or docs/architecture; merge or delete other documents')
         if f.startswith('docs/') and not instructions and (len(parts) != 2 or f not in doc_names):
             fail(f, 'documentation must be flat and use the fixed document names')
@@ -205,7 +229,7 @@ def main():
             errors = check(snapshot, files)
             if not errors and not (snapshot / 'workspace.json').exists():
                 result = subprocess.run([sys.executable, str(snapshot/'scripts/check-api.py'),
-                                         '--root', str(snapshot), '--providers-dir', str(args.root.resolve().parent)],
+                                         '--root', str(snapshot), '--providers-dir', str(provider_directory(args.root))],
                                         capture_output=True, text=True)
                 if result.returncode: errors.append(result.stderr.strip())
     else:
@@ -213,7 +237,9 @@ def main():
         if not errors:
             mode = '--workspace' if (args.root/'workspace.json').exists() else '--root'
             result = subprocess.run([sys.executable, str(args.root/'scripts/check-api.py'),
-                                     mode, str(args.root.resolve())], capture_output=True, text=True)
+                                     mode, str(args.root.resolve()),
+                                     '--providers-dir', str(provider_directory(args.root))],
+                                    capture_output=True, text=True)
             if result.returncode: errors.append(result.stderr.strip())
     if errors:
         print('\n'.join(errors), file=sys.stderr)
