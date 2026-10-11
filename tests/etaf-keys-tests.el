@@ -130,7 +130,7 @@
       (should (equal (nreverse log) '(window b b window))))))
 
 (ert-deftest etaf-keys-modal-scope-hides-outer-keys-and-escape-dismisses ()
-  "An open modal Host confines keys, ignores stray letters; Escape/C-g dismiss."
+  "An open modal Host confines keys, ignores stray letters; Escape dismisses, C-g stays native."
   (let ((open (etaf-ref t)) (log nil))
     (etaf-test-with-mount (runtime (etaf-view
                                     (column :keys (list (list "q" (lambda () (push 'quit log))))
@@ -152,9 +152,9 @@
       (should-not (eq (key-binding "w" t) #'ignore))
       (etaf-set-value open t)
       (etaf-focus runtime 'ok)
-      (etaf-keys-test-press "C-g")
-      (should (equal log '(dismiss quit dismiss)))
-      (should-not (etaf-value open)))))
+      (should (eq (key-binding (kbd "C-g") t) 'keyboard-quit))
+      (should (equal log '(quit dismiss)))
+      (should (etaf-value open)))))
 
 (ert-deftest etaf-keys-behaviors-move-and-resize-from-the-keyboard ()
   "Draggable and resizable Behaviors accept M-arrows and M-S-arrows."

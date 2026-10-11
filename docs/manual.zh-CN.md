@@ -781,7 +781,7 @@ Focus 和 hit testing 是 Runtime 操作：
 - `:focus-scope 'modal` 把 Tab、方向键和 `:keys` 限制在打开的对话框、菜单或
   查看器中；它被移除之前外部按键不可达，其内未绑定的可打印按键会被忽略，
   不会落到应用自身的 keymap。
-- 没有更近 Host 绑定 Escape 或 `C-g` 时，它们运行 `:on-dismiss`。这是按键层唯一
+- 没有更近 Host 绑定 Escape 时，它运行 `:on-dismiss`。这是按键层唯一
   向外查找的回调；用它关闭对话框、弹出层和查看器。
 - `:focus-group`（`vertical`、`horizontal` 或 `grid`）让列表、工具栏或网格成为
   一个 Tab 停靠点。方向键和 `C-n`/`C-p`/`C-b`/`C-f` 先在组内移动，再在空间上移到

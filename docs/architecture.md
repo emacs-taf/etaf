@@ -186,8 +186,8 @@ each binding is a menu-item filter that resolves at key time.  Resolution
 starts at Ebox focus (or point), moves to the innermost visible
 `:focus-scope modal` node when the start lies outside it, then walks committed
 Host ancestors nearest first and stops after the first modal Host.  The first
-enabled entry wins; otherwise framework defaults apply (Escape/`C-g` to the
-nearest `:on-dismiss`, `?` to the palette, arrows to a focused separator or
+enabled entry wins; otherwise framework defaults apply (Escape to the
+nearest `:on-dismiss`, `?` to read-only help, arrows to a focused separator or
 slider's `:on-drag`), and anything else falls through.  This walk is the only
 outward key propagation; ordinary callbacks still do not bubble.  Ebox owns
 focus groups, modal confinement and spatial arrow navigation, so the key layer

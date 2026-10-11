@@ -858,7 +858,7 @@ of installing keymaps in the application:
   menu or viewer. Keys outside it are unreachable until it is removed, and
   printing keys that nothing in it binds are ignored rather than reaching the
   application's own keymaps.
-- `:on-dismiss` runs for Escape or `C-g` when no nearer Host binds them. It is
+- `:on-dismiss` runs for Escape when no nearer Host binds it. It is
   the only callback the key layer searches for outward; close dialogs,
   popovers and viewers with it.
 - `:focus-group` (`vertical`, `horizontal` or `grid`) makes a list, toolbar or

@@ -862,7 +862,7 @@
 ;; keys nothing in it binds are ignored instead of reaching the buffer's
 ;; keymaps.  `?' opens read-only `etaf-help' unless a Host or the buffer
 ;; binds it.  `:on-dismiss'
-;; runs for Escape or C-g when no nearer Host binds them; it is the one
+;; runs for Escape when no nearer Host binds it; it is the one
 ;; callback that the key layer searches for outward.  `:focus-group' vertical,
 ;; horizontal or grid makes its focusable descendants one Tab stop; arrows and
 ;; C-n/C-p/C-b/C-f move within it and then spatially to the nearest stop, and

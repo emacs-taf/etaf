@@ -16,10 +16,10 @@
 ;;    search stops after the first `:focus-scope modal' Host, so keys outside
 ;;    an open dialog are unreachable.  A disabled Host contributes no keys.
 ;; 3. The first entry matching the key wins.  Without one, the framework
-;;    defaults apply: `M-g' opens region selection, Escape and C-g dispatch
-;;    the nearest `:on-dismiss', `?' opens `etaf-palette' unless the buffer
-;;    binds it, arrows step a focused separator or slider that has
-;;    `:on-drag', and an open modal scope ignores unbound printing keys so
+;;    defaults apply: `M-g' opens region selection, Escape dispatches the
+;;    nearest `:on-dismiss', `?' opens `etaf-help' unless the buffer binds
+;;    it, arrows step a focused separator or slider that has `:on-drag',
+;;    and an open modal scope ignores unbound printing keys so
 ;;    they never reach the application behind it.
 ;; 4. Otherwise the key falls through to the buffer's other keymaps.  Keys
 ;;    also fall through while a native input session edits the buffer.
@@ -43,8 +43,9 @@
 
 (add-to-list 'emulation-mode-map-alists 'etaf--keys-alist)
 
-(defconst etaf--keys-dismiss-events (list [escape] [?\C-g])
-  "Events that dismiss the nearest Host with `:on-dismiss'.")
+(defconst etaf--keys-dismiss-events (list [escape])
+  "Events that dismiss the nearest Host with `:on-dismiss'.
+C-g is never bound: it keeps Emacs's native keyboard-quit semantics.")
 
 (defconst etaf--keys-selector-event [?\M-g]
   "Event entering region selection; `etaf-region-select' answers it.")
