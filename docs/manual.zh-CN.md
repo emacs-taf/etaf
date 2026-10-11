@@ -408,6 +408,24 @@ Component setup 中的 effect 和 watch 由 Component Scope 持有，卸载时�
 ```
 
 
+### viewport 区域
+
+`etaf-viewport` 返回当前 Component 子树所在区域的 `(PIXELS . ROWS)`。没有区域时
+就是挂载 Runtime 的 viewport；在 `etaf-viewport-region` 内则是该区域已提交的
+盒尺寸：
+
+```elisp
+(etaf-viewport-region
+  (my-application))            ; 应用改为按这个区域排版
+```
+
+该值是响应式的：读取它的 render、effect 或 computed 会在区域或 Runtime
+viewport 变化后重跑；区域的首次 flush 提交几何之前读到 nil。区域会填满父节点给
+出的空间，并发布自己 Host 的边框盒，所以 padding 留在区域外层、不要给区域加边
+框；调用处传的 Host 属性会覆盖默认值。解析按 Component 的渲染位置进行：经 slot
+传入的内容同样能看到包住它的区域，而 Context 仍沿调用方链路继承。
+
+
 ## 6. children 与 slot
 
 普通尾部子节点就是匿名/默认 slot：

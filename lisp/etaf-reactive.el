@@ -604,6 +604,18 @@ An error from FUNCTION leaves SOURCE unchanged."
     ('post 2)
     (_ (signal 'etaf-reactive-error (list "Invalid watcher flush" flush)))))
 
+(defvar etaf--effect-environment-function nil
+  "Function wrapping an effect callback in its creation environment.
+The Runtime layer installs it.  `etaf-watch' and `etaf-watch-effect' created
+during a Component setup or a Runtime operation call it so later reactive
+runs keep that operation's Context, Runtime and lifecycle phase.")
+
+(defun etaf--effect-environment (function)
+  "Return FUNCTION wrapped in the environment current at its creation."
+  (if etaf--effect-environment-function
+      (funcall etaf--effect-environment-function function)
+    function))
+
 ;;;###autoload
 (cl-defun etaf-watch
     (source callback &key immediate (flush 'pre) test name)
@@ -614,11 +626,16 @@ CALLBACK for the initial value.  FLUSH is `pre' (before Runtimes write their
 buffers) or `post' (after).  TEST compares values; it defaults to the
 source's test.  NAME labels diagnostics.  When CALLBACK returns a function,
 it runs before the next callback and when the watcher stops.  Return a
-zero-argument stop function."
+zero-argument stop function.
+
+A watcher created during Component setup runs its callback in that
+Component's environment on every later run, so Context and Runtime reads
+inside the callback keep working after the first run."
   (etaf--assert-not-rendering 'watch)
   (unless (functionp callback)
     (signal 'wrong-type-argument (list 'functionp callback)))
-  (let* ((getter (etaf--watch-getter source))
+  (let* ((callback (etaf--effect-environment callback))
+         (getter (etaf--watch-getter source))
          (same-p (or test
                      (and (etaf--source-p source) (etaf--source-test source))
                      #'etaf--reactive-same-p))
@@ -628,15 +645,15 @@ zero-argument stop function."
            (lambda ()
              (let ((new (funcall getter)))
                (etaf-untracked
-                 (if (and initialized (funcall same-p old new))
-                     nil
-                   (let ((previous old) (first (not initialized)))
-                     (setq old new initialized t)
-                     (when (or immediate (not first))
-                       (when cleanup
-                         (let ((f cleanup)) (setq cleanup nil) (funcall f)))
-                       (let ((result (funcall callback new previous)))
-                         (when (functionp result) (setq cleanup result)))))))))
+                (if (and initialized (funcall same-p old new))
+                    nil
+                  (let ((previous old) (first (not initialized)))
+                    (setq old new initialized t)
+                    (when (or immediate (not first))
+                      (when cleanup
+                        (let ((f cleanup)) (setq cleanup nil) (funcall f)))
+                      (let ((result (funcall callback new previous)))
+                        (when (functionp result) (setq cleanup result)))))))))
            :phase (etaf--flush-phase flush)
            :name (or name 'watch)))
     (setf (etaf-effect-on-stop effect)
@@ -650,11 +667,16 @@ zero-argument stop function."
 
 FLUSH is `pre' or `post' as in `etaf-watch'.  NAME optionally labels the
 effect.  If FUNCTION returns a function, it cleans up the previous run and
-runs when the effect stops.  Return a zero-argument stop function."
+runs when the effect stops.  Return a zero-argument stop function.
+
+An effect created during Component setup runs in that Component's
+environment on every later run, so Context and Runtime reads inside it keep
+working after the first run."
   (etaf--assert-not-rendering 'watch-effect)
   (unless (functionp function)
     (signal 'wrong-type-argument (list 'functionp function)))
-  (let (cleanup effect)
+  (let ((function (etaf--effect-environment function))
+        cleanup effect)
     (setq effect
           (etaf-reactive-effect-create
            (lambda ()

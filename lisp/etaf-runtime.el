@@ -82,6 +82,11 @@ segments own an Ebox NODE; the others group their KIDS."
 (defvar etaf--current-runtime nil
   "Runtime owning the current setup, lifecycle, or event operation.")
 
+(defvar etaf--current-ictx nil
+  "Evaluation context of the Component operation currently running.
+`etaf--ctx-call' and Component setup bind it so effects created there can
+capture the environment they must run in later.")
+
 (defvar etaf--dirty-runtimes nil
   "Runtimes with work for the next drain commit.")
 
@@ -323,10 +328,13 @@ STAMP names the slot holding an object's creating transaction, or nil."
             (let ((etaf--current-context (etaf--ictx-context ctx)))
               (etaf--theme-source))))))
 
-(defun etaf--ctx-call (ctx function)
-  "Call FUNCTION with CTX's Component environment and return its value."
+(defun etaf--ctx-call (ctx function &optional phase)
+  "Call FUNCTION with CTX's Component environment and return its value.
+PHASE is `render' (the default) or `lifecycle' for a retained effect that
+must run outside the pure render phase."
   (let* ((instance (etaf--ictx-owner ctx))
          (spec (and instance (etaf--instance-spec instance)))
+         (etaf--current-ictx ctx)
          (etaf--current-runtime (etaf--ictx-runtime ctx))
          (etaf--current-context (etaf--ictx-context ctx))
          (etaf--current-component-instance instance)
@@ -339,9 +347,23 @@ STAMP names the slot holding an object's creating transaction, or nil."
          (etaf--current-component-setup-complete-p
           (and instance (etaf--instance-setup-p instance)))
          (etaf--render-parent-style-owners (and instance (etaf--instance-pctx instance)))
-         (etaf--component-phase (and instance 'render))
-         (etaf--render-phase-p t))
+         (etaf--component-phase (and instance (if (eq phase 'lifecycle) 'setup 'render)))
+         (etaf--render-phase-p (not (eq phase 'lifecycle))))
     (funcall function)))
+
+(defun etaf--effect-environment (function)
+  "Return FUNCTION wrapped to run in the current Component environment.
+A watcher or effect created during Component setup or a Runtime operation
+keeps that operation's Context, Runtime and lifecycle phase on every later
+reactive run.  The wrapper forwards any arguments, because watcher callbacks
+receive the new and old values."
+  (let ((ctx etaf--current-ictx))
+    (if (null ctx)
+        function
+      (lambda (&rest arguments)
+        (etaf--ctx-call ctx (lambda () (apply function arguments)) 'lifecycle)))))
+
+(setq etaf--effect-environment-function #'etaf--effect-environment)
 
 (defun etaf--note-update (ctx)
   "Record that an effect owned by CTX's instance re-ran."
@@ -1690,6 +1712,7 @@ stays proportional to the change."
                                    :name (etaf--component-spec-name spec))))
     (setf (etaf--instance-scope inst) scope)
     (let* ((etaf--component-phase 'setup)
+           (etaf--current-ictx ctx)
            (etaf--current-component-instance inst)
            (etaf--current-runtime runtime)
            (etaf--current-context (etaf--ictx-context ctx))

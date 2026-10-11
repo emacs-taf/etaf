@@ -74,6 +74,15 @@ Runtime commit 在任一保留节点发生变化时执行一次 Ebox batch flush
 
 Scope 拥有 effects、computeds、watchers 和 cleanup。释放 Component Scope 时先停止 child Scopes 与 effects，再运行 cleanup。已停止的 Scope 不能再接收工作。
 
+viewport 是挂载子树排版所依据的区域。挂载本身发布 Runtime viewport
+（`etaf-runtime-viewport`）；`etaf-viewport-region` 把内容包进一个 Host，该 Host
+已提交的边框盒就成为渲染树下所有 Component 的 viewport。区域按 Runtime 以 Host
+引用索引，并在 Ebox 每次 flush 之后用 `etaf-host-ref-size` 重新发布，因此读取方
+依赖的是已提交几何而不是猜测。解析沿 Component segment 的祖先链，而不是
+Context：经 slot 传入的内容保留调用方 Context，包装组件内 provide 的值到不了
+它。在 setup 中创建的 watcher 与 effect 会捕获实例的求值环境并在之后的运行中重
+新进入，因此读取方在响应式重跑后仍持有自己的组件环境。
+
 ## 6. Ebox 保留引擎
 
 ETAF 在挂载或插入时为每个 Host 创建一次 Ebox 节点。Ebox 在 Host segment 移除前保留该节点的样式、布局与 buffer 位置。Host 属性与文本变化都是局部节点修改。

@@ -632,6 +632,51 @@
       "name": "etaf-view-unmount-and-kill-release-runtime",
       "file": "tests/etaf-view-tests.el",
       "purpose": "Unmounting releases the Runtime; killing a buffer unmounts it."
+    },
+    {
+      "name": "etaf-component-watcher-keeps-its-environment-on-rerun",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "A Component watcher reruns with its Context and Runtime still bound."
+    },
+    {
+      "name": "etaf-viewport-region-publishes-its-committed-size",
+      "file": "tests/etaf-viewport-tests.el",
+      "purpose": "Content below a region reads the region's committed box, not the mount."
+    },
+    {
+      "name": "etaf-viewport-falls-back-to-the-runtime-viewport",
+      "file": "tests/etaf-viewport-tests.el",
+      "purpose": "Without a region the subtree reads the mounted Runtime's viewport."
+    },
+    {
+      "name": "etaf-viewport-region-reaches-slot-content",
+      "file": "tests/etaf-viewport-tests.el",
+      "purpose": "Content passed through a slot resolves the wrapping region."
+    },
+    {
+      "name": "etaf-viewport-region-republishes-after-a-region-resize",
+      "file": "tests/etaf-viewport-tests.el",
+      "purpose": "A region's own size change republishes it after the next flush."
+    },
+    {
+      "name": "etaf-viewport-region-follows-the-mount-refit",
+      "file": "tests/etaf-viewport-tests.el",
+      "purpose": "A stretched region republishes after the Runtime viewport changes."
+    },
+    {
+      "name": "etaf-viewport-nearest-region-wins",
+      "file": "tests/etaf-viewport-tests.el",
+      "purpose": "A nested region shadows the region around it."
+    },
+    {
+      "name": "etaf-viewport-region-stops-publishing-when-removed",
+      "file": "tests/etaf-viewport-tests.el",
+      "purpose": "Removing a region returns its subtree to the Runtime viewport."
+    },
+    {
+      "name": "etaf-component-watch-callback-keeps-its-environment",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "A two-argument `etaf-watch' callback keeps its Context and Runtime on rerun."
     }
   ]
 }

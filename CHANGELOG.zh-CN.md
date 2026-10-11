@@ -4,6 +4,12 @@
 
 ### Added
 
+- 新增 `etaf-viewport`：读取 Component 子树所在区域的宽高；配合
+  `etaf-viewport-region` 把内容包进嵌套 viewport 并向下发布已提交的盒尺寸，
+  同一个应用无论放在 buffer、窗口还是窗格里都只读同一个响应式值。
+- 在 Component setup 中创建的 watcher 与 effect 会在之后每次响应式重跑时回到该
+  Component 的环境，`etaf-inject`、`etaf-current-runtime` 和 `etaf-viewport`
+  在首次运行之后依然可用。
 - Host 新增 `:keys`：焦点位于其内时生效的 `(KEY COMMAND [LABEL])` 作用域按键，
   KEY 可以是 `C-c C-u` 这样的按键序列，命令的运行方式与 keymap 绑定完全相同；
   `:focus-group` 让列表、工具栏或网格成为一个用方向键导航的 Tab 停靠点；

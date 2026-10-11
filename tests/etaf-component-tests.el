@@ -65,6 +65,41 @@
   :view (text (expr (format "injected %s"
                             (if (etaf-ref-p value) (etaf-value value) value)))))
 
+(etaf-define-component etaf-component-test-watcher (&key source seen)
+  "Record SOURCE, the injected Context and the Runtime into the cons SEEN."
+  :setup
+  (progn
+    (etaf-watch-effect
+     (lambda ()
+       (setcar seen (list (etaf-value source)
+                          (etaf-inject 'etaf-component-test-key "missing")
+                          (and (etaf-current-runtime) t)))))
+    nil)
+  :view (text "watcher"))
+
+(etaf-define-component etaf-component-test-watcher-provider (&key source seen)
+  "Provide a context key around a child that watches SOURCE."
+  :setup (etaf-provide 'etaf-component-test-key "provided")
+  :view (etaf-component-test-watcher :source source :seen seen))
+
+(etaf-define-component etaf-component-test-watch-source (&key source seen)
+  "Record SOURCE through a two-argument `etaf-watch' callback into SEEN."
+  :setup
+  (progn
+    (etaf-watch source
+                (lambda (new _old)
+                  (setcar seen (list new
+                                     (etaf-inject 'etaf-component-test-key "missing")
+                                     (and (etaf-current-runtime) t))))
+                :immediate t)
+    nil)
+  :view (text "watcher"))
+
+(etaf-define-component etaf-component-test-watch-provider (&key source seen)
+  "Provide a context key around a child that watches SOURCE."
+  :setup (etaf-provide 'etaf-component-test-key "provided")
+  :view (etaf-component-test-watch-source :source source :seen seen))
+
 (etaf-define-component etaf-component-test-themed ()
   "Paint with a theme token."
   :view (column (box :class "swatch" "swatch"))
@@ -163,6 +198,26 @@
       (should (equal (etaf-test-lines) '("injected two" "injected missing")))))
   (etaf-test-with-mount (_runtime (etaf-view (column (etaf-component-test-consumer))))
     (should (equal (etaf-test-lines) '("injected missing")))))
+
+(ert-deftest etaf-component-watcher-keeps-its-environment-on-rerun ()
+  "A Component watcher keeps Context and Runtime on later reactive runs."
+  (let* ((source (etaf-ref 1))
+         (seen (cons nil nil)))
+    (etaf-test-with-mount (_runtime (etaf-view (etaf-component-test-watcher-provider
+                                                :source source :seen seen)))
+      (should (equal (car seen) (list 1 "provided" t)))
+      (etaf-set-value source 2)
+      (should (equal (car seen) (list 2 "provided" t))))))
+
+(ert-deftest etaf-component-watch-callback-keeps-its-environment ()
+  "A two-argument `etaf-watch' callback keeps its environment when it reruns."
+  (let* ((source (etaf-ref 1))
+         (seen (cons nil nil)))
+    (etaf-test-with-mount (_runtime (etaf-view (etaf-component-test-watch-provider
+                                                :source source :seen seen)))
+      (should (equal (car seen) (list 1 "provided" t)))
+      (etaf-set-value source 2)
+      (should (equal (car seen) (list 2 "provided" t))))))
 
 (ert-deftest etaf-component-theme-tokens-follow-provided-theme ()
   "Theme tokens in Component rules resolve from the provided Theme."

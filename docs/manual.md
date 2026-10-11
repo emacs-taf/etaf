@@ -443,6 +443,27 @@ fails. These operations run outside View rendering.
 ```
 
 
+### Viewport regions
+
+`etaf-viewport` returns the region the current Component subtree lays out
+into as `(PIXELS . ROWS)`.  Without a region that is the mounted Runtime's
+viewport; inside an `etaf-viewport-region` it is that region's committed box:
+
+```elisp
+(etaf-viewport-region
+  (my-application))            ; the application lays out for this region
+```
+
+The value is reactive: a render, effect or computed that reads it runs again
+when the region or Runtime viewport changes, and it reads as nil until the
+region's first flush commits geometry.  A region fills the space its parent
+gives it and publishes its Host's border box, so keep padding on the outside
+of the region and do not give it a border; Host attributes at the call site
+override the defaults.  Resolution follows where a Component is rendered, so
+content passed through a slot still sees the region that wraps it, while
+Context keeps the caller's chain.
+
+
 ## 6. Children and slots
 
 Trailing children are the anonymous/default slot:

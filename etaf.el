@@ -1621,6 +1621,32 @@
 ;; Invalid ETAF View syntax
 ;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
+;; Function: etaf-viewport ()
+;;;###autoload (autoload 'etaf-viewport "etaf" nil nil)
+;; Return the viewport of the current Component subtree as (PIXELS . ROWS).
+;; PIXELS is the width in pixels and ROWS the height in lines.  Inside an
+;; `etaf-viewport-region' the value is that region's committed size; elsewhere
+;; it is the mounted Runtime's viewport (see `etaf-runtime-viewport').  A
+;; region reads as nil until its first flush commits geometry.
+;;
+;; The value is reactive: a render, effect or computed that reads it runs
+;; again after the region or Runtime viewport changes.  Wrap application
+;; content in `etaf-viewport-region' to make one application lay out for
+;; whatever region hosts it instead of the whole mount.
+;;
+;; Component: etaf-viewport-region ()
+;; Wrap its content in a nested viewport region.
+;;
+;; The region fills the space its parent gives it and publishes its committed
+;; box as the viewport of every Component below it (see `etaf-viewport').
+;; Application content wrapped in it lays out for the region instead of the
+;; whole mount.  Host attributes passed at the call site (`:class', `:width',
+;; `:height' and the other Host attributes) override the region's own
+;; defaults.
+;;
+;; Do not give a region padding or a border: its border box is the published
+;; viewport, so inset the content inside the region instead.
+;;
 ;; Function: etaf-selector (source &key (test 'equal) name)
 ;;;###autoload (autoload 'etaf-selector "etaf" nil nil)
 ;; Return a function of KEY that is non-nil while reactive SOURCE equals KEY.
@@ -1639,6 +1665,9 @@
 ;; write their buffers) or `post' (after).  TEST and NAME customize comparison
 ;; and diagnostics.  When CALLBACK returns a function, it runs before the next
 ;; callback and when the watcher stops.  Return a zero-argument stop function.
+;; A watcher created during Component setup runs its callback in that
+;; Component's environment on every later run, so Context and Runtime reads
+;; inside the callback keep working after the first run.
 ;;
 ;; Function: etaf-watch-effect (function &key (flush 'pre) name)
 ;;;###autoload (autoload 'etaf-watch-effect "etaf" nil nil)
@@ -1647,6 +1676,9 @@
 ;; FLUSH is `pre' or `post' as in `etaf-watch'.  NAME optionally labels the
 ;; effect.  If FUNCTION returns a function, it cleans up the previous run and
 ;; runs when the effect stops.  Return a zero-argument stop function.
+;; An effect created during Component setup runs in that Component's
+;; environment on every later run, so Context and Runtime reads inside it keep
+;; working after the first run.
 ;;
 
 ;; Function: etaf-retained-resize-open (&optional buffer-or-name)
@@ -1810,6 +1842,7 @@
 (require 'etaf-events)
 (require 'etaf-keys)
 (require 'etaf-performance)
+(require 'etaf-viewport)
 (require 'etaf-video-component)
 
 (autoload 'etaf-retained-resize-open "examples/etaf-retained-resize" nil t)

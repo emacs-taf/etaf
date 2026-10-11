@@ -4,6 +4,13 @@
 
 ### Added
 
+- `etaf-viewport` reads the region a Component subtree lays out into, and
+  `etaf-viewport-region` wraps content in a nested viewport that publishes its
+  committed box to descendants, so one application lays out for a buffer, a
+  window or a pane through the same reactive read.
+- Watchers and effects created during Component setup run their callback in
+  that Component's environment on every later reactive run, so `etaf-inject`,
+  `etaf-current-runtime` and `etaf-viewport` keep working after the first run.
 - Hosts accept `:keys`, scoped `(KEY COMMAND [LABEL])` bindings of keys or
   key sequences such as `C-c C-u` that work while focus is inside them (or
   point, once a command moves point out of the focused Host) and

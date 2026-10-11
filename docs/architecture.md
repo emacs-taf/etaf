@@ -133,6 +133,18 @@ Scopes own effects, computeds, watchers and cleanup.  Disposing a Component
 Scope stops child Scopes and effects before cleanup runs.  A stopped Scope
 cannot accept new work.
 
+A viewport is the region a mounted subtree lays out into.  The mount publishes
+the Runtime viewport (`etaf-runtime-viewport`); an `etaf-viewport-region`
+wraps its content in one Host whose committed border box becomes the viewport
+of every Component placed below it in the render tree.  Regions are indexed
+per Runtime by Host reference and republished from the Ebox after-flush hook
+with `etaf-host-ref-size`, so readers depend on committed geometry instead of
+guessing it.  Resolution follows Component segment ancestors, not Context:
+content passed through a slot keeps its caller Context, so a Context value
+provided inside a wrapper would not reach it.  Watchers and effects created in
+setup capture their instance's evaluation context and re-enter it on later
+runs, so a reader keeps its Component environment after reactive reruns.
+
 ## 6. Ebox retained engine
 
 ETAF creates each Host's Ebox node once at mount or insertion time.  Ebox keeps
