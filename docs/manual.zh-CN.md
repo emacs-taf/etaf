@@ -800,9 +800,10 @@ Focus 和 hit testing 是 Runtime 操作：
 - 焦点从外部移入某个 Host 时（Tab、方向键、点击或 `etaf-focus`），该 Host 的
   `:on-focus-enter` 运行。用它在键盘到达时激活区域，例如提升窗口，使键盘和指针
   用户看到相同的激活状态。
-- `?` 打开 `etaf-palette`，列出作用域内带标签的按键、可关闭时的 Close，
-  以及按 `:aria-label` 或文本命名的所有可聚焦控件。Host 或 buffer keymap 绑定了
-  `?` 时保留其绑定。
+- `?` 打开 `etaf-help`：只读 buffer，列出当前焦点作用域的区域、可达的带标签按键
+  及其来源、框架按键与可聚焦控件，永远不执行任何动作。执行入口仍是
+  `M-x etaf-palette`：选带标签按键即运行，选具名控件即聚焦并按下。Host 或
+  buffer keymap 绑定了 `?` 时仍保留其绑定。
 - 指针拖拽都有键盘等价操作。`etaf-draggable` 绑定 `M-<方向键>`，`etaf-resizable`
   绑定 `M-S-<方向键>`（右/下增大、左/上缩小），每次一个单元格；受控变体相同。
   角色为 `separator` 或 `slider` 且带 `:on-drag` 的已聚焦 Host 用普通方向键沿

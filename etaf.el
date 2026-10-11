@@ -637,15 +637,25 @@
 ;; Invalid ETAF Event
 ;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
+;; Function: etaf-help (&optional runtime)
+;;;###autoload (autoload 'etaf-help "etaf" nil t)
+;; Show the effective ETAF keys of mounted RUNTIME in a read-only buffer.
+;; The help lists the regions of the current focus scope, the labelled :keys
+;; the current focus reaches with their source, the framework keys and the
+;; focusable controls; it never runs a command.  `?' opens it in a Runtime
+;; buffer unless a Host or the buffer binds `?'.  `etaf-palette' stays
+;; available through `M-x' for running a command or pressing a control.
+;;
 ;; Function: etaf-palette (&optional runtime)
 ;;;###autoload (autoload 'etaf-palette "etaf" nil t)
 ;; Choose and run a command or control of mounted RUNTIME by name.
 ;; Candidates are the labelled :keys the current focus reaches, Close when an
 ;; :on-dismiss Host is in scope, then every focusable control in the modal
 ;; scope, named by :aria-label or its painted text.  Choosing a key runs its
-;; command; choosing a control focuses it and dispatches its press.  `?' opens
-;; the palette in a Runtime buffer unless a Host or the buffer binds `?'.  An
-;; empty palette signals user-error.
+;; command; choosing a control focuses it and dispatches its press.  The
+;; palette is an execution surface reached from `M-x'; `?' opens `etaf-help'
+;; instead so that viewing never runs anything.  An empty palette signals
+;; user-error.
 ;;
 ;; Function: etaf-region-focus (region-id &optional runtime)
 ;;;###autoload (autoload 'etaf-region-focus "etaf" nil nil)
@@ -850,7 +860,8 @@
 ;; `:focus-scope modal' confines Tab, arrows and :keys to an open Host such as
 ;; a dialog; outer keys are unreachable while it is visible, and printing
 ;; keys nothing in it binds are ignored instead of reaching the buffer's
-;; keymaps.  `:on-dismiss'
+;; keymaps.  `?' opens read-only `etaf-help' unless a Host or the buffer
+;; binds it.  `:on-dismiss'
 ;; runs for Escape or C-g when no nearer Host binds them; it is the one
 ;; callback that the key layer searches for outward.  `:focus-group' vertical,
 ;; horizontal or grid makes its focusable descendants one Tab stop; arrows and

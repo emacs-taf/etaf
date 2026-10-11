@@ -884,9 +884,12 @@ of installing keymaps in the application:
   by Tab, arrows, a press or `etaf-focus`. Use it to activate a region when
   the keyboard reaches it, such as raising a window, so keyboard and pointer
   users see the same active state.
-- `?` opens `etaf-palette`, which lists the labelled keys in scope,
-  Close when `:on-dismiss` applies, and every focusable control by its
-  `:aria-label` or text. A Host or buffer keymap that binds `?` keeps it.
+- `?` opens `etaf-help`, a read-only buffer listing the regions of the
+  current focus scope, the labelled keys the focus reaches with their
+  source, the framework keys and the focusable controls.  It never runs
+  anything.  `M-x etaf-palette` stays the execution surface: choose a
+  labelled key to run or a named control to focus and press.  A Host or
+  buffer keymap that binds `?` keeps it.
 - Pointer drags have keyboard equivalents. `etaf-draggable` binds
   `M-<arrow>` and `etaf-resizable` binds `M-S-<arrow>` (grow right/down,
   shrink left/up), one cell per press; the controlled variants do the same.

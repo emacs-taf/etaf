@@ -351,7 +351,12 @@
     {
       "name": "etaf-keys-palette-lists-labelled-keys-and-controls",
       "file": "tests/etaf-keys-tests.el",
-      "purpose": "The ? palette offers labelled keys and named controls, runs a key and focuses and presses a control."
+      "purpose": "The palette offers labelled keys and named controls, runs a key and focuses and presses a control; ? opens help instead."
+    },
+    {
+      "name": "etaf-keys-help-lists-effective-bindings",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "Question mark opens read-only help listing scoped keys, framework entries and focusable controls."
     },
     {
       "name": "etaf-keys-reject-invalid-bindings",

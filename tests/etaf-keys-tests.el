@@ -20,6 +20,24 @@
       (call-interactively command)
       command)))
 
+(ert-deftest etaf-keys-help-lists-effective-bindings ()
+  "`?' opens read-only help listing keys, framework entries and controls."
+  (etaf-test-with-mount (runtime (etaf-view
+                                  (column :keys (list (list "r" (lambda () (interactive)) "Reload"))
+                                          (box :ref 'save :tab-index 0 :aria-label "Save file" "S"))))
+    (should (eq (key-binding (kbd "?") t) 'etaf-help))
+    (etaf-help runtime)
+    (unwind-protect
+        (with-current-buffer (get-buffer "*ETAF Help*")
+          (should buffer-read-only)
+          (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+            (should (string-match-p "Reload" text))
+            (should (string-match-p "M-g" text))
+            (should (string-match-p "Save file" text))
+            (should (string-match-p "etaf-palette" text))))
+      (when-let* ((buffer (get-buffer "*ETAF Help*")))
+        (kill-buffer buffer)))))
+
 (ert-deftest etaf-keys-resolve-from-focus-outward-and-nearest-wins ()
   "A Host's :keys work inside it; the nearest Host binding a key wins."
   (let (log)
@@ -188,7 +206,7 @@
       (should (equal (etaf-focused-host-ref runtime) 'above)))))
 
 (ert-deftest etaf-keys-palette-lists-labelled-keys-and-controls ()
-  "`?' opens the palette; it runs labelled keys and presses controls."
+  "The palette runs labelled keys and presses controls; `?' opens help instead."
   (let (log offered)
     (etaf-test-with-mount (runtime (etaf-view
                                     (column :keys (list (list "r" (lambda () (push 'reload log)) "Reload")
@@ -200,7 +218,7 @@
                                                  :on-press (lambda () (push 'settings log))
                                                  "*"))))
       (etaf-focus runtime 'save)
-      (should (eq (key-binding (kbd "?") t) 'etaf-palette))
+      (should (eq (key-binding (kbd "?") t) 'etaf-help))
       (cl-letf (((symbol-function 'completing-read)
                  (lambda (_prompt collection &rest _)
                    (setq offered (all-completions "" collection))
