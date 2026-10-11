@@ -17,10 +17,12 @@
 ;;    an open dialog are unreachable.  A disabled Host contributes no keys.
 ;; 3. The first entry matching the key wins.  Without one, the framework
 ;;    defaults apply: `M-g' opens region selection, Escape dispatches the
-;;    nearest `:on-dismiss', `?' opens `etaf-help' unless the buffer binds
-;;    it, arrows step a focused separator or slider that has `:on-drag',
-;;    and an open modal scope ignores unbound printing keys so
-;;    they never reach the application behind it.
+;;    nearest `:on-dismiss', `?' opens `etaf-help', Tab moves one tab stop,
+;;    and an arrow key runs `etaf-direction' (the nearest `:on-direction'
+;;    handler, a focused separator or slider step, then movement inside the
+;;    surrounding region and its adjacent regions).  An open modal scope
+;;    ignores unbound printing keys so they never reach the application
+;;    behind it.
 ;; 4. Otherwise the key falls through to the buffer's other keymaps.  Keys
 ;;    also fall through while a native input session edits the buffer.
 
@@ -36,6 +38,7 @@
 
 (defvar etaf--current-runtime)
 (defvar etaf--current-event)
+(defvar etaf--runtimes)
 
 (defvar-local etaf--keys-alist nil
   "Emulation keymap alist holding the Runtime's scoped key bindings.")
@@ -50,11 +53,38 @@ C-g is never bound: it keeps Emacs's native keyboard-quit semantics.")
 (defconst etaf--keys-selector-event [?\M-g]
   "Event entering region selection; `etaf-region-select' answers it.")
 
-(defconst etaf--keys-reserved-events (list [escape] etaf--keys-selector-event [?\C-g])
-  "Events a Host `:keys' may not bind.
-Escape, the region selector entry and native quit are reserved in the current
-delivery; arrows, `?' during navigation and Tab join this list together with
-their consumer migrations in the workspace keyboard navigation contract.")
+(defconst etaf--keys-direction-events
+  '(([left] . left) ([right] . right) ([up] . up) ([down] . down))
+  "Arrow events mapped to direction symbols for `etaf-direction'.")
+
+(defconst etaf--keys-vim-direction-events
+  '(([?\h] . left) ([?\j] . down) ([?\k] . up) ([?\l] . right))
+  "Vim direction events mapped to direction symbols.")
+
+(defconst etaf--keys-tab-events
+  (list (vconcat (kbd "TAB")) (vconcat (kbd "<tab>"))
+        (vconcat (kbd "S-TAB")) (vconcat (kbd "<backtab>")))
+  "Events that move focus one tab stop, in either terminal or GUI encoding.")
+
+(defconst etaf--keys-backtab-events
+  (list (vconcat (kbd "S-TAB")) (vconcat (kbd "<backtab>")))
+  "Tab events that move focus backward.")
+
+(defconst etaf--keys-reserved-events
+  (append (list [escape] etaf--keys-selector-event [?\C-g] [??])
+          etaf--keys-tab-events
+          (mapcar #'car etaf--keys-direction-events))
+  "Events a Host `:keys' may not bind as the first event of an entry.
+Escape, the region selector entry, native quit, the help key, Tab and the
+direction keys are framework-owned; applications express direction behavior
+through `:on-direction' instead of binding these keys.")
+
+(defvar etaf-direction-scheme 'arrows
+  "Direction scheme of the key layer: `arrows' or `vim'.
+`arrows' uses the physical arrow keys and leaves `h', `j', `k' and `l' to
+the application.  `vim' additionally dispatches those letters as direction
+keys in navigation state.  Set it through `etaf-set-direction-scheme' so a
+conflicting Runtime is reported instead of shadowed.")
 
 (defconst etaf--keys-step-events
   `(([left] . (-1 . 0)) ([right] . (1 . 0)) ([up] . (0 . -1)) ([down] . (0 . 1))
@@ -91,10 +121,15 @@ their consumer migrations in the workspace keyboard navigation contract.")
         (signal 'etaf-renderer-error
                 (list (format ":keys sequence %s starts with a printing key"
                               (key-description events)))))
-      (when (cl-loop for event across events
-                     thereis (member (vector event) etaf--keys-reserved-events))
+      (when (member (vector (aref events 0)) etaf--keys-reserved-events)
         (signal 'etaf-renderer-error
                 (list (format ":keys sequence %s binds a framework-reserved key"
+                              (key-description events)))))
+      (when (and (eq etaf-direction-scheme 'vim)
+                 (member (vector (aref events 0))
+                         (mapcar #'car etaf--keys-vim-direction-events)))
+        (signal 'etaf-renderer-error
+                (list (format ":keys sequence %s shadows the Vim direction scheme"
                               (key-description events)))))))
   keys)
 
@@ -130,6 +165,7 @@ one key cannot both run a command and start a longer sequence."
     (dolist (event (append etaf--keys-dismiss-events
                            (list [??] etaf--keys-selector-event)
                            (mapcar #'car etaf--keys-step-events)
+                           etaf--keys-tab-events
                            etaf--keys-printing-events))
       (etaf--keys-define map event))
     (setf (etaf-runtime-keymap runtime) map)
@@ -267,11 +303,18 @@ keymap or M-x runs it."
                  (t t))
            ref))))
 
-(defun etaf--keys-unbound-p (event)
-  "Return non-nil when only self-insertion binds EVENT outside Host keys."
-  (let* ((etaf--keys-alist nil)
-         (command (key-binding event t)))
-    (memq command '(nil undefined self-insert-command))))
+(defun etaf--keys-direction-of (event)
+  "Return the direction EVENT selects under the active scheme, or nil."
+  (or (cdr (assoc event etaf--keys-direction-events))
+      (and (eq etaf-direction-scheme 'vim)
+           (cdr (assoc event etaf--keys-vim-direction-events)))))
+
+(defun etaf--keys-direction-command (runtime event)
+  "Return a command moving RUNTIME's focus in EVENT's direction."
+  (let ((direction (etaf--keys-direction-of event)))
+    (lambda ()
+      (interactive)
+      (etaf-direction direction runtime))))
 
 (defun etaf--keys-binding (event)
   "Return the command EVENT runs in the current Runtime buffer, or nil."
@@ -290,7 +333,16 @@ keymap or M-x runs it."
             (lambda ()
               (interactive)
               (etaf-dispatch-event runtime ref 'dismiss))))
-         ((and (equal event [??]) (etaf--keys-unbound-p event))
+         ((etaf--keys-direction-of event)
+          (etaf--keys-direction-command runtime event))
+         ((member event etaf--keys-tab-events)
+          (let ((backward (member event etaf--keys-backtab-events)))
+            (lambda ()
+              (interactive)
+              (if backward
+                  (etaf-focus-previous runtime)
+                (etaf-focus-next runtime)))))
+         ((equal event [??])
           #'etaf-help)
          ((etaf--keys-step-ref runtime event)
           (let ((ref (etaf--keys-step-ref runtime event))
@@ -427,7 +479,7 @@ the Host drags."
 The help lists the regions of the current focus scope, the labelled `:keys'
 the current focus reaches with their source, the framework keys and the
 focusable controls.  It never runs a command.  `?' opens it in a Runtime
-buffer unless a Host or the buffer binds `?'; `etaf-palette' stays
+buffer; `etaf-palette' stays
 available through `M-x' for running a command or pressing a control."
   (interactive)
   (setq runtime (etaf-runtime-require-mounted runtime))
@@ -525,7 +577,11 @@ palette is an execution surface and stays reachable from `M-x'; `?' opens
       (push "  (no Host `:keys' in scope)" lines))
     (push "" lines)
     (push "Framework:" lines)
-    (dolist (line '("  M-g        Select region"
+    (dolist (line (list "  M-g        Select region"
+                    (if (eq etaf-direction-scheme 'vim)
+                        "  h j k l    Move focus (Vim scheme)"
+                      "  ←↑↓→        Move focus")
+                    "  Tab        Next focus stop (S-Tab previous)"
                     "  Escape     Close the nearest dismissible Host"
                     "  ?          This help"
                     "  M-x etaf-palette   Run a command or press a control by name"))
@@ -544,6 +600,135 @@ palette is an execution surface and stays reachable from `M-x'; `?' opens
           (dolist (line controls) (push line lines))
         (push "  (no focusable controls)" lines)))
     (mapconcat #'identity (nreverse lines) "\n")))
+
+;;;; Region and direction navigation
+
+(defun etaf--direction-handler (runtime ref direction)
+  "Run the nearest Host `:on-direction' handler above REF in RUNTIME.
+Return the handler's result symbol, or nil when no handler is in scope."
+  (when ref
+    (let ((chain (cons ref (etaf-runtime-host-ancestor-refs runtime ref))))
+      (cl-loop for candidate in chain
+               for handler = (plist-get (etaf--keys-props runtime candidate) :on-direction)
+               when (functionp handler)
+               return (let ((result (funcall handler direction)))
+                        (unless (memq result '(handled hold release))
+                          (signal 'etaf-event-error
+                                  (list (format ":on-direction returned %S; expected handled, hold or release"
+                                                result))))
+                        result)))))
+
+(defun etaf--direction-step (runtime ref direction)
+  "Step a focused separator or slider REF in DIRECTION; return REF or nil."
+  (when ref
+    (let* ((event (car (rassoc direction etaf--keys-direction-events)))
+           (step (and event (cdr (assoc event etaf--keys-step-events)))))
+      (when (and step (eq (etaf--keys-step-ref runtime event) ref))
+        (etaf-drag-step runtime ref (car step) (cdr step))
+        ref))))
+
+(defun etaf--direction-move (runtime ref direction)
+  "Move focus from REF in DIRECTION, crossing region boundaries.
+Inside a declared region the movement is limited to that region; at its edge
+the adjacent region's entry is focused.  Without a region the Ebox spatial
+movement applies and the viewport scrolls at its edge.  Return the focused
+Host reference or nil."
+  (let* ((buffer (etaf-runtime-buffer runtime))
+         (regions (etaf--regions-collect runtime))
+         (region (and ref
+                      (cl-find-if (lambda (item)
+                                    (etaf--regions-contains-p runtime (plist-get item :ref) ref))
+                                  regions)))
+         (root (and region (etaf-runtime-host-node runtime (plist-get region :ref)))))
+    (if region
+        (if-let* ((node (and root (ebox-focus-direction direction buffer root))))
+            (etaf-runtime-node-host-ref runtime node)
+          (when-let* ((target (etaf--regions-neighbor runtime regions direction)))
+            (etaf--regions-focus runtime
+                                 (cl-find target regions
+                                          :key (lambda (item) (plist-get item :id))))))
+      (if-let* ((node (ebox-focus-direction direction buffer)))
+          (etaf-runtime-node-host-ref runtime node)
+        (pcase direction
+          ('down (ebox-scroll-down))
+          ('up (ebox-scroll-up)))
+        nil))))
+
+;;;###autoload
+(defun etaf-direction (direction &optional runtime)
+  "Move DIRECTION in mounted RUNTIME and return the focused Host reference.
+DIRECTION is `up', `down', `left' or `right'.  Order: the nearest Host
+`:on-direction' handler (it returns `handled', `hold' or `release'); a
+focused separator or slider step; then focus movement inside the surrounding
+region, entering the adjacent region at its edge.  Without a surrounding
+region the Ebox spatial movement applies and the viewport scrolls at the
+edge.  Return nil when nothing moves."
+  (interactive
+   (list (intern (completing-read "Direction: " '("up" "down" "left" "right")
+                                  nil t nil nil "down"))))
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (unless (memq direction '(up down left right))
+    (signal 'etaf-event-error (list (format "Unknown direction %S" direction))))
+  (let* ((buffer (etaf-runtime-buffer runtime))
+         (focused (and (not (ebox-input-active-p buffer))
+                       (ebox-focused-node buffer)))
+         (ref (or (and focused (etaf-runtime-node-host-ref runtime focused))
+                  ;; Without focus, the Host at point answers directions, so
+                  ;; read-only readers keep the key semantics of their rows.
+                  (etaf-host-ref-at runtime)
+                  (when-let* ((node (ebox-node-at (point) buffer)))
+                    (etaf-runtime-node-host-ref runtime node)))))
+    (if (memq (etaf--direction-handler runtime ref direction) '(handled hold))
+        (etaf-focused-host-ref runtime)
+      (or (etaf--direction-step runtime ref direction)
+          (etaf--direction-move runtime ref direction)))))
+
+(defun etaf--direction-vim-conflicts (runtime)
+  "Return Vim-scheme conflicts in RUNTIME as readable strings."
+  (let ((letters (mapcar (lambda (pair) (aref (car pair) 0))
+                         etaf--keys-vim-direction-events))
+        conflicts)
+    (dolist (entry (etaf-runtime-host-props-entries runtime))
+      (dolist (binding (plist-get (cdr entry) :keys))
+        (let ((events (etaf--keys-event (car binding))))
+          (when (and (> (length events) 0)
+                     (memq (aref events 0) letters))
+            (push (format "Host %s binds %s" (car entry) (key-description events))
+                  conflicts)))))
+    (dolist (region (etaf--regions-collect runtime))
+      (let ((char (etaf--regions-key-char (plist-get region :key))))
+        (when (and char (memq char letters))
+          (push (format "region %s uses hint %c" (plist-get region :id) char)
+                conflicts))))
+    (nreverse conflicts)))
+
+;;;###autoload
+(defun etaf-set-direction-scheme (scheme &optional runtime)
+  "Select the direction SCHEME, `arrows' or `vim', after conflict checks.
+Vim requires every mounted Runtime to be free of Host `:keys' and region hint
+letters using `h', `j', `k' or `l'; conflicts are reported and the previous
+scheme stays in effect.  RUNTIME limits the check to that Runtime and
+defaults to the active one.  Return SCHEME."
+  (interactive
+   (list (intern (completing-read "Direction scheme: " '("arrows" "vim")
+                                  nil t nil nil (symbol-name etaf-direction-scheme)))))
+  (unless (memq scheme '(arrows vim))
+    (signal 'etaf-event-error (list (format "Unknown direction scheme %S" scheme))))
+  (when (eq scheme 'vim)
+    (let (conflicts)
+      (dolist (item (if runtime
+                        (list (etaf-runtime-require-mounted runtime))
+                      (let (runtimes)
+                        (maphash (lambda (_ item)
+                                   (when (etaf-runtime-mounted-p item)
+                                     (push item runtimes)))
+                                 etaf--runtimes)
+                        runtimes)))
+        (setq conflicts (append conflicts (etaf--direction-vim-conflicts item))))
+      (when conflicts
+        (user-error "Vim direction scheme conflicts: %s" (string-join conflicts "; ")))))
+  (setq etaf-direction-scheme scheme)
+  scheme)
 
 (provide 'etaf-keys)
 

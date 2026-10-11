@@ -474,6 +474,10 @@ QUIET, each later run records an update of CTX's Component instance."
                        (list ":focus-scope must be `modal' or nil"))))
             ((eq property :keys)
              (etaf--keys-validate value))
+            ((eq property :on-direction)
+             (unless (or (null value) (functionp value))
+               (signal 'etaf-renderer-error
+                       (list ":on-direction must be a function or nil"))))
             ((eq property :region)
              (etaf--region-validate value))
             ((eq property :use)

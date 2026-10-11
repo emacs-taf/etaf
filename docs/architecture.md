@@ -189,7 +189,14 @@ Host ancestors nearest first and stops after the first modal Host.  The first
 enabled entry wins; otherwise framework defaults apply (Escape to the
 nearest `:on-dismiss`, `?` to read-only help, arrows to a focused separator or
 slider's `:on-drag`), and anything else falls through.  This walk is the only
-outward key propagation; ordinary callbacks still do not bubble.  Ebox owns
+outward key propagation; ordinary callbacks still do not bubble.  Direction
+keys do not fall through to Ebox: `etaf-direction` runs the nearest Host
+`:on-direction' handler, then a separator or slider step, then Ebox's spatial
+movement limited to the surrounding region, entering the adjacent region's
+entry at the boundary; Tab dispatches to `etaf-focus-next'/`etaf-focus-previous'.
+`etaf-set-direction-scheme' switches the arrow and Vim mappings after
+checking Host declarations and region hints for conflicts.  Ebox owns the
+focus those commands move.  Ebox owns
 focus groups, modal confinement and spatial arrow navigation, so the key layer
 never moves focus itself.  Keyboard drags reuse the pointer `:on-drag` path
 through `etaf-drag-step`, so Behaviors keep one gesture implementation.

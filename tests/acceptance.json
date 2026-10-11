@@ -359,6 +359,31 @@
       "purpose": "Question mark opens read-only help listing scoped keys, framework entries and focusable controls."
     },
     {
+      "name": "etaf-keys-direction-handler-handles-hold-and-release",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "A Host :on-direction handler receives the direction; handled and hold stop, release continues."
+    },
+    {
+      "name": "etaf-keys-arrows-cross-regions-at-their-boundary",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "Arrow movement stays inside a region and enters the adjacent region at its edge."
+    },
+    {
+      "name": "etaf-keys-tab-traverses-and-cycles-focus-stops",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "Tab and S-Tab walk the modal scope's focus stops in opposite order and wrap around."
+    },
+    {
+      "name": "etaf-keys-vim-scheme-dispatches-and-rejects-conflicts",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "The Vim scheme dispatches h/j/k/l as directions and refuses a runtime with conflicting keys or hints."
+    },
+    {
+      "name": "etaf-keys-vim-scheme-rejects-vim-letter-declarations",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "With the Vim scheme active, :keys and region hints using h/j/k/l are render errors."
+    },
+    {
       "name": "etaf-keys-reject-invalid-bindings",
       "file": "tests/etaf-keys-tests.el",
       "purpose": "Malformed :keys, :focus-group and :focus-scope values signal render errors."

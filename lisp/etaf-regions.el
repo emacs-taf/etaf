@@ -38,6 +38,21 @@
   '(([left] . left) ([right] . right) ([up] . up) ([down] . down))
   "Arrow events mapped to region direction symbols.")
 
+(defvar etaf-direction-scheme)
+
+(defconst etaf--regions-vim-direction-events
+  '((?h . left) (?j . down) (?k . up) (?l . right))
+  "Vim direction characters mapped to region direction symbols.")
+
+(defun etaf--regions-direction-of (event)
+  "Return the direction EVENT selects under the active scheme, or nil."
+  (or (cdr (assoc event etaf--regions-direction-events))
+      (when (eq etaf-direction-scheme 'vim)
+        (let ((char (cond ((characterp event) event)
+                          ((and (stringp event) (= 1 (length event))) (aref event 0))
+                          ((and (vectorp event) (= 1 (length event))) (aref event 0)))))
+          (cdr (assoc char etaf--regions-vim-direction-events))))))
+
 (defconst etaf--regions-cancel-event [escape]
   "Event cancelling region selection.")
 
@@ -88,7 +103,11 @@ missing or non-symbol `:id', a `:key' that is not one non-`?' character or a
                        (list ":region :key must be one character")))
              (when (equal (etaf--regions-key-char value) ??)
                (signal 'etaf-renderer-error
-                       (list ":region :key cannot be `?'"))))
+                       (list ":region :key cannot be `?'")))
+             (when (and (eq etaf-direction-scheme 'vim)
+                        (memq (etaf--regions-key-char value) '(?h ?j ?k ?l)))
+               (signal 'etaf-renderer-error
+                       (list ":region :key cannot use a Vim direction letter"))))
             (:enter
              (unless (or (null value) (symbolp value) (stringp value))
                (signal 'etaf-renderer-error
@@ -414,7 +433,11 @@ TABLE maps region references to records."
                           "*" "")
                       (etaf--regions-path region table))))
           regions)))
-    (format "%s  |  ←→↑↓ 跨区  |  ESC 取消" (string-join parts "  "))))
+    (format "%s  |  %s  |  ESC 取消"
+            (string-join parts "  ")
+            (if (eq etaf-direction-scheme 'vim)
+                "h/j/k/l 跨区"
+              "←→↑↓ 跨区"))))
 
 (defun etaf--regions-select-loop (runtime regions)
   "Read one selection for REGIONS in RUNTIME until it jumps or cancels."
@@ -441,19 +464,8 @@ TABLE maps region references to records."
           (setq done t))
          ((equal event "?")
           (setq notice "提示键进入区域；方向键跨区；Escape 取消"))
-         ((and (stringp event) (= (length event) 1))
-          (let ((region (cl-find (aref event 0) regions
-                                 :key (lambda (item)
-                                        (etaf--regions-key-char (plist-get item :key)))
-                                 :test #'eql)))
-            (if (null region)
-                (setq notice (format "%s 不是区域键" (key-description event)))
-              (if (etaf--regions-focus runtime region)
-                  (setq done t)
-                (setq notice (format "区域 %s 没有可聚焦的入口"
-                                     (etaf--regions-label region)))))))
-         ((assoc event etaf--regions-direction-events)
-          (let* ((direction (cdr (assoc event etaf--regions-direction-events)))
+         ((etaf--regions-direction-of event)
+          (let* ((direction (etaf--regions-direction-of event))
                  (target (etaf--regions-neighbor runtime regions direction)))
             (if (null target)
                 (setq notice (format "%s 方向没有相邻区域"
@@ -465,6 +477,17 @@ TABLE maps region references to records."
                 (if (and region (etaf--regions-focus runtime region))
                     (setq done t)
                   (setq notice (format "区域 %s 没有可聚焦的入口" target)))))))
+         ((and (stringp event) (= (length event) 1))
+          (let ((region (cl-find (aref event 0) regions
+                                 :key (lambda (item)
+                                        (etaf--regions-key-char (plist-get item :key)))
+                                 :test #'eql)))
+            (if (null region)
+                (setq notice (format "%s 不是区域键" (key-description event)))
+              (if (etaf--regions-focus runtime region)
+                  (setq done t)
+                (setq notice (format "区域 %s 没有可聚焦的入口"
+                                     (etaf--regions-label region)))))))
          (t
           (setq notice (format "%s 不是区域键" (key-description event)))))))))
 

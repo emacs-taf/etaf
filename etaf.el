@@ -643,7 +643,7 @@
 ;; The help lists the regions of the current focus scope, the labelled :keys
 ;; the current focus reaches with their source, the framework keys and the
 ;; focusable controls; it never runs a command.  `?' opens it in a Runtime
-;; buffer unless a Host or the buffer binds `?'.  `etaf-palette' stays
+;; buffer; `etaf-palette' stays
 ;; available through `M-x' for running a command or pressing a control.
 ;;
 ;; Function: etaf-palette (&optional runtime)
@@ -689,6 +689,31 @@
 ;; Layout follows point only when it stayed at the target; manual point stays
 ;; at its numeric position clamped to the accessible buffer. Rejection restores
 ;; focus and point. No window is selected.
+;;
+;; Function: etaf-direction (direction &optional runtime)
+;;;###autoload (autoload 'etaf-direction "etaf" nil t)
+;; Move DIRECTION in mounted RUNTIME and return the focused Host reference.
+;; DIRECTION is `up', `down', `left' or `right'.  The nearest Host
+;; `:on-direction' handler runs first (returning `handled', `hold' or
+;; `release'); then a focused separator or slider steps; then focus moves
+;; inside the surrounding region, entering the adjacent region at its edge.
+;; Without a surrounding region the Ebox spatial movement applies and the
+;; viewport scrolls at its edge.  Return nil when nothing moves.
+;;
+;; Function: etaf-set-direction-scheme (scheme &optional runtime)
+;;;###autoload (autoload 'etaf-set-direction-scheme "etaf" nil t)
+;; Select the direction SCHEME, `arrows' or `vim', after conflict checks.
+;; Vim requires every mounted Runtime to be free of Host `:keys' and region
+;; hint letters using `h', `j', `k' or `l'; conflicts are reported and the
+;; previous scheme stays in effect.  RUNTIME limits the check and defaults
+;; to the active one.  Return SCHEME.
+;;
+;; Variable: etaf-direction-scheme
+;; Direction scheme of the key layer: `arrows' (default) or `vim'.
+;; `arrows' leaves `h', `j', `k' and `l' to the application; `vim' dispatches
+;; them as direction keys in navigation state.  Set it through
+;; `etaf-set-direction-scheme' so a conflicting Runtime is reported instead
+;; of shadowed.
 ;;
 ;; Function: etaf-focus-next (&optional runtime)
 ;;;###autoload (autoload 'etaf-focus-next "etaf" nil t)
@@ -856,12 +881,19 @@
 ;; selection in a Runtime buffer: a hint key focuses the region's effective
 ;; entry and an arrow key moves to the adjacent region; `etaf-region-focus'
 ;; performs the same jump for application direct keys.  The selector entry
-;; is framework-reserved and cannot be rebound through `:keys'.
+;; is framework-reserved and cannot be rebound through `:keys'.  Arrows and,
+;; under the optional `vim' scheme, `h'/`j'/`k'/`l' run `etaf-direction': a
+;; Host declares `:on-direction', a function called with the direction symbol
+;; that returns `handled', `hold' or `release'.  `handled' and `hold' stop
+;; there; `release' continues to the separator or slider step, the movement
+;; inside the surrounding region and the adjacent-region boundary.  Tab and
+;; S-Tab move between the focus stops of the modal scope.  Arrow keys, Tab,
+;; `?', Escape, `M-g' and `C-g' are framework-reserved; express direction
+;; behavior through `:on-direction' instead of binding them.
 ;; `:focus-scope modal' confines Tab, arrows and :keys to an open Host such as
 ;; a dialog; outer keys are unreachable while it is visible, and printing
 ;; keys nothing in it binds are ignored instead of reaching the buffer's
-;; keymaps.  `?' opens read-only `etaf-help' unless a Host or the buffer
-;; binds it.  `:on-dismiss'
+;; keymaps.  `?' opens read-only `etaf-help'.  `:on-dismiss'
 ;; runs for Escape when no nearer Host binds it; it is the one
 ;; callback that the key layer searches for outward.  `:focus-group' vertical,
 ;; horizontal or grid makes its focusable descendants one Tab stop; arrows and

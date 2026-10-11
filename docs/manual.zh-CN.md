@@ -787,6 +787,14 @@ Focus 和 hit testing 是 Runtime 操作：
   一个 Tab 停靠点。方向键和 `C-n`/`C-p`/`C-b`/`C-f` 先在组内移动，再在空间上移到
   该方向最近的可聚焦 Host，因此复杂布局无需额外的导航键。进入组时回到上次聚焦的
   成员，否则回到带 `:aria-selected`、`:aria-current` 或 `:aria-checked` 的成员。
+- 方向行为是声明而不是绑定。Host 取 `:on-direction`，一个接收 `up`、`down`、`left` 或
+  `right` 的函数，返回 `handled` 或 `hold` 表示就此停止，返回 `release` 表示继续。
+  release 或没有处理器时，已聚焦的 separator 或 slider 先步进，然后焦点在当前区域内移动，
+  到达边界时进入相邻区域；没有区域时沿用 Ebox 的空间移动与边缘滚动。`Tab` 与 `S-Tab`
+  在模态作用域的停靠点之间移动；方向键、`Tab`、`?`、`Escape`、`M-g` 与 `C-g` 是框架保留
+  入口，`:keys` 不能绑定。`etaf-direction` 为 Lisp 调用方执行同样的顺序，
+  `etaf-set-direction-scheme` 在报告冲突的 Host 与区域提示后，在方向键方案与 `vim`
+  方案（`h`/`j`/`k`/`l`）之间切换。
 - `:region` 在 Host 上声明一个用户可直接寻址的功能范围——侧栏、结果列表、详情区
   或输入区。取值是属性列表
   `(:id SYMBOL :label STRING :key CHARACTER :enter REF :neighbors PLIST)`：

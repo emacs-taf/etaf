@@ -234,13 +234,106 @@
       (let ((map (make-sparse-keymap)))
         (define-key map "?" #'describe-mode)
         (use-local-map map))
-      (should (eq (key-binding (kbd "?") t) 'describe-mode)))))
+      ;; `?' is framework-reserved: a buffer keymap cannot shadow the help.
+      (should (eq (key-binding (kbd "?") t) 'etaf-help)))))
+
+(ert-deftest etaf-keys-direction-handler-handles-hold-and-release ()
+  "`:on-direction' results control whether the key falls through."
+  (let (log)
+    (etaf-test-with-mount (runtime (etaf-view
+                                    (column :ref 'app
+                                            :on-direction
+                                            (lambda (direction)
+                                              (push direction log)
+                                              (if (eq direction 'up) 'handled 'release))
+                                            (box :ref 'first :tab-index 0 "1")
+                                            (box :ref 'second :tab-index 0 "2"))))
+      (etaf-focus runtime 'first)
+      (etaf-keys-test-press "<up>")
+      (should (equal log '(up)))
+      (should (eq (etaf-focused-host-ref runtime) 'first))
+      (etaf-keys-test-press "<down>")
+      (should (equal log '(down up)))
+      (should (eq (etaf-focused-host-ref runtime) 'second)))))
+
+(ert-deftest etaf-keys-arrows-cross-regions-at-their-boundary ()
+  "Arrow movement stays inside a region and enters the adjacent one at its edge."
+  (etaf-test-with-mount (runtime (etaf-view
+                                  (column
+                                   (column :region '(:id list :key "l")
+                                           (box :ref 'a :tab-index 0 "A")
+                                           (box :ref 'b :tab-index 0 "B"))
+                                   (column :region '(:id detail :key "d")
+                                           (box :ref 'detail :tab-index 0 "D")))))
+    (etaf-focus runtime 'a)
+    (etaf-keys-test-press "<down>")
+    (should (eq (etaf-focused-host-ref runtime) 'b))
+    (etaf-keys-test-press "<down>")
+    (should (eq (etaf-focused-host-ref runtime) 'detail))
+    (etaf-keys-test-press "<up>")
+    (should (eq (etaf-focused-host-ref runtime) 'b))))
+
+(ert-deftest etaf-keys-tab-traverses-and-cycles-focus-stops ()
+  "Tab and S-Tab walk the modal scope's stops in opposite order and wrap."
+  (etaf-test-with-mount (runtime (etaf-view
+                                  (column
+                                   (box :ref 'one :tab-index 0 "1")
+                                   (box :ref 'two :tab-index 0 "2"))))
+    (etaf-focus runtime 'one)
+    (etaf-keys-test-press "TAB")
+    (should (eq (etaf-focused-host-ref runtime) 'two))
+    (etaf-keys-test-press "TAB")
+    (should (eq (etaf-focused-host-ref runtime) 'one))
+    (etaf-keys-test-press "<backtab>")
+    (should (eq (etaf-focused-host-ref runtime) 'two))))
+
+(ert-deftest etaf-keys-vim-scheme-dispatches-and-rejects-conflicts ()
+  "The Vim scheme dispatches HJKL and refuses conflicting runtimes."
+  (etaf-test-with-mount (runtime (etaf-view
+                                  (row (box :ref 'left :tab-index 0 "L")
+                                       (box :ref 'right :tab-index 0 "R"))))
+    (unwind-protect
+        (progn
+          (etaf-set-direction-scheme 'vim runtime)
+          (etaf-focus runtime 'left)
+          (etaf-keys-test-press "l")
+          (should (eq (etaf-focused-host-ref runtime) 'right))
+          (etaf-keys-test-press "h")
+          (should (eq (etaf-focused-host-ref runtime) 'left)))
+      (etaf-set-direction-scheme 'arrows runtime)))
+  (etaf-test-with-mount (runtime (etaf-view
+                                  (column :keys (list (list "l" (lambda () (interactive)) "Local"))
+                                          (box :ref 'one :tab-index 0 "1"))))
+    (setq etaf-direction-scheme 'arrows)
+    (should-error (etaf-set-direction-scheme 'vim runtime) :type 'user-error)
+    (should (eq etaf-direction-scheme 'arrows)))
+  (etaf-test-with-mount (runtime (etaf-view
+                                  (column :region '(:id hint :key "j")
+                                          (box :ref 'one :tab-index 0 "1"))))
+    (should-error (etaf-set-direction-scheme 'vim runtime) :type 'user-error)
+    (should (eq etaf-direction-scheme 'arrows))))
+
+(ert-deftest etaf-keys-vim-scheme-rejects-vim-letter-declarations ()
+  "With Vim enabled, `:keys' and region hints using h/j/k/l are render errors."
+  (let ((etaf-direction-scheme 'vim))
+    (should-error (etaf-test-with-mount
+                       (_runtime (etaf-node 'box
+                                            (list :keys (list (list "l" #'ignore)))
+                                            (list "x"))))
+                  :type 'etaf-renderer-error)
+    (should-error (etaf-test-with-mount
+                       (_runtime (etaf-node 'box (list :region '(:id r :key "j"))
+                                            (list "x"))))
+                  :type 'etaf-renderer-error)))
 
 (ert-deftest etaf-keys-reject-invalid-bindings ()
   "Malformed :keys, :focus-group and :focus-scope values are render errors."
   (dolist (props (list (list :keys '(("n")))
                        (list :keys (list (list "g g" #'ignore)))
                        (list :keys (list (list "M-g" #'ignore)))
+                       (list :keys (list (list "?" #'ignore)))
+                       (list :keys (list (list "TAB" #'ignore)))
+                       (list :keys (list (list "<left>" #'ignore)))
                        (list :keys (list (list "C-c" #'ignore) (list "C-c n" #'ignore)))
                        (list :keys (list (list "n" #'ignore 'label)))
                        (list :focus-group 'diagonal)
