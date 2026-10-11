@@ -133,7 +133,7 @@ they do not create a second timer.
 
 ## Executable examples
 
-The [`examples/`](README.md) directory contains three core-only best-practice applications: retained state and Actions, Data Controller ownership, and Resource error/cleanup lifecycle. They are byte-compiled and driven through mounted public event paths by `make check`.
+The [`examples/`](README.md) directory contains four core-only best-practice applications: retained state and Actions, Data Controller ownership, Resource error/cleanup lifecycle, and time-driven animation. They are byte-compiled and driven through mounted public event paths by `make check`.
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/etaf/examples")

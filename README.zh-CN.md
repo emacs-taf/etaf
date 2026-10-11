@@ -120,7 +120,7 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 
 ## 可执行示例
 
-[`examples/`](README.zh-CN.md) 目录包含三个只依赖 core 的最佳实践应用：保留式状态与 Action、Data Controller 所有权，以及 Resource 错误/清理 lifecycle。`make check` 会编译它们，并通过已挂载的公开事件路径驱动交互。
+[`examples/`](README.zh-CN.md) 目录包含四个只依赖 core 的最佳实践应用：保留式状态与 Action、Data Controller 所有权、Resource 错误/清理 lifecycle，以及时间驱动的动画。`make check` 会编译它们，并通过已挂载的公开事件路径驱动交互。
 
 ```elisp
 (add-to-list 'load-path "/path/to/github/etaf/examples")
