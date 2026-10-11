@@ -754,6 +754,10 @@
            :keymap (let ((map (make-sparse-keymap)))
                      (define-key map (kbd "C-c C-c")
                                  #'etaf-animation-example--finish-edit)
+                     (define-key map (kbd "ESC")
+                                 #'etaf-animation-example--finish-edit)
+                     (define-key map (kbd "TAB")
+                                 #'etaf-animation-example--finish-edit)
                      map)
            :on-leave #'etaf-animation-example--finish-edit)))
   nil)
@@ -825,10 +829,12 @@
              (rail-width
               (etaf-computed
                (lambda ()
-                 ;; One extra cell keeps the track under the line end after
-                 ;; rounding; the rail box clips the excess.
-                 (max 12 (1+ (ceiling (/ (car (etaf-viewport))
-                                         (float (frame-char-width)))))))))
+                 ;; Whole cells that fit, never one more: an overflowing row
+                 ;; makes Emacs paint its truncation glyph at the right edge.
+                 ;; One cell of slack: the row must never exceed the window,
+                 ;; or Emacs paints its truncation glyph at the right edge.
+                 (max 11 (1- (floor (/ (car (etaf-viewport))
+                                       (float (frame-char-width)))))))))
              (theme (etaf-computed
                      (lambda ()
                        (etaf-theme-resolve-palette
@@ -850,8 +856,15 @@
     (etaf-watch etaf-animation-example-fps
                 (lambda (value _old) (setq etaf-animation-frame-rate value)))
     (setf (etaf-value rail) 1.0)
+    ;; Open in editing: the pad is the demo's interactive surface, and a
+    ;; session is what routes typed keys there.  TAB or ESC leaves it.
     (etaf-on-mounted
-     (lambda () (etaf-focus (etaf-current-runtime) 'pause-button)))
+     (lambda ()
+       (let ((runtime (etaf-current-runtime)))
+         (etaf-focus runtime 'notepad)
+         (etaf-animation-example--edit)
+         (unless (etaf-input-active-p runtime)
+           (etaf-focus runtime 'pause-button)))))
     (etaf-on-scope-dispose
      (lambda ()
        (etaf-animation-example--finish-edit)

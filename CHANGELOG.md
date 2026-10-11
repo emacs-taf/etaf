@@ -206,6 +206,10 @@
 
 ### Fixed
 
+- The animation theatre opens with its editing pad already active, so
+  typing works without a first click; TAB or ESC leaves the editor, and
+  pressing the pad starts it again. The rail leaves one cell of slack, so
+  the row never draws a truncation marker at the right edge.
 - The animation theatre's editing pad stays focusable and editable in
   narrow or short windows, and a leaked session from a dead mount can no
   longer block starting a new one. The pad text keeps its committed Host
