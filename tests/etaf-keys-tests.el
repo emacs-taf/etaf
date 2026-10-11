@@ -24,7 +24,8 @@
   "`?' opens read-only help listing keys, framework entries and controls."
   (etaf-test-with-mount (runtime (etaf-view
                                   (column :keys (list (list "r" (lambda () (interactive)) "Reload"))
-                                          (box :ref 'save :tab-index 0 :aria-label "Save file" "S"))))
+                                          (box :ref 'save :tab-index 0 :aria-label "Save file" "S")
+                                          (box :ref 'plain :tab-index 0 "Plain control"))))
     (should (eq (key-binding (kbd "?") t) 'etaf-help))
     (etaf-help runtime)
     (unwind-protect
@@ -34,6 +35,7 @@
             (should (string-match-p "Reload" text))
             (should (string-match-p "M-g" text))
             (should (string-match-p "Save file" text))
+            (should (string-match-p "Plain control" text))
             (should (string-match-p "etaf-palette" text))))
       (when-let* ((buffer (get-buffer "*ETAF Help*")))
         (kill-buffer buffer)))))

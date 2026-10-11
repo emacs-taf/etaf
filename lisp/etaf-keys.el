@@ -434,7 +434,8 @@ the Host drags."
          (bounds (and (not label) (ebox-node-bounds node t)))
          (text (or (and label (format "%s" label))
                    (and bounds
-                        (buffer-substring-no-properties (car bounds) (cdr bounds))))))
+                        (with-current-buffer (etaf-runtime-buffer runtime)
+                          (buffer-substring-no-properties (car bounds) (cdr bounds)))))))
     (when text
       (setq text (string-trim (replace-regexp-in-string "[ \t\n\r]+" " " text)))
       (unless (string-empty-p text)
