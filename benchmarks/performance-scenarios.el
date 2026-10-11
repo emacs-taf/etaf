@@ -930,4 +930,68 @@ The shared driver owns timing, redisplay and diagnostics."
  :description "Native multiline paste, empty draft and long-line wrapping with animated neighbours"
  :setup (lambda (_mode) (etaf-animation-benchmark--multiline-fixture)))
 
+(defun etaf-animation-benchmark--pointer-fixture ()
+  "Exercise complete native clicks on the empty pad and its Edit button."
+  (let* ((fixture (etaf-animation-benchmark--fixture nil))
+         (buffer (plist-get fixture :buffer))
+         (runtime (etaf-runtime-for-buffer buffer))
+         (step 0) target
+         (position (lambda ()
+                     (if (eq target 'edit-button)
+                         (etaf-host-ref-position runtime target)
+                       (save-excursion
+                         (goto-char (car (etaf-host-ref-bounds runtime 'pad)))
+                         (forward-line 2) (point))))))
+    (plist-put fixture :prepare
+               (lambda ()
+                 (switch-to-buffer buffer)
+                 (etaf-refit runtime (selected-window))
+                 (etaf-dispatch-event runtime 'clear-button 'press)
+                 (setq target (if (cl-oddp (cl-incf step)) 'edit-button 'pad))
+                 (redisplay t)
+                 (let* ((position (funcall position))
+                        (window (get-buffer-window buffer t))
+                        (posn (progn
+                                (goto-char position)
+                                (recenter)
+                                (redisplay t)
+                                (posn-at-point position window))))
+                   (unless (and (eq window (selected-window)) posn
+                                (pos-visible-in-window-p position window))
+                     (error "The empty pad click target is not visibly selected"))
+                   t)))
+    (plist-put fixture :invoke
+               (lambda (_sample)
+                 (etaf-performance-call-operation
+                  runtime 'benchmark "animation-pointer-input"
+                  (lambda ()
+                    ;; Animation changes buffer positions while the driver
+                    ;; records its environment. Resolve the published target
+                    ;; at dispatch, not from the earlier prepare snapshot.
+                    (redisplay t)
+                    (let ((posn (posn-at-point (funcall position) (selected-window))))
+                      (unless posn (error "Pointer target is no longer visible"))
+                      (execute-kbd-macro (vector (list 'down-mouse-1 posn)
+                                                 (list 'mouse-1 posn))))
+                    (execute-kbd-macro "x")
+                    (execute-kbd-macro (kbd "DEL"))))))
+    (plist-put fixture :verify
+               (lambda ()
+                 (let ((session (etaf-input-active-p runtime)))
+                   (cond ((not session) "Mouse release ended the newly opened editor")
+                         ((not (equal (etaf-input-text session) ""))
+                          "Typing and deleting after the click did not edit the draft")
+                         (t t)))))
+    (plist-put fixture :outcome
+               (lambda () (list :target (symbol-name target)
+                                 :active (if (etaf-input-active-p runtime) t :false))))
+    fixture))
+
+(taf-benchmark-register
+ "animation.theatre.edit.pointer"
+ :version 1 :modes '(gui) :isolation 'series :impact 'local :budget-ms 50
+ :required-providers '(ebox)
+ :description "Full mouse press/release on the empty pad or Edit button, then type and delete"
+ :setup (lambda (_mode) (etaf-animation-benchmark--pointer-fixture)))
+
 ;;; performance-scenarios.el ends here

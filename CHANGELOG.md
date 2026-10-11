@@ -209,6 +209,9 @@
 
 ### Fixed
 
+- The animation pad and its text now share one activation owner. Complete
+  mouse press/release gestures keep empty drafts editable after deletion and
+  resize, rather than starting and immediately ending the session.
 - The animation theatre opens with its editing pad already active, so
   typing works without a first click; TAB or ESC leaves the editor, and
   pressing the pad starts it again. The rail leaves one cell of slack, so

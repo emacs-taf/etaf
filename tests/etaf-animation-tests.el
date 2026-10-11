@@ -468,7 +468,7 @@
           (etaf-input-end (etaf-input-active-p runtime))
           (dolist (size '((1200 . 44) (700 . 30) (489 . 28) (320 . 20) (1200 . 44)))
             (etaf-runtime-refit runtime (car size) (cdr size))
-            (etaf-focus runtime 'notepad)
+            (etaf-focus runtime 'pad)
             (execute-kbd-macro (kbd "RET"))
             (let ((session (etaf-input-active-p runtime)))
               (should session)
@@ -489,7 +489,27 @@
           (should (etaf-input-active-p runtime))
           (execute-kbd-macro "typed")
           (should (equal "typed"
-                         (etaf-input-text (etaf-input-active-p runtime)))))
+                         (etaf-input-text (etaf-input-active-p runtime))))
+          ;; Complete pointer gestures run post-command handling too.  Calling
+          ;; the press callback alone cannot catch a session ending on release.
+          (etaf-dispatch-event runtime 'clear-button 'press)
+          (dolist (width '(400 700 320))
+            (etaf-runtime-refit runtime width 24)
+            (let* ((bounds (etaf-host-ref-bounds runtime 'pad))
+                   (position (save-excursion
+                               (goto-char (car bounds)) (forward-line 2) (point)))
+                   (posn (list (selected-window) position '(2 . 2) 0))
+                   ;; Batch Emacs has no pixel hit tester; route through the
+                   ;; actual keymap painted on the chosen cell.
+                   (overriding-local-map (get-text-property position 'keymap)))
+              (execute-kbd-macro (vector (list 'down-mouse-1 posn)
+                                         (list 'mouse-1 posn))))
+            (let ((active (and (etaf-input-active-p runtime) t)))
+              (should active))
+            (execute-kbd-macro "x")
+            (execute-kbd-macro (kbd "DEL"))
+            (let ((text (etaf-input-text (etaf-input-active-p runtime))))
+              (should (equal text "")))))
       (when-let* ((session (etaf-input-active-p runtime)))
         (etaf-input-end session))
       (etaf-unmount runtime)

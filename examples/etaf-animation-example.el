@@ -766,10 +766,9 @@
   "End the pad's native input session when one is active."
   (interactive)
   (when-let* ((session (etaf-value etaf-animation-example-session)))
-    (condition-case nil
+    (unwind-protect
         (etaf-input-end session)
-      (error nil))
-    (setf (etaf-value etaf-animation-example-session) nil)))
+      (setf (etaf-value etaf-animation-example-session) nil))))
 
 (defun etaf-animation-example--clear-draft ()
   "Clear the pad text; the Edit button can reopen an empty draft."
@@ -861,7 +860,7 @@
     (etaf-on-mounted
      (lambda ()
        (let ((runtime (etaf-current-runtime)))
-         (etaf-focus runtime 'notepad)
+         (etaf-focus runtime 'pad)
          (etaf-animation-example--edit)
          (unless (etaf-input-active-p runtime)
            (etaf-focus runtime 'pause-button)))))
@@ -975,8 +974,7 @@
               (expr (if (etaf-value etaf-animation-example-session)
                         "原生输入 / 选择 / 撤销 · C-c C-c 完成"
                       "点这里或「编辑」开始输入，动画继续在跑"))))
-      (text :class "pad-text" :ref 'notepad :tab-index 0
-            :on-press #'etaf-animation-example--edit
+      (text :class "pad-text" :ref 'notepad
             (expr (etaf-value etaf-animation-example-draft))))
     (flex :class "footer" :ref 'footer :height '(lh 1) :flex-shrink 0 :overflow 'hidden :wrap-mode 'none
       (text :class "footer-shimmer"
