@@ -4,6 +4,9 @@
 
 ### Added
 
+- `etaf-keymap-reserved-events` reports the framework-reserved events bound in
+  a keymap, so components reject a caller-supplied `:keymap` that would override
+  Escape, Tab, `?`, the arrows, `M-g` or `C-g`.
 - `etaf-animation-paused` freezes the shared clock and resumes every run in
   place, and `etaf-animation-speed` scales transitions and frame sequences
   live; `etaf-animation-frame-rate` now re-rates the running clock. One-shot
