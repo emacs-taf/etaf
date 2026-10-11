@@ -4,6 +4,13 @@
 
 ### Added
 
+- 新增 `etaf-animation-paused`：冻结共享时钟并让所有运行原地恢复；新增
+  `etaf-animation-speed`：运行时缩放 transition 与帧序列的速度；
+  `etaf-animation-frame-rate` 对下一次调度生效。一次性调度在每次发布后让出
+  帧周期，不因键盘输入抑制采样，也不补跑积压帧。暂停或变速期间新建的动画
+  与已有动画使用相同时间基准。
+- 动画示例以二十个面板铺满 buffer，提供时钟控制、亮暗主题和支持空草稿、
+  撤销的原生编辑区；GUI 窗口用极窄右 fringe 消除额外的截断列空隙。
 - 新增 `etaf-transition`：返回一个随时间跟随响应式 target 的 ref，运行中改变
   target 会从当前显示值重新开始；新增 `etaf-animation-frames`：循环播放帧序列，
   适合 spinner、跑马灯和打字机效果。两者共用一个显示时钟

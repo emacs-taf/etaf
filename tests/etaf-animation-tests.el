@@ -182,6 +182,40 @@
     (should (equal "y" (etaf-value shown)))
     (should (= 1 completed))))
 
+(ert-deftest etaf-animation-clock-pause-and-speed ()
+  "Pausing freezes progress; the speed multiplier scales it."
+  (let* ((target (etaf-ref 0))
+         (shown (etaf-transition target :duration 0.4 :easing 'linear)))
+    (unwind-protect
+        (progn
+          (setf (etaf-value target) 10)
+          (etaf-animation-test-wait (lambda () (etaf-animation-active-p shown)))
+          (etaf-animation-test-sleep 0.08)
+          (setq etaf-animation-paused t)
+          (let ((frozen (etaf-value shown)))
+            (etaf-animation-test-sleep 0.3)
+            (should (equal frozen (etaf-value shown)))
+            (should (etaf-animation-active-p shown))
+            (setq etaf-animation-paused nil)
+            (etaf-animation-test-wait
+             (lambda () (not (etaf-animation-active-p shown))))
+            (should (= 10 (etaf-value shown)))))
+      (setq etaf-animation-paused nil)
+      (etaf-animation-stop shown)))
+  (let* ((etaf-animation-speed 4.0)
+         (target (etaf-ref 0))
+         (shown (etaf-transition target :duration 1.0 :easing 'linear)))
+    (setf (etaf-value target) 5)
+    (etaf-animation-test-wait (lambda () (not (etaf-animation-active-p shown))))
+    (should (= 5 (etaf-value shown))))
+  (let* ((etaf-animation-speed 0.25)
+         (target (etaf-ref 0))
+         (shown (etaf-transition target :duration 0.2 :easing 'linear)))
+    (setf (etaf-value target) 5)
+    (etaf-animation-test-sleep 0.4)
+    (should (etaf-animation-active-p shown))
+    (etaf-animation-stop shown)))
+
 (ert-deftest etaf-animation-interpolation-easings-and-validation ()
   "Values convert over registered easings; invalid inputs signal."
   (should (= 5.0 (etaf-animation-interpolate 0 10 0.5)))
@@ -216,6 +250,135 @@
   (should-error (etaf-animation-stop (etaf-ref 0))
                 :type 'etaf-animation-error)
   (should-not (etaf-animation-active-p 42)))
+
+(ert-deftest etaf-animation-new-runs-use-the-shared-time-base ()
+  "Runs joining a paused or scaled clock start at their own first frame."
+  (let ((etaf-animation-speed 0.25)
+        (etaf-animation-paused nil)
+        first second)
+    (unwind-protect
+        (progn
+          (setq first (etaf-animation-frames '(0 1 2) :interval 0.05))
+          (etaf-animation-test-sleep 0.3)
+          (setq etaf-animation-paused t)
+          (etaf-animation-test-sleep 0.2)
+          (setq second (etaf-animation-frames '("first" "last")
+                                               :interval 0.04 :loop nil))
+          (etaf-animation-test-sleep 0.15)
+          (should (equal (etaf-value second) "first"))
+          (setq etaf-animation-paused nil etaf-animation-speed 1.0)
+          ;; Queued keyboard input must not freeze an otherwise running clock.
+          (let ((unread-command-events (list ?x)))
+            (etaf-animation-test-wait
+             (lambda () (not (etaf-animation-active-p second)))))
+          (should (equal (etaf-value second) "last")))
+      (when first (etaf-animation-stop first))
+      (when second (etaf-animation-stop second)))))
+
+(ert-deftest etaf-animation-native-editing-and-other-buffers ()
+  "Animation publications preserve editing, undo, selection and other buffers."
+  (let* ((frame (etaf-animation-frames '("one" "two" "three") :interval 0.02))
+         (draft (etaf-ref "draft"))
+         (buffer (generate-new-buffer " *animation input*"))
+         (other (generate-new-buffer " *animation other*"))
+         runtime session)
+    (unwind-protect
+        (save-window-excursion
+          (switch-to-buffer buffer)
+          (etaf-mount buffer
+                      (etaf-view
+                       (column (text (expr (etaf-value frame)))
+                               (text :ref 'pad (expr (etaf-value draft)))))
+                      (list :viewport-width 500 :viewport-height 10))
+          (setq runtime (etaf-runtime-for-buffer buffer)
+                session (etaf-input-begin
+                         runtime 'pad :on-change
+                         (lambda (text) (setf (etaf-value draft) text))))
+          (execute-kbd-macro "XYZ")
+          (should (equal (etaf-value draft) "draftXYZ"))
+          (execute-kbd-macro (kbd "C-/"))
+          (should (equal (etaf-value draft) "draft"))
+          (execute-kbd-macro (kbd "C-a C-SPC C-e"))
+          (let ((revision (etaf-runtime-revision runtime)))
+            (etaf-animation-test-wait
+             (lambda () (> (etaf-runtime-revision runtime) (+ revision 1)))))
+          ;; Native editing owns the selection; cutting it after publications
+          ;; proves the selection survived without inspecting its shadow buffer.
+          (execute-kbd-macro (kbd "C-w"))
+          (should (equal (etaf-value draft) ""))
+          (execute-kbd-macro "Again")
+          (should (equal (etaf-value draft) "Again"))
+          (switch-to-buffer other)
+          (insert "unrelated")
+          (goto-char 4)
+          (let ((revision (etaf-runtime-revision runtime)))
+            (etaf-animation-test-wait
+             (lambda () (> (etaf-runtime-revision runtime) (+ revision 1)))))
+          (should (eq (current-buffer) other))
+          (should (= (point) 4))
+          (should (equal (buffer-substring-no-properties (point-min) (point-max))
+                         "unrelated")))
+      (when session (etaf-input-end session))
+      (when runtime (etaf-unmount runtime))
+      (etaf-animation-stop frame)
+      (kill-buffer buffer)
+      (kill-buffer other))))
+
+(ert-deftest etaf-animation-theatre-controls-and-edit-pad ()
+  "The shipped theatre's controls and empty draft remain usable while moving."
+  (let ((original (list etaf-animation-paused etaf-animation-speed
+                        etaf-animation-frame-rate))
+        (buffer nil) runtime)
+    (unwind-protect
+        (save-window-excursion
+          (setq buffer (etaf-animation-example-open)
+                runtime (etaf-runtime-for-buffer buffer))
+          (switch-to-buffer buffer)
+          (etaf-runtime-refit runtime 1200 50)
+          (dolist (label '("TYPEWRITER" "SPINNERS" "HEARTBEAT" "MATRIX" "MORSE"
+                           "SNOW" "FIREWORK" "SPECTRUM" "LOADING" "NEON"
+                           "GRAVITY" "DVD LOGO" "LETTERS" "PENDULUM" "FISH"
+                           "PULSE" "WAVE" "PLASMA" "HEAT" "RAINBOW" "EDIT PAD"))
+            (should (string-match-p label (buffer-substring-no-properties
+                                           (point-min) (point-max)))))
+          (let* ((refs '(lane-text lane-frames lane-motion lane-paint))
+                 (sizes (mapcar (lambda (ref) (etaf-host-ref-size runtime ref)) refs)))
+            (etaf-animation-test-sleep 0.25)
+            (should (equal sizes (mapcar (lambda (ref) (etaf-host-ref-size runtime ref)) refs))))
+          (etaf-dispatch-event runtime 'pause-button 'press)
+          (should etaf-animation-paused)
+          (let ((revision (etaf-runtime-revision runtime)))
+            (etaf-animation-test-sleep 0.15)
+            (should (= revision (etaf-runtime-revision runtime))))
+          (etaf-dispatch-event runtime 'speed-half 'press)
+          (should (= etaf-animation-speed 0.5))
+          (etaf-dispatch-event runtime 'fps-30 'press)
+          (should (= etaf-animation-frame-rate 30))
+          (etaf-dispatch-event runtime 'theme-toggle 'press)
+          (should (string-match-p "暗色" (buffer-substring-no-properties
+                                         (point-min) (point-max))))
+          (etaf-dispatch-event runtime 'theme-toggle 'press)
+          (etaf-dispatch-event runtime 'pause-button 'press)
+          (etaf-dispatch-event runtime 'clear-button 'press)
+          (etaf-focus runtime 'edit-button)
+          (execute-kbd-macro (kbd "RET"))
+          (let* ((session (etaf-input-active-p runtime))
+                 (active (and session t)))
+            (should active)
+            (should (equal (etaf-input-text session) ""))
+            (execute-kbd-macro "hello")
+            (should (equal (etaf-input-text session) "hello"))
+            (let ((revision (etaf-runtime-revision runtime)))
+              (etaf-animation-test-wait
+               (lambda () (> (etaf-runtime-revision runtime) (+ revision 1)))))
+            (execute-kbd-macro (kbd "C-c C-c"))
+            (setq active (and (etaf-input-active-p runtime) t))
+            (should-not active))
+          (etaf-dispatch-event runtime 'edit-button 'press)
+          (etaf-unmount runtime)
+          (should (equal original (list etaf-animation-paused etaf-animation-speed
+                                       etaf-animation-frame-rate))))
+      (when (and buffer (buffer-live-p buffer)) (kill-buffer buffer)))))
 
 (provide 'etaf-animation-tests)
 ;;; etaf-animation-tests.el ends here

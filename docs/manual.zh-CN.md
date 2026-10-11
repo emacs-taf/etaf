@@ -1531,9 +1531,14 @@ View，resize 也保留最新值。
 ```
 
 两种动画都走普通 ref 路径发布：一个共享时钟采样所有运行中的动画
-（`etaf-animation-frame-rate`，默认每秒 30 帧），每个 tick 只产生一次响应式
-batch、一次 Runtime commit 和一次 Ebox flush，只重写受损行。paint 类变化在
-显示帧率下开销很低；layout 变化更贵，最快的动效优先用颜色和 face。
+（`etaf-animation-frame-rate`，默认每秒 30 帧）。每个 tick 产生一次响应式
+batch，通过 Ebox 提交受影响的 Runtime。通常只重写受损区域，布局变化可能扩大
+重绘范围。帧率是上限：每次发布结束后，一次性 timer 至少等待一个帧周期；
+按经过的时间取下一帧，不补跑积压帧；连续键盘输入不会抑制动画采样。
+Lisp、布局和原生重绘共用 Emacs 主线程，单帧过长仍会延迟输入。保持几何稳定、
+量化颜色、预计算帧场，重场景降低帧率。没有运行中的动画时关闭时钟；暂停时
+保留轻量 timer 检测恢复。时钟配置无效或发布失败时停止正在运行的动画并报告
+错误，不无限重复报错。
 
 在 Component setup 或 `:bindings` 中创建时，动画归 Component Scope 所有，
 unmount 时自动停止。`etaf-animation-stop` 冻结当前显示值，
@@ -1543,7 +1548,27 @@ unmount 时自动停止。`etaf-animation-stop` 冻结当前显示值，
 
 `etaf-animation-enabled` 可以整体关掉动效：新 transition 立即应用 target，
 运行中的 transition 跳到 target，运行中的帧序列停在当前值。改回 `t` 不会
-重启已停止的运行。
+重启已停止的运行。`etaf-animation-paused` 则冻结时钟，保留各动画的进度，
+解除暂停后原地继续。`etaf-animation-speed` 缩放时间推进速度（2 为两倍、
+0.5 为一半）；`etaf-animation-frame-rate` 对下一次时钟调度生效。
+
+动画不安装键绑定，也不移动焦点。原生可编辑 Host 可以在其他 Host 动画期间
+输入、选择、撤销，输入法仍由 Emacs 管理。动画并非零开销：要量原生重绘和
+编辑延迟，不能只量 timer 回调。
+
+运行 `M-x etaf-animation-example-open` 打开全 buffer 的二十面板剧场。
+控制栏支持暂停/继续、0.5×/1×/2× 速度、15/30/60 fps 上限与亮暗主题切换，
+默认上限为 15 fps。按「编辑」开始原生编辑，空草稿也可重新进入；
+`C-c C-c` 或「完成」结束编辑。卸载后恢复打开剧场之前的时钟设置。
+一次只打开一个剧场。最小可用画布为 104 列 × 48 行；更小窗口保留几何，
+通过原生滚动/裁切查看，不挤压控件。GUI 显示窗口使用 1 像素右 fringe，
+避免 Emacs 为截断标记额外留出整列。
+
+`benchmarks/performance-scenarios.el` 中的 `animation.theatre.edit.running`
+与 `.paused` 场景通过工作区性能工具比较原生按键加强制重绘成本。
+`.sustained` 场景每次连续全速输入 200ms，拒绝可见动画变化间隔超过 150ms。
+这是明确的 15 fps 负载预算，不是任意文本规模、回调或机器负载下都不卡的保证。
+后台 GUI 样本不等于物理按键到屏幕呈现的延迟认证。
 
 数字、颜色字符串、等长 list 或 vector 以及注册过的类型对之间可以转换；
 `etaf-animation-interpolate` 描述规则，`etaf-animation-interpolators` 可以扩展

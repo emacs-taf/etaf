@@ -1789,10 +1789,16 @@ marquees and typewriter effects:
 
 Both kinds publish through the ordinary ref path.  One shared clock samples
 every running animation (`etaf-animation-frame-rate`, 30 frames per second by
-default); each tick is one reactive batch, one Runtime commit and one Ebox
-flush that rewrites only damaged lines.  Paint changes are cheap at display
-rates; layout changes cost more, so prefer color and face motion for the
-fastest effects.
+default). Each tick is one reactive batch and commits the affected Runtimes
+through Ebox. Only damaged regions are rewritten unless layout changes require
+a wider repaint. The rate is a ceiling: a one-shot timer waits a full period
+after publication and uses elapsed time instead of replaying missed frames.
+Continuous keyboard input does not suppress animation samples. Lisp, layout and native redisplay share
+Emacs's main thread; a long frame still delays input. Keep geometry stable,
+quantize colors, precompute frame fields, and lower the rate for heavy scenes.
+The clock disappears when no runs remain. Pausing keeps a lightweight timer
+alive to detect resume. Invalid clock settings or a publication failure stop
+running animations and report the error instead of repeating it indefinitely.
 
 Created during Component setup or `:bindings`, an animation belongs to the
 Component Scope and stops on unmount.  `etaf-animation-stop` freezes the
@@ -1803,7 +1809,34 @@ Outside a Scope, the caller stops animations explicitly.
 `etaf-animation-enabled` turns motion off for the session: new transitions
 apply their target immediately, running transitions snap to the target and
 running frame sequences hold their current value.  Setting it back to `t`
-does not restart stopped runs.
+does not restart stopped runs.  `etaf-animation-paused` freezes the clock
+instead: every run keeps its progress and resumes exactly where it stopped.
+`etaf-animation-speed` scales the clock (2 is twice as fast, 0.5 half), and
+`etaf-animation-frame-rate` applies to the running clock, so a control bar can
+pause, slow and re-rate every animation without restarting them.
+
+Animations do not install key bindings or move focus. A native editable Host
+can accept text, selection and undo while other Hosts animate; normal input
+methods remain owned by Emacs. Animation is not cost-free: measure native
+redisplay and editing latency, not just the timer callback.
+
+Run `M-x etaf-animation-example-open` for a full-buffer, twenty-panel theatre.
+Its controls pause/resume, select 0.5×/1×/2× speed, cap the rate at 15/30/60 fps,
+and switch light/dark themes. The default cap is 15 fps. Press Edit to start
+native editing, including an empty draft; `C-c C-c` or Done ends the session.
+Unmounting restores the clock settings in effect before the theatre opened.
+Use one theatre at a time. Its minimum usable canvas is 104 columns by 48 lines;
+smaller windows preserve that geometry with native scrolling/clipping rather
+than squeezing controls. Displaying GUI windows use a one-pixel right fringe
+to avoid reserving an entire text column for Emacs's truncation marker.
+
+The maintained `animation.theatre.edit.running` and `.paused` scenarios in
+`benchmarks/performance-scenarios.el` compare native keystrokes plus forced
+redisplay through the workspace performance driver. The `.sustained` scenario
+types at full speed for 200 ms per burst and rejects observed gaps over 150 ms
+between visible scene changes. This is an explicit 15 fps workload budget,
+not a guarantee for arbitrary text sizes, callbacks or machine load. Background
+GUI samples are not physical input-to-screen latency certification.
 
 Numbers, color strings, equal-length lists or vectors and registered pairs
 convert between states; `etaf-animation-interpolate` documents the rules and

@@ -4,6 +4,15 @@
 
 ### Added
 
+- `etaf-animation-paused` freezes the shared clock and resumes every run in
+  place, and `etaf-animation-speed` scales transitions and frame sequences
+  live; `etaf-animation-frame-rate` now re-rates the running clock. One-shot
+  scheduling yields after each publication without suppressing animation during
+  keyboard input or replaying missed frames. Runs created during a pause or speed
+  change use the same time base as existing runs.
+- The animation example fills the buffer with twenty panels, live clock and
+  theme controls, and a native editing pad supporting empty drafts and undo.
+  GUI windows avoid the extra truncation-column gap with a narrow right fringe.
 - `etaf-transition` returns a ref that follows a reactive target over time and
   restarts from the displayed value when the target changes mid-run;
   `etaf-animation-frames` cycles a frame sequence for spinners, marquees and

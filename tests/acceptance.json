@@ -759,9 +759,29 @@
       "purpose": "Unmounting stops the Scope's animation without a clock, and disabling applies at once."
     },
     {
+      "name": "etaf-animation-clock-pause-and-speed",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "Pausing freezes progress and resumes in place; the speed multiplier scales transitions."
+    },
+    {
       "name": "etaf-animation-frames-cycle-and-finish",
       "file": "tests/etaf-animation-tests.el",
       "purpose": "A frame sequence cycles, freezes on stop and finishes on its last frame."
+    },
+    {
+      "name": "etaf-animation-new-runs-use-the-shared-time-base",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "A frame sequence created during a paused, scaled clock starts from its first frame and completes after resuming."
+    },
+    {
+      "name": "etaf-animation-native-editing-and-other-buffers",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "Animation publications preserve native text editing, empty values, undo, selection and unrelated buffers."
+    },
+    {
+      "name": "etaf-animation-theatre-controls-and-edit-pad",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "The twenty-panel theatre keeps stable lanes and working pause, speed, frame-rate, theme and native editing controls."
     },
     {
       "name": "etaf-animation-interpolation-easings-and-validation",

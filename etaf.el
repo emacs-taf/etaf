@@ -125,7 +125,24 @@
 ;;
 ;; Variable: etaf-animation-frame-rate
 ;; Display clock rate in frames per second for running animations.
-;; A positive number; one clock serves every running animation.
+;; A positive upper bound; one clock serves every running animation.  Changing it
+;; applies to the running clock.
+;;
+;; Each publication yields a full period before the next sample.  Keyboard input
+;; does not suppress sampling; elapsed time advances without catch-up frames.
+;; Lisp and redisplay still share Emacs's main thread, so expensive scenes must
+;; use a lower rate and bounded per-frame work.
+;;
+;; Variable: etaf-animation-paused
+;; While non-nil the shared clock stops advancing: running animations hold
+;; their displayed value and keep their progress, and clearing it resumes
+;; exactly where they stopped.  Unlike `etaf-animation-enabled', pausing does
+;; not resolve or stop a run.
+;;
+;; Variable: etaf-animation-speed
+;; Animation speed multiplier, a positive number.  2 advances every transition
+;; and frame sequence twice as fast and 0.5 half as fast; a change applies
+;; from the next tick without moving a run's progress.
 ;;
 ;; Variable: etaf-animation-easings
 ;; Alist of (NAME . FUNCTION) easing curves mapping progress 0..1 to eased
@@ -1831,6 +1848,14 @@
 ;; This example does not implement catalog window chrome or paragraph reflow.
 ;; Reopening replaces its existing mount; unrelated nonempty buffers are refused.
 ;; Unmount or kill the buffer to release it.
+;;
+;; Function: etaf-animation-example-open ()
+;;;###autoload (autoload 'etaf-animation-example-open "etaf" nil t)
+;; Mount the twenty-panel animation theatre and return its buffer; display it
+;; when called interactively.  Includes pause, speed, frame-rate, theme and
+;; native editing controls.  Use at least 104 columns by 48 lines; smaller
+;; windows retain the canvas with native scrolling/clipping.  Only one theatre
+;; owns the shared clock controls; unmount restores the previous clock settings.
 ;;
 ;; Function: etaf-resource-example-open ()
 ;;;###autoload (autoload 'etaf-resource-example-open "etaf" nil t)

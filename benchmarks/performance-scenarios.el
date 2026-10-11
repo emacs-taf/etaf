@@ -776,4 +776,111 @@ plain buffer."
  :gate '(:class resize)
  :setup (lambda (_mode) (etaf-gate-benchmark--resize-fixture 400)))
 
+(defun etaf-animation-benchmark--scene (buffer)
+  "Read only the animated scene's visible text in BUFFER, not its edit pad."
+  (with-current-buffer buffer
+    (save-excursion
+      (goto-char (point-min))
+      (search-forward "EDIT PAD")
+      (buffer-substring-no-properties (point-min) (match-beginning 0)))))
+
+(defun etaf-animation-benchmark--fixture (paused &optional sustained)
+  "Type in the theatre with its clock running or PAUSED.
+SUSTAINED omits inter-key waits and checks visible animation continuity.
+The shared driver owns timing, redisplay and diagnostics."
+  (let* ((buffer (etaf-animation-example-open))
+         (runtime (etaf-runtime-for-buffer buffer))
+         (last-change (float-time)) (longest-gap 0.0) (changes 0)
+         scene session before expected started (keystrokes 0))
+    (etaf-dispatch-event runtime 'clear-button 'press)
+    (when paused (etaf-dispatch-event runtime 'pause-button 'press))
+    (list
+     :buffer buffer
+     :environment (lambda () (list :panels 20 :frame-rate 15 :paused (if paused t :false)
+                                   :sustained (if sustained t :false)
+                                   :input-route "native-keyboard-macro"
+                                   :physical-pointer-latency-certified :false))
+     :prepare
+     (lambda ()
+       ;; Keyboard macros use the selected window, not `with-current-buffer'.
+       (switch-to-buffer buffer)
+       (unless session
+         (etaf-dispatch-event runtime 'edit-button 'press)
+         (setq session (etaf-input-active-p runtime)))
+       ;; Allow actual animation publications between keystrokes, outside the
+       ;; timed input boundary.  The paused twin uses the same waiting period.
+       (unless sustained (sleep-for 0.1))
+       (setq before (etaf-input-text session)
+             expected (if (equal before "X") "" "X")))
+     :invoke
+     (lambda (_sample)
+       (etaf-performance-call-operation
+        runtime 'benchmark "animation-input"
+        (lambda ()
+          ;; Measure continuity inside the burst.  The driver's environment
+          ;; snapshots between samples deliberately do not count as input load.
+          (setq started (float-time) last-change started longest-gap 0.0
+                changes 0 keystrokes 0
+                scene (and sustained (etaf-animation-benchmark--scene buffer)))
+          (while (or (zerop keystrokes)
+                     (and sustained (< (- (float-time) started) 0.2)))
+            (cl-incf keystrokes)
+            (setq before (etaf-input-text session)
+                  expected (if (equal before "X") "" "X"))
+            (execute-kbd-macro (if (equal before "X") (kbd "DEL") "X"))
+            (when sustained
+              ;; Yield to the same timers as the native command loop; no
+              ;; synthetic human pause is inserted between keystrokes.
+              (accept-process-output nil 0.001)
+              (redisplay t)
+              (let ((now (float-time))
+                    (visible (etaf-animation-benchmark--scene buffer)))
+                (setq longest-gap (max longest-gap (- now last-change)))
+                (unless (equal visible scene)
+                  (setq scene visible last-change now changes (1+ changes)))))))))
+     :verify (lambda ()
+               (cond
+                ((not (equal (etaf-input-text session) expected))
+                 "Native editing lost the typed or deleted character")
+                ((and sustained (> longest-gap 0.15))
+                 "Visible animations stopped for over 150 ms during sustained input")
+                ((and sustained (zerop changes))
+                 "No visible animation advanced during the continuous input burst")
+                (t t)))
+     :outcome (lambda () (list :text (etaf-input-text session)
+                               :keystrokes keystrokes :scene-changes changes
+                               :max-observed-scene-gap-ms (* 1000 longest-gap)
+                               :revision (etaf-runtime-revision runtime)))
+     :observe
+     (lambda (sink)
+       (etaf-performance-clear)
+       (etaf-performance-start runtime)
+       (lambda ()
+         (etaf-performance-stop runtime)
+         (dolist (operation (plist-get (etaf-performance-report-data) :operations))
+           (dolist (stage (plist-get operation :stages))
+             (funcall sink
+                      (append (list :provider (plist-get stage :provider)
+                                    :stage (plist-get stage :stage)
+                                    :duration-ms (plist-get stage :duration-ms))
+                              (plist-get stage :metadata)))))))
+     :cleanup (lambda () (etaf-unmount runtime)
+                (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(dolist (paused '(nil t))
+  (let ((selected paused))
+    (taf-benchmark-register
+     (if paused "animation.theatre.edit.paused" "animation.theatre.edit.running")
+     :version 1 :modes '(batch gui) :isolation 'series :impact 'local :budget-ms 50
+     :required-providers '(ebox)
+     :description "One native keystroke with twenty animation panels, including forced redisplay"
+     :setup (lambda (_mode) (etaf-animation-benchmark--fixture selected)))))
+
+(taf-benchmark-register
+ "animation.theatre.edit.sustained"
+ :version 3 :modes '(gui) :isolation 'series :impact 'local :budget-ms 400
+ :required-providers '(ebox)
+ :description "200 ms of native keystrokes at full speed with redisplay; animation gaps under 150 ms"
+ :setup (lambda (_mode) (etaf-animation-benchmark--fixture nil t)))
+
 ;;; performance-scenarios.el ends here

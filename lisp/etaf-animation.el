@@ -27,14 +27,27 @@
 
 (defvar etaf-animation-frame-rate 30
   "Display clock rate in frames per second for running animations.
-A positive number; the clock samples every running animation this often and
-publishes one reactive batch per tick.")
+A positive upper bound; the clock waits at least one frame period after each
+publication.  It never queues catch-up frames or suppresses animation merely
+because keyboard input is pending.  Each sample publishes one reactive batch.")
 
 (defvar etaf-animation-enabled t
   "Whether animations interpolate over time.
 When nil, new transitions apply their target immediately, running transitions
 snap to their target and running frame sequences hold their current value.
 Setting this back to t does not restart stopped runs.")
+
+(defvar etaf-animation-paused nil
+  "Whether the shared clock stops advancing.
+While paused, running animations hold their displayed value and keep their
+progress; setting this back to nil resumes exactly where they stopped.  Unlike
+`etaf-animation-enabled', pausing does not resolve or stop a run.")
+
+(defvar etaf-animation-speed 1.0
+  "Animation speed multiplier.
+A positive number scaling how fast the shared clock advances, so 2 runs every
+transition and frame sequence twice as fast and 0.5 half as fast.  The change
+applies from the next tick without moving a run's progress.")
 
 (defvar etaf-animation-interpolators nil
   "Ordered ((PREDICATE . FUNCTION) ...) consulted before built-in conversion.
@@ -137,7 +150,17 @@ while equal non-numbers stand still.  Extend the conversion by adding
   "Animations subscribed to the shared clock, most recent first.")
 
 (defvar etaf-animation--timer nil
-  "Repeating clock timer, or nil while nothing runs.")
+  "Pending one-shot clock timer, or nil while nothing runs.")
+
+(defvar etaf-animation--ticking nil
+  "Non-nil while a sample and its reactive publication are in progress.")
+
+(defvar etaf-animation--clock-time nil
+  "Animation time in seconds while the clock runs, or nil while stopped.
+It advances by the wall time between ticks times `etaf-animation-speed'.")
+
+(defvar etaf-animation--clock-stamp nil
+  "Wall time of the previous clock tick, or nil while stopped.")
 
 (defvar etaf-animation--registry (make-hash-table :test #'eq :weakness 'key)
   "Map of each animated ref to its animation.")
@@ -155,18 +178,35 @@ while equal non-numbers stand still.  Extend the conversion by adding
               (list "etaf-animation-frame-rate must be a positive number" rate)))
     (/ 1.0 rate)))
 
+(defun etaf-animation--time-scale ()
+  "Return the validated `etaf-animation-speed' multiplier."
+  (let ((scale etaf-animation-speed))
+    (unless (and (numberp scale) (> scale 0))
+      (signal 'etaf-animation-error
+              (list "etaf-animation-speed must be a positive number" scale)))
+    scale))
+
 (defun etaf-animation--ensure-clock ()
-  "Start the shared clock while it is stopped."
+  "Initialize animation time and schedule at most one future sample."
   (let ((period (etaf-animation--tick-rate)))
-    (unless etaf-animation--timer
+    (etaf-animation--time-scale)
+    (unless etaf-animation--clock-time
+      (setq etaf-animation--clock-stamp (float-time)
+            etaf-animation--clock-time etaf-animation--clock-stamp))
+    (unless (or etaf-animation--timer etaf-animation--ticking)
       (setq etaf-animation--timer
-            (run-at-time period period #'etaf-animation--tick)))))
+            (run-at-time period nil #'etaf-animation--tick)))))
 
 (defun etaf-animation--drop-clock ()
   "Stop the shared clock; the next activation restarts it."
   (when etaf-animation--timer
-    (cancel-timer etaf-animation--timer)
-    (setq etaf-animation--timer nil)))
+    (cancel-timer etaf-animation--timer))
+  (setq etaf-animation--timer nil)
+  ;; A completion callback can retarget the last run during publication.
+  ;; Keep the same time base until that batch has finished.
+  (unless etaf-animation--ticking
+    (setq etaf-animation--clock-time nil
+          etaf-animation--clock-stamp nil)))
 
 (defun etaf-animation--activate (animation)
   "Subscribe ANIMATION to the shared clock."
@@ -246,16 +286,26 @@ while equal non-numbers stand still.  Extend the conversion by adding
     ('frames nil))
   (etaf-animation--deactivate animation))
 
-(defun etaf-animation--tick ()
-  "Sample every running animation and publish one reactive batch."
-  (if (not etaf-animation-enabled)
-      (progn
-        (etaf-batch
-          (dolist (animation (copy-sequence etaf-animation--running))
-            (etaf-animation--freeze animation)))
-        (etaf-animation--drop-clock))
-    (let ((now (float-time))
-          (failure nil))
+(defun etaf-animation--publish ()
+  "Advance animation time and publish at most one reactive batch."
+  (cond
+   ((not etaf-animation-enabled)
+    (etaf-batch
+      (dolist (animation (copy-sequence etaf-animation--running))
+        (etaf-animation--freeze animation)))
+    (etaf-animation--drop-clock))
+   (etaf-animation-paused
+    ;; Freezing the animation clock here resumes exactly where the pause
+    ;; started; the timer keeps running so a later unpause needs no restart.
+    (setq etaf-animation--clock-stamp (float-time)))
+   (t
+    (let* ((wall (float-time))
+           (scale (etaf-animation--time-scale))
+           (now (+ etaf-animation--clock-time
+                   (* scale (max 0.0 (- wall etaf-animation--clock-stamp)))))
+           (failure nil))
+      (setq etaf-animation--clock-stamp wall
+            etaf-animation--clock-time now)
       (etaf-batch
         (dolist (animation (copy-sequence etaf-animation--running))
           (condition-case error
@@ -264,7 +314,32 @@ while equal non-numbers stand still.  Extend the conversion by adding
              (etaf-animation--deactivate animation)
              (unless failure (setq failure error))))))
       (when failure
-        (signal (car failure) (cdr failure))))))
+        (signal (car failure) (cdr failure)))))))
+
+(defun etaf-animation--tick ()
+  "Publish one sample, then yield a full period to the Emacs event loop."
+  (setq etaf-animation--timer nil)
+  (let (failure)
+    (let ((etaf-animation--ticking t))
+      (condition-case error
+          (etaf-animation--publish)
+        ((error quit) (setq failure error))))
+    (condition-case error
+        (if failure
+            (progn
+              (dolist (animation (copy-sequence etaf-animation--running))
+                (etaf-animation--stop animation))
+              (etaf-animation--drop-clock))
+          (if etaf-animation--running
+              (etaf-animation--ensure-clock)
+            (etaf-animation--drop-clock)))
+      ((error quit)
+       ;; Invalid live clock settings must not create a repeating error storm.
+       (dolist (animation (copy-sequence etaf-animation--running))
+         (etaf-animation--stop animation))
+       (etaf-animation--drop-clock)
+       (unless failure (setq failure error))))
+    (when failure (signal (car failure) (cdr failure)))))
 
 (defun etaf-animation--retarget (animation target)
   "Move ANIMATION's shown value toward TARGET.
@@ -284,8 +359,8 @@ target never jumps.  Disabled animation and zero duration apply TARGET now."
       (etaf-animation--deactivate animation)
       (etaf-set-value shown target))
      (t
-      (setf (etaf-animation-start animation) (float-time))
-      (etaf-animation--activate animation)))))
+      (etaf-animation--activate animation)
+      (setf (etaf-animation-start animation) etaf-animation--clock-time)))))
 
 (defun etaf-animation--own (animation scope)
   "Register ANIMATION cleanup when SCOPE is active."
@@ -346,10 +421,11 @@ call `etaf-animation-stop' yourself.  NAME labels the ref in diagnostics."
          (animation (etaf--animation-create
                      :shown shown :kind 'frames :sequence frames
                      :interval (float interval) :loop (and loop t)
-                     :start (float-time) :on-complete on-complete)))
+                     :on-complete on-complete)))
     (puthash shown animation etaf-animation--registry)
     (when etaf-animation-enabled
-      (etaf-animation--activate animation))
+      (etaf-animation--activate animation)
+      (setf (etaf-animation-start animation) etaf-animation--clock-time))
     (etaf-animation--own animation scope)
     shown))
 
