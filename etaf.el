@@ -1853,8 +1853,9 @@
 ;;;###autoload (autoload 'etaf-animation-example-open "etaf" nil t)
 ;; Mount the twenty-panel animation theatre and return its buffer; display it
 ;; when called interactively.  Includes pause, speed, frame-rate, theme and
-;; native editing controls.  Use at least 104 columns by 48 lines; smaller
-;; windows retain the canvas with native scrolling/clipping.  Only one theatre
+;; native editing controls.  Cards reflow from four columns to one, controls
+;; wrap, and content scrolls vertically.  Use at least 28 columns by 12 lines;
+;; smaller windows clip the minimum canvas.  Only one theatre
 ;; owns the shared clock controls; unmount restores the previous clock settings.
 ;;
 ;; Function: etaf-resource-example-open ()

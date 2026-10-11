@@ -206,6 +206,9 @@
 
 ### Fixed
 
+- The animation theatre uses a responsive one-to-four-column Grid, wrapping
+  controls and vertical scrolling on narrow windows. Its top rail spans the
+  viewport instead of ending after a fixed number of characters.
 - The animation theatre keeps its editing toolbar visible when a multiline
   draft exceeds the pad's height. Multiline input, clear and undo are covered
   alongside animated neighbours by public regressions and a GUI workload.

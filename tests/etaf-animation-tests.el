@@ -341,10 +341,12 @@
                            "PULSE" "WAVE" "PLASMA" "HEAT" "RAINBOW" "EDIT PAD"))
             (should (string-match-p label (buffer-substring-no-properties
                                            (point-min) (point-max)))))
-          (let* ((refs '(lane-text lane-frames lane-motion lane-paint))
+          (let* ((refs '(rail panels))
                  (sizes (mapcar (lambda (ref) (etaf-host-ref-size runtime ref)) refs)))
+            (should (cl-every #'consp sizes))
             (etaf-animation-test-sleep 0.25)
-            (should (equal sizes (mapcar (lambda (ref) (etaf-host-ref-size runtime ref)) refs))))
+            (let ((after (mapcar (lambda (ref) (etaf-host-ref-size runtime ref)) refs)))
+              (should (equal sizes after))))
           (etaf-dispatch-event runtime 'pause-button 'press)
           (should etaf-animation-paused)
           (let ((revision (etaf-runtime-revision runtime)))
@@ -411,6 +413,38 @@
                 (should (string-match-p "EDIT PAD" (buffer-substring-no-properties
                                                    (point-min) (point-max)))))
               (should (equal (etaf-input-text session) "")))))
+      (etaf-unmount runtime)
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
+(ert-deftest etaf-animation-theatre-reflows-and-fills-its-viewport ()
+  "The rail fills every viewport and the gallery reflows to one through four columns."
+  (let* ((buffer (etaf-animation-example-open))
+         (runtime (etaf-runtime-for-buffer buffer)))
+    (unwind-protect
+        (dolist (case '((1300 . 4) (900 . 3) (600 . 2) (300 . 1) (1300 . 4)))
+          (etaf-runtime-refit runtime (car case) 24)
+          (let* ((rail (etaf-host-ref-size runtime 'rail))
+                 (grid (etaf-host-ref-size runtime 'panels))
+                 (columns (length (plist-get (etaf-runtime-host-props-for runtime 'panels)
+                                             :grid-template-columns)))
+                 (edit (etaf-host-ref-bounds runtime 'edit-button))
+                 (rows (ceiling (/ 20.0 columns))))
+            (should (= columns (cdr case)))
+            (should (= (car rail) (car case)))
+            (should (= (car grid) (car case)))
+            (should (>= (cdr grid) (+ (* rows 6) (1- rows))))
+            (should edit)
+            (etaf-runtime-refit runtime (car case) 80)
+            (let ((position (etaf-host-ref-position runtime 'footer)))
+              (should position)
+              (with-current-buffer buffer
+                (let ((line (line-number-at-pos position)))
+                  (if (= columns 4)
+                      (should (= line 80))
+                    (should (>= line 80))))))
+            (with-current-buffer buffer
+              (should (string-match-p "RAINBOW" (buffer-substring-no-properties
+                                                (point-min) (point-max)))))))
       (etaf-unmount runtime)
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 

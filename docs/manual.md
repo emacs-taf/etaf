@@ -1825,9 +1825,15 @@ Its controls pause/resume, select 0.5×/1×/2× speed, cap the rate at 15/30/60 
 and switch light/dark themes. The default cap is 15 fps. Press Edit to start
 native editing, including an empty draft; `C-c C-c` or Done ends the session.
 Unmounting restores the clock settings in effect before the theatre opened.
-Use one theatre at a time. Its minimum usable canvas is 104 columns by 48 lines;
-smaller windows preserve that geometry with native scrolling/clipping rather
-than squeezing controls. Displaying GUI windows use a one-pixel right fringe
+Use one theatre at a time. The native Grid reflows from four columns to one
+as the reactive viewport narrows; controls wrap and secondary hints disappear
+on compact windows. Card rows share the remaining window height, with a
+six-line minimum, retaining the full-window composition without a blank area
+below the footer. Extra content scrolls vertically instead of squeezing
+panels or clipping whole columns.
+The minimum usable viewport is 28 columns by 12 lines; smaller windows clip
+that minimum canvas. The original text rail and its moving highlight are
+preserved; the track's character count follows the viewport width. GUI windows use a one-pixel right fringe
 to avoid reserving an entire text column for Emacs's truncation marker.
 
 The maintained `animation.theatre.edit.running` and `.paused` scenarios in

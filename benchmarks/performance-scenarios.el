@@ -871,14 +871,14 @@ The shared driver owns timing, redisplay and diagnostics."
   (let ((selected paused))
     (taf-benchmark-register
      (if paused "animation.theatre.edit.paused" "animation.theatre.edit.running")
-     :version 1 :modes '(batch gui) :isolation 'series :impact 'local :budget-ms 50
+     :version 2 :modes '(batch gui) :isolation 'series :impact 'local :budget-ms 50
      :required-providers '(ebox)
-     :description "One native keystroke with twenty animation panels, including forced redisplay"
+     :description "One native keystroke with twenty responsive animation panels, including forced redisplay"
      :setup (lambda (_mode) (etaf-animation-benchmark--fixture selected)))))
 
 (taf-benchmark-register
  "animation.theatre.edit.sustained"
- :version 3 :modes '(gui) :isolation 'series :impact 'local :budget-ms 400
+ :version 4 :modes '(gui) :isolation 'series :impact 'local :budget-ms 400
  :required-providers '(ebox)
  :description "200 ms of native keystrokes at full speed with redisplay; animation gaps under 150 ms"
  :setup (lambda (_mode) (etaf-animation-benchmark--fixture nil t)))
@@ -925,7 +925,7 @@ The shared driver owns timing, redisplay and diagnostics."
 
 (taf-benchmark-register
  "animation.theatre.edit.multiline"
- :version 1 :modes '(batch gui) :isolation 'series :impact 'local :budget-ms 50
+ :version 2 :modes '(batch gui) :isolation 'series :impact 'local :budget-ms 50
  :required-providers '(ebox)
  :description "Native multiline paste, empty draft and long-line wrapping with animated neighbours"
  :setup (lambda (_mode) (etaf-animation-benchmark--multiline-fixture)))

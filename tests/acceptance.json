@@ -784,9 +784,14 @@
       "purpose": "Multiline input, clearing and undo keep exactly one footer while the full theatre's animations continue."
     },
     {
+      "name": "etaf-animation-theatre-reflows-and-fills-its-viewport",
+      "file": "tests/etaf-animation-tests.el",
+      "purpose": "The animation rail spans the viewport and all twenty panels reflow between one and four columns while controls remain mounted."
+    },
+    {
       "name": "etaf-animation-theatre-controls-and-edit-pad",
       "file": "tests/etaf-animation-tests.el",
-      "purpose": "The twenty-panel theatre keeps stable lanes and working pause, speed, frame-rate, theme and native editing controls."
+      "purpose": "The twenty-panel theatre keeps stable gallery geometry and working pause, speed, frame-rate, theme and native editing controls."
     },
     {
       "name": "etaf-animation-interpolation-easings-and-validation",

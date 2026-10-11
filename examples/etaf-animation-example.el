@@ -15,8 +15,9 @@
 ;; edit pad is a native editable Host, so typing, selection, undo and input
 ;; methods keep working while every animation runs.  Animations never touch
 ;; keys, focus, point or other buffers; `etaf-animation-enabled' is the global
-;; off switch.  The usable viewport is at least 104 columns by 48 lines;
-;; smaller windows retain that canvas and use native buffer scrolling/clipping.
+;; off switch.  The gallery reflows from four columns to one and controls
+;; wrap as the window narrows.  Content scrolls vertically; the minimum usable
+;; viewport is 28 columns by 12 lines, with clipping below that size.
 ;; The example configures a one-pixel right fringe in its displaying windows
 ;; so Emacs does not reserve a whole text column for a truncation marker.
 ;;
@@ -260,7 +261,7 @@
   "Flicker frames of the neon sign.")
 
 (defun etaf-animation-example--rail (phase total width)
-  "Return (LEFT LIT RIGHT) rail pieces for PHASE."
+  "Return (LEFT LIT RIGHT) rail pieces for PHASE across TOTAL cells."
   (let* ((span (max 1 (- total width)))
          (start (min span (floor (* (mod phase 1.0) span)))))
     (list (make-string start ?─)
@@ -296,9 +297,9 @@
       (text :class "card-kind" (expr (format "%s · %s" kind hint))))
     (slot))
   :styles
-  (("&" :width stretch :flex-grow 1 :flex-basis (lh 0) :min-height (lh 4)
+  (("&" :width stretch :height stretch :min-width (px 0)
     :padding-left (ch 1) :padding-right (px 0)
-    :margin-bottom (lh 1) :overflow hidden
+    :overflow hidden
     :bgcolor (etaf-theme-token :panel)
     :border-style solid :border-width (px 1)
     :border-color (etaf-theme-token :line))
@@ -801,7 +802,7 @@
 ;;;; Theatre
 
 (etaf-define-component etaf-animation-example-theatre ()
-  "Fill the buffer with controls, four lanes of panels and an editing pad."
+  "Reflow a full-width panel grid and controls with the mounted viewport."
   :bindings ((clock-settings (list etaf-animation-paused etaf-animation-speed
                                   etaf-animation-frame-rate))
              (rail (etaf-ref 0.0))
@@ -809,6 +810,18 @@
                          rail :duration 1.8 :easing 'linear :name 'rail
                          :on-complete (lambda ()
                                         (etaf-animation-example--advance rail))))
+             (columns (etaf-computed
+                       (lambda () (max 1 (min 4 (floor (/ (car (etaf-viewport)) 260.0)))))))
+             (minimum-grid-height
+              (etaf-computed
+               (lambda ()
+                 (let ((rows (ceiling (/ 20.0 (etaf-value columns)))))
+                   (+ (* rows 6) (1- rows))))))
+             (rail-width
+              (etaf-computed
+               (lambda ()
+                 (max 11 (ceiling (/ (car (etaf-viewport))
+                                     (float (frame-char-width))))))))
              (theme (etaf-computed
                      (lambda ()
                        (etaf-theme-resolve-palette
@@ -840,17 +853,20 @@
              etaf-animation-frame-rate (nth 2 clock-settings)))))
   :view
   (flex :class "theatre" :flex-direction 'column
-    (flex :class "rail" :height '(lh 1) :overflow 'hidden :wrap-mode 'none
+        :min-height (list 'lh (+ 14 (etaf-value minimum-grid-height)))
+    (box :class "rail" :ref 'rail :width 'stretch :height '(lh 1)
+         :flex-shrink 0 :overflow 'hidden :wrap-mode 'none
       (text :class "rail-dim"
             (expr (nth 0 (etaf-animation-example--rail
-                          (etaf-value rail-tick) 150 10))))
+                          (etaf-value rail-tick) (etaf-value rail-width) 10))))
       (text :class "rail-lit"
             (expr (nth 1 (etaf-animation-example--rail
-                          (etaf-value rail-tick) 150 10))))
+                          (etaf-value rail-tick) (etaf-value rail-width) 10))))
       (text :class "rail-dim"
             (expr (nth 2 (etaf-animation-example--rail
-                          (etaf-value rail-tick) 150 10)))))
-    (flex :class "controls" :height '(lh 1) :gap '((lh 0) (ch 1))
+                          (etaf-value rail-tick) (etaf-value rail-width) 10)))))
+    (flex :class "controls" :ref 'controls :flex-flow '(row wrap) :flex-shrink 0
+          :gap '((lh 0) (ch 1))
       (etaf-animation-example-control-button
        :ref 'pause-button
        :label (if (etaf-value etaf-animation-example-paused) "▶ 继续" "⏸ 暂停")
@@ -888,40 +904,39 @@
                    (setf (etaf-value etaf-animation-example-mode)
                          (if (eq (etaf-value etaf-animation-example-mode) 'light)
                              'dark 'light))))
-      (text :class "controls-state"
+      (text :class "controls-state" :if (>= (car (etaf-viewport)) 600)
             (expr (format "   speed %.2g× · clock %s fps · %s"
                           (etaf-value etaf-animation-example-speed)
                           (number-to-string (etaf-value etaf-animation-example-fps))
                           (if (etaf-value etaf-animation-example-paused) "paused" "running")))))
-    (flex :class "lanes" :flex-flow '(row nowrap) :flex-grow 1
-          :flex-basis '(lh 0) :gap '((lh 0) (ch 1))
-      (flex :class "lane" :ref 'lane-text :flex-direction 'column :flex-grow 1 :min-width '(ch 24)
-        (etaf-animation-example-typewriter-card)
-        (etaf-animation-example-spinners-card)
-        (etaf-animation-example-ecg-card)
-        (etaf-animation-example-rain-card)
-        (etaf-animation-example-morse-card))
-      (flex :class "lane" :ref 'lane-frames :flex-direction 'column :flex-grow 1 :min-width '(ch 24)
-        (etaf-animation-example-snow-card)
-        (etaf-animation-example-firework-card)
-        (etaf-animation-example-spectrum-card)
-        (etaf-animation-example-loading-card)
-        (etaf-animation-example-neon-card))
-      (flex :class "lane" :ref 'lane-motion :flex-direction 'column :flex-grow 1 :min-width '(ch 24)
-        (etaf-animation-example-bounce-card)
-        (etaf-animation-example-dvd-card)
-        (etaf-animation-example-letters-card)
-        (etaf-animation-example-pendulum-card)
-        (etaf-animation-example-fish-card))
-      (flex :class "lane" :ref 'lane-paint :flex-direction 'column :flex-grow 1 :min-width '(ch 24)
-        (etaf-animation-example-pulse-card)
-        (etaf-animation-example-wave-card)
-        (etaf-animation-example-plasma-card)
-        (etaf-animation-example-heat-card)
-        (etaf-animation-example-rainbow-card)))
-    (flex :class "pad" :height '(lh 7) :overflow 'hidden :flex-direction 'column
+    (grid :class "panels" :ref 'panels :width 'stretch :height 'stretch
+          :flex-grow 1 :flex-basis '(lh 0) :flex-shrink 0
+          :min-height (list 'lh (etaf-value minimum-grid-height))
+          :grid-template-columns (make-list (etaf-value columns) '(minmax (px 0) (fr 1)))
+          :grid-auto-rows '(minmax (lh 6) (fr 1)) :gap '((lh 1) (ch 1))
+      (etaf-animation-example-typewriter-card)
+      (etaf-animation-example-spinners-card)
+      (etaf-animation-example-ecg-card)
+      (etaf-animation-example-rain-card)
+      (etaf-animation-example-morse-card)
+      (etaf-animation-example-snow-card)
+      (etaf-animation-example-firework-card)
+      (etaf-animation-example-spectrum-card)
+      (etaf-animation-example-loading-card)
+      (etaf-animation-example-neon-card)
+      (etaf-animation-example-bounce-card)
+      (etaf-animation-example-dvd-card)
+      (etaf-animation-example-letters-card)
+      (etaf-animation-example-pendulum-card)
+      (etaf-animation-example-fish-card)
+      (etaf-animation-example-pulse-card)
+      (etaf-animation-example-wave-card)
+      (etaf-animation-example-plasma-card)
+      (etaf-animation-example-heat-card)
+      (etaf-animation-example-rainbow-card))
+    (flex :class "pad" :height '(lh 7) :flex-shrink 0 :overflow 'hidden :flex-direction 'column
           :gap '((lh 0) (px 0))
-      (flex :class "pad-head" :height '(lh 1) :flex-shrink 0 :gap '((lh 0) (ch 1))
+      (flex :class "pad-head" :flex-flow '(row wrap) :flex-shrink 0 :gap '((lh 0) (ch 1))
         (text :class "pad-title" "EDIT PAD")
         (etaf-animation-example-control-button
          :ref 'edit-button :label "编辑" :active (and (etaf-value etaf-animation-example-session) t)
@@ -932,7 +947,7 @@
         (etaf-animation-example-control-button
          :ref 'clear-button :label "清空" :active nil
          :on-press #'etaf-animation-example--clear-draft)
-        (text :class "pad-hint"
+        (text :class "pad-hint" :if (>= (car (etaf-viewport)) 600)
               (expr (if (etaf-value etaf-animation-example-session)
                         "原生输入 / 选择 / 撤销 · C-c C-c 完成"
                       "点「编辑」或下方文本开始输入，动画继续在跑"))))
@@ -940,14 +955,14 @@
         (text :class "pad-text" :ref 'notepad :tab-index 0
               :on-press #'etaf-animation-example--edit
               (expr (etaf-value etaf-animation-example-draft)))))
-    (flex :class "footer" :height '(lh 1) :overflow 'hidden :wrap-mode 'none
+    (flex :class "footer" :ref 'footer :height '(lh 1) :flex-shrink 0 :overflow 'hidden :wrap-mode 'none
       (text :class "footer-shimmer"
             (expr (etaf-animation-example--shimmer
                    (etaf-value rail-tick) 30)))
       (text :class "footer-note"
             " one shared clock · animations never touch keys, focus, point or other buffers")))
   :styles
-  (("&" :width stretch :height stretch :min-width (ch 104) :min-height (lh 48)
+  (("&" :width stretch :height stretch :min-width (ch 28)
     :bgcolor (etaf-theme-token :bg) :color (etaf-theme-token :ink))
    (".rail" :bgcolor (etaf-theme-token :bar))
    (".rail-dim" :color (etaf-theme-token :dim))
@@ -956,8 +971,7 @@
     :padding-left (ch 1) :padding-right (px 0))
    (".controls-gap" :color (etaf-theme-token :bar))
    (".controls-state" :color (etaf-theme-token :dim) :font-size 11)
-   (".lanes" :width stretch)
-   (".lane" :height stretch :flex-basis (px 0))
+   (".panels" :margin-bottom (lh 1))
    (".pad" :bgcolor (etaf-theme-token :pad)
     :border-style solid :border-width (px 1)
     :border-color (etaf-theme-token :line)
