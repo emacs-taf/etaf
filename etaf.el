@@ -969,6 +969,9 @@
 ;; active.  A sequence such as "C-c C-u" shares its prefix with the buffer's
 ;; maps; it may not start with a printing key, and one key cannot both run a
 ;; command and start a sequence anywhere in the Runtime (a render error).
+;; Native command objects retain only weak references to their Runtime and
+;; callback owners, so command history does not keep a disposed application
+;; alive. Invoking a command after its mount ends signals `user-error'.
 ;; Component root `:keys' put the caller's entries first.
 ;; `:region' declares a user-addressable functional range on a Host: a
 ;; plist whose `:id' is the stable identity, `:label' the display name,

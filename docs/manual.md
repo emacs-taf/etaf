@@ -847,7 +847,9 @@ of installing keymaps in the application:
   command) exactly like a keymap binding: no batch surrounds it, so each write
   publishes and the command can move point to or begin input on a Host it just
   revealed. Wrap several writes in `etaf-batch` to publish them once. LABEL
-  lists the key in the palette.
+  lists the key in the palette. Native command objects may remain in Emacs
+  history without keeping their Runtime or callback resources alive. A retained
+  command cannot run after its mount ends; invoking it then signals `user-error`.
 - A key works while focus is inside the Host. Point decides instead when
   nothing is focused or a command moved point out of the focused Host, so an
   application that moves point into another pane gets that pane's keys. The nearest Host that binds the key wins, so a pane can override

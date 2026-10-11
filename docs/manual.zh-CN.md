@@ -772,7 +772,8 @@ Focus 和 hit testing 是 Runtime 操作：
   错误。COMMAND 以无参数调用（是 command 时交互调用），行为与 keymap 绑定完全
   相同：外面没有 batch，每次写入立即发布，因此命令可以把 point 移到或开始编辑它刚
   显示出来的 Host。多次写入需要合并发布时用 `etaf-batch` 包住。LABEL 让按键出现在
-  命令面板中。
+  命令面板中。原生命令对象可以留在 Emacs 按键历史里，但不会因此持有已经卸载的
+  Runtime 或回调资源。挂载结束后再调用保留的命令会报 `user-error`。
 - 焦点位于 Host 内时按键生效；无焦点，或命令把 point 移出了焦点所在 Host 时，以
   point 为准，因此应用把 point 移入另一窗格后即获得该窗格的按键。最近的绑定该键的 Host
   胜出，因此窗格可以覆盖应用级按键。Host 按键优先于 buffer 自身的 keymap，包括应用

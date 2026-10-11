@@ -290,11 +290,33 @@ keymap or M-x runs it."
           (funcall command))
       (etaf-runtime-event-end runtime))))
 
-(defun etaf--keys-command (runtime ref command)
-  "Return an interactive command running COMMAND for Host REF in RUNTIME."
+(defun etaf--keys-callable (references kind)
+  "Return a KIND command referring only weakly to its mounted owners.
+Keep this factory separate: interpreted closures must not capture the caller's
+Runtime or callback arguments through their lexical environment."
   (lambda ()
     (interactive)
-    (etaf--keys-run runtime ref command)))
+    (let ((runtime (gethash 'runtime references))
+          (ref (gethash 'ref references))
+          (argument (gethash 'argument references)))
+      (unless (and runtime (etaf-runtime-mounted-p runtime))
+        (user-error "The ETAF Runtime is no longer mounted"))
+      (pcase kind
+        ('command
+         (unless (and ref argument) (user-error "The ETAF key binding is no longer available"))
+         (etaf--keys-run runtime ref argument))
+        ('dismiss (etaf-dispatch-event runtime ref 'dismiss))
+        ('direction (etaf-direction argument runtime))
+        ('tab (if argument (etaf-focus-previous runtime) (etaf-focus-next runtime)))
+        ('step (etaf-drag-step runtime ref (car argument) (cdr argument)))))))
+
+(defun etaf--keys-command (runtime kind &optional ref argument)
+  "Return a KIND command without extending RUNTIME or ARGUMENT's lifetime."
+  (let ((references (make-hash-table :test 'eq :weakness 'value :size 3)))
+    (puthash 'runtime runtime references)
+    (puthash 'ref ref references)
+    (puthash 'argument argument references)
+    (etaf--keys-callable references kind)))
 
 (defun etaf--keys-dismiss-ref (runtime chain)
   "Return the nearest enabled Host in CHAIN with a dismiss handler."
@@ -327,13 +349,6 @@ keymap or M-x runs it."
       (and (eq etaf-direction-scheme 'vim)
            (cdr (assoc event etaf--keys-vim-direction-events)))))
 
-(defun etaf--keys-direction-command (runtime event)
-  "Return a command moving RUNTIME's focus in EVENT's direction."
-  (let ((direction (etaf--keys-direction-of event)))
-    (lambda ()
-      (interactive)
-      (etaf-direction direction runtime))))
-
 (defun etaf--keys-binding (event)
   "Return the command EVENT runs in the current Runtime buffer, or nil."
   (let ((runtime (etaf-runtime-for-buffer (current-buffer))))
@@ -343,31 +358,22 @@ keymap or M-x runs it."
                              :key (lambda (item) (etaf--keys-event (cadr item)))
                              :test #'equal)))
         (cond
-         (found (etaf--keys-command runtime (car found) (nth 2 found)))
+         (found (etaf--keys-command runtime 'command (car found) (nth 2 found)))
          ((equal event etaf--keys-selector-event)
           #'etaf-region-select)
          ((member event etaf--keys-dismiss-events)
           (when-let* ((ref (etaf--keys-dismiss-ref runtime chain)))
-            (lambda ()
-              (interactive)
-              (etaf-dispatch-event runtime ref 'dismiss))))
+            (etaf--keys-command runtime 'dismiss ref)))
          ((etaf--keys-direction-of event)
-          (etaf--keys-direction-command runtime event))
+          (etaf--keys-command runtime 'direction nil (etaf--keys-direction-of event)))
          ((member event etaf--keys-tab-events)
-          (let ((backward (member event etaf--keys-backtab-events)))
-            (lambda ()
-              (interactive)
-              (if backward
-                  (etaf-focus-previous runtime)
-                (etaf-focus-next runtime)))))
+          (etaf--keys-command runtime 'tab nil (and (member event etaf--keys-backtab-events) t)))
          ((equal event [??])
           #'etaf-help)
          ((etaf--keys-step-ref runtime event)
           (let ((ref (etaf--keys-step-ref runtime event))
                 (step (cdr (assoc event etaf--keys-step-events))))
-            (lambda ()
-              (interactive)
-              (etaf-drag-step runtime ref (car step) (cdr step)))))
+            (etaf--keys-command runtime 'step ref step)))
          ;; An open dialog keeps typed letters from reaching the application
          ;; behind it, including keymaps that are not Host `:keys'.
          ((and (member event etaf--keys-printing-events)
