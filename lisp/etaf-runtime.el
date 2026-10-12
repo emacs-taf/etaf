@@ -2536,8 +2536,8 @@ reruns after it changes."
 (defun etaf-runtime-refit (runtime viewport-width &optional viewport-height)
   "Fix RUNTIME's viewport to VIEWPORT-WIDTH pixels and VIEWPORT-HEIGHT lines.
 A nil dimension follows the displaying window.  Return non-nil when the
-layout changed.  During a native input session the refit waits, returning
-nil, until the session ends."
+layout changed.  A native input session does not delay the refit; it applies
+immediately like any other refit."
   (let ((runtime (etaf-runtime-require-mounted runtime)))
     (when (and viewport-width
                (not (and (numberp viewport-width) (> viewport-width 0))))
