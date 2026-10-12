@@ -6,7 +6,7 @@
 ;; Version: 0.2.1
 ;; Package-Requires: ((emacs "29.1") (ebox "3.0.0") (ecss "0.1.0"))
 ;; Keywords: ui, tools, convenience
-;; URL: https://github.com/ginqi7/etaf
+;; URL: https://github.com/emacs-taf/etaf
 
 ;;; Commentary:
 

@@ -3,7 +3,7 @@
 源码布局：将仓库根目录加入 `load-path`，然后 require 与包同名的入口。
 入口 Commentary 列出公共 API 及用法；内部实现位于 `lisp/`。
 
-ETAF 在独立的 [Ebox](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/) 布局与渲染引擎上，使用可复用的 Component 构建文本应用。
+ETAF 在独立的 [Ebox](https://github.com/emacs-taf/ebox/blob/main/) 布局与渲染引擎上，使用可复用的 Component 构建文本应用。
 
 从 `etaf-view` 和 `etaf-mount` 开始。`(name :property value ... child ...)`
 中属性在前、子节点在后，属性值是普通 Elisp。求值下面完整例子，切换到
@@ -138,10 +138,10 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 
 | 包 | 职责 |
 | --- | --- |
-| [`etaf-ui`](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-ui/src/branch/main/README.md) | 官方 Component 目录：Button、Checkbox、Label、Panel 和 DataGrid。 |
-| [`etaf-db`](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-db/src/branch/main/README.md) | 数据库后端包，目前提供 SQLite；Data Controller 仍属于 ETAF core。 |
-| [`etaf-playground`](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-playground/src/branch/main/README.md) | ETAF 示例；只有请求官方目录示例时才加载 UI 包。 |
-| [`ebox-playground`](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox-playground/src/branch/main/README.md) | 只使用 Ebox 的布局示例，与 ETAF 独立。 |
+| [`etaf-ui`](https://github.com/emacs-taf/etaf-ui/blob/main/README.md) | 官方 Component 目录：Button、Checkbox、Label、Panel 和 DataGrid。 |
+| [`etaf-db`](https://github.com/emacs-taf/etaf-db/blob/main/README.md) | 数据库后端包，目前提供 SQLite；Data Controller 仍属于 ETAF core。 |
+| [`etaf-playground`](https://github.com/emacs-taf/etaf-playground/blob/main/README.md) | ETAF 示例；只有请求官方目录示例时才加载 UI 包。 |
+| [`ebox-playground`](https://github.com/emacs-taf/ebox-playground/blob/main/README.md) | 只使用 Ebox 的布局示例，与 ETAF 独立。 |
 
 没有单独需要安装的 `etaf-data`：Data 是 ETAF 核心能力。也没有笼统的 `etaf-adapters` 包：其他数据库、服务、文件或 ORM 应使用明确名称的具体 Data Source 包实现同一契约。
 

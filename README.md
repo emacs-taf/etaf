@@ -5,7 +5,7 @@ Source layout: add the repository root to `load-path` and use
 [`etaf.el`](etaf.el); implementation modules live in `lisp/`.
 
 ETAF builds text applications from reusable Components above the independent
-[Ebox](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox/src/branch/main/) layout and rendering engine.
+[Ebox](https://github.com/emacs-taf/ebox/blob/main/) layout and rendering engine.
 
 Start with `etaf-view` and `etaf-mount`. Properties precede children in
 `(name :property value ... child ...)`; property values are ordinary Elisp.
@@ -151,10 +151,10 @@ The [`examples/`](README.md) directory contains four core-only best-practice app
 
 | Package | Role |
 | --- | --- |
-| [`etaf-ui`](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-ui/src/branch/main/README.md) | Official Component catalog: Button, Checkbox, Label, Panel, and DataGrid. |
-| [`etaf-db`](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-db/src/branch/main/README.md) | Database backend package, currently providing SQLite; the Data Controller remains in ETAF core. |
-| [`etaf-playground`](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-playground/src/branch/main/README.md) | ETAF examples, with the UI catalog loaded only when requested. |
-| [`ebox-playground`](https://gitea.gklazycat.heiyu.space/emacs-taf/ebox-playground/src/branch/main/README.md) | Ebox-only layout examples, independent from ETAF. |
+| [`etaf-ui`](https://github.com/emacs-taf/etaf-ui/blob/main/README.md) | Official Component catalog: Button, Checkbox, Label, Panel, and DataGrid. |
+| [`etaf-db`](https://github.com/emacs-taf/etaf-db/blob/main/README.md) | Database backend package, currently providing SQLite; the Data Controller remains in ETAF core. |
+| [`etaf-playground`](https://github.com/emacs-taf/etaf-playground/blob/main/README.md) | ETAF examples, with the UI catalog loaded only when requested. |
+| [`ebox-playground`](https://github.com/emacs-taf/ebox-playground/blob/main/README.md) | Ebox-only layout examples, independent from ETAF. |
 
 There is no separate `etaf-data` install: Data is a core ETAF capability. There is no generic `etaf-adapters` package: other databases, services, files, or ORMs should provide concrete Data Source packages with explicit names.
 
