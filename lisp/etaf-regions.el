@@ -384,7 +384,8 @@ the smallest perpendicular centre distance and the earliest document order."
           ((declared (region)
              (when region
                (let* ((neighbors (plist-get region :neighbors))
-                      (target (plist-get neighbors direction)))
+                      ;; Directions are symbols; the property keys are keywords.
+                      (target (plist-get neighbors (intern (format ":%s" direction)))))
                  (when (and target
                             (cl-find target regions
                                      :key (lambda (item) (plist-get item :id))))

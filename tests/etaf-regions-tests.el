@@ -62,6 +62,20 @@
     (etaf-regions-test-select runtime "M-g <up>")
     (should (eq (etaf-focused-host-ref runtime) 'editor))))
 
+(ert-deftest etaf-regions-declared-neighbor-overrides-geometry ()
+  "A `:neighbors' declaration picks its target even against geometry."
+  (etaf-test-with-mount (runtime (etaf-view
+                                  (column
+                                   (column :region '(:id second :key "s")
+                                           (box :ref 'b :tab-index 0 "B"))
+                                   (column :region '(:id first :key "f"
+                                                           :neighbors (:right second))
+                                           (box :ref 'a :tab-index 0 "A")))))
+    (etaf-focus runtime 'a)
+    ;; `second' sits to the left, so only the declaration reaches it.
+    (etaf-regions-test-select runtime "M-g <right>")
+    (should (eq (etaf-focused-host-ref runtime) 'b))))
+
 (ert-deftest etaf-regions-unknown-keys-keep-state-and-c-g-quits ()
   "Unknown keys change nothing; Escape cancels and C-g quits natively."
   (etaf-test-with-mount (runtime (etaf-view

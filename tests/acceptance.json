@@ -729,6 +729,11 @@
       "purpose": "Arrow selection crosses sibling regions and leaves nested regions through parent exits."
     },
     {
+      "name": "etaf-regions-declared-neighbor-overrides-geometry",
+      "file": "tests/etaf-regions-tests.el",
+      "purpose": "A `:neighbors' declaration reaches its named region even when geometry points the other way."
+    },
+    {
       "name": "etaf-regions-unknown-keys-keep-state-and-c-g-quits",
       "file": "tests/etaf-regions-tests.el",
       "purpose": "Unknown selection keys change nothing, Escape cancels and C-g quits natively."

@@ -211,6 +211,9 @@
 
 ### Fixed
 
+- A `:region`'s `:neighbors` declaration now reaches the named region: the
+  lookup asked the symbol direction in a keyword plist, so declarations never
+  matched and arrow adjacency always followed geometry.
 - The animation pad and its text now share one activation owner. Complete
   mouse press/release gestures keep empty drafts editable after deletion and
   resize, rather than starting and immediately ending the session.
