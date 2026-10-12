@@ -1097,6 +1097,11 @@
 ;;;###autoload (autoload 'etaf-performance-operation-p "etaf" nil nil)
 ;;
 ;;
+;; Function: etaf-performance-operation-runtime-id (x)
+;;;###autoload (autoload 'etaf-performance-operation-runtime-id "etaf" nil nil)
+;; Access slot "runtime-id" of `etaf-performance-operation' struct X.
+;;
+;;
 ;; Function: etaf-performance-operation-stage-summary (operation)
 ;;;###autoload (autoload 'etaf-performance-operation-stage-summary "etaf" nil nil)
 ;; Summarize flat provider stages in OPERATION by category.

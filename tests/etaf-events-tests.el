@@ -376,7 +376,10 @@
     (let ((records (etaf-performance-records)))
       (should records)
       (should (eq (etaf-performance-operation-kind (car records)) 'event))
-      (should (eq (etaf-performance-operation-status (car records)) 'success)))))
+      (should (eq (etaf-performance-operation-status (car records)) 'success))
+      (let ((runtime-id (etaf-performance-operation-runtime-id (car records))))
+        (should (integerp runtime-id))
+        (should (= 1 (length (etaf-performance-records runtime-id))))))))
 
 (provide 'etaf-events-tests)
 
