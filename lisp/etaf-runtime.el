@@ -2266,6 +2266,16 @@ Signal `etaf-runtime-error' when none is mounted."
         (etaf--drain)))
     (etaf-runtime-rev runtime)))
 
+;;;###autoload
+(defun etaf-runtime-update-report (&optional runtime)
+  "Return the last buffer update report of mounted RUNTIME, or nil.
+The plist is the engine's flush report for the last commit: its strategy,
+the edited range count, the line count, the ranges and the flush counter.
+RUNTIME defaults to the Runtime of the current buffer; a non-mounted
+Runtime signals `etaf-runtime-error'."
+  (let* ((runtime (etaf-runtime-require-mounted runtime)))
+    (ebox-buffer-update-report (etaf-runtime-buffer runtime))))
+
 ;;;; Sticky Host
 ;;
 ;; A `:sticky top' Host stays visible while its buffer scrolls: once a

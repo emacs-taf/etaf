@@ -151,7 +151,8 @@
           (etaf-set-value b "B")
           (should (equal (etaf-test-lines) '("a" "b"))))
         (should (equal (etaf-test-lines) '("A" "B")))
-        (should (= (etaf-runtime-revision runtime) (1+ revision)))))))
+        (should (= (etaf-runtime-revision runtime) (1+ revision)))
+        (should (eq 'lines (plist-get (etaf-runtime-update-report runtime) :strategy)))))))
 
 (ert-deftest etaf-view-updates-reactive-paint-properties ()
   "A reactive Host property changes the painted face without changing text."

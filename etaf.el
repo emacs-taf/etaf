@@ -1371,6 +1371,14 @@
 ;; changed the layout).  Tests and benchmarks compare revisions
 ;; to observe that a change was published.
 ;;
+;; Function: etaf-runtime-update-report (&optional runtime)
+;;;###autoload (autoload 'etaf-runtime-update-report "etaf" nil nil)
+;; Return the last buffer update report of mounted RUNTIME, or nil.
+;; The plist is the engine's flush report for the last commit: its strategy,
+;; the edited range count, the line count, the ranges and the flush counter.
+;; RUNTIME defaults to the Runtime of the current buffer; a non-mounted
+;; Runtime signals `etaf-runtime-error'.
+;;
 ;; Function: etaf-runtime-set-input-finisher (runtime finisher)
 ;;;###autoload (autoload 'etaf-runtime-set-input-finisher "etaf" nil nil)
 ;; Set mounted RUNTIME's native input session finisher to FINISHER or nil.
