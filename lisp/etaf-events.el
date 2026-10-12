@@ -240,6 +240,24 @@ RUNTIME defaults to the Runtime in the current buffer."
     (when (and runtime (etaf-runtime-mounted-p runtime))
       (ebox-input-active-p (etaf-runtime-buffer runtime)))))
 
+(defun etaf-input-edit-command-add (command)
+  "Add COMMAND to the commands that edit a native input session's text.
+A command in this list that is bound in a session keymap edits the session
+value; other session bindings run in the mounted buffer.  COMMAND must be a
+command symbol; another value signals `wrong-type-argument'.  Return the
+updated list."
+  (unless (and (symbolp command) (commandp command))
+    (signal 'wrong-type-argument (list 'commandp command)))
+  (add-to-list 'ebox-input-edit-commands command))
+
+(defun etaf-input-edit-command-remove (command)
+  "Remove COMMAND from the native input session's text-editing commands.
+COMMAND must be a command symbol; another value signals `wrong-type-argument'.
+Return the updated list."
+  (unless (and (symbolp command) (commandp command))
+    (signal 'wrong-type-argument (list 'commandp command)))
+  (setq ebox-input-edit-commands (delq command ebox-input-edit-commands)))
+
 (defun etaf-host-ref-bounds (runtime host-ref)
   "Return live Ebox bounds for HOST-REF in mounted RUNTIME.
 The (START . END) span runs from the Host's first visible painted cell to

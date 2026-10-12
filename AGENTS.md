@@ -16,6 +16,7 @@ grouped by the theme you are chasing:
 | Component definition, props, slots, retained instances | `etaf-component` |
 | Mounted lifetime, retained Host tree, fine-grained bindings, commit, direct Ebox writes | `etaf-runtime` |
 | Nested viewport regions: subtree layout region publication and resolution | `etaf-viewport` |
+| Text measurement for applications | `etaf-measure` |
 | Reactive state, derived values, effects, batches, Scopes | `etaf-reactive` |
 | Time-driven values, transitions and frame sequences | `etaf-animation` |
 | Events, activation, focus, input identity | `etaf-events` |

@@ -314,6 +314,12 @@
       "purpose": "The performance recorder captures observed event operations."
     },
     {
+      "name": "etaf-input-edit-commands-add-and-remove",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "The session text-editing command list changes through the public add and remove only."
+    },
+
+    {
       "name": "etaf-keys-resolve-from-focus-outward-and-nearest-wins",
       "file": "tests/etaf-keys-tests.el",
       "purpose": "A Host's :keys work while focus is inside it and the nearest Host binding a key shadows outer ones."
@@ -604,6 +610,12 @@
       "purpose": "A refit that changes the viewport commits a revision; an equal one does not."
     },
     {
+      "name": "etaf-string-pixel-width-measures-the-first-line",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "The measurement adapter measures the first line, honors faces and rejects non-strings."
+    },
+
+    {
       "name": "etaf-view-refit-reports-an-observed-operation",
       "file": "tests/etaf-view-tests.el",
       "purpose": "A refit reaches the mount observer as a refit operation together with its flush."
@@ -713,6 +725,12 @@
       "file": "tests/etaf-viewport-tests.el",
       "purpose": "Removing a region returns its subtree to the Runtime viewport."
     },
+    {
+      "name": "etaf-viewport-window-metrics-need-a-graphic-window",
+      "file": "tests/etaf-viewport-tests.el",
+      "purpose": "The window viewport reads nil without a graphical window and signals when no Runtime is mounted."
+    },
+
     {
       "name": "etaf-component-watch-callback-keeps-its-environment",
       "file": "tests/etaf-component-tests.el",

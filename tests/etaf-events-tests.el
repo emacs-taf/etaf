@@ -381,6 +381,21 @@
         (should (integerp runtime-id))
         (should (= 1 (length (etaf-performance-records runtime-id))))))))
 
+(ert-deftest etaf-input-edit-commands-add-and-remove ()
+  "The session text-editing commands change only through the public API."
+  (let ((command 'forward-char))
+    (unwind-protect
+        (progn
+          (should (memq command (etaf-input-edit-command-add command)))
+          (should (memq command (etaf-input-edit-command-add command)))
+          (should-not (memq command (etaf-input-edit-command-remove command)))
+          (should-not (memq command (etaf-input-edit-command-remove command)))
+          (should-error (etaf-input-edit-command-add "forward-char")
+                        :type 'wrong-type-argument)
+          (should-error (etaf-input-edit-command-remove 7)
+                        :type 'wrong-type-argument))
+      (etaf-input-edit-command-remove command))))
+
 (provide 'etaf-events-tests)
 
 ;;; etaf-events-tests.el ends here

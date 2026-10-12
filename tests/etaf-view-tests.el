@@ -335,6 +335,18 @@
       (kill-buffer buffer)
       (should-not (etaf-runtime-mounted-p runtime)))))
 
+(ert-deftest etaf-string-pixel-width-measures-the-first-line ()
+  "The measurement adapter measures styled text and rejects non-strings."
+  (should (zerop (etaf-string-pixel-width "")))
+  (should (> (etaf-string-pixel-width "abc") 0))
+  ;; Only the first line is measured.
+  (should (= (etaf-string-pixel-width "abc\ndefgh")
+             (etaf-string-pixel-width "abc")))
+  ;; A face never measures narrower than the plain string.
+  (should (>= (etaf-string-pixel-width (propertize "abc" 'face 'bold))
+              (etaf-string-pixel-width "abc")))
+  (should-error (etaf-string-pixel-width 5) :type 'wrong-type-argument))
+
 (provide 'etaf-view-tests)
 
 ;;; etaf-view-tests.el ends here

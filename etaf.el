@@ -865,6 +865,19 @@
 ;;;###autoload (autoload 'etaf-input-active-p "etaf" nil nil)
 ;; Return a mounted Runtime's active input session, or nil.
 ;;
+;; Function: etaf-input-edit-command-add (command)
+;;;###autoload (autoload 'etaf-input-edit-command-add "etaf" nil nil)
+;; Add COMMAND to the commands that edit a native input session's text.
+;; A command in this list that is bound in a session keymap edits the session
+;; value; other session bindings run in the mounted buffer.  A value that is
+;; not a command symbol signals `wrong-type-argument'.  Return the updated
+;; list.
+;;
+;; Function: etaf-input-edit-command-remove (command)
+;;;###autoload (autoload 'etaf-input-edit-command-remove "etaf" nil nil)
+;; Remove COMMAND from the native input session's text-editing commands.
+;; Return the updated list.
+;;
 ;; Function: etaf-host-ref-bounds (runtime host-ref)
 ;;;###autoload (autoload 'etaf-host-ref-bounds "etaf" nil nil)
 ;; Return live Ebox bounds for HOST-REF in mounted RUNTIME.
@@ -1488,6 +1501,14 @@
 ;; that reads it reruns after the viewport changes, so a Component can size
 ;; fixed-grid content such as images and video to the window.
 ;;
+;; Function: etaf-runtime-window-viewport (&optional runtime)
+;;;###autoload (autoload 'etaf-runtime-window-viewport "etaf" nil nil)
+;; Return RUNTIME's display-window viewport as (WIDTH . HEIGHT).
+;; WIDTH is the pixel width the window offers to a mounted tree and HEIGHT is
+;; its body height in lines.  Nil when no window displays RUNTIME's buffer or
+;; the display is not graphical; read `etaf-runtime-viewport' for the canvas
+;; size instead.  A non-mounted Runtime signals `etaf-runtime-error'.
+;;
 ;; Function: etaf-scope-run (scope function)
 ;;;###autoload (autoload 'etaf-scope-run "etaf" nil nil)
 ;; Run FUNCTION with SCOPE active and return its value.  Effects, computeds,
@@ -1521,6 +1542,13 @@
 ;; A defined setup may return nil; setup presence is tracked independently.
 ;; Prefer named `:bindings' for handles used by the View and event callbacks.
 ;; Components using named bindings cannot also use this accessor.
+;;
+;; Function: etaf-string-pixel-width (string)
+;;;###autoload (autoload 'etaf-string-pixel-width "etaf" nil nil)
+;; Return the display pixel width of STRING's first line.
+;; The measure honors STRING's `face' and `display' properties, so styled text
+;; and plain text can measure differently.  A newline ends the measurement and
+;; an empty string is zero.  A non-string signals `wrong-type-argument'.
 ;;
 ;; Function: etaf-theme-current-mode ()
 ;;;###autoload (autoload 'etaf-theme-current-mode "etaf" nil nil)
@@ -2012,6 +2040,7 @@
                                       buffer-file-name)))))
 
 (require 'etaf-view)
+(require 'etaf-measure)
 (require 'etaf-compiler)
 (require 'etaf-component)
 (require 'etaf-reactive)

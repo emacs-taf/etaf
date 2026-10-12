@@ -107,5 +107,11 @@
       (etaf-set-value show nil)
       (should (equal (car seen) (cons 200 10))))))
 
+(ert-deftest etaf-viewport-window-metrics-need-a-graphic-window ()
+  "The window viewport is nil without a graphical window and needs a Runtime."
+  (etaf-test-with-mount (runtime (etaf-view (box "w")))
+    (should-not (etaf-runtime-window-viewport runtime)))
+  (should-error (etaf-runtime-window-viewport) :type 'etaf-runtime-error))
+
 (provide 'etaf-viewport-tests)
 ;;; etaf-viewport-tests.el ends here
