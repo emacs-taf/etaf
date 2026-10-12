@@ -39,7 +39,8 @@
 (defvar etaf-video-density-ramp " .:-=+*#%@"
   "Characters used for one video pixel in the `ascii' render mode.
 The ramp maps darkness to density from left to right.  It must be nonempty
-and single-line.  Changing it takes effect on the next rendered frame.")
+and single-line.  A canvas captures the ramp when it is built; changing this
+default affects canvases built afterwards and does not repaint a mounted one.")
 
 (defvar etaf-video--cached-ramp-table nil
   "Cached byte-to-character translation table, or nil.")

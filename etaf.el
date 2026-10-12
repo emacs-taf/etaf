@@ -1467,10 +1467,10 @@
 ;; and the changed region rewritten.
 ;; Return non-nil when the layout changed.  The refit is one Runtime operation:
 ;; a mount `:observer' and `etaf-performance-mode' receive it as kind `refit'
-;; with its Ebox flush report.  While a native input session owns
-;; the buffer text the refit waits and returns nil; ending the session applies
-;; it.  A non-mounted Runtime signals `etaf-runtime-error' and non-positive
-;; sizes signal `wrong-type-argument'.
+;; with its Ebox flush report.  A native input session does not delay the
+;; refit; it applies immediately like any other refit.  A non-mounted Runtime
+;; signals `etaf-runtime-error' and non-positive sizes signal
+;; `wrong-type-argument'.
 ;;
 ;; Function: etaf-runtime-viewport (&optional runtime)
 ;;;###autoload (autoload 'etaf-runtime-viewport "etaf" nil nil)
