@@ -30,7 +30,8 @@ grouped by the theme you are chasing:
 
 `docs/architecture.md` states concepts, ownership, data flow and invariants; it
 is not an implementation map, so do not look there for "which file". User
-workflows and the GUI verification procedure are in `docs/manual.md`, and the
+workflows are in the [ETAF Reference Manual](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-manual/src/branch/main/book/en/introduction.md),
+the GUI verification procedure is in the workspace tool manual, and the
 `etaf.el` Commentary is the authoritative public API inventory.
 
 Design rationale, the files a change touched and its verification commands are

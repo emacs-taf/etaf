@@ -57,6 +57,10 @@
   的 ref 保留新值。下一次写入或 `etaf-runtime-flush` 会重试被丢弃的工作，因此在
   修复失败之前，后续更新也会等待。
 
+### 删除
+
+- 包内手册 `docs/manual.md` 由 [ETAF 参考手册](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-manual/src/branch/main/book/zh-CN/introduction.md) 取代，README、开发说明与架构文档改为链接手册；`docs/architecture.zh-CN.md` 仍是维护者契约。
+
 ### 修复
 
 - 动画编辑区和其中的文本共用一个点击归属；完整鼠标按下/松开后，删空和缩放后的

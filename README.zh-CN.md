@@ -131,7 +131,7 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 ## 文档
 
 - [English Architecture](docs/architecture.md) · [中文架构](docs/architecture.zh-CN.md)
-- [English User Guide](docs/manual.md) · [中文用户指南](docs/manual.zh-CN.md)
+- [English Reference Manual](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-manual/src/branch/main/book/en/introduction.md) · [中文参考手册](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-manual/src/branch/main/book/zh-CN/introduction.md)
 - [English Best-practice Examples](README.md) · [中文示例](README.zh-CN.md)
 
 ## 独立包
@@ -179,6 +179,6 @@ make check EMACS=/Applications/Emacs.app/Contents/MacOS/Emacs
 
 克隆后运行 `make setup-hooks`。提交变更前运行 `make check`；`make structure-check` 用于快速检查目录、命名和引用。
 
-[docs/manual.zh-CN.md](docs/manual.zh-CN.md) · [docs/architecture.zh-CN.md](docs/architecture.zh-CN.md) · [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
+[参考手册](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-manual/src/branch/main/book/zh-CN/introduction.md) · [docs/architecture.zh-CN.md](docs/architecture.zh-CN.md) · [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)
 
 `make check` 运行规范检查、编译及 [tests/acceptance.json](tests/acceptance.json) 中的公共验收场景。`make test` 运行同一套公共 API 测试。清单涵盖全部维护的 Lisp 测试。GUI 与性能验收使用独立入口。

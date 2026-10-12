@@ -195,6 +195,8 @@
 
 ### Removed
 
+- The package manual `docs/manual.md` is replaced by the [ETAF Reference Manual](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-manual/src/branch/main/book/en/introduction.md), which the README, the development instructions and the architecture notes link; `docs/architecture.md` remains the maintainer contract.
+
 - Removed the deleted Runtime and integration APIs: `etaf-runtime-generation`,
   `etaf-runtime-current-generation`, `etaf-runtime-snapshot`,
   `etaf-runtime-root-node`, `etaf-generation-p`,
