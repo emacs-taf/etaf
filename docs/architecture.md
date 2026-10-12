@@ -2,7 +2,7 @@
 
 This document is the maintainer contract for ETAF's implemented runtime.  It
 explains ownership, dependency direction, data flow and invariants.  User
-recipes belong in the [ETAF Reference Manual](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-manual/src/branch/main/book/en/introduction.md); the authoritative public API list is
+recipes belong in the [ETAF Reference Manual](https://etaf.top/introduction/); the authoritative public API list is
 in the Commentary of [`../etaf.el`](../etaf.el).
 
 ## 1. Responsibility stack

@@ -59,7 +59,7 @@
 
 ### 删除
 
-- 包内手册 `docs/manual.md` 由 [ETAF 参考手册](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-manual/src/branch/main/book/zh-CN/introduction.md) 取代，README、开发说明与架构文档改为链接手册；`docs/architecture.zh-CN.md` 仍是维护者契约。
+- 包内手册 `docs/manual.md` 由 [ETAF 参考手册](https://etaf.top/zh-cn/introduction/) 取代，README、开发说明与架构文档改为链接手册；`docs/architecture.zh-CN.md` 仍是维护者契约。
 
 ### 修复
 

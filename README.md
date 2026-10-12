@@ -144,7 +144,7 @@ The [`examples/`](README.md) directory contains four core-only best-practice app
 ## Documentation
 
 - [Architecture](docs/architecture.md) · [中文架构](docs/architecture.zh-CN.md)
-- [Reference manual](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-manual/src/branch/main/book/en/introduction.md) · [参考手册（中文）](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-manual/src/branch/main/book/zh-CN/introduction.md)
+- [Reference manual](https://etaf.top/introduction/) · [参考手册（中文）](https://etaf.top/zh-cn/introduction/)
 - [Best-practice examples](README.md) · [中文示例](README.zh-CN.md)
 
 ## Independent packages
@@ -194,7 +194,7 @@ The core gate byte-compiles the implementation, runs the core/Data/Resource test
 
 After cloning, run `make setup-hooks`. Before submitting a change, run `make check`; `make structure-check` is the fast organization gate.
 
-[Reference manual](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-manual/src/branch/main/book/en/introduction.md) · [docs/architecture.md](docs/architecture.md) · [CHANGELOG.md](CHANGELOG.md)
+[Reference manual](https://etaf.top/introduction/) · [docs/architecture.md](docs/architecture.md) · [CHANGELOG.md](CHANGELOG.md)
 
 `make check` runs structure checks, compilation and the public acceptance scenarios listed in [tests/acceptance.json](tests/acceptance.json). `make test` runs the same public API suite. The inventory covers every maintained Lisp test. GUI and performance checks use separate targets.
 

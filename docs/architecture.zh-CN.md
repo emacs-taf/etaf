@@ -1,6 +1,6 @@
 # ETAF 架构
 
-本文是 ETAF 已实现运行时的维护者契约，说明职责、依赖方向、数据流和不变量。用户用法写在 [ETAF 参考手册](https://gitea.gklazycat.heiyu.space/emacs-taf/etaf-manual/src/branch/main/book/zh-CN/introduction.md)，权威公共 API 清单在 [`../etaf.el`](../etaf.el) 的 Commentary 中。
+本文是 ETAF 已实现运行时的维护者契约，说明职责、依赖方向、数据流和不变量。用户用法写在 [ETAF 参考手册](https://etaf.top/zh-cn/introduction/)，权威公共 API 清单在 [`../etaf.el`](../etaf.el) 的 Commentary 中。
 
 ## 1. 职责栈
 
