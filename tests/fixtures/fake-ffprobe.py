@@ -6,13 +6,15 @@ lines; this fixture produces that exact shape from the environment so
 metadata handling can be tested without ffprobe installed.
 
 Environment:
-  FAKE_FFPROBE_LOG       append the received argv here, one line per run
+  FAKE_FFPROBE_LOG       append the received argv here as one JSON array per
+                         run
   FAKE_FFPROBE_WIDTH, FAKE_FFPROBE_HEIGHT, FAKE_FFPROBE_FPS,
   FAKE_FFPROBE_DURATION   video values to print
   FAKE_FFPROBE_AUDIO      print an audio stream index when set
   FAKE_FFPROBE_STATUS     exit status (default 0)
 """
 
+import json
 import os
 import sys
 
@@ -21,7 +23,7 @@ def main():
     log = os.environ.get("FAKE_FFPROBE_LOG")
     if log:
         with open(log, "a", encoding="utf-8") as sink:
-            sink.write("\0".join(sys.argv[1:]) + "\n")
+            sink.write(json.dumps(sys.argv[1:]) + "\n")
     print("width=%s" % os.environ.get("FAKE_FFPROBE_WIDTH", "640"))
     print("height=%s" % os.environ.get("FAKE_FFPROBE_HEIGHT", "360"))
     print("r_frame_rate=%s" % os.environ.get("FAKE_FFPROBE_FPS", "25/1"))

@@ -555,6 +555,16 @@
       "purpose": "An HTTP URL reaches ffmpeg with reconnect options and presents a paused first frame while a non-HTTP scheme is rejected."
     },
     {
+      "name": "etaf-video-tests-normalizes-separate-audio-stream",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "A split audio stream keeps its URL as the audio target, a present audio URL implies audio, and ffprobe receives the source headers and proxy without probing the audio URL."
+    },
+    {
+      "name": "etaf-video-tests-streams-separate-audio-with-network-options",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "A split HTTP(S) source sends video to ffmpeg and audio to ffplay, both with the same User-Agent, headers and proxy, while the producer never opens the audio URL."
+    },
+    {
       "name": "etaf-video-tests-restarts-on-input-change",
       "file": "tests/etaf-video-tests.el",
       "purpose": "A canvas size change republishes the canvas and rebuilds the session with the new scale at the same paused position."

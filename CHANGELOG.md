@@ -4,6 +4,11 @@
 
 ### Added
 
+- `etaf-video` sources accept a separate `:audio-url` plus `:headers` and
+  `:proxy` for authenticated HTTP(S) playback.  The video decoder and the
+  audio sidecar receive the same network options, `etaf-video-source-info`
+  reports the normalized `:audio-url`, `:audio-target`, `:headers` and
+  `:proxy` keys, and a present audio URL implies `:audio`.
 - `etaf-display-metrics` reactively reports a mounted buffer's effective
   character width, line height and image ascent, including text scaling.
   Native image producers can repartition rows without resetting the app.

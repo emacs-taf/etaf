@@ -1708,7 +1708,10 @@
 ;; Render a live video source in a fixed COLUMNS by ROWS canvas.
 ;;
 ;; SRC is nil for the built-in demo, a local file name, an HTTP(S) URL, or a
-;; plist accepted by the video source normalizer.  MODE is `image' (one scaled
+;; plist accepted by the video source normalizer.  A plist may name separate
+;; video and audio streams with `:audio-url' and carry `:headers' and
+;; `:proxy' for authenticated playback; `etaf-video-source-info' documents
+;; the normalized keys.  MODE is `image' (one scaled
 ;; JPEG per frame, graphical frames only, falling back to `ascii' elsewhere),
 ;; `ascii' (one density-ramp character per pixel) or `color' (two full-color
 ;; pixels per `▀' half-block cell).  RAMP defaults to
@@ -1769,12 +1772,17 @@
 ;;
 ;; SOURCE is nil for the built-in demo, a local file name, an HTTP(S) URL, or
 ;; a plist accepted by the `etaf-video' Component.  The result holds `:kind',
-;; `:file', `:url', `:target', `:width', `:height', `:duration', `:fps' and
-;; `:audio'.  Values come from ffprobe when it runs; a missing ffprobe keeps
-;; documented defaults.  The result is authoritative metadata and can be
-;; passed back as the Component's `:src' without another probe, so an
-;; application that resizes or restarts a video keeps them.  Unsupported
-;; sources and unreadable files signal `user-error'.
+;; `:file', `:url', `:target', `:audio-url', `:audio-target', `:headers',
+;; `:proxy', `:width', `:height', `:duration', `:fps' and `:audio'.  A source
+;; whose video and audio are separate HTTP(S) streams describes them with
+;; `:audio-url'; `:headers' (an alist, a hash table or one `Name: value'
+;; string) and `:proxy' apply to every request both decoders make.  A present
+;; `:audio-url' implies `:audio'.  Values come from ffprobe when it runs; a
+;; missing ffprobe keeps documented defaults.  The result is authoritative
+;; metadata and can be passed back as the Component's `:src' without another
+;; probe, so an application that resizes or restarts a video keeps them.
+;; Unsupported sources, unreadable files and malformed network options signal
+;; `user-error'.
 ;;
 ;; Function: etaf-video-state (handle)
 ;;;###autoload (autoload 'etaf-video-state "etaf" nil nil)

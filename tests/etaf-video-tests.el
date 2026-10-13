@@ -13,6 +13,7 @@
 
 (require 'ert)
 (require 'cl-lib)
+(require 'json)
 (require 'etaf)
 
 (defconst etaf-video-tests--fixtures
@@ -41,14 +42,21 @@
   (make-temp-file "etaf-video-log-"))
 
 (defun etaf-video-tests--runs (log)
-  "Return the recorded fixture invocations in LOG as argument lists."
+  "Return the recorded fixture invocations in LOG as argument lists.
+Each fixture writes one JSON array per invocation; ffplay also writes a
+`pid=...' line that is skipped here."
   (when (file-exists-p log)
-    (mapcar (lambda (line) (split-string line "\000" t))
-            (split-string
-             (with-temp-buffer
-               (insert-file-contents log)
-               (buffer-string))
-             "\n" t))))
+    (let (runs)
+      (with-temp-buffer
+        (insert-file-contents log)
+        (goto-char (point-min))
+        (while (not (eobp))
+          (let ((line (buffer-substring-no-properties
+                       (line-beginning-position) (line-end-position))))
+            (unless (or (string-empty-p line) (string-prefix-p "pid=" line))
+              (push (append (json-parse-string line) nil) runs)))
+          (forward-line 1)))
+      (nreverse runs))))
 
 (defun etaf-video-tests--argument (arguments flag)
   "Return the value following FLAG in ARGUMENTS, or nil."
@@ -442,6 +450,108 @@ rejected before any process starts."
       (etaf-video-tests--cleanup " *etaf-video-bad-url*")
       (ignore-errors (delete-file log)))))
 
+(ert-deftest etaf-video-tests-normalizes-separate-audio-stream ()
+  "A split audio stream and network options survive source normalization.
+The video URL is probed with the headers and proxy, the audio URL becomes
+`:audio-target', and a present audio URL implies audio even though ffprobe
+reports no audio stream."
+  (let ((probe-log (etaf-video-tests--log))
+        (log (etaf-video-tests--log)))
+    (unwind-protect
+        (etaf-video-tests--with-fixture
+            log (list (concat "FAKE_FFPROBE_LOG=" probe-log)
+                      "FAKE_FFPROBE_DURATION=12.5")
+          (let ((info (etaf-video-source-info
+                       (list :url "https://media.test/video.m4s"
+                             :audio-url "https://media.test/audio.m4s"
+                             :headers "User-Agent: EtAfTest/1.0\r\nAccept-Language: zh-CN"
+                             :proxy "http://127.0.0.1:7890"))))
+            (should (equal "https://media.test/video.m4s" (plist-get info :url)))
+            (should (equal "https://media.test/audio.m4s"
+                           (plist-get info :audio-url)))
+            (should (equal "https://media.test/audio.m4s"
+                           (plist-get info :audio-target)))
+            (should (equal "https://media.test/video.m4s" (plist-get info :target)))
+            (should (equal "http://127.0.0.1:7890" (plist-get info :proxy)))
+            (should (plist-get info :audio))
+            (should (= 12.5 (plist-get info :duration)))
+            (should-not (etaf-video-tests--runs log))
+            (let ((runs (etaf-video-tests--runs probe-log)))
+              (should (= 3 (length runs)))
+              (dolist (arguments runs)
+                (should (member "https://media.test/video.m4s" arguments))
+                (should-not (member "https://media.test/audio.m4s" arguments))
+                (should (equal "EtAfTest/1.0"
+                               (etaf-video-tests--argument arguments "-user_agent")))
+                (should (equal "Accept-Language: zh-CN\r\n"
+                               (etaf-video-tests--argument arguments "-headers")))
+                (should (equal "http://127.0.0.1:7890"
+                               (etaf-video-tests--argument arguments "-http_proxy")))))
+            ;; A hash table is accepted the way JSON objects usually arrive.
+            (let ((headers (make-hash-table :test #'equal)))
+              (puthash "User-Agent" "Hash/1.0" headers)
+              (let ((normalized (etaf-video-source-info
+                                 (list :kind 'url
+                                       :url "https://media.test/video.m4s"
+                                       :audio-url "https://media.test/audio.m4s"
+                                       :headers headers :audio t))))
+                (should (plist-get normalized :audio))
+                (should (equal "https://media.test/audio.m4s"
+                               (plist-get normalized :audio-target)))))))
+      (ignore-errors (delete-file probe-log))
+      (ignore-errors (delete-file log)))))
+
+(ert-deftest etaf-video-tests-streams-separate-audio-with-network-options ()
+  "A split HTTP(S) source feeds video to ffmpeg and audio to ffplay.
+Both decoders receive the same User-Agent, extra headers and proxy, the
+producer never opens the audio URL, and the sidecar follows playback."
+  (let ((name " *etaf-video-split-stream*")
+        (log (etaf-video-tests--log))
+        (audio-log (etaf-video-tests--log)))
+    (unwind-protect
+        (etaf-video-tests--with-fixture
+            log (list "FAKE_FFMPEG_FRAMES=200" "FAKE_FFMPEG_INTERVAL=0.01"
+                      (concat "FAKE_FFPLAY_LOG=" audio-log))
+          (let ((handle (etaf-video-tests--mount
+                         name (list :src (list :kind 'url
+                                               :url "https://stream.test/video.m4s"
+                                               :audio-url "https://stream.test/audio.m4s"
+                                               :headers '(("User-Agent" . "EtAfTest/1.0")
+                                                          ("Referer" . "https://example.test/"))
+                                               :proxy "http://127.0.0.1:7890"
+                                               :audio t :width 640 :height 360
+                                               :fps 30 :duration 60)
+                                    :audio t
+                                    :mode 'ascii :columns 8 :rows 2 :autoplay t))))
+            (should (etaf-video-tests--wait
+                     (lambda () (etaf-video-tests--ffplay-pid audio-log)) 5))
+            (should (etaf-video-tests--wait
+                     (lambda () (>= (etaf-video-tests--presented handle) 1))))
+            (let ((arguments (car (last (etaf-video-tests--runs log)))))
+              (should (member "https://stream.test/video.m4s" arguments))
+              (should-not (member "https://stream.test/audio.m4s" arguments))
+              (should (equal "EtAfTest/1.0"
+                             (etaf-video-tests--argument arguments "-user_agent")))
+              (should (equal "Referer: https://example.test/\r\n"
+                             (etaf-video-tests--argument arguments "-headers")))
+              (should (equal "http://127.0.0.1:7890"
+                             (etaf-video-tests--argument arguments "-http_proxy"))))
+            (let ((arguments (etaf-video-tests--ffplay-arguments audio-log)))
+              (should (equal "https://stream.test/audio.m4s"
+                             (car (last arguments))))
+              (should (equal "EtAfTest/1.0"
+                             (etaf-video-tests--argument arguments "-user_agent")))
+              (should (equal "Referer: https://example.test/\r\n"
+                             (etaf-video-tests--argument arguments "-headers")))
+              (should (equal "http://127.0.0.1:7890"
+                             (etaf-video-tests--argument arguments "-http_proxy")))
+              (should (equal "1"
+                             (etaf-video-tests--argument arguments "-reconnect"))))
+            (etaf-video-pause handle)))
+      (etaf-video-tests--cleanup name)
+      (ignore-errors (delete-file log))
+      (ignore-errors (delete-file audio-log)))))
+
 (ert-deftest etaf-video-tests-restarts-on-input-change ()
   "Changing the canvas size restarts the producer at the same position.
 The Component republishes the new canvas first and then rebuilds its session
@@ -621,7 +731,22 @@ behind."
                               (etaf-node 'etaf-video (list :columns 0) nil)))
            :type 'etaf-component-call-error)
           (should-error (etaf-video-state (make-symbol "etaf-video-missing"))
-                        :type 'user-error))
+                        :type 'user-error)
+          (should-error
+           (etaf-video-source-info
+            (list :url "https://media.test/video.m4s"
+                  :audio-url "ftp://media.test/audio.m4s"))
+           :type 'user-error)
+          (should-error
+           (etaf-video-source-info
+            (list :url "https://media.test/video.m4s"
+                  :proxy "socks5://127.0.0.1:1080"))
+           :type 'user-error)
+          (should-error
+           (etaf-video-source-info
+            (list :url "https://media.test/video.m4s"
+                  :headers '(("X-Test" . "line\nbreak"))))
+           :type 'user-error))
       (etaf-video-tests--cleanup name))))
 
 (provide 'etaf-video-tests)

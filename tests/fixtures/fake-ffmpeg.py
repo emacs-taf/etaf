@@ -9,7 +9,8 @@ suite exercises the Emacs process, frame mapping and retained publication
 path without ffmpeg; only the GUI workflow runs real ffmpeg.
 
 Environment:
-  FAKE_FFMPEG_LOG       append the received argv here, one line per run
+  FAKE_FFMPEG_LOG       append the received argv here as one JSON array
+                        per run
   FAKE_FFMPEG_FRAMES    frame count (default 40)
   FAKE_FFMPEG_INTERVAL  seconds between frames (default 0.02)
   FAKE_FFMPEG_PATTERN   columns (default), shift or flash
@@ -18,6 +19,7 @@ Environment:
 """
 
 import base64
+import json
 import os
 import re
 import sys
@@ -45,7 +47,7 @@ def main():
     log = os.environ.get("FAKE_FFMPEG_LOG")
     if log:
         with open(log, "a", encoding="utf-8") as sink:
-            sink.write("\0".join(argv) + "\n")
+            sink.write(json.dumps(argv) + "\n")
 
     width = height = None
     for argument in argv:

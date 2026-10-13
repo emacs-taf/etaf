@@ -6,7 +6,9 @@
 ;; ffplay plays a source's audio track as a sidecar: no video window, auto
 ;; exit at the end of the stream, started at a position and rate.  A playback
 ;; session owns at most one sidecar process.  Sources that report no audio
-;; stream, the built-in demo and a missing ffplay all stay silent.
+;; stream, the built-in demo and a missing ffplay all stay silent.  A source
+;; with a separate `:audio-url' plays that stream instead of the video
+;; stream, carrying the same `:headers' and `:proxy' as the video decoder.
 
 ;;; Code:
 
@@ -29,7 +31,10 @@ A session's `:audio' argument overrides it.")
   (and (executable-find etaf-video-ffplay-program) t))
 
 (defun etaf-video--audio-arguments (spec position speed volume)
-  "Return ffplay arguments for SPEC at POSITION, SPEED and VOLUME."
+  "Return ffplay arguments for SPEC at POSITION, SPEED and VOLUME.
+A separate `:audio-url' becomes the sidecar input, and the source's
+`:headers' and `:proxy' precede it as input options, so an authenticated
+stream plays the same track the video decoder was given."
   (append (list "-nodisp" "-autoexit" "-loglevel" "error"
                 "-volume" (number-to-string
                            (max 0 (min 100 (round (or volume 100))))))
@@ -37,7 +42,15 @@ A session's `:audio' argument overrides it.")
             (list "-ss" (number-to-string position)))
           (when (and (numberp speed) (not (= speed 1)))
             (list "-af" (format "atempo=%s" speed)))
-          (list (plist-get spec :target))))
+          (let ((target (or (plist-get spec :audio-target)
+                            (plist-get spec :target))))
+            (if (etaf-video--url-p target)
+                (append (etaf-video--http-arguments (plist-get spec :headers)
+                                                    (plist-get spec :proxy))
+                        (list "-reconnect" "1" "-reconnect_streamed" "1"
+                              "-reconnect_delay_max" "5")
+                        (list target))
+              (list target)))))
 
 (defun etaf-video--audio-start (spec position speed volume)
   "Start an ffplay sidecar for SPEC, or return nil when it is not needed.
