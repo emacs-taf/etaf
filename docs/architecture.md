@@ -30,6 +30,11 @@ Ebox is therefore an internal engine behind ETAF.  ETAF may keep Host-to-node
 maps for events and queries, but the physical node tree, layout cache and buffer
 edits remain Ebox responsibilities.
 
+Ebox's settled display notifications publish `etaf-display-metrics` and the
+Runtime viewport in one reactive batch.  Applications preparing native image
+rows read these metrics to update their own producers.  ETAF does not rebuild
+the Component tree or take ownership of the producer's pixel content.
+
 ## 2. Maintainer model
 
 | Concept | Owner | Maintained facts |

@@ -18,6 +18,8 @@ ecss → ebox → etaf → etaf-ui → applications
 
 因此 Ebox 是 ETAF 背后的内部引擎。ETAF 可以维护 Host 到节点的索引用于事件和查询，但物理节点树、布局缓存和 buffer 修改都属于 Ebox。
 
+Ebox 的显示稳定通知把 `etaf-display-metrics` 与 Runtime 视口放在同一个响应式 batch 中发布。准备原生图像行的应用读取这些度量并更新自己的图像提供者。ETAF 不重建组件树，也不接管提供者的像素内容。
+
 ## 2. 维护者模型
 
 | 概念 | Owner | 维护的事实 |

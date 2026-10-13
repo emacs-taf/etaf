@@ -4,6 +4,9 @@
 
 ### Added
 
+- `etaf-display-metrics` reactively reports a mounted buffer's effective
+  character width, line height and image ascent, including text scaling.
+  Native image producers can repartition rows without resetting the app.
 - `etaf-keymap-reserved-events` reports the framework-reserved events bound in
   a keymap, so components reject a caller-supplied `:keymap` that would override
   Escape, Tab, `?`, the arrows, `M-g` or `C-g`.

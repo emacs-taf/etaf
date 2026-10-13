@@ -835,6 +835,16 @@
       "name": "etaf-animation-interpolation-easings-and-validation",
       "file": "tests/etaf-animation-tests.el",
       "purpose": "Values convert over registered easings; invalid inputs signal."
+    },
+    {
+      "name": "etaf-display-metrics-update-fixed-viewport-with-retained-state",
+      "file": "tests/etaf-display-tests.el",
+      "purpose": "Reactive display metrics update on zoom even with a fixed viewport without resetting Component state."
+    },
+    {
+      "name": "etaf-display-metrics-require-a-mounted-runtime",
+      "file": "tests/etaf-display-tests.el",
+      "purpose": "A metric query outside a mounted Runtime signals the documented lifecycle error."
     }
   ]
 }

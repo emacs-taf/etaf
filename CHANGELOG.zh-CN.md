@@ -4,6 +4,8 @@
 
 ### Added
 
+- `etaf-display-metrics` 响应式报告挂载缓冲区的有效字符宽、行高与图像基线，
+  包含文本缩放。原生图像提供者可重新切分条带而不重置应用状态。
 - 新增 `etaf-animation-paused`：冻结共享时钟并让所有运行原地恢复；新增
   `etaf-animation-speed`：运行时缩放 transition 与帧序列的速度；
   `etaf-animation-frame-rate` 对下一次调度生效。一次性调度在每次发布后让出

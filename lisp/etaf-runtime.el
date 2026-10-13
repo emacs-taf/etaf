@@ -55,7 +55,7 @@
   (nodes (make-hash-table :test #'eq))
   (rev 0) dirty changed new-instances updated-instances retired-instances
   errors observer (event-depth 0) (next-operation-id 0) mount-id
-  fixed-viewport view (next-id 0) sticky viewport-ref keymap)
+  fixed-viewport view (next-id 0) sticky viewport-ref display-ref keymap)
 
 (etaf--defstruct (etaf--ictx (:constructor etaf--ictx-make) (:copier nil))
   "Evaluation context of one Component instance: owner, Context and theme."
@@ -2556,6 +2556,32 @@ non-mounted Runtime signals `etaf-runtime-error'."
     (etaf-set-value cell (ebox-mount-viewport buffer))))
 
 (add-hook 'ebox-viewport-change-functions #'etaf--runtime-viewport-changed)
+
+(defun etaf-display-metrics (&optional runtime)
+  "Return RUNTIME's effective default-face metrics as a fresh plist.
+The keys :char-width and :line-height are positive pixel sizes and :ascent
+is an image ascent percentage.  RUNTIME defaults to the current Component
+or buffer Runtime; an unmounted Runtime signals `etaf-runtime-error'.
+A reactive read reruns after settled buffer text scaling, even with a fixed
+viewport.  Image producers can repartition rows without remounting state."
+  (let* ((runtime (etaf-runtime-require-mounted runtime))
+         (metrics (ebox-display-metrics (etaf-runtime-buffer runtime)))
+         (cell (or (etaf-runtime-display-ref runtime)
+                   (setf (etaf-runtime-display-ref runtime)
+                         (etaf--ref-create :value metrics :test #'equal
+                                           :name "display-metrics")))))
+    (etaf-value cell)
+    (copy-sequence metrics)))
+
+(defun etaf--runtime-display-changed (buffer)
+  "Publish BUFFER's settled display metrics and viewport in one batch."
+  (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
+    (etaf-batch
+      (when-let* ((cell (etaf-runtime-display-ref runtime)))
+        (etaf-set-value cell (ebox-display-metrics buffer)))
+      (etaf--runtime-viewport-changed buffer))))
+
+(add-hook 'ebox-display-change-functions #'etaf--runtime-display-changed)
 
 ;;;###autoload
 (defun etaf-runtime-refit (runtime viewport-width &optional viewport-height)

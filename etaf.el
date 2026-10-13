@@ -1509,6 +1509,17 @@
 ;; that reads it reruns after the viewport changes, so a Component can size
 ;; fixed-grid content such as images and video to the window.
 ;;
+;; Function: etaf-display-metrics (&optional runtime)
+;;;###autoload (autoload 'etaf-display-metrics "etaf" nil nil)
+;; Return a fresh plist with RUNTIME's effective default-face :char-width,
+;; :line-height (positive pixels) and :ascent (image baseline percentage).
+;; RUNTIME defaults to the current Component or buffer Runtime; an unmounted
+;; Runtime signals `etaf-runtime-error'.  Text displays use unit cells and
+;; 100 percent ascent.  The read is reactive: a render, effect or computed
+;; reruns after settled buffer text scaling even when the viewport is fixed.
+;; Image producers can repartition native pixel content into aligned rows
+;; without resetting application state.
+;;
 ;; Function: etaf-runtime-window-viewport (&optional runtime)
 ;;;###autoload (autoload 'etaf-runtime-window-viewport "etaf" nil nil)
 ;; Return RUNTIME's display-window viewport as (WIDTH . HEIGHT).
