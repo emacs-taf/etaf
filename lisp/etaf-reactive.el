@@ -505,13 +505,19 @@ TEST optionally compares old and new values.  NAME is used in diagnostics."
 
 TEST optionally compares old and new values; consumers of an unchanged
 result do not re-run.  NAME optionally labels the computed value.  The
-active Scope owns the computed: stopping it releases its dependencies."
+active Scope owns the computed: stopping it releases its dependencies.
+
+A computed created during Component setup runs its getter in that
+Component's environment on every later run, so Context, Runtime and
+`etaf-viewport' reads inside it keep working after the first run."
   (etaf--assert-not-rendering 'create-computed)
   (unless (functionp getter)
     (signal 'wrong-type-argument (list 'functionp getter)))
   (when (and test (not (functionp test)))
     (signal 'wrong-type-argument (list 'functionp test)))
-  (let ((computed (etaf--computed-create :getter getter :test test :name name)))
+  (let ((computed (etaf--computed-create
+                   :getter (etaf--effect-environment getter)
+                   :test test :name name)))
     (when (and etaf--active-scope (etaf-effect-scope-active-p etaf--active-scope))
       (push computed (etaf-effect-scope-effects etaf--active-scope)))
     computed))
@@ -605,10 +611,11 @@ An error from FUNCTION leaves SOURCE unchanged."
     (_ (signal 'etaf-reactive-error (list "Invalid watcher flush" flush)))))
 
 (defvar etaf--effect-environment-function nil
-  "Function wrapping an effect callback in its creation environment.
-The Runtime layer installs it.  `etaf-watch' and `etaf-watch-effect' created
-during a Component setup or a Runtime operation call it so later reactive
-runs keep that operation's Context, Runtime and lifecycle phase.")
+  "Function wrapping a reactive callback in its creation environment.
+The Runtime layer installs it.  `etaf-watch', `etaf-watch-effect' and
+`etaf-computed' created during a Component setup or a Runtime operation call
+it so later reactive runs keep that operation's Context, Runtime and
+lifecycle phase.")
 
 (defun etaf--effect-environment (function)
   "Return FUNCTION wrapped in the environment current at its creation."

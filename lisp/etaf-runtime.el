@@ -354,10 +354,10 @@ must run outside the pure render phase."
 
 (defun etaf--effect-environment (function)
   "Return FUNCTION wrapped to run in the current Component environment.
-A watcher or effect created during Component setup or a Runtime operation
-keeps that operation's Context, Runtime and lifecycle phase on every later
-reactive run.  The wrapper forwards any arguments, because watcher callbacks
-receive the new and old values."
+A watcher, effect or computed getter created during Component setup or a
+Runtime operation keeps that operation's Context, Runtime and lifecycle
+phase on every later reactive run.  The wrapper forwards any arguments,
+because watcher callbacks receive the new and old values."
   (let ((ctx etaf--current-ictx))
     (if (null ctx)
         function

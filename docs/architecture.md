@@ -146,9 +146,10 @@ per Runtime by Host reference and republished from the Ebox after-flush hook
 with `etaf-host-ref-size`, so readers depend on committed geometry instead of
 guessing it.  Resolution follows Component segment ancestors, not Context:
 content passed through a slot keeps its caller Context, so a Context value
-provided inside a wrapper would not reach it.  Watchers and effects created in
-setup capture their instance's evaluation context and re-enter it on later
-runs, so a reader keeps its Component environment after reactive reruns.
+provided inside a wrapper would not reach it.  Reactive callbacks created in
+setup -- watchers, effects and computed getters -- capture their instance's
+evaluation context and re-enter it on later runs, so a reader keeps its
+Component environment after reactive reruns.
 
 Animation is time in the same graph.  `etaf-transition` and
 `etaf-animation-frames` publish values through ordinary refs, so a tick is

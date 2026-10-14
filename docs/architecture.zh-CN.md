@@ -82,8 +82,8 @@ viewport 是挂载子树排版所依据的区域。挂载本身发布 Runtime vi
 引用索引，并在 Ebox 每次 flush 之后用 `etaf-host-ref-size` 重新发布，因此读取方
 依赖的是已提交几何而不是猜测。解析沿 Component segment 的祖先链，而不是
 Context：经 slot 传入的内容保留调用方 Context，包装组件内 provide 的值到不了
-它。在 setup 中创建的 watcher 与 effect 会捕获实例的求值环境并在之后的运行中重
-新进入，因此读取方在响应式重跑后仍持有自己的组件环境。
+它。在 setup 中创建的 watcher、effect 与 computed getter 会捕获实例的求值环境，
+并在之后的运行中重新进入，因此读取方在响应式重跑后仍持有自己的组件环境。
 
 动画是同一张图里的时间。`etaf-transition` 与 `etaf-animation-frames` 通过
 普通 ref 发布值，因此一个 tick 只产生一次响应式 batch、一次 Runtime commit

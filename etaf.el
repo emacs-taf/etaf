@@ -256,10 +256,11 @@
 ;; Create a lazy cached value computed by zero-argument GETTER.
 ;;
 ;; TEST optionally compares old and new values.  NAME optionally labels the
-;; computed value. Mounted consumers retain their publication when all their
-;; reactive inputs compare unchanged; getters reading ambient Context use the
-;; ordinary render path to preserve Context tracking. Unobserved computations
-;; stay lazy.
+;; computed value.  Mounted consumers retain their publication when all their
+;; reactive inputs compare unchanged.  A computed created during Component
+;; setup runs its getter in that Component's environment on every later run,
+;; so `etaf-inject', `etaf-current-runtime' and `etaf-viewport' reads inside
+;; it keep working after the first run.  Unobserved computations stay lazy.
 ;;
 ;; Function: etaf-computed-p (x)
 ;;;###autoload (autoload 'etaf-computed-p "etaf" nil nil)

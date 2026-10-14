@@ -100,6 +100,25 @@
   :setup (etaf-provide 'etaf-component-test-key "provided")
   :view (etaf-component-test-watch-source :source source :seen seen))
 
+(etaf-define-component etaf-component-test-computed-watcher (&key source seen)
+  "Record SOURCE through a computed binding into SEEN."
+  :bindings ((derived (etaf-computed
+                       (lambda ()
+                         (list (etaf-value source)
+                               (etaf-inject 'etaf-component-test-key "missing")
+                               (and (etaf-current-runtime) t)))
+                       :test #'equal)))
+  :setup
+  (progn
+    (etaf-watch derived (lambda (new _old) (setcar seen new)) :immediate t)
+    nil)
+  :view (text "computed watcher"))
+
+(etaf-define-component etaf-component-test-computed-provider (&key source seen)
+  "Provide a context key around a child that computes over SOURCE."
+  :setup (etaf-provide 'etaf-component-test-key "provided")
+  :view (etaf-component-test-computed-watcher :source source :seen seen))
+
 (etaf-define-component etaf-component-test-themed ()
   "Paint with a theme token."
   :view (column (box :class "swatch" "swatch"))
@@ -217,6 +236,18 @@
                                                 :source source :seen seen)))
       (should (equal (car seen) (list 1 "provided" t)))
       (etaf-set-value source 2)
+      (should (equal (car seen) (list 2 "provided" t))))))
+
+(ert-deftest etaf-component-computed-keeps-its-environment-on-rerun ()
+  "A computed keeps Context and Runtime when it refreshes outside rendering."
+  (let* ((source (etaf-ref 1))
+         (seen (cons nil nil)))
+    (etaf-test-with-mount (_runtime (etaf-view (etaf-component-test-computed-provider
+                                                :source source :seen seen)))
+      (should (equal (car seen) (list 1 "provided" t)))
+      ;; Refresh from a buffer without a Runtime, outside the Component
+      ;; render that created the computed.
+      (with-temp-buffer (etaf-set-value source 2))
       (should (equal (car seen) (list 2 "provided" t))))))
 
 (ert-deftest etaf-component-theme-tokens-follow-provided-theme ()

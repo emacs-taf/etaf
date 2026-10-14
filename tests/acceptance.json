@@ -740,11 +740,21 @@
       "file": "tests/etaf-viewport-tests.el",
       "purpose": "The window viewport reads nil without a graphical window and signals when no Runtime is mounted."
     },
+    {
+      "name": "etaf-viewport-computed-keeps-its-component-environment",
+      "file": "tests/etaf-viewport-tests.el",
+      "purpose": "A computed created in a Component keeps resolving its own viewport region when it later runs outside rendering."
+    },
 
     {
       "name": "etaf-component-watch-callback-keeps-its-environment",
       "file": "tests/etaf-component-tests.el",
       "purpose": "A two-argument `etaf-watch' callback keeps its Context and Runtime on rerun."
+    },
+    {
+      "name": "etaf-component-computed-keeps-its-environment-on-rerun",
+      "file": "tests/etaf-component-tests.el",
+      "purpose": "A computed created in a Component keeps its Context and Runtime when it later refreshes outside rendering."
     },
     {
       "name": "etaf-regions-select-focuses-hint-key-and-remembers-entry",

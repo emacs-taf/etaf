@@ -219,6 +219,12 @@
 
 ### Fixed
 
+- A computed runs its getter in the Component environment that created it, on
+  every later reactive run, like watchers and effects already did.  A
+  `etaf-viewport`, injected Context or current Runtime read inside a computed
+  no longer falls back to an empty environment when the computation refreshes
+  outside rendering; an application embedded in a desktop window keeps
+  laying out for its own region.
 - A `:region`'s `:neighbors` declaration now reaches the named region: the
   lookup asked the symbol direction in a keyword plist, so declarations never
   matched and arrow adjacency always followed geometry.

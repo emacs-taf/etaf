@@ -24,6 +24,25 @@
   :view (etaf-viewport-region :height (list 'lh (etaf-value height))
           (etaf-viewport-test-reader :seen seen)))
 
+(etaf-define-component etaf-viewport-test-computed-reader (&key source seen)
+  "Record the subtree's viewport through a computed binding into SEEN.
+SOURCE is read first so a plain reference change dirties the computed."
+  :bindings ((viewport (etaf-computed
+                        (lambda ()
+                          (etaf-value source)
+                          (etaf-viewport))
+                        :test #'equal)))
+  :setup
+  (progn
+    (etaf-watch viewport (lambda (new _old) (setcar seen new)))
+    nil)
+  :view (text "computed reader"))
+
+(etaf-define-component etaf-viewport-test-computed-region (&key source seen height)
+  "Wrap SEEN's computed reader in a viewport region of HEIGHT lines."
+  :view (etaf-viewport-region :height (list 'lh (etaf-value height))
+          (etaf-viewport-test-computed-reader :source source :seen seen)))
+
 (etaf-define-component etaf-viewport-test-wrapper ()
   "Pass its default slot through a viewport region."
   :render
@@ -106,6 +125,23 @@
       (should (equal (car seen) (cons 200 4)))
       (etaf-set-value show nil)
       (should (equal (car seen) (cons 200 10))))))
+
+(ert-deftest etaf-viewport-computed-keeps-its-component-environment ()
+  "A computed keeps reading its own region when later run outside rendering.
+The refresh below happens in a buffer with no Runtime and no Component
+render; without the retained Component environment the getter would look
+up the ambient Runtime and signal."
+  (let ((source (etaf-ref 1))
+        (height (etaf-ref 6))
+        (seen (cons nil nil)))
+    (etaf-test-with-mount
+        (_runtime (etaf-view (etaf-viewport-test-computed-region
+                              :source source :seen seen :height height))
+                  (list :viewport-width 200 :viewport-height 10))
+      (should (equal (car seen) (cons 200 6)))
+      ;; Refresh from a buffer without a Runtime, outside any render.
+      (with-temp-buffer (etaf-set-value source 2))
+      (should (equal (car seen) (cons 200 6))))))
 
 (ert-deftest etaf-viewport-window-metrics-need-a-graphic-window ()
   "The window viewport is nil without a graphical window and needs a Runtime."
