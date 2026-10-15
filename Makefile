@@ -38,6 +38,7 @@ check: structure-check compile acceptance api-check tool-check
 .PHONY: tool-check gui-tool-check
 tool-check:
 	EMACS="$(EMACS)" python3 -m unittest discover -s tests/tools -p 'test_gui_scenarios.py'
+	EMACS="$(EMACS)" python3 -m unittest discover -s tests/tools -p 'test_gui_click.py'
 
 gui-tool-check:
 	EMACS="$(EMACS)" python3 -m unittest discover -s tests/tools -p 'test_*.py'

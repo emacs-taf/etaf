@@ -12,11 +12,43 @@
 ;; guards the row-height budget that keeps a canvas from clipping, and
 ;; `etaf-gui-verifier-canvas-filled-p' / `etaf-gui-verifier-canvas-assertion'
 ;; keep a repaint settled on the window size.
+;; `etaf-gui-verifier-native-click' sends one complete native click to an
+;; explicitly supplied, visible buffer position without raising a frame.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'json)
+
+(defun etaf-gui-verifier-native-click (position &optional window)
+  "Send a native down/up click at explicit POSITION in WINDOW; return t.
+WINDOW defaults to the selected window and must be that live graphical
+window in a visible frame, displaying the current buffer.  POSITION is an
+accessible integer or a live marker in that buffer, never nil.  Reject
+invalid, invisible or offscreen targets before sending either event; do not
+fall back to point.
+The complete click uses one keyboard macro and never raises a frame or
+moves the OS pointer.  Callers resolve fresh positions from their own
+published targets and verify the resulting application state separately."
+  (setq window (or window (selected-window)))
+  (unless (and (window-live-p window) (eq window (selected-window))
+               (eq (window-buffer window) (current-buffer))
+               (display-graphic-p (window-frame window))
+               (eq t (frame-visible-p (window-frame window))))
+    (error "Native click requires the selected graphical window and current buffer"))
+  (unless (and (integer-or-marker-p position)
+               (or (integerp position) (eq (marker-buffer position) (current-buffer)))
+               (<= (point-min) position) (<= position (point-max)))
+    (error "Native click requires an explicit position in the current buffer"))
+  (redisplay t)
+  (let ((data (posn-at-point position window)))
+    (unless (and data (eq (posn-window data) window)
+                 (equal (posn-point data) (if (markerp position) (marker-position position) position))
+                 (not (invisible-p position))
+                 (pos-visible-in-window-p position window))
+      (error "Native click target is not visible in the selected window"))
+    (execute-kbd-macro (vector (list 'down-mouse-1 data) (list 'mouse-1 data))))
+  t)
 
 (defconst etaf-gui-verifier--capture-program
   (expand-file-name "capture-emacs-window.sh"
