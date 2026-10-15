@@ -731,7 +731,9 @@
 ;; RUNTIME defaults to the active/current-buffer Runtime.  The opening scope
 ;; is captured before focus moves; repeated calls reuse that help.  No frame,
 ;; window, help buffer or application Runtime is created.  Escape closes the
-;; help and restores a surviving opening focus and window position.  Return
+;; help and restores a surviving opening focus and window position.  While
+;; open, native window scrolling starts at the canvas top so the modal stays
+;; visible; a rejected renderer restores the original position.  Return
 ;; the application buffer.  A non-mounted Runtime signals etaf-runtime-error.
 ;; `etaf-ui' supplies the searchable catalog presentation when loaded; core
 ;; alone supplies a scrollable modal.  Neither executes listed commands.
@@ -750,7 +752,9 @@
 ;; Return non-nil when help was open, nil otherwise.  RUNTIME defaults to the
 ;; active/current-buffer Runtime; an unmounted Runtime signals
 ;; etaf-runtime-error.  Closing preserves application state and input; C-g
-;; remains Emacs's native interrupt, not a close command.
+;; remains Emacs's native interrupt, not a close command.  Inside an event or
+;; batch, restore focus and window position after modal removal is published;
+;; a newer help opening or Runtime unmount is never overridden.
 ;;
 ;; Function: etaf-help-data (&optional runtime)
 ;;;###autoload (autoload 'etaf-help-data "etaf" nil nil)

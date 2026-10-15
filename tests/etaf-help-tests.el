@@ -283,4 +283,78 @@
       (let ((focus (etaf-focused-host-ref runtime)))
         (should (eq focus 'opener))))))
 
+(ert-deftest etaf-help-closing-event-restores-after-publication ()
+  "A close callback restores focus and native scrolling after removing help."
+  (save-window-excursion
+    (let ((etaf-help-view-function
+           (lambda (_data close)
+             (etaf-view
+              (box :position 'absolute :layer 'root :left '(px 0) :top '(lh 0)
+                   :width '(ch 40) :height '(lh 8) :focus-scope 'modal
+                   :ref 'help-panel :tab-index 0 :on-dismiss close
+                (box :ref 'help-close :tab-index 0 :role 'button :on-press close
+                  "Close help"))))))
+      (etaf-test-with-mount
+          (runtime (etaf-view
+                    (column :width 'stretch :height '(lh 40)
+                      (expr (mapcar (lambda (n)
+                                      (etaf-view (text (expr (format "Application row %d" n)))))
+                                    (number-sequence 1 28)))
+                      (box :ref 'entry :tab-index 0 "Application entry"))))
+        (set-window-buffer (selected-window) (current-buffer))
+        (etaf-focus runtime 'entry)
+        (let ((focused (etaf-focused-host-ref runtime)))
+          (should (eq focused 'entry)))
+        (let ((start (save-excursion (goto-char (point-min)) (forward-line 5) (point))))
+          (set-window-start (selected-window) start t)
+          (etaf-help runtime)
+          (should (= (window-start) (point-min)))
+          (etaf-dispatch-event runtime 'help-close 'press)
+          (let ((focus (etaf-focused-host-ref runtime)) (restored (window-start)))
+            (should (eq focus 'entry))
+            (should (= restored start))))))))
+
+(ert-deftest etaf-help-render-failure-restores-native-window-position ()
+  "A renderer rejection restores the native scroll used before opening."
+  (save-window-excursion
+    (etaf-test-with-mount
+        (runtime (etaf-view
+                  (column :height '(lh 40)
+                    (text (expr (make-string 28 ?\n)))
+                    (box :ref 'entry :tab-index 0 "Entry"))))
+      (set-window-buffer (selected-window) (current-buffer))
+      (etaf-focus runtime 'entry)
+      (let ((start (save-excursion (goto-char (point-min)) (forward-line 5) (point)))
+            (origin (point))
+            (etaf-help-view-function
+             (lambda (_data _close)
+               (etaf-view (box :help 42 "Rejected renderer")))))
+        (set-window-start (selected-window) start t)
+        (let ((failed (condition-case nil (progn (etaf-help runtime) nil)
+                        (etaf-renderer-error t))))
+          (should failed))
+        (should (= start (window-start)))
+        (should (= origin (point)))
+        (let ((closed (etaf-help-close runtime)))
+          (should-not closed))))))
+
+(ert-deftest etaf-help-deferred-close-respects-newer-lifecycles ()
+  "Closing in a batch neither refocuses an unmount nor steals a newer help."
+  (etaf-test-with-mount
+      (runtime (etaf-view (box :ref 'entry :tab-index 0 "Entry")))
+    (etaf-focus runtime 'entry)
+    (etaf-help runtime)
+    (etaf-batch
+      (etaf-help-close runtime)
+      (etaf-help runtime))
+    (let ((focus (etaf-focused-host-ref runtime))
+          (text (etaf-help-test-text)))
+      (should-not (eq focus 'entry))
+      (should (string-match-p "关闭帮助" text)))
+    (etaf-batch
+      (etaf-help-close runtime)
+      (etaf-unmount runtime))
+    (let ((mounted (etaf-runtime-for-buffer (current-buffer))))
+      (should-not mounted))))
+
 (provide 'etaf-help-tests)

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Keyboard help stays within the visible canvas even when its application
+  uses native window scrolling. Escape and pointer callbacks restore focus
+  and the original scroll position after the modal disappears.
+
 ### Added
 
 - Host `:on-help-open` prepares the nearest enabled application scope before

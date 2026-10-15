@@ -925,6 +925,21 @@
       "name": "etaf-display-metrics-require-a-mounted-runtime",
       "file": "tests/etaf-display-tests.el",
       "purpose": "A metric query outside a mounted Runtime signals the documented lifecycle error."
+    },
+    {
+      "name": "etaf-help-closing-event-restores-after-publication",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "Closing help from its event callback restores surviving focus and native window scrolling after modal removal is published."
+    },
+    {
+      "name": "etaf-help-render-failure-restores-native-window-position",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "A rejected help renderer restores the prior native window start and point without leaving an active help surface."
+    },
+    {
+      "name": "etaf-help-deferred-close-respects-newer-lifecycles",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "Deferred close restoration respects a newer help opening and skips a Runtime unmounted in the same batch."
     }
   ]
 }

@@ -236,14 +236,25 @@ is published before preparing help.  Return the app buffer."
                 (etaf--keys-define (etaf-runtime-keymap runtime) events)))))
         (setq etaf--help-state state)
         (condition-case err
-            (etaf--runtime-set-surface
-             runtime
-             (lambda ()
-               (funcall renderer data
-                        (lambda () (etaf-help-close runtime))))
-             origin)
+            (progn
+              ;; Root-layer geometry is relative to the canvas, not an
+              ;; Emacs window's native scroll.  Present the modal from the
+              ;; canvas top; its saved opener position is restored on close.
+              (when window
+                (set-window-start window (point-min) t)
+                (set-window-point window (point-min)))
+              (etaf--runtime-set-surface
+               runtime
+               (lambda ()
+                 (funcall renderer data
+                          (lambda () (etaf-help-close runtime))))
+               origin))
           ((error quit)
            (setq etaf--help-state nil)
+           (goto-char (min (point-max) (plist-get state :point)))
+           (when (and (window-live-p window)
+                      (eq (window-buffer window) (current-buffer)))
+             (set-window-start window (min (point-max) (plist-get state :start)) t))
            (signal (car err) (cdr err))))))
     (current-buffer)))
 
@@ -260,14 +271,24 @@ and application state; native C-g is never repurposed as this command."
       (let ((state etaf--help-state))
         (etaf--runtime-set-surface runtime nil nil)
         (setq etaf--help-state nil)
-        (let ((focus (plist-get state :focus))
-              (window (plist-get state :window)))
-          (if (and focus (etaf-host-ref-position runtime focus))
-              (etaf-focus runtime focus)
-            (goto-char (min (point-max) (plist-get state :point))))
-          (when (and (window-live-p window)
-                     (eq (window-buffer window) (current-buffer)))
-            (set-window-start window (min (point-max) (plist-get state :start)) t)))
+        ;; An Escape or pointer callback is still inside the outer event
+        ;; batch.  Restore only after removing the modal has been published;
+        ;; otherwise focus still meets the old modal and its flush resets the
+        ;; window start we just restored.
+        (etaf-next-tick
+         (lambda ()
+           (when (etaf-runtime-mounted-p runtime)
+             (with-current-buffer (etaf-runtime-buffer runtime)
+               (unless etaf--help-state
+                 (let ((focus (plist-get state :focus))
+                       (window (plist-get state :window)))
+                   (if (and focus (etaf-host-ref-position runtime focus))
+                       (etaf-focus runtime focus)
+                     (goto-char (min (point-max) (plist-get state :point))))
+                   (when (and (window-live-p window)
+                              (eq (window-buffer window) (current-buffer)))
+                     (set-window-start
+                      window (min (point-max) (plist-get state :start)) t))))))))
         t))))
 
 (defun etaf--help-default-view (data close)
