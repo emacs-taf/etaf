@@ -14,6 +14,21 @@
   "support": [],
   "cases": [
     {
+      "name": "etaf-help-opening-from-an-event-waits-for-preparation-publication",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "Button-triggered help waits for the event and preparation to publish, captures current notes and coalesces repeated requests."
+    },
+    {
+      "name": "etaf-help-opening-prepares-only-the-nearest-enabled-scope",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "A new help opening prepares only the nearest enabled scope, respects modal boundaries and never repeats preparation on reuse or close."
+    },
+    {
+      "name": "etaf-help-opening-failure-preserves-policy-state-and-permits-retry",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "Preparation failures leave no help surface, preserve application policy changes and permit retry with a post-preparation snapshot."
+    },
+    {
       "name": "etaf-help-preserves-provider-observation-across-canvas-changes",
       "file": "tests/etaf-help-tests.el",
       "purpose": "Opening and closing help retain real engine flush reports inside the Runtime's observed operation, including canvas replacement."

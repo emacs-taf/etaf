@@ -735,6 +735,14 @@
 ;; the application buffer.  A non-mounted Runtime signals etaf-runtime-error.
 ;; `etaf-ui' supplies the searchable catalog presentation when loaded; core
 ;; alone supplies a scrollable modal.  Neither executes listed commands.
+;; Calls inside an event or batch defer opening until its work is published.
+;; Before each new opening, finish editing, then dispatch :on-help-open on
+;; the nearest enabled Host in the current key scope, stopping at a modal
+;; boundary.  The zero-argument callback may pause application activity;
+;; its return value is ignored and its errors or quit abort opening.  Capture
+;; the snapshot after it succeeds.  Reusing or closing help does not run it
+;; or undo application changes.  Keep the Runtime mounted and do not open
+;; help recursively from this callback.
 ;;
 ;; Function: etaf-help-close (&optional runtime)
 ;;;###autoload (autoload 'etaf-help-close "etaf" nil t)
@@ -1043,10 +1051,12 @@
 ;; `:focus-scope modal' confines Tab, arrows and :keys to an open Host such as
 ;; a dialog; outer keys are unreachable while it is visible, and printing
 ;; keys nothing in it binds are ignored instead of reaching the buffer's
-;; keymaps.  `?' opens read-only `etaf-help'.  `:on-dismiss'
-;; runs for Escape when no nearer Host binds it; it is the one
-;; callback that the key layer searches for outward.  `:focus-group' vertical,
-;; horizontal or grid makes its focusable descendants one Tab stop; arrows and
+;; keymaps.  `?' opens read-only `etaf-help'; the nearest :on-help-open callback
+;; can prepare the application before a new opening.  `:on-dismiss'
+;; runs for Escape when no nearer Host binds it; the key layer searches
+;; outward for the nearest enabled dismiss handler within the modal scope.
+;; `:focus-group' vertical, horizontal or grid makes its focusable descendants
+;; one Tab stop; arrows and
 ;; C-n/C-p/C-b/C-f move within it and then spatially to the nearest stop, and
 ;; entering it returns to the remembered or aria-selected member.  Arrow keys
 ;; on a focused Host with role separator or slider and :on-drag step it by

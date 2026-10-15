@@ -194,13 +194,31 @@ The returned data is a defensive copy and contains no business callbacks."
 The opening scope is captured before the modal takes focus.  Repeated calls
 reuse it.  No frame, window, buffer or application Runtime is created.
 `etaf-help-view-function' supplies the View; Escape closes it and restores
-the effective opening focus and window position.  Return the app buffer."
+the effective opening focus and window position.  Before a new opening,
+run the nearest enabled Host's :on-help-open callback in the current key
+scope.  Its errors abort opening; closing never undoes its application
+state changes.  Calls inside an event or batch wait until its pending work
+is published before preparing help.  Return the app buffer."
   (interactive)
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (etaf-next-tick (lambda () (etaf--help-open runtime)))
+  (etaf-runtime-buffer runtime))
+
+(defun etaf--help-open (runtime)
+  "Prepare and publish help for mounted RUNTIME after the caller's batch."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (with-current-buffer (etaf-runtime-buffer runtime)
     (unless etaf--help-state
       (when-let* ((finish (etaf-runtime-input-finisher runtime)))
         (funcall finish runtime))
+      (when-let* ((prepare
+                   (cl-find-if
+                    (lambda (ref)
+                      (let ((props (etaf--keys-props runtime ref)))
+                        (and (functionp (plist-get props :on-help-open))
+                             (not (plist-get props :disabled)))))
+                    (etaf--keys-chain runtime))))
+        (etaf-dispatch-event runtime prepare 'help-open))
       (let* ((data (etaf-help-data runtime))
              (origin (car (etaf--keys-chain runtime)))
              (renderer (or etaf-help-view-function #'etaf--help-default-view))

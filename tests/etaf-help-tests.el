@@ -202,4 +202,85 @@
       (etaf-help-close runtime)
       (should (equal (string-trim (etaf-help-test-text)) "Remounted")))))
 
+(ert-deftest etaf-help-opening-prepares-only-the-nearest-enabled-scope ()
+  "Help preparation runs once per opening, within the effective modal scope."
+  (let ((prepared nil) (disabled (etaf-ref nil)))
+    (etaf-test-with-mount
+        (runtime (etaf-view
+                  (column :on-help-open (lambda () (push 'outer prepared))
+                    (column :disabled (etaf-value disabled)
+                            :on-help-open (lambda () (push 'inner prepared))
+                      (box :ref 'entry :tab-index 0 "Entry")))))
+      (etaf-focus runtime 'entry)
+      (call-interactively (key-binding (kbd "?") t))
+      (should (equal prepared '(inner)))
+      (etaf-help runtime)
+      (should (equal prepared '(inner)))
+      (etaf-help-close runtime)
+      (should (equal prepared '(inner)))
+      (setf (etaf-value disabled) t)
+      (etaf-help runtime)
+      (should (equal prepared '(outer inner))))
+    (setq prepared nil)
+    (etaf-test-with-mount
+        (runtime (etaf-view
+                  (column :on-help-open (lambda () (push 'outer prepared))
+                    (column :focus-scope 'modal
+                      (box :ref 'entry :tab-index 0 "Dialog entry")))))
+      (etaf-focus runtime 'entry)
+      (etaf-help runtime)
+      (should-not prepared))))
+
+(ert-deftest etaf-help-opening-failure-preserves-policy-state-and-permits-retry ()
+  "Preparation can pause activity; failures never open help or undo that pause."
+  (let ((running (etaf-ref t)) (reject t))
+    (etaf-test-with-mount
+        (runtime (etaf-view
+                  (column :help (if (etaf-value running) "Running" "Paused")
+                          :on-help-open
+                          (lambda ()
+                            (setf (etaf-value running) nil)
+                            (when reject (user-error "Preparation rejected")))
+                    (box :ref 'entry :tab-index 0 "Application"))))
+      (etaf-focus runtime 'entry)
+      (let ((failed (condition-case nil (progn (etaf-help runtime) nil)
+                      (user-error t)))
+            (paused (not (etaf-value running))))
+        (should failed)
+        (should paused))
+      (let ((closed (etaf-help-close runtime))
+            (text (string-trim (etaf-help-test-text))))
+        (should-not closed)
+        (should (equal text "Application")))
+      (setq reject nil)
+      (etaf-help runtime)
+      (let ((notes (plist-get (etaf-help-data runtime) :notes)))
+        (should (equal notes '("Paused"))))
+      (etaf-help-close runtime)
+      (let ((running-now (etaf-value running))
+            (focus (etaf-focused-host-ref runtime)))
+        (should-not running-now)
+        (should (eq focus 'entry))))))
+
+(ert-deftest etaf-help-opening-from-an-event-waits-for-preparation-publication ()
+  "A button sees settled preparation notes and repeated requests reuse help."
+  (let ((note (etaf-ref "Running")) (prepared nil))
+    (etaf-test-with-mount
+        (runtime (etaf-view
+                  (column :help (etaf-value note)
+                          :on-help-open (lambda ()
+                                          (push 'paused prepared)
+                                          (setf (etaf-value note) "Paused"))
+                    (box :ref 'opener :tab-index 0 :role 'button
+                         :on-press (lambda () (etaf-help) (etaf-help))
+                      "Open help"))))
+      (etaf-focus runtime 'opener)
+      (etaf-activate runtime)
+      (let ((notes (plist-get (etaf-help-data runtime) :notes)))
+        (should (equal notes '("Paused"))))
+      (should (equal prepared '(paused)))
+      (etaf-help-close runtime)
+      (let ((focus (etaf-focused-host-ref runtime)))
+        (should (eq focus 'opener))))))
+
 (provide 'etaf-help-tests)

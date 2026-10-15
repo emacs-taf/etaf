@@ -34,7 +34,7 @@ Ebox 的显示稳定通知把 `etaf-display-metrics` 与 Runtime 视口放在同
 
 Host segment 拥有作者声明的 Ebox 节点。fragment、expression、branch、list、slot、Component 和 root segment 组织子节点，或持有维护它们的 effect。只有多根输出或临时界面需要 Runtime 画布 wrapper；普通 Component 结构不会增加不可见的 Ebox wrapper。
 
-快捷键帮助是原 Runtime 拥有的临时 segment，使用与应用内容相同的构建、patch、释放及 Component 生命周期。它继承打开位置 Host 的 Context，并与原节点共享视口大小的画布，因此短根节点和纯 text 应用也能显示帮助。打开与关闭不重建应用 Component 或业务状态，画布重新挂载时节点滚动位置仍保留。根节点替换把帮助节点放在同一次子列表更新中，保留其原生输入投影。卸载同时释放应用和临时 segment。有效键快照与返回位置由核心拥有；可选的目录呈现器只返回 View，不创建其他 buffer 或 Runtime。
+快捷键帮助是原 Runtime 拥有的临时 segment，使用与应用内容相同的构建、patch、释放及 Component 生命周期。它继承打开位置 Host 的 Context，并与原节点共享视口大小的画布，因此短根节点和纯 text 应用也能显示帮助。打开与关闭不重建应用 Component 或业务状态，画布重新挂载时节点滚动位置仍保留。根节点替换把帮助节点放在同一次子列表更新中，保留其原生输入投影。卸载同时释放应用和临时 segment。有效键快照与返回位置由核心拥有；可选的目录呈现器只返回 View，不创建其他 buffer 或 Runtime。捕获前，有效按键作用域内最近启用的 `:on-help-open` Host 可准备应用状态，例如暂停持续活动；这一查找止于模态边界。关闭不逆转应用策略。
 
 ## 3. View 编译与保留 segment
 

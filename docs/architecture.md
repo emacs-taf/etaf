@@ -62,6 +62,10 @@ surface nodes in the same child-list update, retaining their native input
 projection. Unmount releases the application and transient segment together.
 The effective key snapshot and return location belong to core; an optional
 catalog renderer returns a View rather than another buffer or Runtime.
+Before capture, the nearest enabled `:on-help-open` Host in the effective
+key scope can prepare application state, such as pausing ongoing activity.
+The modal boundary contains this lookup. Closing does not reverse that
+application policy.
 
 ## 3. View compilation and retained segments
 

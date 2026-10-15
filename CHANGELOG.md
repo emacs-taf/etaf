@@ -4,6 +4,10 @@
 
 ### Added
 
+- Host `:on-help-open` prepares the nearest enabled application scope before
+  any shared help entry opens. Applications can pause ongoing activity without
+  overriding `?`; dismissing help does not reverse that policy.
+
 - `etaf-help-data` exposes a defensive snapshot of effective scoped keys,
   application-local keymaps, regions and readable controls. Host `:help`
   supplies non-binding notes. `etaf-help-close` and
