@@ -50,7 +50,7 @@
   "One mounted ETAF application over one Ebox buffer mount."
   buffer mounted-p input-finisher
   (instances (make-hash-table :test #'eql))
-  root wrapper mounted-root root-dirty
+  root wrapper mounted-root root-dirty surface
   (hosts (make-hash-table :test #'equal))
   (nodes (make-hash-table :test #'eq))
   (rev 0) dirty changed new-instances updated-instances retired-instances
@@ -166,7 +166,7 @@ STAMP names the slot holding an object's creating transaction, or nil."
 (etaf--journal-setters etaf--instance txn)
 (etaf--journal-setters etaf-runtime nil
                        new-instances updated-instances retired-instances
-                       root-dirty changed)
+                       root-dirty changed surface)
 
 (defun etaf--journal (function)
   "Record FUNCTION to undo a change when the transaction rolls back."
@@ -474,6 +474,11 @@ QUIET, each later run records an update of CTX's Component instance."
                        (list ":focus-scope must be `modal' or nil"))))
             ((eq property :keys)
              (etaf--keys-validate value))
+            ((eq property :help)
+             (unless (or (null value) (stringp value)
+                         (and (proper-list-p value) (cl-every #'stringp value)))
+               (signal 'etaf-renderer-error
+                       (list ":help must be a string or a list of strings"))))
             ((eq property :on-direction)
              (unless (or (null value) (functionp value))
                (signal 'etaf-renderer-error
@@ -920,7 +925,7 @@ HOST and REF are non-nil for a mounted Host, which receives a keymap."
 (defun etaf--seg-phys (seg)
   "Return the Host or root segment whose node list holds SEG's nodes."
   (let ((parent (etaf--seg-parent seg)))
-    (while (not (memq (etaf--seg-kind parent) '(host root)))
+    (while (not (memq (etaf--seg-kind parent) '(host root surface)))
       (setq parent (etaf--seg-parent parent)))
     parent))
 
@@ -933,7 +938,7 @@ HOST and REF are non-nil for a mounted Host, which receives a keymap."
           (push (car tail) before)
           (setq tail (cdr tail)))
         (setq found (cl-some #'etaf--seg-last-node before)))
-      (if (or found (memq (etaf--seg-kind parent) '(host root)))
+      (if (or found (memq (etaf--seg-kind parent) '(host root surface)))
           (setq parent nil)
         (setq child parent parent (etaf--seg-parent parent))))
     found))
@@ -960,11 +965,15 @@ SEG must not be a Host: a Host's own kids start its node list."
   "Place live SEG's region nodes contiguously after PREV.
 For a Host SEG, place its kids' nodes from the start of its node."
   (let* ((runtime (etaf--seg-runtime seg))
-         (phys (if (eq (etaf--seg-kind seg) 'host) seg (etaf--seg-phys seg))))
+         (phys (if (memq (etaf--seg-kind seg) '(host root surface))
+                   seg (etaf--seg-phys seg))))
     (if (eq (etaf--seg-kind phys) 'root)
         (etaf--root-dirty runtime)
-      (let ((parent (etaf--seg-node phys))
-            (index (if prev (1+ (ebox-node-index prev)) 0))
+      (let* ((parent (etaf--seg-node phys))
+             (index (cond (prev (1+ (ebox-node-index prev)))
+                         ((eq (etaf--seg-kind phys) 'surface)
+                          (ebox-node-child-count parent))
+                         (t 0)))
             (nodes (if (eq phys seg) (etaf--kids-nodes seg) (etaf--seg-nodes seg)))
             changed)
         (dolist (node nodes)
@@ -1997,21 +2006,47 @@ Host's `:ref' and to Host query, focus or event APIs."
     (setf (etaf-runtime-root-dirty runtime) nil)
     (let* ((nodes (etaf--kids-nodes (etaf-runtime-root runtime)))
            (desired
-            (if (and nodes (null (cdr nodes)))
+            (if (and nodes (null (cdr nodes))
+                     (not (etaf-runtime-surface runtime)))
                 (car nodes)
               (let ((wrapper (or (etaf-runtime-wrapper runtime)
                                  (setf (etaf-runtime-wrapper runtime)
                                        (ebox-node-create 'column nil)))))
-                (ebox-node-replace-children wrapper nodes)
+                ;; A modal needs a viewport canvas even when the application
+                ;; is a single text Host or an intrinsically short column.
+                ;; Keep its original nodes and geometry; only this outer
+                ;; canvas grows.  Node-owned scroll offsets survive mounting.
+                (ebox-node-set-props
+                 wrapper
+                 (when (etaf-runtime-surface runtime)
+                   (list :width 'stretch
+                         :height (if (cdr (etaf-runtime-viewport runtime))
+                                     '(vh 100)
+                                   '(lh 32)))))
+                ;; Include retained surface nodes in the replacement itself.
+                ;; Detaching and reattaching them would discard Ebox's mounted
+                ;; projection while the outer canvas identity stays unchanged.
+                (ebox-node-replace-children
+                 wrapper (append nodes
+                                 (when-let* ((surface (etaf-runtime-surface runtime)))
+                                   (etaf--kids-nodes surface))))
                 wrapper)))
            (buffer (etaf-runtime-buffer runtime)))
+      ;; Managed transient content shares the mounted tree, not another
+      ;; buffer or Ebox mount.  Move it with a replaced application root.
+      (when-let* ((surface (etaf-runtime-surface runtime)))
+        (setf (etaf--seg-node surface) desired))
       (unless (eq desired (etaf-runtime-mounted-root runtime))
         (when (and (ebox-node-parent desired)
                    (eq (ebox-node-parent desired) (etaf-runtime-wrapper runtime)))
           (ebox-node-remove desired))
         (when (buffer-live-p buffer)
           (let ((viewport (etaf-runtime-fixed-viewport runtime)))
-            (ebox-mount buffer desired :width (car viewport) :height (cdr viewport))))
+            ;; Root replacement preserves this Runtime's observation lifetime,
+            ;; including the new engine mount's first flush.
+            (ebox-mount buffer desired :width (car viewport) :height (cdr viewport)
+                        :observer (and (etaf-runtime-observer runtime)
+                                       #'etaf--runtime-forward-ebox-report))))
         (setf (etaf-runtime-mounted-root runtime) desired
               (etaf-runtime-changed runtime) t)))))
 
@@ -2182,6 +2217,40 @@ provide `:viewport-width' in pixels, `:viewport-height' in lines and
 See `etaf-runtime-mount'."
   (etaf-runtime-mount buffer-or-name view options))
 
+(defun etaf--runtime-set-surface (runtime view origin)
+  "Present transient VIEW in RUNTIME, inheriting ORIGIN's Context.
+Nil VIEW disposes the surface.  The retained application nodes share a
+viewport canvas with its absolute root-layer Hosts.  Application Components
+are not remounted and their state, subscriptions and node scroll offsets
+are retained."
+  (etaf--assert-not-rendering 'present-surface)
+  (etaf-call-with-batch
+   (lambda ()
+     (if (null view)
+         (when-let* ((surface (etaf-runtime-surface runtime)))
+           (setf (etaf-runtime-surface runtime) nil)
+           (etaf--dispose surface t)
+           (etaf--runtime-changed runtime))
+       (when (etaf-runtime-surface runtime)
+         (signal 'etaf-runtime-error (list "A transient surface is already open")))
+       (let* ((source (or (etaf--runtime-host-seg runtime origin)
+                          (etaf-runtime-root runtime)))
+              (ctx (etaf--ictx-make
+                    :runtime runtime
+                    :context (etaf--ictx-context (etaf--seg-ctx source))))
+              (surface (etaf--seg-make
+                        :kind 'surface :src view :ctx ctx
+                        :node (etaf-runtime-mounted-root runtime))))
+         (condition-case err
+             (progn
+               (etaf--root-init surface)
+               (setf (etaf--seg-live surface) t
+                     (etaf-runtime-surface runtime) surface)
+               (etaf--root-dirty runtime))
+           ((error quit)
+            (etaf--dispose surface nil)
+            (signal (car err) (cdr err)))))))))
+
 (defun etaf--runtime-unmount-now (runtime)
   "Dispose RUNTIME's segments and release its buffer, idempotently."
   (when (etaf-runtime-mounted-p runtime)
@@ -2193,6 +2262,9 @@ See `etaf-runtime-mount'."
           (etaf--run-log nil))
       (when (eq (gethash buffer etaf--runtimes) runtime)
         (remhash buffer etaf--runtimes))
+      (when-let* ((surface (etaf-runtime-surface runtime)))
+        (setf (etaf-runtime-surface runtime) nil)
+        (etaf--dispose surface nil))
       (when root (etaf--dispose root nil))
       (setq etaf--dirty-runtimes (delq runtime etaf--dirty-runtimes))
       (setf (etaf-runtime-dirty runtime) nil)
@@ -2668,8 +2740,8 @@ the window."
 
 (defun etaf--walk-hosts (runtime function)
   "Call FUNCTION with each registered Host segment of RUNTIME in order."
-  (let ((stack (and (etaf-runtime-root runtime)
-                    (list (etaf-runtime-root runtime)))))
+  (let ((stack (delq nil (list (etaf-runtime-root runtime)
+                                (etaf-runtime-surface runtime)))))
     (while stack
       (let ((seg (pop stack)))
         (when (and (eq (etaf--seg-kind seg) 'host)

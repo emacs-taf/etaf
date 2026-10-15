@@ -727,12 +727,45 @@
 ;;
 ;; Function: etaf-help (&optional runtime)
 ;;;###autoload (autoload 'etaf-help "etaf" nil t)
-;; Show the effective ETAF keys of mounted RUNTIME in a read-only buffer.
-;; The help lists the regions of the current focus scope, the labelled :keys
-;; the current focus reaches with their source, the framework keys and the
-;; focusable controls; it never runs a command.  `?' opens it in a Runtime
-;; buffer; `etaf-palette' stays
-;; available through `M-x' for running a command or pressing a control.
+;; Open read-only keyboard help as a modal inside RUNTIME's existing buffer.
+;; RUNTIME defaults to the active/current-buffer Runtime.  The opening scope
+;; is captured before focus moves; repeated calls reuse that help.  No frame,
+;; window, help buffer or application Runtime is created.  Escape closes the
+;; help and restores a surviving opening focus and window position.  Return
+;; the application buffer.  A non-mounted Runtime signals etaf-runtime-error.
+;; `etaf-ui' supplies the searchable catalog presentation when loaded; core
+;; alone supplies a scrollable modal.  Neither executes listed commands.
+;;
+;; Function: etaf-help-close (&optional runtime)
+;;;###autoload (autoload 'etaf-help-close "etaf" nil t)
+;; Close RUNTIME's help and restore its surviving focus and window start.
+;; Return non-nil when help was open, nil otherwise.  RUNTIME defaults to the
+;; active/current-buffer Runtime; an unmounted Runtime signals
+;; etaf-runtime-error.  Closing preserves application state and input; C-g
+;; remains Emacs's native interrupt, not a close command.
+;;
+;; Function: etaf-help-data (&optional runtime)
+;;;###autoload (autoload 'etaf-help-data "etaf" nil nil)
+;; Return a defensive read-only snapshot of RUNTIME's effective key scope.
+;; The plist contains :title and :scope strings, :groups, :notes and :controls.
+;; A group has :title, :source, :kind (application, framework or regions) and
+;; :entries.  An entry has :key, :label, :source and optional :events (a key
+;; vector).  Notes are scoped Host :help strings; controls are readable names.
+;; There are no executable callbacks in the data.  Nearer Host keys shadow
+;; outer keys even without a label; effective local maps supplement them.
+;; While help is open return its opening snapshot.  RUNTIME defaults to the
+;; active/current-buffer Runtime; an unmounted Runtime signals
+;; etaf-runtime-error.  Use this data to compose a read-only help renderer.
+;;
+;; Variable: etaf-help-view-function
+;; Nil (default), or a function of DATA and CLOSE returning a root-layer
+;; modal help View.  DATA follows etaf-help-data; CLOSE is a zero-argument
+;; dismissal callback.
+;; The View inherits the opening Host's Context and mounted lifecycle, and
+;; must not create buffers/windows or execute listed business commands.
+;; Nil uses core's minimal scrollable modal; loading etaf-ui installs its
+;; catalog renderer only when this value is nil, preserving custom renderers
+;; without a reverse package dependency.
 ;;
 ;; Function: etaf-palette (&optional runtime)
 ;;;###autoload (autoload 'etaf-palette "etaf" nil t)
@@ -987,6 +1020,9 @@
 ;; callback owners, so command history does not keep a disposed application
 ;; alive. Invoking a command after its mount ends signals `user-error'.
 ;; Component root `:keys' put the caller's entries first.
+;; `:help' contributes a string or list of strings to the scoped help as
+;; read-only usage notes, not a second key inventory.  Bindings and their
+;; labels come from :keys or effective local keymaps.
 ;; `:region' declares a user-addressable functional range on a Host: a
 ;; plist whose `:id' is the stable identity, `:label' the display name,
 ;; `:key' one hint character, `:enter' the default entry Host reference,
@@ -2085,6 +2121,7 @@
 (require 'etaf-events)
 (require 'etaf-keys)
 (require 'etaf-regions)
+(require 'etaf-help)
 (require 'etaf-performance)
 (require 'etaf-viewport)
 (require 'etaf-video-component)

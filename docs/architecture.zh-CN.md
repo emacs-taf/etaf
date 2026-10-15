@@ -32,7 +32,9 @@ Ebox 的显示稳定通知把 `etaf-display-metrics` 与 Runtime 视口放在同
 | Ebox node | Ebox | 计算后样式、几何、焦点/输入事实、合成行 |
 | Data Controller | `etaf-data` | query、page、items、status、error、reconciliation state |
 
-只有 Host segment 持有 Ebox 节点。fragment、expression、branch、list、slot、Component 和 root segment 只组织子节点，或持有维护其子节点的 effect。这让 Runtime 树保持保留式，同时不引入不可见 Ebox wrapper。
+Host segment 拥有作者声明的 Ebox 节点。fragment、expression、branch、list、slot、Component 和 root segment 组织子节点，或持有维护它们的 effect。只有多根输出或临时界面需要 Runtime 画布 wrapper；普通 Component 结构不会增加不可见的 Ebox wrapper。
+
+快捷键帮助是原 Runtime 拥有的临时 segment，使用与应用内容相同的构建、patch、释放及 Component 生命周期。它继承打开位置 Host 的 Context，并与原节点共享视口大小的画布，因此短根节点和纯 text 应用也能显示帮助。打开与关闭不重建应用 Component 或业务状态，画布重新挂载时节点滚动位置仍保留。根节点替换把帮助节点放在同一次子列表更新中，保留其原生输入投影。卸载同时释放应用和临时 segment。有效键快照与返回位置由核心拥有；可选的目录呈现器只返回 View，不创建其他 buffer 或 Runtime。
 
 ## 3. View 编译与保留 segment
 
@@ -141,7 +143,7 @@ Data Controller 拥有 query、pagination、item collection、selection、status
 
 ## 10. 不变量
 
-1. **单一保留树。** 一个已挂载 Runtime 只有一棵 live segment 树和一棵保留 Ebox node 树。Host/node map 是这棵树的索引，不是第二份权威。
+1. **单一保留所有权。** 一个已挂载 Runtime 拥有应用 segment 和至多一个临时帮助 segment，共享一棵保留 Ebox node 树。Host/node map 只是这些 segment 的索引，不是第二份权威。
 2. **一个可见写入边界。** Runtime commit 至多执行一次 Ebox flush，该 flush 只写一次变化的 buffer 区域。
 3. **绑定所有权。** 每个细粒度绑定只拥有一个 Host node 属性集、一个文本 payload 或一个动态子区域。它可以读取多个响应式 source，但只能 patch 自己的目标。
 4. **Keyed identity。** 稳定 key 保留 segment、Component Scope、Host ref 与 Ebox node。key 缺失或变化时释放旧 owner。

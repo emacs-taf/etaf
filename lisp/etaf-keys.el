@@ -39,6 +39,8 @@
 (defvar etaf--current-runtime)
 (defvar etaf--current-event)
 (defvar etaf--runtimes)
+(defvar etaf--help-state)
+(declare-function etaf-help "etaf-help" (&optional runtime))
 
 (defvar-local etaf--keys-alist nil
   "Emulation keymap alist holding the Runtime's scoped key bindings.")
@@ -205,7 +207,8 @@ one key cannot both run a command and start a longer sequence."
       (with-current-buffer buffer
         (remove-hook 'ebox-focus-change-functions #'etaf--keys-focus-enter t)
         (etaf--regions-uninstall runtime)
-        (kill-local-variable 'etaf--keys-alist)))))
+        (kill-local-variable 'etaf--keys-alist)
+        (kill-local-variable 'etaf--help-state)))))
 
 (defun etaf--keys-focus-enter (previous node)
   "Dispatch `:on-focus-enter' on the Hosts focus entered moving PREVIOUS to NODE.
@@ -376,7 +379,8 @@ Runtime or callback arguments through their lexical environment."
             (etaf--keys-command runtime 'step ref step)))
          ;; An open dialog keeps typed letters from reaching the application
          ;; behind it, including keymaps that are not Host `:keys'.
-         ((and (member event etaf--keys-printing-events)
+         ((and (or (member event etaf--keys-printing-events)
+                   (bound-and-true-p etaf--help-state))
                (eq (plist-get (etaf--keys-props runtime (car (last chain)))
                               :focus-scope)
                    'modal))
@@ -499,25 +503,6 @@ the Host drags."
     (nreverse candidates)))
 
 ;;;###autoload
-(defun etaf-help (&optional runtime)
-  "Show the effective ETAF keys of mounted RUNTIME in a read-only buffer.
-The help lists the regions of the current focus scope, the labelled `:keys'
-the current focus reaches with their source, the framework keys and the
-focusable controls.  It never runs a command.  `?' opens it in a Runtime
-buffer; `etaf-palette' stays
-available through `M-x' for running a command or pressing a control."
-  (interactive)
-  (setq runtime (etaf-runtime-require-mounted runtime))
-  (let ((buffer (get-buffer-create "*ETAF Help*")))
-    (with-current-buffer buffer
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (insert (etaf--keys-help-text runtime)))
-      (special-mode)
-      (goto-char (point-min)))
-    (display-buffer buffer)
-    buffer))
-
 ;;;###autoload
 (defun etaf-palette (&optional runtime)
   "Choose and run a command or control of mounted RUNTIME by name.
@@ -563,68 +548,6 @@ palette is an execution surface and stays reachable from `M-x'; `?' opens
       (cond ((and label (not (string-empty-p (format "%s" label))))
              (format "%s" label))
             ((symbolp ref) (format "%s" ref))))))
-
-(defun etaf--keys-help-text (runtime)
-  "Return the read-only key help text of RUNTIME's current scope."
-  (let* ((chain (etaf--keys-chain runtime))
-         (entries (etaf--keys-entries runtime chain))
-         (regions (etaf--regions-in-scope runtime))
-         (current (etaf--regions-current runtime regions))
-         (lines (list "ETAF keyboard help" "")))
-    (when (or regions current)
-      (push (format "Scope: %s"
-                    (if current
-                        (etaf--regions-label current)
-                      "application"))
-            lines)
-      (when regions
-        (push (format "Regions: %s"
-                      (mapconcat
-                       (lambda (region)
-                         (let ((key (plist-get region :key)))
-                           (format "%s%s"
-                                   (if key (format "[%c] " (etaf--regions-key-char key)) "")
-                                   (etaf--regions-label region))))
-                       regions "  "))
-              lines))
-      (push "" lines))
-    (push "Keys:" lines)
-    (if entries
-        (dolist (item entries)
-          (let ((entry (cdr item))
-                (source (etaf--keys-source-name runtime (car item))))
-            (when (nth 2 entry)
-              (push (format "  %-10s %s%s"
-                            (key-description (etaf--keys-event (car entry)))
-                            (nth 2 entry)
-                            (if source (format "  (%s)" source) ""))
-                    lines))))
-      (push "  (no Host `:keys' in scope)" lines))
-    (push "" lines)
-    (push "Framework:" lines)
-    (dolist (line (list "  M-g        Select region"
-                    (if (eq etaf-direction-scheme 'vim)
-                        "  h j k l    Move focus (Vim scheme)"
-                      "  ←↑↓→        Move focus")
-                    "  Tab        Next focus stop (S-Tab previous)"
-                    "  Escape     Close the nearest dismissible Host"
-                    "  ?          This help"
-                    "  M-x etaf-palette   Run a command or press a control by name"))
-      (push line lines))
-    (push "" lines)
-    (push "Controls:" lines)
-    (let ((controls
-           (delq nil
-                 (mapcar
-                  (lambda (node)
-                    (let* ((ref (etaf-runtime-node-host-ref runtime node))
-                           (label (and ref (etaf--keys-control-label runtime ref node))))
-                      (and label (format "  %s" label))))
-                  (ebox-focus-stops (etaf-runtime-buffer runtime))))))
-      (if controls
-          (dolist (line controls) (push line lines))
-        (push "  (no focusable controls)" lines)))
-    (mapconcat #'identity (nreverse lines) "\n")))
 
 ;;;; Region and direction navigation
 

@@ -1,0 +1,205 @@
+;;; -*- lexical-binding: t; -*-
+;;; etaf-help-tests.el --- Public keyboard-help lifecycle acceptance
+
+(require 'ert)
+(require 'etaf)
+(require 'etaf-test-support)
+
+(defun etaf-help-test-text ()
+  "Read the current application's visible text without properties."
+  (buffer-substring-no-properties (point-min) (point-max)))
+
+(defun etaf-help-test-labels (data)
+  "Return the advertised labels in help DATA."
+  (mapcan (lambda (group)
+            (mapcar (lambda (entry) (plist-get entry :label))
+                    (plist-get group :entries)))
+          (plist-get data :groups)))
+
+(defun etaf-help-test-first-command ()
+  "First local command."
+  (interactive))
+
+(defun etaf-help-test-second-command ()
+  "Second local command."
+  (interactive))
+
+(ert-deftest etaf-help-snapshot-respects-scope-shadowing-and-copy-ownership ()
+  "Only effective labelled keys appear, and caller mutation cannot alter help."
+  (let ((note (copy-sequence "Keep this note")))
+    (etaf-test-with-mount
+        (runtime (etaf-view
+                  (column :aria-label "Reader" :help note
+                          :keys (list (list "r" #'ignore "Outer reload")
+                                      (list "s" #'ignore "Outer save"))
+                    (column :aria-label "Articles"
+                            :region '(:id articles :label "Articles" :key "a")
+                            :keys (list (list "r" #'ignore)
+                                        (list "s" #'ignore "Save article"))
+                      (box :ref 'entry :tab-index 0 "Entry")))))
+      (etaf-focus runtime 'entry)
+      (let* ((data (etaf-help-data runtime))
+             (labels (etaf-help-test-labels data)))
+        (should (equal (plist-get data :scope) "Articles"))
+        (should (member "Save article" labels))
+        (should-not (member "Outer reload" labels))
+        (should-not (member "Outer save" labels))
+        (aset (car (plist-get data :notes)) 0 ?X)
+        (should (equal note "Keep this note")))
+      (etaf-help runtime)
+      (let ((data (etaf-help-data runtime)))
+        (aset (plist-get data :title) 0 ?X)
+        (setcar (plist-get data :notes) "Changed"))
+      (let ((data (etaf-help-data runtime)))
+        (should (equal (plist-get data :title) "Reader"))
+        (should (equal (plist-get data :notes) '("Keep this note")))))))
+
+(ert-deftest etaf-help-tracks-effective-local-maps-between-openings ()
+  "Local keymap changes appear on the next opening, not in a captured snapshot."
+  (etaf-test-with-mount (runtime (etaf-view (text "Short application")))
+    (let ((map (make-sparse-keymap)))
+      (define-key map (kbd "C-c b")
+                  '(menu-item "First shortcut" etaf-help-test-first-command))
+      (use-local-map map)
+      (etaf-help runtime)
+      (define-key map (kbd "C-c b") #'etaf-help-test-second-command)
+      (let ((labels (etaf-help-test-labels (etaf-help-data runtime))))
+        (should (member "First shortcut" labels))
+        (should-not (member "Second local command." labels)))
+      (etaf-help-close runtime)
+      (should (eq (key-binding (kbd "C-c b") t) #'etaf-help-test-second-command))
+      (let ((labels (etaf-help-test-labels (etaf-help-data runtime))))
+        (should (member "Second local command." labels))
+        (should-not (member "First shortcut" labels))))))
+
+(ert-deftest etaf-help-covers-short-and-text-roots-without-changing-them ()
+  "A short or text-only application gets a full modal then its original extent."
+  (dolist (view (list (etaf-view (text :ref 'root "Text root"))
+                      (etaf-view (column :ref 'root (text "Short column")))
+                      (etaf-view (fragment (text "First") (text "Second")))))
+    (etaf-test-with-mount (runtime view)
+      (let ((before (etaf-help-test-text))
+            (buffers (buffer-list))
+            (windows (window-list)))
+        (etaf-help runtime)
+        (should (string-match-p "通用导航" (etaf-help-test-text)))
+        (should (string-match-p "关闭帮助" (etaf-help-test-text)))
+        (should (equal buffers (buffer-list)))
+        (should (equal windows (window-list)))
+        (etaf-help-close runtime)
+        (should (equal before (etaf-help-test-text)))))))
+
+(ert-deftest etaf-help-preserves-provider-observation-across-canvas-changes ()
+  "Opening and closing help keep actual Ebox flush reports in Runtime operations."
+  (etaf-test-with-mount (runtime (etaf-view (text "Observed application")))
+    (etaf-performance-start runtime)
+    (dolist (operation (list (lambda () (etaf-help runtime))
+                            (lambda () (etaf-help-close runtime))))
+      (etaf-performance-call-operation runtime 'help "Help transition" operation)
+      (let* ((record (car (etaf-performance-records)))
+             (reports (etaf-performance-operation-stages record))
+             (flush (cl-find-if
+                     (lambda (report)
+                       (and (eq (etaf-performance-stage-provider report) 'ebox)
+                            (eq (etaf-performance-stage-name report) 'flush)
+                            (> (plist-get (etaf-performance-stage-metadata report) :lines) 0)))
+                     reports)))
+        (should flush)))))
+
+(ert-deftest etaf-help-renders-without-a-known-window-height ()
+  "An offscreen mount with an indefinite height can open and close help."
+  (with-temp-buffer
+    (etaf-mount (current-buffer) (etaf-view (text "Offscreen application")))
+    (unwind-protect
+        (progn
+          (etaf-help)
+          (should (string-match-p "关闭帮助" (etaf-help-test-text)))
+          (etaf-help-close)
+          (should (equal (string-trim (etaf-help-test-text)) "Offscreen application")))
+      (etaf-unmount (etaf-runtime-for-buffer (current-buffer))))))
+
+(ert-deftest etaf-help-retains-scrolling-and-surviving-focus ()
+  "Opening help never remounts application state or resets its scroll offset."
+  (etaf-test-with-mount
+      (runtime (etaf-view
+                (column :ref 'page :width 'stretch :height '(lh 40)
+                  (box :ref 'entry :tab-index 0 "Entry")
+                  (column :ref 'log :height '(lh 6) :overflow 'scroll
+                    (expr (mapcar (lambda (n) (etaf-view (text (expr (format "Row %d" n)))))
+                                  (number-sequence 1 50)))))))
+    (etaf-focus runtime 'entry)
+    (etaf-scroll-to runtime 'log 17)
+    (let ((before (etaf-help-test-text))
+          (size (etaf-host-ref-size runtime 'page)))
+      (etaf-help runtime)
+      (let ((offset (etaf-scroll-offset runtime 'log))
+            (during-size (etaf-host-ref-size runtime 'page)))
+        (should (= offset 17))
+        (should (equal size during-size)))
+      (etaf-help-close runtime)
+      (let ((offset (etaf-scroll-offset runtime 'log)))
+        (should (= offset 17)))
+      (should (eq (etaf-focused-host-ref runtime) 'entry))
+      (should (equal before (etaf-help-test-text))))))
+
+(ert-deftest etaf-help-survives-root-replacement-and-removed-opener ()
+  "A background root replacement preserves help and closes without stale focus."
+  (let ((revision (etaf-ref 1)))
+    (etaf-test-with-mount
+        (runtime (lambda ()
+                   (if (= (etaf-value revision) 1)
+                       (etaf-view (column :aria-label "Original" :width 'stretch :height '(lh 40)
+                                    (box :ref 'entry :tab-index 0 "Entry")))
+                     (etaf-view (text :aria-label "Replacement" "New application")))))
+      (etaf-focus runtime 'entry)
+      (etaf-help runtime)
+      (setf (etaf-value revision) 2)
+      (should (string-match-p "关闭帮助" (etaf-help-test-text)))
+      (let ((data (etaf-help-data runtime)))
+        (should (equal (plist-get data :title) "Original")))
+      (etaf-help-close runtime)
+      (should (equal (string-trim (etaf-help-test-text)) "New application"))
+      (let ((data (etaf-help-data runtime)))
+        (should (equal (plist-get data :title) "Replacement"))))))
+
+(ert-deftest etaf-help-render-failure-leaves-application-usable ()
+  "A failing custom renderer leaves no modal or stale help state and can retry."
+  (etaf-test-with-mount
+      (runtime (etaf-view (column (box :ref 'entry :tab-index 0 "Entry"))))
+    (etaf-focus runtime 'entry)
+    (let ((before (etaf-help-test-text))
+          (etaf-help-view-function
+           (lambda (_data _close)
+             (etaf-view (box :help 42 "Invalid help metadata")))))
+      (let ((failed (condition-case nil
+                        (progn (etaf-help runtime) nil)
+                      (etaf-renderer-error t))))
+        (should failed))
+      (should (equal before (etaf-help-test-text)))
+      (let ((closed (etaf-help-close runtime)))
+        (should-not closed)))
+    (let ((etaf-help-view-function nil))
+      (etaf-help runtime)
+      (should (string-match-p "关闭帮助" (etaf-help-test-text)))
+      (etaf-help-close runtime)
+      (should (eq (etaf-focused-host-ref runtime) 'entry)))))
+
+(ert-deftest etaf-help-isolates-mounts-and-releases-on-unmount ()
+  "Closing or unmounting one application does not retire another's help."
+  (etaf-test-with-mount (first (etaf-view (text "First")))
+    (etaf-help first)
+    (etaf-test-with-mount (second (etaf-view (text "Second")))
+      (etaf-help second)
+      (etaf-unmount first)
+      (should (string-match-p "关闭帮助" (etaf-help-test-text)))
+      (etaf-help-close second)
+      (should (equal (string-trim (etaf-help-test-text)) "Second")))
+    (etaf-mount (current-buffer) (etaf-view (text "Remounted"))
+                '(:viewport-width 800 :viewport-height 40))
+    (let ((runtime (etaf-runtime-for-buffer (current-buffer))))
+      (etaf-help runtime)
+      (should (string-match-p "关闭帮助" (etaf-help-test-text)))
+      (etaf-help-close runtime)
+      (should (equal (string-trim (etaf-help-test-text)) "Remounted")))))
+
+(provide 'etaf-help-tests)

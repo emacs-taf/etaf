@@ -47,10 +47,21 @@ the Component tree or take ownership of the producer's pixel content.
 | Ebox node | Ebox | Computed style, geometry, focus/input facts, composed lines |
 | Data Controller | `etaf-data` | Query, page, items, status, errors, reconciliation state |
 
-Only Host segments own Ebox nodes.  Fragment, expression, branch, list, slot,
-Component and root segments group children or own effects that maintain their
-children.  This keeps the Runtime tree retained without introducing invisible
-Ebox wrappers.
+Host segments own authored Ebox nodes. Fragment, expression, branch, list, slot,
+Component and root segments group children or own effects that maintain them.
+A Runtime canvas wrapper is needed only for multiple roots or a transient
+surface; ordinary Component structure does not add invisible Ebox wrappers.
+
+Keyboard help is a transient segment owned by the existing Runtime, with the
+same build, patch, disposal and Component lifecycle as application content.
+It inherits the opening Host's Context and shares one viewport-sized canvas
+with the original nodes, including short or text-only application roots.
+Opening and closing never recreate application Components or their state;
+node scroll offsets survive the canvas mount change. Root replacement keeps
+surface nodes in the same child-list update, retaining their native input
+projection. Unmount releases the application and transient segment together.
+The effective key snapshot and return location belong to core; an optional
+catalog renderer returns a View rather than another buffer or Runtime.
 
 ## 3. View compilation and retained segments
 
@@ -261,9 +272,9 @@ recreate the View tree to resize the buffer.
 
 ## 10. Invariants
 
-1. **Single retained tree.**  A mounted Runtime has one live segment tree and one
-   retained Ebox node tree.  Host/node maps are indexes into that tree, not a
-   second authority.
+1. **Single retained ownership.** A mounted Runtime owns the application
+   segments and at most one transient help segment over one retained Ebox node
+   tree. Host/node maps index those segments, not a second authority.
 2. **One visible write boundary.**  A Runtime commit performs at most one Ebox
    flush, and that flush writes changed buffer regions once.  A failed pre or
    render effect discards the whole transaction before any buffer write.

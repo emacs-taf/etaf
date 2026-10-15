@@ -21,24 +21,28 @@
       command)))
 
 (ert-deftest etaf-keys-help-lists-effective-bindings ()
-  "`?' opens read-only help listing keys, framework entries and controls."
+  "`?' keeps read-only key help inside the application's window and buffer."
   (etaf-test-with-mount (runtime (etaf-view
-                                  (column :keys (list (list "r" (lambda () (interactive)) "Reload"))
+                                  (column :height '(lh 40)
+                                          :keys (list (list "r" (lambda () (interactive)) "Reload"))
                                           (box :ref 'save :tab-index 0 :aria-label "Save file" "S")
                                           (box :ref 'plain :tab-index 0 "Plain control"))))
-    (should (eq (key-binding (kbd "?") t) 'etaf-help))
-    (etaf-help runtime)
-    (unwind-protect
-        (with-current-buffer (get-buffer "*ETAF Help*")
-          (should buffer-read-only)
-          (let ((text (buffer-substring-no-properties (point-min) (point-max))))
-            (should (string-match-p "Reload" text))
-            (should (string-match-p "M-g" text))
-            (should (string-match-p "Save file" text))
-            (should (string-match-p "Plain control" text))
-            (should (string-match-p "etaf-palette" text))))
-      (when-let* ((buffer (get-buffer "*ETAF Help*")))
-        (kill-buffer buffer)))))
+    (let ((buffers (buffer-list)) (windows (window-list))
+          (before (buffer-substring-no-properties (point-min) (point-max))))
+      (should (eq (key-binding (kbd "?") t) 'etaf-help))
+      (etaf-focus runtime 'save)
+      (let ((shown (etaf-help runtime))
+            (data (etaf-help-data runtime))
+            (text (buffer-substring-no-properties (point-min) (point-max))))
+        (should (eq shown (current-buffer)))
+        (should (equal buffers (buffer-list)))
+        (should (equal windows (window-list)))
+        (should (string-match-p "Reload" text))
+        (should (string-match-p "M-g" text))
+        (should (equal (plist-get data :controls) '("Save file" "Plain control"))))
+      (etaf-help-close runtime)
+      (should (eq (etaf-focused-host-ref runtime) 'save))
+      (should (equal before (buffer-substring-no-properties (point-min) (point-max)))))))
 
 (ert-deftest etaf-keys-resolve-from-focus-outward-and-nearest-wins ()
   "A Host's :keys work inside it; the nearest Host binding a key wins."
@@ -319,13 +323,15 @@
   "With Vim enabled, `:keys' and region hints using h/j/k/l are render errors."
   (let ((etaf-direction-scheme 'vim))
     (should-error (etaf-test-with-mount
-                       (_runtime (etaf-node 'box
-                                            (list :keys (list (list "l" #'ignore)))
-                                            (list "x"))))
+                       (runtime (etaf-node 'box
+                                           (list :keys (list (list "l" #'ignore)))
+                                           (list "x")))
+                     runtime)
                   :type 'etaf-renderer-error)
     (should-error (etaf-test-with-mount
-                       (_runtime (etaf-node 'box (list :region '(:id r :key "j"))
-                                            (list "x"))))
+                       (runtime (etaf-node 'box (list :region '(:id r :key "j"))
+                                           (list "x")))
+                     runtime)
                   :type 'etaf-renderer-error)))
 
 (ert-deftest etaf-keys-reject-invalid-bindings ()
@@ -340,7 +346,8 @@
                        (list :keys (list (list "n" #'ignore 'label)))
                        (list :focus-group 'diagonal)
                        (list :focus-scope 'global)))
-    (should-error (etaf-test-with-mount (_runtime (etaf-node 'box props (list "x"))))
+    (should-error (etaf-test-with-mount (runtime (etaf-node 'box props (list "x")))
+                    runtime)
                   :type 'etaf-renderer-error)))
 
 (ert-deftest etaf-keys-keymap-reserved-events-scan ()

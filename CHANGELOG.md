@@ -4,6 +4,12 @@
 
 ### Added
 
+- `etaf-help-data` exposes a defensive snapshot of effective scoped keys,
+  application-local keymaps, regions and readable controls. Host `:help`
+  supplies non-binding notes. `etaf-help-close` and
+  `etaf-help-view-function` let a catalog provide a modal View without
+  creating another buffer or application Runtime.
+
 - `etaf-video` sources accept a separate `:audio-url` plus `:headers` and
   `:proxy` for authenticated HTTP(S) playback.  The video decoder and the
   audio sidecar receive the same network options, `etaf-video-source-info`
@@ -46,10 +52,13 @@
   point, once a command moves point out of the focused Host) and
   run their commands exactly like keymap bindings, `:focus-group` to make a list, toolbar or grid
   one Tab stop navigated with arrows, `:focus-scope 'modal` to confine keys
-  and focus to an open dialog, `:on-dismiss` for Escape and `C-g`, and
+  and focus to an open dialog, `:on-dismiss` for Escape, and
   `:on-focus-enter`, which runs when focus moves into a Host.
-- `?` opens `etaf-palette`, which runs labelled keys and presses any
-  focusable control by name.
+- `?` opens read-only help inside the application instead of splitting an
+  Emacs window or displaying a separate help buffer. Escape or a backdrop
+  click closes it and restores the caller; repeated openings do not stack.
+  The optional etaf-ui package supplies search and responsive key cards.
+  `M-x etaf-palette` remains the separate command execution entry.
 - `etaf-draggable` and `etaf-resizable` (and their controlled variants) move
   with `M-<arrow>` and resize with `M-S-<arrow>`; focused separators and
   sliders step with arrows; `etaf-drag-step` drives any `:on-drag` from keys.

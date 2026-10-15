@@ -21,6 +21,7 @@ grouped by the theme you are chasing:
 | Time-driven values, transitions and frame sequences | `etaf-animation` |
 | Events, activation, focus, input identity | `etaf-events` |
 | Scoped Host keys, keyboard drags, command palette | `etaf-keys` |
+| Effective key snapshots and in-buffer modal help | `etaf-help` |
 | Named regions: declarations, entry resolution and adjacency | `etaf-regions` |
 | Behaviors and named Actions | `etaf-behavior`, `etaf-controlled-behavior`, `etaf-actions` |
 | Inherited Context and Theme resolution | `etaf-context` |

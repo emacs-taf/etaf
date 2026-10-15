@@ -14,6 +14,51 @@
   "support": [],
   "cases": [
     {
+      "name": "etaf-help-preserves-provider-observation-across-canvas-changes",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "Opening and closing help retain real engine flush reports inside the Runtime's observed operation, including canvas replacement."
+    },
+    {
+      "name": "etaf-help-renders-without-a-known-window-height",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "An undisplayed application with no definite canvas height still opens a readable modal and restores its original extent."
+    },
+    {
+      "name": "etaf-help-snapshot-respects-scope-shadowing-and-copy-ownership",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "Effective scoped keys hide shadowed bindings and defensive snapshots detach notes, strings and entries."
+    },
+    {
+      "name": "etaf-help-tracks-effective-local-maps-between-openings",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "Effective application keymaps supplement Host keys, stay stable while help is open and refresh on reopening."
+    },
+    {
+      "name": "etaf-help-covers-short-and-text-roots-without-changing-them",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "Short, text-only and multi-root applications show in-place help without creating buffers or changing their restored extent."
+    },
+    {
+      "name": "etaf-help-retains-scrolling-and-surviving-focus",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "Help preserves retained application geometry, scroll offsets and surviving focus."
+    },
+    {
+      "name": "etaf-help-survives-root-replacement-and-removed-opener",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "Background root replacement keeps the opening snapshot and permits closing after its original focus target disappears."
+    },
+    {
+      "name": "etaf-help-render-failure-leaves-application-usable",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "A failing custom help renderer leaves no partial modal and permits a successful retry."
+    },
+    {
+      "name": "etaf-help-isolates-mounts-and-releases-on-unmount",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "Independent help mounts do not share lifecycle state and unmount releases the old snapshot before remounting."
+    },
+    {
       "name": "etaf-native-key-commands-do-not-retain-disposed-owners",
       "file": "tests/etaf-key-lifetime-tests.el",
       "purpose": "Native commands remain usable while mounted but retained history cannot keep disposed application resources alive."
