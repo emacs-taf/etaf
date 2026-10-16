@@ -116,6 +116,51 @@
       (should found)
       (should (eq (etaf-focused-host-ref runtime) 'field)))))
 
+(ert-deftest etaf-keys-focus-leave-precedes-entry-and-excludes-shared-ancestors ()
+  "Focus observers leave inner-to-outer, then enter; a shared parent stays put."
+  (let (log)
+    (etaf-test-with-mount
+        (runtime
+         (etaf-view
+          (column
+           (box :ref 'outside :tab-index 0
+                :on-focus-enter (lambda () (push 'enter-outside log)) "outside")
+           (column :ref 'group
+                   :on-focus-enter (lambda () (push 'enter-group log))
+                   :on-focus-leave (lambda () (push 'leave-group log))
+                   (box :ref 'a :tab-index 0
+                        :on-focus-leave
+                        (lambda ()
+                          (push (list 'leave-a (etaf-focused-host-ref)) log)) "a")
+                   (box :ref 'b :tab-index 0
+                        :on-focus-enter (lambda () (push 'enter-b log))
+                        :on-focus-leave (lambda () (push 'leave-b log)) "b")))))
+      (etaf-focus runtime 'a)
+      (etaf-focus-next runtime)
+      (etaf-focus runtime 'b)
+      (etaf-focus runtime 'outside)
+      (should (equal (nreverse log)
+                     '(enter-group (leave-a b) enter-b leave-b leave-group enter-outside))))))
+
+(ert-deftest etaf-keys-focus-leave-redirection-stops-stale-entry ()
+  "A leave handler may redirect focus without entering the superseded target."
+  (let (log)
+    (etaf-test-with-mount
+        (runtime
+         (etaf-view
+          (column
+           (box :ref 'a :tab-index 0
+                :on-focus-leave (lambda () (etaf-focus nil 'outside)) "a")
+           (box :ref 'b :tab-index 0
+                :on-focus-enter (lambda () (push 'b log)) "b")
+           (box :ref 'outside :tab-index 0
+                :on-focus-enter (lambda () (push 'outside log)) "outside"))))
+      (etaf-focus runtime 'a)
+      (etaf-focus runtime 'b)
+      (let ((focus (etaf-focused-host-ref runtime)))
+        (should (eq focus 'outside)))
+      (should (equal log '(outside))))))
+
 (ert-deftest etaf-keys-focus-enter-runs-when-focus-moves-into-a-host ()
   "`:on-focus-enter' runs on each Host focus enters, not on moves inside it."
   (let (log)

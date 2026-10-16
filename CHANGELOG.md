@@ -10,6 +10,10 @@
 
 ### Added
 
+- Host `:on-focus-leave` clears focus-dependent presentation when focus moves
+  outside a subtree. Leave callbacks precede enter callbacks in one reactive
+  batch, skip shared ancestors and observe the engine's accepted focus.
+
 - Host `:key-scope 'local` isolates a nested application's commands,
   navigation, dismissal, regions and help without creating a modal dialog.
   Unbound letters cannot invoke enclosing Host or buffer actions. Explicit

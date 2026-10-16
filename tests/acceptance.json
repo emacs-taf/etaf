@@ -14,6 +14,16 @@
   "support": [],
   "cases": [
     {
+      "name": "etaf-keys-focus-leave-redirection-stops-stale-entry",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "A focus-leave callback can redirect focus without notifying the superseded destination."
+    },
+    {
+      "name": "etaf-keys-focus-leave-precedes-entry-and-excludes-shared-ancestors",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "Focus movement notifies exited Hosts before entered Hosts, skips shared ancestors and exposes the accepted destination to callbacks."
+    },
+    {
       "name": "etaf-key-scope-native-editing-keeps-draft-before-dismissal",
       "file": "tests/etaf-key-scope-tests.el",
       "purpose": "Native editing consumes the first Escape and preserves the draft before a subsequent Escape dismisses the local layer."

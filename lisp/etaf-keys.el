@@ -201,7 +201,7 @@ one key cannot both run a command and start a longer sequence."
       (etaf--keys-define map event))
     (setf (etaf-runtime-keymap runtime) map)
     (with-current-buffer (etaf-runtime-buffer runtime)
-      (add-hook 'ebox-focus-change-functions #'etaf--keys-focus-enter nil t)
+      (add-hook 'ebox-focus-change-functions #'etaf--keys-focus-change nil t)
       (etaf--regions-install runtime)
       (setq etaf--keys-alist (list (cons t map)))
       ;; Host keys are the most specific bindings, so they precede any
@@ -216,24 +216,31 @@ one key cannot both run a command and start a longer sequence."
   (let ((buffer (etaf-runtime-buffer runtime)))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
-        (remove-hook 'ebox-focus-change-functions #'etaf--keys-focus-enter t)
+        (remove-hook 'ebox-focus-change-functions #'etaf--keys-focus-change t)
         (etaf--regions-uninstall runtime)
         (kill-local-variable 'etaf--keys-alist)
         (kill-local-variable 'etaf--help-state)))))
 
-(defun etaf--keys-focus-enter (previous node)
-  "Dispatch `:on-focus-enter' on the Hosts focus entered moving PREVIOUS to NODE.
-Each Host containing NODE but not PREVIOUS is entered, nearest first."
-  (when-let* ((runtime (etaf-runtime-for-buffer (current-buffer)))
-              (ref (and node (etaf-runtime-node-host-ref runtime node))))
+(defun etaf--keys-focus-change (previous node)
+  "Notify Hosts left and entered moving PREVIOUS to NODE, nearest first.
+Shared ancestors receive neither event.  Both phases share one reactive batch;
+callbacks observe Ebox's already accepted focus, never a second focus state."
+  (when-let* ((runtime (etaf-runtime-for-buffer (current-buffer))))
     (let* ((old (and previous (etaf-runtime-node-host-ref runtime previous)))
-           (left (and old (cons old (etaf-runtime-host-ancestor-refs runtime old)))))
-      (dolist (each (cons ref (etaf-runtime-host-ancestor-refs runtime ref)))
-        (unless (member each left)
-          (let ((props (etaf--keys-props runtime each)))
-            (when (and (functionp (plist-get props :on-focus-enter))
-                       (not (plist-get props :disabled)))
-              (etaf-dispatch-event runtime each 'focus-enter))))))))
+           (ref (and node (etaf-runtime-node-host-ref runtime node)))
+           (left (and old (cons old (etaf-runtime-host-ancestor-refs runtime old))))
+           (entered (and ref (cons ref (etaf-runtime-host-ancestor-refs runtime ref)))))
+      (etaf-batch
+        (dolist (phase (list (list 'focus-leave :on-focus-leave left entered)
+                            (list 'focus-enter :on-focus-enter entered left)))
+          (dolist (each (nth 2 phase))
+            (when (and (etaf-runtime-mounted-p runtime)
+                       (eq node (ebox-focused-node (etaf-runtime-buffer runtime)))
+                       (not (member each (nth 3 phase))))
+              (let ((props (etaf--keys-props runtime each)))
+                (when (and (functionp (plist-get props (nth 1 phase)))
+                           (not (plist-get props :disabled)))
+                  (etaf-dispatch-event runtime each (car phase)))))))))))
 
 (defun etaf--keys-register (runtime keys)
   "Add the events of a Host's KEYS to RUNTIME's scoped key map."

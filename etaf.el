@@ -672,9 +672,14 @@
 ;; :on-* names require explicit dispatch and do not imply native event support.
 ;; `:on-press-capture' is the one explicit ancestor hook: after a target press
 ;; callback succeeds, committed ancestor capture handlers run nearest-first.
-;; Ordinary :on-press callbacks never bubble implicitly.  `:on-focus-enter'
-;; runs with no arguments on every enabled Host that focus moves into from
-;; outside it, nearest first, whether by Tab, arrows, a press or `etaf-focus'.
+;; Ordinary :on-press callbacks never bubble implicitly. `:on-focus-leave'
+;; runs on enabled Hosts focus moves out of, then `:on-focus-enter' on those
+;; it moves into, nearest first in each phase. Shared ancestors are skipped.
+;; Both take no arguments and share one reactive batch; they observe the
+;; already accepted focus, whether moved by Tab, arrows, a press or `etaf-focus'.
+;; Redirecting focus stops notifications for the superseded destination.
+;; These are movement notifications, not teardown hooks; removed/unmounted
+;; Hosts use Component lifecycle cleanup instead.
 ;;
 ;;   When PAYLOAD-P is non-nil, pass PAYLOAD as the callback's only argument;
 ;; otherwise call the local callback with no arguments.
