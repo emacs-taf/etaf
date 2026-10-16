@@ -10,6 +10,12 @@
 
 ### Added
 
+- Host `:key-scope 'local` isolates a nested application's commands,
+  navigation, dismissal, regions and help without creating a modal dialog.
+  Unbound letters cannot invoke enclosing Host or buffer actions. Explicit
+  focus changes remain available, and region entry memory restores the
+  previous control when returning.
+
 - Host `:on-help-open` prepares the nearest enabled application scope before
   any shared help entry opens. Applications can pause ongoing activity without
   overriding `?`; dismissing help does not reverse that policy.

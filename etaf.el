@@ -783,8 +783,8 @@
 ;;;###autoload (autoload 'etaf-palette "etaf" nil t)
 ;; Choose and run a command or control of mounted RUNTIME by name.
 ;; Candidates are the labelled :keys the current focus reaches, Close when an
-;; :on-dismiss Host is in scope, then every focusable control in the modal
-;; scope, named by :aria-label or its painted text.  Choosing a key runs its
+;; :on-dismiss Host is in scope, then every focusable control in the current
+;; keyboard scope, named by :aria-label or its painted text.  Choosing a key runs its
 ;; command; choosing a control focuses it and dispatches its press.  The
 ;; palette is an execution surface reached from `M-x'; `?' opens `etaf-help'
 ;; instead so that viewing never runs anything.  An empty palette signals
@@ -1049,16 +1049,31 @@
 ;; that returns `handled', `hold' or `release'.  `handled' and `hold' stop
 ;; there; `release' continues to the separator or slider step, the movement
 ;; inside the surrounding region and the adjacent-region boundary.  Tab and
-;; S-Tab move between the focus stops of the modal scope.  Arrow keys, Tab,
+;; S-Tab move between the focus stops of the current keyboard scope.  Arrow keys, Tab,
 ;; `?', Escape, `M-g' and `C-g' are framework-reserved; express direction
 ;; behavior through `:on-direction' instead of binding them.
+;; `:key-scope local' (or nil) establishes a non-modal keyboard boundary.
+;; While focus or the point fallback is inside it, the nearest local or modal
+;; boundary contains :keys, :on-dismiss, :on-direction, :on-help-open, Tab,
+;; direction/edge navigation, region selection, help and palette controls.
+;; Unbound printing keys are ignored rather than invoking an enclosing Host
+;; or buffer action; an unhandled Escape is ignored too.  Native editing
+;; still owns its keys.  A focused local subtree remains authoritative even
+;; when point moves outside it; only a real focus change leaves that layer.
+;; Pointer and explicit focus/region jumps can leave a local boundary;
+;; no second focus or application-mode state is created.
+;; Combine a local boundary's :on-dismiss with an explicit focus destination
+;; to return to its host without disposing the application.  A :region on
+;; the same Host restores its last eligible control on reentry.
 ;; `:focus-scope modal' confines Tab, arrows and :keys to an open Host such as
 ;; a dialog; outer keys are unreachable while it is visible, and printing
 ;; keys nothing in it binds are ignored instead of reaching the buffer's
 ;; keymaps.  `?' opens read-only `etaf-help'; the nearest :on-help-open callback
 ;; can prepare the application before a new opening.  `:on-dismiss'
 ;; runs for Escape when no nearer Host binds it; the key layer searches
-;; outward for the nearest enabled dismiss handler within the modal scope.
+;; outward for the nearest enabled dismiss handler within the keyboard scope.
+;; One press runs one handler regardless of its return value.  An inner
+;; temporary state supplies a handler only while that state needs dismissal.
 ;; `:focus-group' vertical, horizontal or grid makes its focusable descendants
 ;; one Tab stop; arrows and
 ;; C-n/C-p/C-b/C-f move within it and then spatially to the nearest stop, and

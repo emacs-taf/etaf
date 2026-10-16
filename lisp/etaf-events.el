@@ -35,6 +35,7 @@
                   "etaf-runtime" (runtime kind label function))
 (declare-function etaf-runtime-host-node "etaf-runtime" (runtime ref))
 (declare-function etaf-runtime-node-host-ref "etaf-runtime" (runtime node))
+(declare-function etaf--keys-scope-root "etaf-keys" (runtime &optional from))
 
 (define-error 'etaf-event-error "Invalid ETAF Event")
 
@@ -389,15 +390,25 @@ navigation; a negative or absent index permits explicit focus."
 
 ;;;###autoload
 (defun etaf-focus-next (&optional runtime)
-  "Focus the next visible Host in mounted RUNTIME."
+  "Focus the next visible Host in mounted RUNTIME's keyboard scope."
   (interactive)
-  (ebox-focus-next 1 t (etaf-runtime-buffer (etaf-runtime-require-mounted runtime))))
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (let* ((buffer (etaf-runtime-buffer runtime))
+         (root (etaf--keys-scope-root runtime)))
+    (if (eq root (ebox-focus-scope buffer))
+        (ebox-focus-next 1 t buffer)
+      (ebox-focus-within root 1 t buffer))))
 
 ;;;###autoload
 (defun etaf-focus-previous (&optional runtime)
-  "Focus the previous visible Host in mounted RUNTIME."
+  "Focus the previous visible Host in mounted RUNTIME's keyboard scope."
   (interactive)
-  (ebox-focus-previous 1 t (etaf-runtime-buffer (etaf-runtime-require-mounted runtime))))
+  (setq runtime (etaf-runtime-require-mounted runtime))
+  (let* ((buffer (etaf-runtime-buffer runtime))
+         (root (etaf--keys-scope-root runtime)))
+    (if (eq root (ebox-focus-scope buffer))
+        (ebox-focus-previous 1 t buffer)
+      (ebox-focus-within root -1 t buffer))))
 
 ;;;###autoload
 (defun etaf-focus-within (runtime host-ref &optional count)

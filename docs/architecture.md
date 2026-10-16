@@ -213,7 +213,8 @@ one emulation keymap holding every event any committed Host lists in `:keys`;
 each binding is a menu-item filter that resolves at key time.  Resolution
 starts at Ebox focus (or point), moves to the innermost visible
 `:focus-scope modal` node when the start lies outside it, then walks committed
-Host ancestors nearest first and stops after the first modal Host.  The first
+Host ancestors nearest first and stops after the first modal or
+`:key-scope local` Host.  The first
 enabled entry wins; otherwise framework defaults apply (Escape to the
 nearest `:on-dismiss`, `?` to read-only help, arrows to a focused separator or
 slider's `:on-drag`), and anything else falls through.  This walk is the only
@@ -228,6 +229,15 @@ focus those commands move.  Ebox owns
 focus groups, modal confinement and spatial arrow navigation, so the key layer
 never moves focus itself.  Keyboard drags reuse the pointer `:on-drag` path
 through `etaf-drag-step`, so Behaviors keep one gesture implementation.
+
+A local keyboard boundary is derived from the same focus/point ancestry as
+key dispatch, not a parallel application-mode state. It bounds dismissal,
+direction handlers, region adjacency, help and palette controls as well as
+commands. Tab, direction aliases and edge keys delegate to Ebox navigation
+with that subtree root; no second ordering or focus algorithm is maintained.
+Unbound printing keys and unhandled Escape stop at the boundary. Native
+editing keeps its bindings, and pointer or explicit focus/region jumps can
+leave a local boundary. A visible modal still bounds entry from outside it.
 
 Region navigation adds one layer above the scoped keys.  `etaf-regions` reads
 the committed `:region` declarations (stable id, label, hint key, default

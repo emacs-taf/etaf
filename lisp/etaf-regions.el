@@ -39,6 +39,7 @@
   "Arrow events mapped to region direction symbols.")
 
 (defvar etaf-direction-scheme)
+(declare-function etaf--keys-scope-root "etaf-keys" (runtime &optional from))
 
 (defconst etaf--regions-vim-direction-events
   '((?h . left) (?j . down) (?k . up) (?l . right))
@@ -162,10 +163,9 @@ nearest enclosing region reference (nil at the top level)."
                       (gethash ref declarations)))
             (nreverse refs))))
 
-(defun etaf--regions-in-scope (runtime)
-  "Return RUNTIME's regions inside the current focus scope, document order."
-  (let* ((buffer (etaf-runtime-buffer runtime))
-         (scope (ebox-focus-scope buffer))
+(defun etaf--regions-in-scope (runtime &optional from)
+  "Return RUNTIME's regions within FROM's or the current keyboard scope."
+  (let* ((scope (etaf--keys-scope-root runtime from))
          (regions (etaf--regions-collect runtime)))
     (if (null scope)
         regions
@@ -232,12 +232,17 @@ A nil REGION-REF only requires the committed, enabled and painted checks."
              (or (null region-ref)
                  (etaf--regions-contains-p runtime region-ref ref)))))))
 
+(defun etaf--regions-containing (runtime regions ref)
+  "Return the nearest region in REGIONS containing REF in RUNTIME."
+  (when ref
+    (cl-loop for ancestor in (cons ref (etaf-runtime-host-ancestor-refs runtime ref))
+             thereis (cl-find ancestor regions
+                              :key (lambda (region) (plist-get region :ref))
+                              :test #'equal))))
+
 (defun etaf--regions-current (runtime regions)
-  "Return the region of REGIONS containing the current focus, or nil."
-  (when-let* ((ref (etaf-focused-host-ref runtime)))
-    (cl-find-if (lambda (region)
-                  (etaf--regions-contains-p runtime (plist-get region :ref) ref))
-                regions)))
+  "Return the nearest region of REGIONS containing the current focus."
+  (etaf--regions-containing runtime regions (etaf-focused-host-ref runtime)))
 
 (defun etaf--regions-memory-table (runtime &optional create)
   "Return RUNTIME's region entry memory, creating it when CREATE is non-nil."

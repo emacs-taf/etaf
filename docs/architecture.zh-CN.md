@@ -115,7 +115,9 @@ Ebox 负责原生定位、point 保持、焦点顺序、drag 跟踪和输入会�
 
 `ebox-input-begin` 在 Ebox 的隐藏编辑 buffer 中编辑 text Host 的值，使 Emacs 持有按键、point、selection 与 undo，同时 Host 保持自身布局。会话期间发布照常进行：组件在 `:on-change` 中把每个值同步到 ref，把同一个值发布回 Host 不产生任何效果。
 
-键盘输入由 `etaf-keys` 中的作用域按键层处理。每个 Runtime buffer 持有一个 emulation keymap，包含所有已提交 Host 在 `:keys` 中列出的事件；每个绑定是按键时才解析的 menu-item filter。解析从 Ebox 焦点（或 point）开始；起点不在最内层可见的 `:focus-scope modal` 节点内时改从该节点开始，然后由近及远遍历已提交的 Host 祖先，并在第一个 modal Host 之后停止。第一个启用的条目胜出；否则应用框架默认值（Escape 交给最近的 `:on-dismiss`，`?` 打开只读帮助，方向键交给已聚焦 separator 或 slider 的 `:on-drag`），其余按键继续落到其他 keymap。这一遍历是唯一的向外按键传播；普通回调仍然不冒泡。方向键不再落到 Ebox：`etaf-direction` 先运行最近的 Host `:on-direction` 处理器，再步进已聚焦的 separator 或 slider，然后把 Ebox 的空间移动限制在当前区域，到边界时进入相邻区域的入口；Tab 分发给 `etaf-focus-next`／`etaf-focus-previous`。`etaf-set-direction-scheme` 在检查 Host 声明与区域提示的冲突后切换方向键与 Vim 映射。这些命令移动的焦点仍由 Ebox 拥有。焦点组、modal 限制和空间方向导航由 Ebox 负责，按键层本身从不移动焦点。键盘拖拽通过 `etaf-drag-step` 复用指针 `:on-drag` 路径，使 Behavior 只保留一种手势实现。
+键盘输入由 `etaf-keys` 中的作用域按键层处理。每个 Runtime buffer 持有一个 emulation keymap，包含所有已提交 Host 在 `:keys` 中列出的事件；每个绑定是按键时才解析的 menu-item filter。解析从 Ebox 焦点（或 point）开始；起点不在最内层可见的 `:focus-scope modal` 节点内时改从该节点开始，然后由近及远遍历已提交的 Host 祖先，并在第一个 modal 或 `:key-scope local` Host 之后停止。第一个启用的条目胜出；否则应用框架默认值（Escape 交给最近的 `:on-dismiss`，`?` 打开只读帮助，方向键交给已聚焦 separator 或 slider 的 `:on-drag`），其余按键继续落到其他 keymap。这一遍历是唯一的向外按键传播；普通回调仍然不冒泡。方向键不再落到 Ebox：`etaf-direction` 先运行最近的 Host `:on-direction` 处理器，再步进已聚焦的 separator 或 slider，然后把 Ebox 的空间移动限制在当前区域，到边界时进入相邻区域的入口；Tab 分发给 `etaf-focus-next`／`etaf-focus-previous`。`etaf-set-direction-scheme` 在检查 Host 声明与区域提示的冲突后切换方向键与 Vim 映射。这些命令移动的焦点仍由 Ebox 拥有。焦点组、modal 限制和空间方向导航由 Ebox 负责，按键层本身从不移动焦点。键盘拖拽通过 `etaf-drag-step` 复用指针 `:on-drag` 路径，使 Behavior 只保留一种手势实现。
+
+局部键盘边界从同一焦点／point 祖先链派生，不维护另一份应用模式状态。它同时限制关闭、方向处理器、区域邻接、帮助和命令面板控件。Tab、方向别名与首末键把该子树根交给 Ebox 导航，不复制排序或焦点算法。未绑定的打印键和无人处理的 Escape 在边界处停止。原生编辑保留自己的绑定，指针及显式焦点／区域跳转仍可离开局部边界。可见模态范围仍限制来自其外部的入口。
 
 区域导航是在作用域按键之上加的一层。`etaf-regions` 读取已提交的 `:region` 声明（稳定 id、名称、提示键、默认入口和声明的邻接关系），推导它们的 Host 祖先，记住每个区域最后被接受的焦点位置；没有声明的邻接关系时，用已提交几何解算方向邻接。`etaf-region-select`（Runtime buffer 中的 `M-g`）读取选择，`etaf-region-focus` 为应用键执行同样的跳转；焦点仍由 Ebox 拥有。
 

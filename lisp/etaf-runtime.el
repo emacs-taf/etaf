@@ -472,6 +472,10 @@ QUIET, each later run records an update of CTX's Component instance."
              (unless (memq value '(nil modal))
                (signal 'etaf-renderer-error
                        (list ":focus-scope must be `modal' or nil"))))
+            ((eq property :key-scope)
+             (unless (memq value '(nil local))
+               (signal 'etaf-renderer-error
+                       (list ":key-scope must be `local' or nil"))))
             ((eq property :keys)
              (etaf--keys-validate value))
             ((eq property :help)

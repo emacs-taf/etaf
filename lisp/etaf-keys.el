@@ -13,14 +13,14 @@
 ;;    visible `:focus-scope modal' Host does not contain it, the scope starts
 ;;    at that modal Host instead.
 ;; 2. The registered Host and its ancestors are searched nearest first; the
-;;    search stops after the first `:focus-scope modal' Host, so keys outside
-;;    an open dialog are unreachable.  A disabled Host contributes no keys.
+;;    search stops after the first `:focus-scope modal' or `:key-scope local'
+;;    Host.  A disabled Host contributes no keys but still bounds the search.
 ;; 3. The first entry matching the key wins.  Without one, the framework
 ;;    defaults apply: `M-g' opens region selection, Escape dispatches the
 ;;    nearest `:on-dismiss', `?' opens `etaf-help', Tab moves one tab stop,
 ;;    and an arrow key runs `etaf-direction' (the nearest `:on-direction'
 ;;    handler, a focused separator or slider step, then movement inside the
-;;    surrounding region and its adjacent regions).  An open modal scope
+;;    surrounding region and its adjacent regions).  A local or modal scope
 ;;    ignores unbound printing keys so they never reach the application
 ;;    behind it.
 ;; 4. Otherwise the key falls through to the buffer's other keymaps.  Keys
@@ -58,6 +58,16 @@ C-g is never bound: it keeps Emacs's native keyboard-quit semantics.")
 (defconst etaf--keys-direction-events
   '(([left] . left) ([right] . right) ([up] . up) ([down] . down))
   "Arrow events mapped to direction symbols for `etaf-direction'.")
+
+(defconst etaf--keys-control-direction-events
+  '(([?\C-b] . left) ([?\C-f] . right) ([?\C-p] . up) ([?\C-n] . down))
+  "Native direction aliases constrained inside a keyboard boundary.
+Host bindings still take precedence over these non-reserved aliases.")
+
+(defconst etaf--keys-edge-events
+  '(([home] . nil) ([end] . t) ([?\M-<] . nil) ([?\M->] . t))
+  "Native edge aliases constrained inside a keyboard boundary.
+A cdr of t selects the last stop; nil selects the first.")
 
 (defconst etaf--keys-vim-direction-events
   '(([?\h] . left) ([?\j] . down) ([?\k] . up) ([?\l] . right))
@@ -113,7 +123,7 @@ conflicting Runtime is reported instead of shadowed.")
 
 (defconst etaf--keys-printing-events
   (mapcar #'vector (number-sequence ?\s ?~))
-  "Printing events an open modal scope swallows when nothing binds them.")
+  "Printing events a local or modal scope swallows when nothing binds them.")
 
 (defun etaf--keys-event (key)
   "Return the event vector of KEY, a `kbd' string or a key vector."
@@ -185,6 +195,7 @@ one key cannot both run a command and start a longer sequence."
     (dolist (event (append etaf--keys-dismiss-events
                            (list [??] etaf--keys-selector-event)
                            (mapcar #'car etaf--keys-step-events)
+                           (mapcar #'car etaf--keys-edge-events)
                            etaf--keys-tab-events
                            etaf--keys-printing-events))
       (etaf--keys-define map event))
@@ -235,18 +246,33 @@ Each Host containing NODE but not PREVIOUS is entered, nearest first."
   (let ((seg (etaf--runtime-host-seg runtime ref)))
     (and seg (etaf--host-props (etaf--seg-data seg)))))
 
-(defun etaf--keys-chain (runtime)
-  "Return RUNTIME's key scope: Host references from the focus outward.
-Focus answers while point lies inside it; once a command moves point
-elsewhere, the node at point answers instead."
+(defun etaf--keys-boundary-p (runtime ref)
+  "Return non-nil when REF bounds keyboard operation in RUNTIME."
+  (let ((props (etaf--keys-props runtime ref)))
+    (or (eq (plist-get props :focus-scope) 'modal)
+        (eq (plist-get props :key-scope) 'local))))
+
+(defun etaf--keys-chain (runtime &optional from)
+  "Return RUNTIME's Host references from FROM or its key entry outward.
+Local boundaries follow real focus even if redisplay moves point elsewhere.
+Outside one, focus answers while point lies inside it, else point answers.
+FROM explicitly chooses a Host while retaining modal and local boundaries."
   (let* ((buffer (etaf-runtime-buffer runtime))
          (scope (ebox-focus-scope buffer))
          (focus (ebox-focused-node buffer))
+         (focus-ref (and focus (etaf-runtime-node-host-ref runtime focus)))
+         (local (and focus-ref
+                     (cl-some (lambda (ref)
+                                (eq (plist-get (etaf--keys-props runtime ref) :key-scope)
+                                    'local))
+                              (cons focus-ref
+                                    (etaf-runtime-host-ancestor-refs runtime focus-ref)))))
          (here (ebox-node-at (point) buffer))
-         (node (if (and focus (or (null here) (eq here focus)
-                                  (ebox-node-ancestor-p focus here)))
-                   focus
-                 (or here focus)))
+         (node (or (and from (etaf-runtime-host-node runtime from))
+                   (if (and focus (or local (null here) (eq here focus)
+                                      (ebox-node-ancestor-p focus here)))
+                       focus
+                     (or here focus))))
          (node (if (and node (or (eq node scope) (ebox-node-ancestor-p scope node)))
                    node
                  scope))
@@ -256,9 +282,26 @@ elsewhere, the node at point answers instead."
       (catch 'done
         (dolist (each (cons ref (etaf-runtime-host-ancestor-refs runtime ref)))
           (push each chain)
-          (when (eq (plist-get (etaf--keys-props runtime each) :focus-scope) 'modal)
+          (when (etaf--keys-boundary-p runtime each)
             (throw 'done nil)))))
     (nreverse chain)))
+
+(defun etaf--keys-scope-root (runtime &optional from)
+  "Return the keyboard navigation root of RUNTIME from FROM or its key entry.
+A local boundary restricts only navigation from inside it.  The engine's
+visible modal scope still bounds an entry from outside that modal."
+  (with-current-buffer (etaf-runtime-buffer runtime)
+    (let ((ref (car (last (etaf--keys-chain runtime from)))))
+      (if (etaf--keys-boundary-p runtime ref)
+          (etaf-runtime-host-node runtime ref)
+        (ebox-focus-scope (current-buffer))))))
+
+(defun etaf--keys-scope-stops (runtime)
+  "Return RUNTIME's engine-ordered stops within its keyboard scope."
+  (let ((root (etaf--keys-scope-root runtime)))
+    (cl-remove-if-not
+     (lambda (node) (or (eq root node) (ebox-node-ancestor-p root node)))
+     (ebox-focus-stops (etaf-runtime-buffer runtime)))))
 
 (defun etaf--keys-entries (runtime chain)
   "Return the effective ((REF . ENTRY) ...) of CHAIN in RUNTIME.
@@ -311,6 +354,8 @@ Runtime or callback arguments through their lexical environment."
         ('dismiss (etaf-dispatch-event runtime ref 'dismiss))
         ('direction (etaf-direction argument runtime))
         ('tab (if argument (etaf-focus-previous runtime) (etaf-focus-next runtime)))
+        ('edge (ebox-focus-edge argument (etaf-runtime-buffer runtime)
+                                (etaf--keys-scope-root runtime)))
         ('step (etaf-drag-step runtime ref (car argument) (cdr argument)))))))
 
 (defun etaf--keys-command (runtime kind &optional ref argument)
@@ -365,25 +410,33 @@ Runtime or callback arguments through their lexical environment."
          ((equal event etaf--keys-selector-event)
           #'etaf-region-select)
          ((member event etaf--keys-dismiss-events)
-          (when-let* ((ref (etaf--keys-dismiss-ref runtime chain)))
-            (etaf--keys-command runtime 'dismiss ref)))
+          (if-let* ((ref (etaf--keys-dismiss-ref runtime chain)))
+              (etaf--keys-command runtime 'dismiss ref)
+            (when (etaf--keys-boundary-p runtime (car (last chain)))
+              #'ignore)))
          ((etaf--keys-direction-of event)
           (etaf--keys-command runtime 'direction nil (etaf--keys-direction-of event)))
          ((member event etaf--keys-tab-events)
           (etaf--keys-command runtime 'tab nil (and (member event etaf--keys-backtab-events) t)))
+         ((and (etaf--keys-boundary-p runtime (car (last chain)))
+               (assoc event etaf--keys-control-direction-events))
+          (etaf--keys-command runtime 'direction nil
+                              (cdr (assoc event etaf--keys-control-direction-events))))
+         ((and (etaf--keys-boundary-p runtime (car (last chain)))
+               (assoc event etaf--keys-edge-events))
+          (etaf--keys-command runtime 'edge nil
+                              (cdr (assoc event etaf--keys-edge-events))))
          ((equal event [??])
           #'etaf-help)
          ((etaf--keys-step-ref runtime event)
           (let ((ref (etaf--keys-step-ref runtime event))
                 (step (cdr (assoc event etaf--keys-step-events))))
             (etaf--keys-command runtime 'step ref step)))
-         ;; An open dialog keeps typed letters from reaching the application
-         ;; behind it, including keymaps that are not Host `:keys'.
+         ;; A boundary keeps typed letters from reaching its host, including
+         ;; buffer keymaps outside Host `:keys' (notably the engine's q).
          ((and (or (member event etaf--keys-printing-events)
                    (bound-and-true-p etaf--help-state))
-               (eq (plist-get (etaf--keys-props runtime (car (last chain)))
-                              :focus-scope)
-                   'modal))
+               (etaf--keys-boundary-p runtime (car (last chain))))
           #'ignore))))))
 
 ;;;###autoload
@@ -487,7 +540,7 @@ the Host drags."
         (push (list "Close" "<escape>"
                     (lambda () (etaf-dispatch-event runtime ref 'dismiss)))
               candidates)))
-    (dolist (node (ebox-focus-stops buffer))
+    (dolist (node (etaf--keys-scope-stops runtime))
       (let* ((ref (etaf-runtime-node-host-ref runtime node))
              (label (etaf--keys-control-label runtime ref node))
              (props (and ref (etaf--keys-props runtime ref)))
@@ -508,8 +561,8 @@ the Host drags."
   "Choose and run a command or control of mounted RUNTIME by name.
 The candidates are the labelled `:keys' that the current focus reaches,
 Close when an `:on-dismiss' Host is in scope, and every focusable control
-in the modal scope, named by its `:aria-label' or painted text.  Choosing a
-key runs its command; choosing a control focuses and presses it.  The
+in the current keyboard scope, named by its `:aria-label' or painted text.
+Choosing a key runs its command; choosing a control focuses and presses it.  The
 palette is an execution surface and stays reachable from `M-x'; `?' opens
 `etaf-help' instead so that viewing never runs anything."
   (interactive)
@@ -552,19 +605,18 @@ palette is an execution surface and stays reachable from `M-x'; `?' opens
 ;;;; Region and direction navigation
 
 (defun etaf--direction-handler (runtime ref direction)
-  "Run the nearest Host `:on-direction' handler above REF in RUNTIME.
+  "Run the nearest enabled `:on-direction' from REF in RUNTIME's key scope.
 Return the handler's result symbol, or nil when no handler is in scope."
-  (when ref
-    (let ((chain (cons ref (etaf-runtime-host-ancestor-refs runtime ref))))
-      (cl-loop for candidate in chain
-               for handler = (plist-get (etaf--keys-props runtime candidate) :on-direction)
-               when (functionp handler)
-               return (let ((result (funcall handler direction)))
-                        (unless (memq result '(handled hold release))
-                          (signal 'etaf-event-error
-                                  (list (format ":on-direction returned %S; expected handled, hold or release"
-                                                result))))
-                        result)))))
+  (cl-loop for candidate in (etaf--keys-chain runtime ref)
+           for props = (etaf--keys-props runtime candidate)
+           for handler = (plist-get props :on-direction)
+           when (and (functionp handler) (not (plist-get props :disabled)))
+           return (let ((result (funcall handler direction)))
+                    (unless (memq result '(handled hold release))
+                      (signal 'etaf-event-error
+                              (list (format ":on-direction returned %S; expected handled, hold or release"
+                                            result))))
+                    result)))
 
 (defun etaf--direction-step (runtime ref direction)
   "Step a focused separator or slider REF in DIRECTION; return REF or nil."
@@ -582,11 +634,8 @@ the adjacent region's entry is focused.  Without a region the Ebox spatial
 movement applies and the viewport scrolls at its edge.  Return the focused
 Host reference or nil."
   (let* ((buffer (etaf-runtime-buffer runtime))
-         (regions (etaf--regions-collect runtime))
-         (region (and ref
-                      (cl-find-if (lambda (item)
-                                    (etaf--regions-contains-p runtime (plist-get item :ref) ref))
-                                  regions)))
+         (regions (etaf--regions-in-scope runtime ref))
+         (region (etaf--regions-containing runtime regions ref))
          (root (and region (etaf-runtime-host-node runtime (plist-get region :ref)))))
     (if region
         (if-let* ((node (and root (ebox-focus-direction direction buffer root))))
@@ -595,7 +644,8 @@ Host reference or nil."
             (etaf--regions-focus runtime
                                  (cl-find target regions
                                           :key (lambda (item) (plist-get item :id))))))
-      (if-let* ((node (ebox-focus-direction direction buffer)))
+      (if-let* ((node (ebox-focus-direction direction buffer
+                                              (etaf--keys-scope-root runtime ref))))
           (etaf-runtime-node-host-ref runtime node)
         (pcase direction
           ('down (ebox-scroll-down))
@@ -617,19 +667,12 @@ edge.  Return nil when nothing moves."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (unless (memq direction '(up down left right))
     (signal 'etaf-event-error (list (format "Unknown direction %S" direction))))
-  (let* ((buffer (etaf-runtime-buffer runtime))
-         (focused (and (not (ebox-input-active-p buffer))
-                       (ebox-focused-node buffer)))
-         (ref (or (and focused (etaf-runtime-node-host-ref runtime focused))
-                  ;; Without focus, the Host at point answers directions, so
-                  ;; read-only readers keep the key semantics of their rows.
-                  (etaf-host-ref-at runtime)
-                  (when-let* ((node (ebox-node-at (point) buffer)))
-                    (etaf-runtime-node-host-ref runtime node)))))
-    (if (memq (etaf--direction-handler runtime ref direction) '(handled hold))
-        (etaf-focused-host-ref runtime)
-      (or (etaf--direction-step runtime ref direction)
-          (etaf--direction-move runtime ref direction)))))
+  (with-current-buffer (etaf-runtime-buffer runtime)
+    (let ((ref (car (etaf--keys-chain runtime (etaf-focused-host-ref runtime)))))
+      (if (memq (etaf--direction-handler runtime ref direction) '(handled hold))
+          (etaf-focused-host-ref runtime)
+        (or (etaf--direction-step runtime ref direction)
+            (etaf--direction-move runtime ref direction))))))
 
 (defun etaf--direction-vim-conflicts (runtime)
   "Return Vim-scheme conflicts in RUNTIME as readable strings."

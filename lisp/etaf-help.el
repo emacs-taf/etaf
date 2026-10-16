@@ -137,9 +137,8 @@ The returned data is a defensive copy and contains no business callbacks."
                     (append (plist-get group :entries)
                             (list (list :key (key-description events) :events events
                                         :label (nth 2 entry) :source source)))))))
-        ;; Do not advertise application mode maps behind an existing modal.
-        (unless (eq (plist-get (etaf--keys-props runtime (car (last chain)))
-                               :focus-scope) 'modal)
+        ;; Buffer maps belong to the enclosing canvas, not a nested scope.
+        (unless (etaf--keys-boundary-p runtime (car (last chain)))
           (when-let* ((local (etaf--help-map-entries runtime seen)))
             (let ((group (cl-find title groups :key (lambda (g) (plist-get g :source))
                                   :test #'equal)))
@@ -182,7 +181,7 @@ The returned data is a defensive copy and contains no business callbacks."
         (dolist (ref chain)
           (when-let* ((help (plist-get (etaf--keys-props runtime ref) :help)))
             (setq notes (append notes (if (stringp help) (list help) help)))))
-        (dolist (node (ebox-focus-stops (etaf-runtime-buffer runtime)))
+        (dolist (node (etaf--keys-scope-stops runtime))
           (when-let* ((ref (etaf-runtime-node-host-ref runtime node))
                       (label (etaf--keys-control-label runtime ref node)))
             (push label controls)))

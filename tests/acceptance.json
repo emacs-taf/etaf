@@ -14,6 +14,51 @@
   "support": [],
   "cases": [
     {
+      "name": "etaf-key-scope-native-editing-keeps-draft-before-dismissal",
+      "file": "tests/etaf-key-scope-tests.el",
+      "purpose": "Native editing consumes the first Escape and preserves the draft before a subsequent Escape dismisses the local layer."
+    },
+    {
+      "name": "etaf-key-scope-nearest-boundary-stops-unhandled-dismissal",
+      "file": "tests/etaf-key-scope-tests.el",
+      "purpose": "Nested local boundaries stop unhandled Escape and help preparation from reaching an enclosing scope."
+    },
+    {
+      "name": "etaf-key-scope-isolates-siblings-and-unbound-letters",
+      "file": "tests/etaf-key-scope-tests.el",
+      "purpose": "Local scopes resolve shared letters independently and block unbound letters from reaching outer Host or buffer actions."
+    },
+    {
+      "name": "etaf-key-scope-confines-tab-directions-and-region-exits",
+      "file": "tests/etaf-key-scope-tests.el",
+      "purpose": "Tab, direction aliases, Home/End and region selection stay inside a local scope, including declared exits and outer direction handlers."
+    },
+    {
+      "name": "etaf-key-scope-confines-spatial-navigation-without-regions",
+      "file": "tests/etaf-key-scope-tests.el",
+      "purpose": "Spatial movement stays local without requiring regions, while explicit focus can leave the non-modal boundary."
+    },
+    {
+      "name": "etaf-key-scope-help-and-palette-expose-only-local-controls",
+      "file": "tests/etaf-key-scope-tests.el",
+      "purpose": "Read-only help and executable palette share local key and control ownership and help restores its opener."
+    },
+    {
+      "name": "etaf-key-scope-dismisses-one-layer-and-restores-region-entry",
+      "file": "tests/etaf-key-scope-tests.el",
+      "purpose": "Escape clears selection, dismisses a modal or returns from a local scope once per press; region reentry restores the last control."
+    },
+    {
+      "name": "etaf-key-scope-reactive-boundaries-and-lifetime",
+      "file": "tests/etaf-key-scope-tests.el",
+      "purpose": "Reactive boundary changes, subtree removal and unmount update keyboard ownership without a parallel mode state."
+    },
+    {
+      "name": "etaf-key-scope-rejects-unsupported-values",
+      "file": "tests/etaf-key-scope-tests.el",
+      "purpose": "Local keyboard metadata rejects unsupported values as renderer errors."
+    },
+    {
       "name": "etaf-help-opening-from-an-event-waits-for-preparation-publication",
       "file": "tests/etaf-help-tests.el",
       "purpose": "Button-triggered help waits for the event and preparation to publish, captures current notes and coalesces repeated requests."
