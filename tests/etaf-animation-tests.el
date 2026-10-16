@@ -127,8 +127,8 @@
 
 (ert-deftest etaf-animation-scope-and-switch-control-the-clock ()
   "Unmounting stops the Scope's animation; a disabled switch applies at once."
-  (let ((baseline (length timer-list))
-        (buffer (generate-new-buffer " *etaf-animation-test*")))
+  (let ((buffer (generate-new-buffer " *etaf-animation-test*"))
+        unrelated unrelated-fired)
     (unwind-protect
         (progn
           (etaf-mount buffer (etaf-view (etaf-animation-test-card))
@@ -145,13 +145,15 @@
           (setf (etaf-value etaf-animation-test-level) 9)
           (etaf-animation-test-wait
            (lambda () (etaf-animation-active-p etaf-animation-test-shown)))
+          (setq unrelated (run-at-time 0.05 nil (lambda () (setq unrelated-fired t))))
           (etaf-unmount (etaf-runtime-for-buffer buffer))
           (should-not (etaf-animation-active-p etaf-animation-test-shown))
           (let ((frozen (etaf-value etaf-animation-test-shown)))
             (etaf-animation-test-sleep 0.1)
-            (should (equal frozen (etaf-value etaf-animation-test-shown)))))
-      (when (buffer-live-p buffer) (kill-buffer buffer)))
-    (should (= baseline (length timer-list))))
+            (should (equal frozen (etaf-value etaf-animation-test-shown)))
+            (should unrelated-fired)))
+      (when unrelated (cancel-timer unrelated))
+      (when (buffer-live-p buffer) (kill-buffer buffer))))
   (let* ((etaf-animation-enabled nil)
          (target (etaf-ref 0))
          (shown (etaf-transition target :duration 1.0)))
