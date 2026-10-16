@@ -65,9 +65,12 @@
 ;; Dispatch `press' for the focused Host, or the interaction boundary at point.
 ;;
 ;; RUNTIME is the mounted Runtime to activate, or nil for the current buffer.
-;; Position lookup uses committed Ebox node keymaps. Enabled press handlers are
+;; Live keyboard focus wins even when publication or inspection moved point;
+;; without focus, position lookup uses committed Ebox node keymaps. Native
+;; RET/return activation follows the same rule. Pointer presses keep their
+;; clicked target. Enabled press handlers are
 ;; native activation/navigation targets; disabled or callbackless controls block
-;; ancestor activation. Ebox owns keyboard focus precedence and target selection.
+;; ancestor activation. Ebox remains the focus and native keymap authority.
 ;;
 ;; Function: etaf-transition (source &key (duration 0.2) (easing 'ease-out) name on-complete)
 ;;;###autoload (autoload 'etaf-transition "etaf" nil nil)

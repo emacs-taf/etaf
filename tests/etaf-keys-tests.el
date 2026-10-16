@@ -20,6 +20,26 @@
       (call-interactively command)
       command)))
 
+(ert-deftest etaf-keys-return-uses-live-focus-instead-of-displaced-point ()
+  "Return and explicit activation follow live focus across local boundaries."
+  (let ((inside 0) (outside 0) (host 0))
+    (etaf-test-with-mount
+        (runtime
+         (etaf-view
+          (column :keys (list (list "RET" (lambda () (cl-incf host)) "Host entry"))
+            (box :ref 'outside :on-press (lambda () (cl-incf outside)) "Outside")
+            (column :key-scope 'local
+              (box :ref 'inside :tab-index 0
+                   :on-press (lambda () (cl-incf inside)) "Inside")))))
+      (etaf-focus runtime 'inside)
+      (dolist (key '(nil "RET" "<return>"))
+        (goto-char (etaf-host-ref-position runtime 'outside))
+        (if key (etaf-keys-test-press key) (etaf-activate runtime))
+        (should (eq (etaf-focused-host-ref runtime) 'inside)))
+      (should (= inside 3))
+      (should (= outside 0))
+      (should (= host 0)))))
+
 (ert-deftest etaf-keys-help-lists-effective-bindings ()
   "`?' keeps read-only key help inside the application's window and buffer."
   (etaf-test-with-mount (runtime (etaf-view

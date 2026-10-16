@@ -202,6 +202,11 @@ Ebox owns native targeting, point preservation, focus order, drag tracking and
 input sessions.  ETAF translates public operations such as `etaf-activate`,
 `etaf-focus`, `etaf-focus-next`, `etaf-call-with-input` and `etaf-input-begin`
 into Ebox operations after validating the Runtime and Host reference.
+Keyboard activation restores point to the live focus before resolving its
+native keymap. The activation relay also covers text-property keymaps, which
+can precede emulation maps; a displaced point never selects another control.
+Pointer activation keeps its clicked target, and absent focus retains the
+ordinary point-based lookup.
 
 `ebox-input-begin` edits a text Host's value in Ebox's hidden editing buffer, so
 Emacs owns its keys, point, selection and undo while the Host keeps its layout.

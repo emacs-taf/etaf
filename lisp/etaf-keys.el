@@ -193,7 +193,7 @@ one key cannot both run a command and start a longer sequence."
   "Give RUNTIME's buffer its scoped key map with the framework defaults."
   (let ((map (make-sparse-keymap)))
     (dolist (event (append etaf--keys-dismiss-events
-                           (list [??] etaf--keys-selector-event)
+                           (list [??] [13] [return] etaf--keys-selector-event)
                            (mapcar #'car etaf--keys-step-events)
                            (mapcar #'car etaf--keys-edge-events)
                            etaf--keys-tab-events
@@ -414,6 +414,7 @@ Runtime or callback arguments through their lexical environment."
                              :test #'equal)))
         (cond
          (found (etaf--keys-command runtime 'command (car found) (nth 2 found)))
+         ((member event '([13] [return])) #'etaf-activate)
          ((equal event etaf--keys-selector-event)
           #'etaf-region-select)
          ((member event etaf--keys-dismiss-events)

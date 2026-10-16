@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- RET/return activation follows live keyboard focus after reflow or inspection
+  moves point, rather than activating another control at the displaced position.
+
 - Keyboard help stays within the visible canvas even when its application
   uses native window scrolling. Escape and pointer callbacks restore focus
   and the original scroll position after the modal disappears.

@@ -343,19 +343,33 @@ or its bottom with the last line instead."
 
 (defun etaf--dispatch-activation (runtime host-ref)
   "Dispatch an enabled committed HOST-REF activation in RUNTIME."
-  (if (and (not (plist-get (etaf-runtime-host-props-for runtime host-ref) :disabled))
-           (etaf--event-handler runtime host-ref 'press))
-      (etaf-dispatch-event runtime host-ref 'press)
-    (user-error "No interactive ETAF Host at point")))
+  (let ((focused (and (not (mouse-event-p last-input-event))
+                      (etaf-focused-host-ref runtime))))
+    ;; Text-property keymaps can precede the Runtime's emulation map.  If
+    ;; point drifted onto another control, reenter native activation at the
+    ;; live focus.  At its restored position the engine resolves inherited
+    ;; keymaps normally, including callbackless and disabled boundaries.
+    (if (and focused
+             (not (eql (point) (etaf-host-ref-position runtime focused))))
+        (etaf-activate runtime)
+      (if (and (not (plist-get (etaf-runtime-host-props-for runtime host-ref) :disabled))
+               (etaf--event-handler runtime host-ref 'press))
+          (etaf-dispatch-event runtime host-ref 'press)
+        (user-error "No interactive ETAF Host at point")))))
 
 ;;;###autoload
 (defun etaf-activate (&optional runtime)
   "Dispatch `press' for the focused Host, or the interaction boundary at point.
 
-RUNTIME is the mounted Runtime to activate, or nil for the current buffer."
+RUNTIME is the mounted Runtime to activate, or nil for the current buffer.
+Live focus wins even when publication or inspection displaced point."
   (interactive)
   (setq runtime (etaf-runtime-require-mounted runtime))
   (with-current-buffer (etaf-runtime-buffer runtime)
+    ;; Publication and inspection may move point without changing focus.
+    ;; Restore its live position before entering the engine's native keymap.
+    (when-let* ((ref (etaf-focused-host-ref runtime)))
+      (etaf-focus runtime ref))
     (ebox-activate)))
 
 ;;;###autoload

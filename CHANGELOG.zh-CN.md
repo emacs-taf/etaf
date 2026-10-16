@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- 重排或观察操作使 point 偏移后，RET/return 激活仍跟随真实键盘焦点，
+  不会误触偏移位置上的另一个控件。
+
 ### Added
 
 - `etaf-display-metrics` 响应式报告挂载缓冲区的有效字符宽、行高与图像基线，

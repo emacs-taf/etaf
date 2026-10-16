@@ -111,7 +111,7 @@ text Host 只包含一个文本 payload。ETAF 校验 payload 并保存语义 Ho
 
 事件通过已提交的 Host 引用进入。Runtime 把 Host ref 解析为保留 Ebox 节点和 handler 表，然后在 ETAF batch 内 dispatch 回调。press capture 回调沿已提交祖先 ref 运行。
 
-Ebox 负责原生定位、point 保持、焦点顺序、drag 跟踪和输入会话。ETAF 在校验 Runtime 与 Host 引用后，把 `etaf-activate`、`etaf-focus`、`etaf-focus-next`、`etaf-call-with-input` 和 `etaf-input-begin` 等公共操作转换为 Ebox 操作。
+Ebox 负责原生定位、point 保持、焦点顺序、drag 跟踪和输入会话。ETAF 在校验 Runtime 与 Host 引用后，把 `etaf-activate`、`etaf-focus`、`etaf-focus-next`、`etaf-call-with-input` 和 `etaf-input-begin` 等公共操作转换为 Ebox 操作。键盘激活先把 point 恢复到真实焦点，再解析该节点的原生 keymap；激活转发也覆盖优先于 emulation map 的文本属性 keymap，不让偏移后的 point 选择另一个控件。指针激活保持点击目标；没有焦点时仍按 point 定位。
 
 `ebox-input-begin` 在 Ebox 的隐藏编辑 buffer 中编辑 text Host 的值，使 Emacs 持有按键、point、selection 与 undo，同时 Host 保持自身布局。会话期间发布照常进行：组件在 `:on-change` 中把每个值同步到 ref，把同一个值发布回 Host 不产生任何效果。
 

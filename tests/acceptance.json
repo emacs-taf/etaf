@@ -14,6 +14,11 @@
   "support": [],
   "cases": [
     {
+      "name": "etaf-keys-return-uses-live-focus-instead-of-displaced-point",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "Native RET/return and explicit activation follow live focus when point moves across a local scope, without invoking the enclosing host or the control at point."
+    },
+    {
       "name": "etaf-keys-focus-leave-redirection-stops-stale-entry",
       "file": "tests/etaf-keys-tests.el",
       "purpose": "A focus-leave callback can redirect focus without notifying the superseded destination."
