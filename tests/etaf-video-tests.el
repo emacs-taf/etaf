@@ -655,6 +655,34 @@ a stale session."
       (etaf-video-tests--cleanup name)
       (ignore-errors (delete-file log)))))
 
+(ert-deftest etaf-video-tests-expands-local-file-names ()
+  "A local source reaches ffprobe as an absolute file name.
+`read-file-name' returns names unexpanded, so a `~' name or one relative to
+`default-directory' is resolved before the decoder sees it."
+  (let ((probe-log (etaf-video-tests--log))
+        (log (etaf-video-tests--log))
+        (absolute etaf-video-tests--input)
+        (directory (file-name-directory etaf-video-tests--input)))
+    (unwind-protect
+        (etaf-video-tests--with-fixture
+            log (list "FAKE_FFPROBE_DURATION=3.0"
+                      (concat "FAKE_FFPROBE_LOG=" probe-log))
+          (let ((default-directory directory))
+            (let ((info (etaf-video-source-info
+                         (file-relative-name absolute directory))))
+              (should (equal absolute (plist-get info :file)))
+              (should (equal absolute (plist-get info :target)))
+              (should (= 3.0 (plist-get info :duration)))))
+          (let ((info (etaf-video-source-info (abbreviate-file-name absolute))))
+            (should (equal absolute (plist-get info :file)))
+            (should (equal absolute (plist-get info :target))))
+          (let ((runs (etaf-video-tests--runs probe-log)))
+            (should (>= (length runs) 6))
+            (dolist (arguments runs)
+              (should (member absolute arguments)))))
+      (ignore-errors (delete-file log))
+      (ignore-errors (delete-file probe-log)))))
+
 (ert-deftest etaf-video-tests-normalized-source-skips-second-probe ()
   "A metadata plist from `etaf-video-source-info' mounts without probing.
 The normalized result stays authoritative, so an application that probes

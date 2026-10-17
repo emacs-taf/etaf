@@ -1845,9 +1845,12 @@
 ;; Return SOURCE's normalized playback metadata as a plist.
 ;;
 ;; SOURCE is nil for the built-in demo, a local file name, an HTTP(S) URL, or
-;; a plist accepted by the `etaf-video' Component.  The result holds `:kind',
-;; `:file', `:url', `:target', `:audio-url', `:audio-target', `:headers',
-;; `:proxy', `:width', `:height', `:duration', `:fps' and `:audio'.  A source
+;; a plist accepted by the `etaf-video' Component.  A local file name may
+;; start with `~' or be relative to `default-directory'; it is expanded to an
+;; absolute `:file' and `:target' before the decoders run.  The result holds
+;; `:kind', `:file', `:url', `:target', `:audio-url', `:audio-target',
+;; `:headers', `:proxy', `:width', `:height', `:duration', `:fps' and
+;; `:audio'.  A source
 ;; whose video and audio are separate HTTP(S) streams describes them with
 ;; `:audio-url'; `:headers' (an alist, a hash table or one `Name: value'
 ;; string) and `:proxy' apply to every request both decoders make.  A present

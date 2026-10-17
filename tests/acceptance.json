@@ -700,6 +700,11 @@
       "purpose": "Unmounting stops producer processes and makes the released handle unaddressable."
     },
     {
+      "name": "etaf-video-tests-expands-local-file-names",
+      "file": "tests/etaf-video-tests.el",
+      "purpose": "A local source named with ~ or relative to the default directory reaches ffprobe as an absolute file name."
+    },
+    {
       "name": "etaf-video-tests-normalized-source-skips-second-probe",
       "file": "tests/etaf-video-tests.el",
       "purpose": "A metadata plist from etaf-video-source-info mounts with its values and without another ffprobe call."

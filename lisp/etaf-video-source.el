@@ -157,6 +157,10 @@ A plist that already carries `:kind' is treated as authoritative metadata, as
 returned by `etaf-video-source-info', so callers that probed once can mount
 without another probe.
 
+A local file name is expanded with `expand-file-name', so a name that starts
+with `~' or is relative to `default-directory' reaches the decoders as an
+absolute name; `:file' and `:target' hold that expanded name.
+
 A source may split its video and audio into separate HTTP(S) streams with
 `:audio-url'; the audio sidecar then opens that URL while ffmpeg decodes the
 video URL.  `:headers' (an alist, a hash table or one `Name: value' string)
@@ -193,6 +197,11 @@ the source reports an audio stream; a present `:audio-url' implies one)."
                  headers (plist-get source :headers)
                  proxy (plist-get source :proxy)))
           (t (user-error "Unsupported etaf-video source: %S" source)))
+    (when (and (eq kind 'file) (stringp file))
+      ;; `read-file-name' hands back names unexpanded, and the decoders are
+      ;; external programs that never expand `~' or resolve relative names.
+      ;; Resolve once here so every decoder gets the same absolute name.
+      (setq file (expand-file-name file)))
     (when (eq kind 'file)
       (unless (and (stringp file) (file-readable-p file))
         (user-error "Video file is not readable: %S" file)))
@@ -259,7 +268,9 @@ the source reports an audio stream; a present `:audio-url' implies one)."
 
 SOURCE is nil for the built-in demo, a local file name, an HTTP(S) URL, or a
 plist accepted by the `etaf-video' Component (`:file', `:url' or `:demo',
-optionally `:audio-url', `:headers' and `:proxy').
+optionally `:audio-url', `:headers' and `:proxy').  A local file name may
+start with `~' or be relative to `default-directory'; it is expanded with
+`expand-file-name', and `:file' and `:target' hold the absolute name.
 The result holds `:kind', `:file', `:url', `:target', `:audio-url',
 `:audio-target', `:headers', `:proxy', `:width', `:height', `:duration',
 `:fps' (source rate) and `:audio' (whether the source reports an audio

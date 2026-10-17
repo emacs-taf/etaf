@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- A local `etaf-video` source resolves `~` and names relative to
+  `default-directory` with `expand-file-name` before ffprobe or ffmpeg runs,
+  so a file chosen from a prompt that shows `~/Videos/` plays instead of
+  falling back to default metadata.
+
 - RET/return activation follows live keyboard focus after reflow or inspection
   moves point, rather than activating another control at the displaced position.
 
