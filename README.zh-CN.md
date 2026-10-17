@@ -1,9 +1,24 @@
 <h1 align="center"><img src="design/etaf-logo.svg" alt="ETAF — Emacs 文本应用框架" width="480"></h1>
 
-源码布局：将仓库根目录加入 `load-path`，然后 require 与包同名的入口。
-入口 Commentary 列出公共 API 及用法；内部实现位于 `lisp/`。
-
 ETAF 在独立的 [Ebox](https://github.com/emacs-taf/ebox/blob/main/) 布局与渲染引擎上，使用可复用的 Component 构建文本应用。
+
+## 安装
+
+在 Emacs 29.1 或更新版本中执行以下代码一次，选择框架或组件画廊。package.el 自动安装依赖，不需要 Git、Python 或系统编译器，也不替换现有配置。
+
+```elisp
+;;; -*- lexical-binding: t; -*-
+(require 'package)
+(add-to-list 'package-archives '("etaf" . "https://etaf.top/packages/"))
+(package-initialize)
+(package-refresh-contents)
+(package-install 'etaf-install)
+(call-interactively #'etaf-install)
+```
+
+以后用 `M-x etaf-install` 离线重开已安装的目标，用 `M-x etaf-install-doctor` 检查能力。通过 `M-x list-packages` 更新或卸载包；更新或安装失败后先重启。同一依赖不要混用包安装与源码加载路径。详见[安装与恢复](https://etaf.top/zh-cn/introduction/#安装)。
+
+## 第一个 View
 
 从 `etaf-view` 和 `etaf-mount` 开始。`(name :property value ... child ...)`
 中属性在前、子节点在后，属性值是普通 Elisp。求值下面完整例子，切换到
@@ -145,9 +160,9 @@ operation 的 flat 阶段。`etaf-performance-records` 返回 operation/stage �
 
 没有单独需要安装的 `etaf-data`：Data 是 ETAF 核心能力。也没有笼统的 `etaf-adapters` 包：其他数据库、服务、文件或 ORM 应使用明确名称的具体 Data Source 包实现同一契约。
 
-## 加载与验证
+## 源码开发
 
-先安装 ECSS，再安装 Ebox，最后安装 ETAF。ETAF 直接声明 ECSS 依赖，
+源码开发时先加载 ECSS，再加载 Ebox，最后加载 ETAF。ETAF 直接声明 ECSS 依赖，
 以便主题解析保留延迟层叠值。ETAF 使用 Ebox 作为保留节点、布局、焦点、
 输入和 buffer 引擎；应用只使用 ETAF 公共 API。
 

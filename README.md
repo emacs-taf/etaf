@@ -1,11 +1,31 @@
 <h1 align="center"><img src="design/etaf-logo.svg" alt="ETAF — Emacs Text Application Framework" width="480"></h1>
 
-Source layout: add the repository root to `load-path` and use
-`(require 'etaf)`. The supported API and usage notes are in
-[`etaf.el`](etaf.el); implementation modules live in `lisp/`.
-
 ETAF builds text applications from reusable Components above the independent
 [Ebox](https://github.com/emacs-taf/ebox/blob/main/) layout and rendering engine.
+
+## Installation
+
+In Emacs 29.1 or newer, evaluate this once and choose the framework or the
+component gallery. Package.el installs dependencies without Git, Python or a
+system compiler, and your existing configuration is preserved.
+
+```elisp
+;;; -*- lexical-binding: t; -*-
+(require 'package)
+(add-to-list 'package-archives '("etaf" . "https://etaf.top/packages/"))
+(package-initialize)
+(package-refresh-contents)
+(package-install 'etaf-install)
+(call-interactively #'etaf-install)
+```
+
+Then use `M-x etaf-install` to reopen installed targets offline and
+`M-x etaf-install-doctor` for capability checks. Update or remove packages with
+`M-x list-packages`; restart after an update or a failed installation. Do not mix
+package installations with source load paths for the same dependencies.
+See [installation and recovery](https://etaf.top/introduction/#installation).
+
+## First View
 
 Start with `etaf-view` and `etaf-mount`. Properties precede children in
 `(name :property value ... child ...)`; property values are ordinary Elisp.
@@ -158,9 +178,9 @@ The [`examples/`](README.md) directory contains four core-only best-practice app
 
 There is no separate `etaf-data` install: Data is a core ETAF capability. There is no generic `etaf-adapters` package: other databases, services, files, or ORMs should provide concrete Data Source packages with explicit names.
 
-## Load and verify
+## Source development
 
-Install ECSS before Ebox, then install ETAF. ETAF declares ECSS directly to
+For checkout-based development, load ECSS before Ebox, then ETAF. ETAF declares ECSS directly to
 preserve deferred cascade values when resolving Theme tokens. ETAF uses Ebox as
 its retained node, layout, focus, input and buffer engine; applications stay on
 ETAF public APIs.
