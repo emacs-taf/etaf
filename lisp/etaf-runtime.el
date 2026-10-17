@@ -28,6 +28,8 @@
 (define-error 'etaf-runtime-error "ETAF runtime error")
 (define-error 'etaf-renderer-error "ETAF rendering error")
 
+;; The native predicate is absent from Emacs builds without image support.
+(declare-function imagep "image.c" (spec))
 (declare-function etaf--dispatch-activation "etaf-events" (runtime host-ref))
 (declare-function etaf--keys-validate "etaf-keys" (keys))
 (declare-function etaf--region-validate "etaf-regions" (region))
@@ -2825,13 +2827,15 @@ references, nearest first.  Unknown references are absent."
 ;;;###autoload
 (defun etaf-runtime-update-host-contents (runtime updates)
   "Replace Host contents in mounted RUNTIME from UPDATES, ((REF . CONTENT) ...).
-CONTENT is a string or an image from `create-image'.  Every target validates
-before the first change.  Return t."
+CONTENT is a string or an image from `create-image'.  Builds without native
+image support accept strings only.  Every target validates before the first
+change; invalid content signals `etaf-runtime-error'.  Return t."
   (setq runtime (etaf-runtime-require-mounted runtime))
   (unless (and (proper-list-p updates)
                (cl-every (lambda (entry)
                            (and (consp entry)
-                                (or (stringp (cdr entry)) (imagep (cdr entry)))))
+                                (or (stringp (cdr entry))
+                                    (and (fboundp 'imagep) (imagep (cdr entry))))))
                          updates))
     (signal 'etaf-runtime-error (list "Invalid Host content updates" updates)))
   (let ((nodes (mapcar (lambda (entry)

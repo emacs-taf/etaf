@@ -338,6 +338,7 @@
                                                "Back")
                                           " Title")
                                      "Body")))
+      (ignore runtime)
       ;; Batch Emacs formats no mode lines; read the construct's value.
       (should (symbolp header-line-format))
       (let* ((header (symbol-value header-line-format))
@@ -364,6 +365,26 @@
       (should (= (car (etaf-host-ref-size runtime 'panel)) 200))
       (should-error (etaf-runtime-update-host-content runtime 'missing "x")
                     :type 'etaf-runtime-error))))
+
+(ert-deftest etaf-events-invalid-host-content-preserves-the-whole-batch ()
+  "Invalid content signals the public error, with no text or revision changes."
+  (etaf-test-with-mount
+      (runtime (etaf-view (column (text :ref 'first "first")
+                                 (text :ref 'second "second"))))
+    (let ((revision (etaf-runtime-revision runtime)))
+      (let ((failure
+             (condition-case problem
+                 (progn
+                   (etaf-runtime-update-host-contents
+                    runtime '((first . "must not publish") (second . 42)))
+                   nil)
+               (error (car problem)))))
+        (should (eq failure 'etaf-runtime-error)))
+      (should (equal (etaf-test-lines) '("first" "second")))
+      (should (= (etaf-runtime-revision runtime) revision))
+      (let ((updated (etaf-runtime-update-host-content runtime 'first "retry")))
+        (should updated))
+      (should (equal (etaf-test-lines) '("retry" "second"))))))
 
 (ert-deftest etaf-events-performance-records-operations ()
   "The performance recorder captures observed event operations."

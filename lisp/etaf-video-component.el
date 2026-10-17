@@ -36,6 +36,10 @@
 (require 'etaf-video-session)
 (require 'etaf-video-source)
 
+;; Only the image mode uses these optional native display primitives.
+(declare-function image-flush "image.c" (spec &optional frame))
+(declare-function font-info "font.c" (name &optional frame))
+
 (defvar etaf-video-density-ramp " .:-=+*#%@"
   "Characters used for one video pixel in the `ascii' render mode.
 The ramp maps darkness to density from left to right.  It must be nonempty

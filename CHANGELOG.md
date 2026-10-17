@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Text-only Emacs builds compile optional graphics calls without undeclared
+  function warnings. Invalid retained Host content reports `etaf-runtime-error`
+  instead of a missing image-predicate error, without partially updating a batch.
+
 - Standard package.el installation can reload unchanged Component declarations
   from source to bytecode without duplicate-registration errors. Library reloads
   preserve live state and original captures; changed definitions and ordinary

@@ -1519,7 +1519,9 @@
 ;; must render the same content, or the retained Host is reconciled to it.  A
 ;; committed update returns t.  Unknown Hosts, unmounted Runtimes, CONTENT that
 ;; is neither a string nor an image, and Hosts whose retained node cannot hold
-;; content signal `etaf-runtime-error' without a partial update.
+;; content signal `etaf-runtime-error' without a partial update. Emacs builds
+;; without native image support accept strings only; rejected values still
+;; signal the same public error without changing the published content.
 ;;
 ;; Function: etaf-runtime-update-host-contents (runtime updates)
 ;;;###autoload (autoload 'etaf-runtime-update-host-contents "etaf" nil nil)

@@ -444,6 +444,11 @@
       "purpose": "Retained content and geometry updates change one Host and bump the revision."
     },
     {
+      "name": "etaf-events-invalid-host-content-preserves-the-whole-batch",
+      "file": "tests/etaf-events-tests.el",
+      "purpose": "Invalid retained content signals the public runtime error without changing any target or revision, including on text-only Emacs builds; a valid retry succeeds."
+    },
+    {
       "name": "etaf-events-performance-records-operations",
       "file": "tests/etaf-events-tests.el",
       "purpose": "The performance recorder captures observed event operations."
