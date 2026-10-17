@@ -128,6 +128,11 @@ lowering for its :src, :columns, :rows, :adapter and :inset properties.")
 (defvar etaf--view-registry (make-hash-table :test #'eq)
   "Registry of Hosts and Components used by structural View calls.")
 
+(defvar etaf--component-declarations (make-hash-table :test #'eq :weakness 'key)
+  "Library and declaration fingerprint for each loaded Component definition.
+Metadata stays outside the spec so existing consumers' compiled constructors
+remain valid when only the provider is upgraded.")
+
 (defvar etaf--allow-component-redefinition nil
   "When non-nil, permit an explicit authoring tool to replace Components.
 
@@ -164,23 +169,36 @@ disposing the old Runtime.")
   "Return the property keyword corresponding to symbol NAME."
   (intern (concat ":" (symbol-name name))))
 
-(defun etaf--register-component (name spec)
-  "Register Component SPEC under exact registry NAME."
+(defun etaf--register-component (name spec &optional declaration)
+  "Register Component SPEC under exact registry NAME.
+DECLARATION is its source fingerprint, or nil for previously compiled callers.
+An unchanged declaration loaded from the same library reuses its definition.
+Ordinary evaluation has no library identity and cannot replace a definition."
   (unless (and (symbolp name) (etaf--component-spec-p spec))
     (signal 'wrong-type-argument (list 'etaf--component-spec-p spec)))
-  (let ((existing (gethash name etaf--view-registry)))
-    (when (eq existing etaf--host-marker)
-      (etaf--component-error
-       "Component %S conflicts with a core Host" name))
-    (when (and existing (not (eq existing etaf--host-marker))
-               (not (eq existing spec))
-               (not etaf--allow-component-redefinition))
-      (etaf--component-error
-       "Component %S is already registered" name)))
-  (puthash name spec etaf--view-registry)
-  (when (fboundp 'etaf-compiler-note-registry-change)
-    (etaf-compiler-note-registry-change))
-  spec)
+  (let* ((existing (gethash name etaf--view-registry))
+         (previous (and existing (gethash existing etaf--component-declarations)))
+         (library (and load-in-progress load-file-name
+                       (file-name-sans-extension (file-truename load-file-name)))))
+    (cond
+     ((eq existing etaf--host-marker)
+      (etaf--component-error "Component %S conflicts with a core Host" name))
+     ((or (eq existing spec)
+          (and previous library declaration (not etaf--allow-component-redefinition)
+               (equal library (car previous))
+               (equal declaration (cdr previous))))
+      ;; Keep retained instances, captured values and compiled Views together;
+      ;; loading bytecode after source must not replace their shared definition.
+      existing)
+     ((and existing (not etaf--allow-component-redefinition))
+      (etaf--component-error "Component %S is already registered" name))
+     (t
+      (puthash name spec etaf--view-registry)
+      (when (and library declaration)
+        (puthash spec (cons library declaration) etaf--component-declarations))
+      (when (fboundp 'etaf-compiler-note-registry-change)
+        (etaf-compiler-note-registry-change))
+      spec))))
 
 (defun etaf--register-core-hosts ()
   "Register the exact core Host names."

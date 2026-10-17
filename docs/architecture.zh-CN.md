@@ -52,7 +52,9 @@ Host segment 拥有作者声明的 Ebox 节点。fragment、expression、branch�
 
 ## 4. Component
 
-`etaf-define-component` 注册一个 Component 定义。挂载的 Component instance 只初始化一次：
+`etaf-define-component` 注册一个 Component 定义，并记录声明指纹与规范化库路径；同一路径的 `.el` 和 `.elc` 属于同一库。重载未改变的声明会复用原定义，不使已编译 View 失效，也不重置保留实例，因而支持 package.el 安装后从源码到字节码的重载。原定义捕获的值同样保留。普通求值没有库身份；改变声明或从另一库定义同名组件，仍须先销毁相关 Runtime，再通过 `etaf-component-redefine-run` 显式重定义。
+
+挂载的 Component instance 只初始化一次：
 
 1. 分配 Component Scope；
 2. 按声明顺序创建命名 `:bindings`；

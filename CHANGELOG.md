@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- Standard package.el installation can reload unchanged Component declarations
+  from source to bytecode without duplicate-registration errors. Library reloads
+  preserve live state and original captures; changed definitions and ordinary
+  evaluated duplicates still require explicit redefinition.
+
 - A local `etaf-video` source resolves `~` and names relative to
   `default-directory` with `expand-file-name` before ffprobe or ffmpeg runs,
   so a file chosen from a prompt that shows `~/Videos/` plays instead of

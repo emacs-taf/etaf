@@ -239,9 +239,10 @@
 ;;;###autoload (autoload 'etaf-component-redefine-run "etaf" nil nil)
 ;; Run FUNCTION while allowing intentional Component redefinition.
 ;;
-;; Normal duplicate Component definitions remain errors.  Authoring tools may
-;; use this narrow public boundary after disposing the old Runtime, so hot reload
-;; does not depend on ETAF's private registry flag.
+;; Duplicate Component definitions remain errors except for unchanged declarations
+;; reloaded from the same library, which keep their original definition. Authoring
+;; tools use this boundary after disposing the old Runtime to replace a declaration
+;; or refresh its captured values, even when its source text is unchanged.
 ;;
 ;; Function: etaf-component-set-styles (name styles)
 ;;;###autoload (autoload 'etaf-component-set-styles "etaf" nil nil)
@@ -563,6 +564,13 @@
 ;; Macro: etaf-define-component (name arguments &rest clauses)
 ;;;###autoload (autoload 'etaf-define-component "etaf" nil nil 'macro)
 ;; Define Component NAME from prop ARGUMENTS and CLAUSES.
+;;
+;; Reloading an identical declaration from the same library (source or bytecode)
+;; retains its original definition, captured values and mounted instances. This
+;; is not hot replacement: changed declarations, other libraries and ordinary
+;; evaluated duplicates still signal etaf-component-call-error. To replace a
+;; definition or refresh its captured values, dispose its Runtimes and use
+;; etaf-component-redefine-run.
 ;;
 ;; Choose exactly one authoring frontend:
 ;;

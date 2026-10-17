@@ -162,9 +162,10 @@ implicitly."
 (defun etaf-component-redefine-run (function)
   "Run FUNCTION while allowing intentional Component redefinition.
 
-Normal duplicate Component definitions remain errors.  Authoring tools may
-use this narrow public boundary after disposing the old Runtime, so hot reload
-does not depend on ETAF's private registry flag."
+Duplicate Component definitions remain errors except for unchanged declarations
+reloaded from the same library, which keep their original definition.  Authoring
+tools use this boundary after disposing the old Runtime to replace a declaration
+or refresh its captured values, even when its source text is unchanged."
   (unless (functionp function)
     (signal 'wrong-type-argument (list 'functionp function)))
   (let ((etaf--allow-component-redefinition t))
@@ -349,6 +350,13 @@ rendering, and publication of tracked prop sources."
 (defmacro etaf-define-component (name arguments &rest clauses)
   "Define Component NAME from prop ARGUMENTS and CLAUSES.
 
+Reloading an identical declaration from the same library (source or bytecode)
+retains its original definition, captured values and mounted instances.  This
+is not hot replacement: changed declarations, other libraries and ordinary
+evaluated duplicates still signal `etaf-component-call-error'.  To replace a
+definition or refresh its captured values, dispose its Runtimes and use
+`etaf-component-redefine-run'.
+
 Choose exactly one authoring frontend:
 
   (etaf-define-component NAME (&key PROPS)
@@ -409,7 +417,13 @@ published props and callbacks; it does not undo the caller's business ref write.
   (unless (symbolp name)
     (etaf--component-definition-error
      "Component name must be a symbol: %S" name))
-  (let ((docstring (when (stringp (car clauses)) (pop clauses)))
+  (let ((declaration (let ((print-circle t) (print-length nil) (print-level nil)
+                           (print-gensym t) (print-quoted t)
+                           (print-escape-newlines t) (print-escape-control-characters t)
+                           (print-escape-nonascii t) (print-escape-multibyte t)
+                           (print-continuous-numbering nil))
+                       (secure-hash 'sha256 (prin1-to-string (list name arguments clauses)))))
+        (docstring (when (stringp (car clauses)) (pop clauses)))
         view-form
         render-form
         setup-form
@@ -534,27 +548,29 @@ published props and callbacks; it does not undo the caller's business ref write.
                               :values (vector ,@binding-names)))
                         setup-form)))))))
       `(progn
-         (defconst ,definition-symbol
-           (etaf--component-spec-create
-            :name ',name
-            :props ',props
-            :defaults ,(etaf--component-default-resolver arguments)
-            :validate ,(when saw-validate
-                         `(lambda (etaf--validated-props)
-                            (let ,(mapcar
-                                   (lambda (prop)
-                                     `(,prop (plist-get etaf--validated-props
-                                                        ,(etaf--component-prop-key prop))))
-                                   props)
-                              (ignore ,@props)
-                              ,validate-form)))
-            :render ,render-lambda
-            :view-p ,saw-view
-            :setup ,setup-lambda
-            :styles ',styles-form)
-           ,(or docstring
-                (format "Definition of ETAF Component `%s'." name)))
-         (etaf--register-component ',name ,definition-symbol)
+         (defvar ,definition-symbol nil
+           ,(or docstring (format "Definition of ETAF Component `%s'." name)))
+         (setq ,definition-symbol
+               (etaf--register-component
+                ',name
+                (etaf--component-spec-create
+                 :name ',name
+                 :props ',props
+                 :defaults ,(etaf--component-default-resolver arguments)
+                 :validate ,(when saw-validate
+                              `(lambda (etaf--validated-props)
+                                 (let ,(mapcar
+                                        (lambda (prop)
+                                          `(,prop (plist-get etaf--validated-props
+                                                             ,(etaf--component-prop-key prop))))
+                                        props)
+                                   (ignore ,@props)
+                                   ,validate-form)))
+                 :render ,render-lambda
+                 :view-p ,saw-view
+                 :setup ,setup-lambda
+                 :styles ',styles-form)
+                ,declaration))
          ',name))))
 
 (provide 'etaf-component)

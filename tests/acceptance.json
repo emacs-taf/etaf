@@ -74,6 +74,21 @@
       "purpose": "Local keyboard metadata rejects unsupported values as renderer errors."
     },
     {
+      "name": "etaf-component-library-reload-retains-live-state",
+      "file": "tests/etaf-component-loading-tests.el",
+      "purpose": "Loading the same source and bytecode declaration keeps live state when a newly constructed View replaces the old call."
+    },
+    {
+      "name": "etaf-component-library-conflicts-preserve-the-definition",
+      "file": "tests/etaf-component-loading-tests.el",
+      "purpose": "Changed declarations and other libraries cannot replace an existing definition; deliberate replacement remains available."
+    },
+    {
+      "name": "etaf-component-evaluated-duplicates-retain-lexical-captures",
+      "file": "tests/etaf-component-loading-tests.el",
+      "purpose": "Ordinary evaluation rejects duplicate declarations rather than silently retaining or replacing different lexical captures."
+    },
+    {
       "name": "etaf-help-opening-from-an-event-waits-for-preparation-publication",
       "file": "tests/etaf-help-tests.el",
       "purpose": "Button-triggered help waits for the event and preparation to publish, captures current notes and coalesces repeated requests."

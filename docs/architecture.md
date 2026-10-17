@@ -93,8 +93,16 @@ segments.
 
 ## 4. Components
 
-`etaf-define-component` registers one Component definition.  A mounted Component
-instance runs its initialization once:
+`etaf-define-component` registers one Component definition. Registration records
+its declaration fingerprint and the canonical library path, treating `.el` and
+`.elc` as the same library. Reloading an unchanged declaration reuses the original
+definition without invalidating compiled Views or resetting retained instances;
+this supports package.el's source-to-bytecode reload after installation. It also
+preserves the original captured values. Ordinary evaluation has no library identity,
+and changed declarations or another library still require explicit redefinition
+through `etaf-component-redefine-run` after disposing affected Runtimes.
+
+A mounted Component instance runs its initialization once:
 
 1. allocate the Component Scope;
 2. create named `:bindings` in declaration order;
