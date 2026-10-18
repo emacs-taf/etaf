@@ -93,6 +93,9 @@ capture the environment they must run in later.")
 (defvar etaf--dirty-runtimes nil
   "Runtimes with work for the next drain commit.")
 
+(defvar-local etaf--mount-cursor nil
+  "Cursor state a mounted View replaced, as (HAD-LOCAL . CURSOR-TYPE).")
+
 (defvar etaf--runtimes (make-hash-table :test #'eq :weakness 'key)
   "Mounted Runtime of each buffer.")
 
@@ -2202,7 +2205,15 @@ provide `:viewport-width' in pixels, `:viewport-height' in lines and
       (setf (etaf-runtime-root runtime) root)
       (puthash buffer runtime etaf--runtimes)
       (with-current-buffer buffer
-        (add-hook 'kill-buffer-hook #'etaf--runtime-buffer-killed nil t))
+        (add-hook 'kill-buffer-hook #'etaf--runtime-buffer-killed nil t)
+        ;; A mounted View paints its own focus and caret, so the native text
+        ;; cursor would draw a block wherever the pointer last placed point.
+        ;; The mounted buffer owns this state until it unmounts; a text input
+        ;; sets its own `cursor-type' while editing and restores this value.
+        (unless etaf--mount-cursor
+          (setq etaf--mount-cursor
+                (cons (local-variable-p 'cursor-type) cursor-type))
+          (setq-local cursor-type nil)))
       (etaf--keys-install runtime)
       (condition-case err
           (etaf--runtime-run-operation
@@ -2290,6 +2301,11 @@ are retained."
       (when (buffer-live-p buffer)
         (with-current-buffer buffer
           (remove-hook 'kill-buffer-hook #'etaf--runtime-buffer-killed t)
+          (when etaf--mount-cursor
+            (if (car etaf--mount-cursor)
+                (setq-local cursor-type (cdr etaf--mount-cursor))
+              (kill-local-variable 'cursor-type))
+            (setq etaf--mount-cursor nil))
           (etaf--keys-uninstall runtime)
           (when (etaf-runtime-observer runtime)
             (ebox-buffer-set-observer buffer nil))

@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- A mounted View hides the native text cursor for the whole buffer and
+  restores the caller's cursor state on unmount. Applications paint their own
+  focus and selection, so clicking content no longer leaves a cursor block;
+  a text input still installs its caret while it edits.
+
 - `etaf-runtime-window-viewport` reports a text frame's cell viewport instead
   of nil, so a surface can center and clamp itself against the window on a
   terminal as it does on a graphical frame.

@@ -1003,6 +1003,10 @@
 ;; Function: etaf-mount (buffer-or-name view &optional options)
 ;;;###autoload (autoload 'etaf-mount "etaf" nil nil)
 ;; Mount normalized VIEW into BUFFER-OR-NAME and return its buffer.
+;; The mounted buffer hides the native text cursor: an application paints its
+;; own focus and caret, so leaving the native cursor would draw a block wherever
+;; the pointer last placed point. A text input sets its own `cursor-type' while
+;; it edits and the caller's cursor state returns on unmount.
 ;; OPTIONS is forwarded to `etaf-runtime-mount' when the Runtime is loaded.
 ;;
 ;; Function: etaf-node (tag props children &optional named-slots)
