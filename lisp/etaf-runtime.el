@@ -96,6 +96,32 @@ capture the environment they must run in later.")
 (defvar-local etaf--mount-cursor nil
   "Cursor state a mounted View replaced, as (HAD-LOCAL . CURSOR-TYPE).")
 
+(defvar-local etaf--cursor-hidden nil
+  "Whether the input modality, not the application, hid this buffer's cursor.")
+
+(defun etaf--cursor-pointer-command-p ()
+  "Whether the running command came from a pointer event."
+  (let ((event last-command-event))
+    (and (consp event)
+         (symbolp (car event))
+         (string-prefix-p "mouse" (symbol-name (car event))))))
+
+(defun etaf--cursor-input-modality ()
+  "Follow the input modality with the native cursor of a mounted View.
+A pointer press hides it, because the block it leaves behind is not a focus
+cue; the next keyboard command shows it again, because that is where arrows
+and Tab put the user. This only touches a cursor it hid itself, so a text
+input keeps its own caret and an application keeps the cursor it chose."
+  (if (etaf--cursor-pointer-command-p)
+      (unless etaf--cursor-hidden
+        (setq etaf--cursor-hidden t)
+        (setq-local cursor-type nil))
+    (when etaf--cursor-hidden
+      (setq etaf--cursor-hidden nil)
+      (if (and etaf--mount-cursor (car etaf--mount-cursor))
+          (setq-local cursor-type (cdr etaf--mount-cursor))
+        (kill-local-variable 'cursor-type)))))
+
 (defvar etaf--runtimes (make-hash-table :test #'eq :weakness 'key)
   "Mounted Runtime of each buffer.")
 
@@ -2206,14 +2232,16 @@ provide `:viewport-width' in pixels, `:viewport-height' in lines and
       (puthash buffer runtime etaf--runtimes)
       (with-current-buffer buffer
         (add-hook 'kill-buffer-hook #'etaf--runtime-buffer-killed nil t)
-        ;; A mounted View paints its own focus and caret, so the native text
-        ;; cursor would draw a block wherever the pointer last placed point.
-        ;; The mounted buffer owns this state until it unmounts; a text input
-        ;; sets its own `cursor-type' while editing and restores this value.
+        ;; A mounted View paints its own focus, yet the native cursor is how a
+        ;; keyboard user sees which element the arrows reached. It therefore
+        ;; follows the input modality: a pointer press leaves it as a stray
+        ;; block wherever point landed, so it hides then, and the next keyboard
+        ;; command brings it back. A text input installs its own caret while it
+        ;; edits; the caller's cursor state returns on unmount.
         (unless etaf--mount-cursor
           (setq etaf--mount-cursor
-                (cons (local-variable-p 'cursor-type) cursor-type))
-          (setq-local cursor-type nil)))
+                (cons (local-variable-p 'cursor-type) cursor-type)))
+        (add-hook 'pre-command-hook #'etaf--cursor-input-modality nil t))
       (etaf--keys-install runtime)
       (condition-case err
           (etaf--runtime-run-operation
@@ -2301,6 +2329,8 @@ are retained."
       (when (buffer-live-p buffer)
         (with-current-buffer buffer
           (remove-hook 'kill-buffer-hook #'etaf--runtime-buffer-killed t)
+          (remove-hook 'pre-command-hook #'etaf--cursor-input-modality t)
+          (setq etaf--cursor-hidden nil)
           (when etaf--mount-cursor
             (if (car etaf--mount-cursor)
                 (setq-local cursor-type (cdr etaf--mount-cursor))
