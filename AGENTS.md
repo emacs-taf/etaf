@@ -55,6 +55,28 @@ Both directions are available for every module; batch independent symbols into
 one call. Bindings are closures registered as reactive effects, so `refs`
 reporting no direct caller for a binding updater is expected.
 
+## Layer hooks and load order
+
+- A function installed into a lower layer's hook variable must be its own function.
+  `#'symbol` evaluates to that symbol in byte code, so storing it makes the hook
+  resolve to whatever the symbol currently names.  Two layers that define the same
+  name (a delegating wrapper in the reactive layer and the real implementation in
+  the Runtime layer) then call each other, and the next watcher, effect or computed
+  signals `excessive-lisp-nesting`.  Name the implementation for its own behaviour
+  and let the lower layer own the wrapper.
+- Native compilation changes definitions while the session runs: an asynchronous
+  `.eln` load re-evaluates a library's definitions but skips its top-level forms, so
+  a later load can reinstate a wrapper the upper layer had replaced.  A load-order
+  hook cannot rely on "the last file loaded".
+- Diagnose that loop by comparing the environment hook variable with the function
+  cell it is supposed to call: a hook that names the wrapper itself, or a wrapper
+  installed after the Runtime layer, is the defect.  Reloading the Runtime layer
+  restores the session until the next such load.
+- Run `make -C etaf check` in a checkout whose `ecss` and `ebox` byte code exists
+  (`make -C ecss compile && make -C ebox compile` first).  With those layers loaded
+  from source, one animation input-gesture scenario fails on an input session that
+  byte-compiled code keeps, which reads as a regression.
+
 ## Enforced gates
 
 - `tests/acceptance.json` must inventory exactly the maintained Lisp
