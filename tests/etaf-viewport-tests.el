@@ -143,11 +143,26 @@ up the ambient Runtime and signal."
       (with-temp-buffer (etaf-set-value source 2))
       (should (equal (car seen) (cons 200 6))))))
 
-(ert-deftest etaf-viewport-window-metrics-need-a-graphic-window ()
-  "The window viewport is nil without a graphical window and needs a Runtime."
+(ert-deftest etaf-viewport-window-metrics-need-a-live-window ()
+  "The window viewport follows a displaying window on any display and needs a Runtime."
   (etaf-test-with-mount (runtime (etaf-view (box "w")))
     (should-not (etaf-runtime-window-viewport runtime)))
   (should-error (etaf-runtime-window-viewport) :type 'etaf-runtime-error))
+
+(ert-deftest etaf-viewport-window-metrics-read-a-text-window ()
+  "A text frame reports the cell viewport of the window showing the Runtime.
+The width is what the mount lays out against, so a terminal surface can
+center and clamp itself instead of guessing a pixel width."
+  (etaf-test-with-mount (runtime (etaf-view (box "w")))
+    (let* ((window (selected-window))
+           (original (window-buffer window)))
+      (unwind-protect
+          (progn
+            (set-window-buffer window (current-buffer))
+            (should (equal (etaf-runtime-window-viewport runtime)
+                           (cons (ebox-viewport-window-width window)
+                                 (window-body-height window)))))
+        (set-window-buffer window original)))))
 
 (provide 'etaf-viewport-tests)
 ;;; etaf-viewport-tests.el ends here

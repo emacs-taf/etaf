@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- `etaf-runtime-window-viewport` 在文本 frame 上返回字符格视口而不是 nil，
+  显示面在终端上也能像图形 frame 一样按窗口居中并限制尺寸。
+
 - 在同一个 Emacs 里安装、原生编译或重载包之后重新打开已挂载的应用，不再报
   `excessive-lisp-nesting`。响应式层可以在 Runtime 装好环境钩子之后再次求值，
   watcher、effect 与 computed 仍保留自己的组件环境。

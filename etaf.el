@@ -1607,10 +1607,11 @@
 ;; Function: etaf-runtime-window-viewport (&optional runtime)
 ;;;###autoload (autoload 'etaf-runtime-window-viewport "etaf" nil nil)
 ;; Return RUNTIME's display-window viewport as (WIDTH . HEIGHT).
-;; WIDTH is the pixel width the window offers to a mounted tree and HEIGHT is
-;; its body height in lines.  Nil when no window displays RUNTIME's buffer or
-;; the display is not graphical; read `etaf-runtime-viewport' for the canvas
-;; size instead.  A non-mounted Runtime signals `etaf-runtime-error'.
+;; WIDTH is the width the window offers to a mounted tree: pixels on a
+;; graphical frame, character cells on a text terminal.  HEIGHT is its body
+;; height in lines.  Nil when no window displays RUNTIME's buffer; read
+;; `etaf-runtime-viewport' for the canvas size instead.  A non-mounted Runtime
+;; signals `etaf-runtime-error'.
 ;;
 ;; Function: etaf-scope-run (scope function)
 ;;;###autoload (autoload 'etaf-scope-run "etaf" nil nil)

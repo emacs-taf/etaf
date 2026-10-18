@@ -881,9 +881,14 @@
       "purpose": "Removing a region returns its subtree to the Runtime viewport."
     },
     {
-      "name": "etaf-viewport-window-metrics-need-a-graphic-window",
+      "name": "etaf-viewport-window-metrics-need-a-live-window",
       "file": "tests/etaf-viewport-tests.el",
-      "purpose": "The window viewport reads nil without a graphical window and signals when no Runtime is mounted."
+      "purpose": "The window viewport reads nil without a displaying window and signals when no Runtime is mounted."
+    },
+    {
+      "name": "etaf-viewport-window-metrics-read-a-text-window",
+      "file": "tests/etaf-viewport-tests.el",
+      "purpose": "On a text frame the window viewport reports the cell width the mount lays out against, so surfaces can center and clamp themselves."
     },
     {
       "name": "etaf-viewport-computed-keeps-its-component-environment",

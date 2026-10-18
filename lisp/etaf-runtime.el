@@ -2618,14 +2618,14 @@ reruns after it changes."
 ;;;###autoload
 (defun etaf-runtime-window-viewport (&optional runtime)
   "Return RUNTIME's display-window viewport as (WIDTH . HEIGHT).
-WIDTH is the pixel width the window offers to a mounted tree and HEIGHT is
-its body height in lines.  RUNTIME defaults to the Runtime in the current
-buffer.  Nil when no window displays RUNTIME's buffer or the display is not
-graphical; read `etaf-runtime-viewport' for the canvas size instead.  A
-non-mounted Runtime signals `etaf-runtime-error'."
+WIDTH is the width the window offers to a mounted tree: pixels on a
+graphical frame, character cells on a text terminal.  HEIGHT is its body
+height in lines.  RUNTIME defaults to the Runtime in the current buffer.
+Nil when no window displays RUNTIME's buffer; read
+`etaf-runtime-viewport' for the canvas size instead.  A non-mounted
+Runtime signals `etaf-runtime-error'."
   (let* ((runtime (etaf-runtime-require-mounted runtime))
-         (window (and (display-graphic-p)
-                      (get-buffer-window (etaf-runtime-buffer runtime) t))))
+         (window (get-buffer-window (etaf-runtime-buffer runtime) t)))
     (when (window-live-p window)
       (cons (ebox-viewport-window-width window)
             (window-body-height window)))))

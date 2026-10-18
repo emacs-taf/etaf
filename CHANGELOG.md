@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- `etaf-runtime-window-viewport` reports a text frame's cell viewport instead
+  of nil, so a surface can center and clamp itself against the window on a
+  terminal as it does on a graphical frame.
+
 - Reopening a mounted application after packages were installed, natively
   compiled or reloaded in the same Emacs no longer signals
   `excessive-lisp-nesting`.  The reactive layer can be evaluated after the
