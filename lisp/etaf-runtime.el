@@ -354,7 +354,7 @@ must run outside the pure render phase."
          (etaf--render-phase-p (not (eq phase 'lifecycle))))
     (funcall function)))
 
-(defun etaf--effect-environment (function)
+(defun etaf--wrap-component-environment (function)
   "Return FUNCTION wrapped to run in the current Component environment.
 A watcher, effect or computed getter created during Component setup or a
 Runtime operation keeps that operation's Context, Runtime and lifecycle
@@ -366,7 +366,10 @@ because watcher callbacks receive the new and old values."
       (lambda (&rest arguments)
         (etaf--ctx-call ctx (lambda () (apply function arguments)) 'lifecycle)))))
 
-(setq etaf--effect-environment-function #'etaf--effect-environment)
+;; Name the hook with a function of its own.  `etaf-reactive' owns
+;; `etaf--effect-environment' and delegates through this hook, so pointing the
+;; hook at that wrapper would call it again from inside itself.
+(setq etaf--effect-environment-function #'etaf--wrap-component-environment)
 
 (defun etaf--note-update (ctx)
   "Record that an effect owned by CTX's instance re-ran."

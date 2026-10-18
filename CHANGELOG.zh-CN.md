@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- 在同一个 Emacs 里安装、原生编译或重载包之后重新打开已挂载的应用，不再报
+  `excessive-lisp-nesting`。响应式层可以在 Runtime 装好环境钩子之后再次求值，
+  watcher、effect 与 computed 仍保留自己的组件环境。
+
 - 纯文本 Emacs 构建编译可选图形调用时不再报告未声明函数。非法的保留 Host 内容
   会报告 `etaf-runtime-error`，不再因图像谓词缺失而报错，也不会部分更新批内内容。
 

@@ -615,13 +615,15 @@ An error from FUNCTION leaves SOURCE unchanged."
 The Runtime layer installs it.  `etaf-watch', `etaf-watch-effect' and
 `etaf-computed' created during a Component setup or a Runtime operation call
 it so later reactive runs keep that operation's Context, Runtime and
-lifecycle phase.")
+lifecycle phase.  It must name a function of its own: pointing at
+`etaf--effect-environment' itself would make that wrapper call itself.")
 
 (defun etaf--effect-environment (function)
   "Return FUNCTION wrapped in the environment current at its creation."
-  (if etaf--effect-environment-function
-      (funcall etaf--effect-environment-function function)
-    function))
+  (let ((wrap etaf--effect-environment-function))
+    (if (or (null wrap) (eq wrap 'etaf--effect-environment))
+        function
+      (funcall wrap function))))
 
 ;;;###autoload
 (cl-defun etaf-watch

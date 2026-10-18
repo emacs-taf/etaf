@@ -4,6 +4,12 @@
 
 ### Fixed
 
+- Reopening a mounted application after packages were installed, natively
+  compiled or reloaded in the same Emacs no longer signals
+  `excessive-lisp-nesting`.  The reactive layer can be evaluated after the
+  Runtime installed its environment hook, and watchers, effects and computed
+  getters keep their Component environment.
+
 - Text-only Emacs builds compile optional graphics calls without undeclared
   function warnings. Invalid retained Host content reports `etaf-runtime-error`
   instead of a missing image-predicate error, without partially updating a batch.
