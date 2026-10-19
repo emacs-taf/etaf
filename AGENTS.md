@@ -15,6 +15,8 @@ grouped by the theme you are chasing:
 | View grammar, Hosts, structural normalization | `etaf-view`, `etaf-compiler` |
 | Component definition, props, slots, retained instances | `etaf-component` |
 | Mounted lifetime, retained Host tree, fine-grained bindings, commit, direct Ebox writes | `etaf-runtime` |
+| Application buffers: canvas, theme face, fit after window changes, single close | `etaf-app` |
+| Run-to-completion subprocesses for command-line backends | `etaf-process` |
 | Nested viewport regions: subtree layout region publication and resolution | `etaf-viewport` |
 | Text measurement for applications | `etaf-measure` |
 | Reactive state, derived values, effects, batches, Scopes | `etaf-reactive` |

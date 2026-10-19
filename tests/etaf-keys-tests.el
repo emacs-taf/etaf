@@ -435,4 +435,46 @@
       (should (member (vconcat (kbd "<left>")) found))
       (should (member (vconcat (kbd "C-g")) found)))))
 
+
+(ert-deftest etaf-keys-return-keeps-a-focused-control-before-an-enclosing-binding ()
+  "RET activates the focused control rather than an enclosing Host's RET key."
+  (let ((pressed 0) (opened 0))
+    (etaf-test-with-mount
+        (runtime
+         (etaf-view
+          (column
+            (box :ref 'outside "Outside")
+            (column :key-scope 'local
+                    :keys (list (list "RET" (lambda () (cl-incf opened)) "Open"))
+              (box :ref 'button :tab-index 0 :on-press (lambda () (cl-incf pressed))
+                   "Button")
+              (box :ref 'plain :tab-index 0 "Plain")))))
+      ;; Focus answers inside a local scope even when point is elsewhere,
+      ;; so the control's own keymap is not the one under point.
+      (dolist (ref '(button plain))
+        (etaf-focus runtime ref)
+        (goto-char (etaf-host-ref-position runtime 'outside))
+        (etaf-keys-test-press "RET"))
+      (should (equal (list pressed opened) '(1 1))))))
+
+(ert-deftest etaf-keys-pointer-events-resolve-from-the-host-under-the-pointer ()
+  "A wheel event runs the binding of the Host under the pointer."
+  (let (log)
+    (etaf-test-with-mount
+        (runtime
+         (etaf-view
+          (column :keys (list (list "<wheel-up>" (lambda () (push 'root log))))
+            (box :ref 'pane
+                 :keys (list (list "<wheel-up>" (lambda () (push 'pane log))))
+                 "Pane")
+            (box :ref 'other :tab-index 0 "Other"))))
+      (set-window-buffer (selected-window) (current-buffer))
+      (etaf-focus runtime 'other)
+      (dolist (ref '(pane other))
+        (let* ((position (etaf-host-ref-position runtime ref))
+               (last-input-event
+                (list 'wheel-up (list (selected-window) position '(0 . 0) 0))))
+          (call-interactively (key-binding [wheel-up] t))))
+      (should (equal (nreverse log) '(pane root))))))
+
 ;;; etaf-keys-tests.el ends here

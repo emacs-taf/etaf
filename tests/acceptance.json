@@ -458,7 +458,6 @@
       "file": "tests/etaf-events-tests.el",
       "purpose": "The session text-editing command list changes through the public add and remove only."
     },
-
     {
       "name": "etaf-keys-resolve-from-focus-outward-and-nearest-wins",
       "file": "tests/etaf-keys-tests.el",
@@ -769,7 +768,6 @@
       "file": "tests/etaf-view-tests.el",
       "purpose": "The measurement adapter measures the first line, honors faces and rejects non-strings."
     },
-
     {
       "name": "etaf-view-refit-reports-an-observed-operation",
       "file": "tests/etaf-view-tests.el",
@@ -895,7 +893,6 @@
       "file": "tests/etaf-viewport-tests.el",
       "purpose": "A computed created in a Component keeps resolving its own viewport region when it later runs outside rendering."
     },
-
     {
       "name": "etaf-component-watch-callback-keeps-its-environment",
       "file": "tests/etaf-component-tests.el",
@@ -1030,6 +1027,71 @@
       "name": "etaf-help-deferred-close-respects-newer-lifecycles",
       "file": "tests/etaf-help-tests.el",
       "purpose": "Deferred close restoration respects a newer help opening and skips a Runtime unmounted in the same batch."
+    },
+    {
+      "name": "etaf-keys-return-keeps-a-focused-control-before-an-enclosing-binding",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "RET activates a nearer enabled control with a press handler before an enclosing Host's RET entry, and reaches that entry when the focused Host has no press handler."
+    },
+    {
+      "name": "etaf-keys-pointer-events-resolve-from-the-host-under-the-pointer",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "A wheel event runs the binding of the Host under the pointer, falling back to an enclosing Host's binding, independent of focus."
+    },
+    {
+      "name": "etaf-app-open-mounts-a-canvas-and-closes-once",
+      "file": "tests/etaf-app-tests.el",
+      "purpose": "etaf-app-open mounts the View on a canvas buffer with truncated lines, no mode line and a blank truncation glyph; etaf-app-close runs ON-CLOSE once while mounted and kills the buffer."
+    },
+    {
+      "name": "etaf-app-killing-the-buffer-or-reopening-closes-the-application",
+      "file": "tests/etaf-app-tests.el",
+      "purpose": "Reopening an application name and killing its buffer each run ON-CLOSE exactly once; closing a non-application buffer signals user-error."
+    },
+    {
+      "name": "etaf-app-open-failure-closes-and-propagates",
+      "file": "tests/etaf-app-tests.el",
+      "purpose": "A failing mount runs ON-CLOSE, kills the application buffer and propagates the error."
+    },
+    {
+      "name": "etaf-app-close-reports-the-close-error-after-teardown",
+      "file": "tests/etaf-app-tests.el",
+      "purpose": "An ON-CLOSE error still kills the buffer, then propagates from etaf-app-close."
+    },
+    {
+      "name": "etaf-app-canvas-follows-the-theme-source",
+      "file": "tests/etaf-app-tests.el",
+      "purpose": "Reactive BACKGROUND and FOREGROUND sources remap the default face and repaint on change; CURSOR sets the buffer cursor."
+    },
+    {
+      "name": "etaf-app-fits-after-a-settled-window-change",
+      "file": "tests/etaf-app-tests.el",
+      "purpose": "ON-FIT runs in the application buffer before mount and after a settled display-window change, not for an unchanged window and not after close."
+    },
+    {
+      "name": "etaf-process-run-reads-both-streams-after-exit",
+      "file": "tests/etaf-process-tests.el",
+      "purpose": "etaf-process-run reports the exit code and the complete stdout and stderr of a finished command, never calling back before it returns."
+    },
+    {
+      "name": "etaf-process-run-parses-json-output",
+      "file": "tests/etaf-process-tests.el",
+      "purpose": "JSON output arrives as plists and lists with null as nil and false as :false; invalid JSON arrives as nil."
+    },
+    {
+      "name": "etaf-process-run-applies-environment-and-directory",
+      "file": "tests/etaf-process-tests.el",
+      "purpose": "ENVIRONMENT entries override variables and DIRECTORY sets the working directory of the command."
+    },
+    {
+      "name": "etaf-process-run-times-out-and-reports-failures",
+      "file": "tests/etaf-process-tests.el",
+      "purpose": "A timeout stops the command and settles as timeout; a missing program settles as failed with a message."
+    },
+    {
+      "name": "etaf-process-cancel-never-calls-back",
+      "file": "tests/etaf-process-tests.el",
+      "purpose": "Cancelling a running or failed job returns non-nil once and suppresses its callback."
     }
   ]
 }

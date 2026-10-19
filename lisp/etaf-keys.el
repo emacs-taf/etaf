@@ -11,11 +11,15 @@
 ;;
 ;; 1. The scope starts at the focused Host, else the Host at point.  When a
 ;;    visible `:focus-scope modal' Host does not contain it, the scope starts
-;;    at that modal Host instead.
+;;    at that modal Host instead.  A pointer event (a wheel turn or a
+;;    click) starts at the Host under the pointer, so a pane can bind the
+;;    wheel for itself.
 ;; 2. The registered Host and its ancestors are searched nearest first; the
 ;;    search stops after the first `:focus-scope modal' or `:key-scope local'
 ;;    Host.  A disabled Host contributes no keys but still bounds the search.
-;; 3. The first entry matching the key wins.  Without one, the framework
+;; 3. The first entry matching the key wins, except that RET activates a
+;;    nearer enabled Host with a press handler, so a focused control keeps
+;;    RET even when an enclosing Host binds it.  Without one, the framework
 ;;    defaults apply: `M-g' opens region selection, Escape dispatches the
 ;;    nearest `:on-dismiss', `?' opens `etaf-help', Tab moves one tab stop,
 ;;    and an arrow key runs `etaf-direction' (the nearest `:on-direction'
@@ -404,17 +408,44 @@ Runtime or callback arguments through their lexical environment."
       (and (eq etaf-direction-scheme 'vim)
            (cdr (assoc event etaf--keys-vim-direction-events)))))
 
+(defun etaf--keys-pointer-ref (runtime)
+  "Return the Host under the pointer event being looked up in RUNTIME, or nil.
+Wheel and click bindings follow the pointer rather than focus or point."
+  (let ((event last-input-event))
+    (when (and (consp event) (consp (cdr event)) (consp (event-start event)))
+      (let* ((position (event-start event))
+             (window (posn-window position))
+             (point (posn-point position))
+             (buffer (etaf-runtime-buffer runtime)))
+        (when (and (windowp window) (eq (window-buffer window) buffer)
+                   (integer-or-marker-p point))
+          (when-let* ((node (ebox-node-at point buffer)))
+            (etaf-runtime-node-host-ref runtime node)))))))
+
+(defun etaf--keys-activation-ref (runtime chain)
+  "Return the nearest Host in CHAIN that a RUNTIME activation would press."
+  (cl-find-if (lambda (ref)
+                (and (not (plist-get (etaf--keys-props runtime ref) :disabled))
+                     (etaf--event-handler runtime ref 'press)))
+              chain))
+
 (defun etaf--keys-binding (event)
   "Return the command EVENT runs in the current Runtime buffer, or nil."
   (let ((runtime (etaf-runtime-for-buffer (current-buffer))))
     (when (and runtime (not (ebox-input-active-p (current-buffer))))
-      (let* ((chain (etaf--keys-chain runtime))
+      (let* ((chain (etaf--keys-chain runtime (etaf--keys-pointer-ref runtime)))
              (found (cl-find event (etaf--keys-entries runtime chain)
                              :key (lambda (item) (etaf--keys-event (cadr item)))
-                             :test #'equal)))
+                             :test #'equal))
+             (return (member event '([13] [return])))
+             (pressed (and return (etaf--keys-activation-ref runtime chain))))
         (cond
+         ;; A control nearer than the Host that binds RET keeps activation.
+         ((and found pressed
+               (< (cl-position pressed chain) (cl-position (car found) chain)))
+          #'etaf-activate)
          (found (etaf--keys-command runtime 'command (car found) (nth 2 found)))
-         ((member event '([13] [return])) #'etaf-activate)
+         (return #'etaf-activate)
          ((equal event etaf--keys-selector-event)
           #'etaf-region-select)
          ((member event etaf--keys-dismiss-events)

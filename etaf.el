@@ -3,8 +3,8 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; Author: ETAF contributors
-;; Version: 0.2.3
-;; Package-Requires: ((emacs "29.1") (ebox "3.0.1") (ecss "0.1.0"))
+;; Version: 0.3.0
+;; Package-Requires: ((emacs "29.1") (ebox "3.1.0") (ecss "0.1.0"))
 ;; Keywords: ui, tools, convenience
 ;; URL: https://github.com/emacs-taf/etaf
 
@@ -51,6 +51,35 @@
 ;; The owning Resource or Controller starts and releases the operation; this is
 ;; not a standalone promise.  Native timers and processes may call completion
 ;; functions later on the Emacs thread.
+;;
+;; Function: etaf-process-run (command &key callback timeout environment directory (output 'string) (coding 'utf-8-unix) name)
+;;;###autoload (autoload 'etaf-process-run "etaf" nil nil)
+;; Run COMMAND, a list of a program and its arguments, without blocking and
+;; return a job.  CALLBACK receives one result plist when the job settles:
+;; :status is `exit', `signal', `timeout' or `failed' (the program could not
+;; start), :exit the exit code or signal number, :output stdout as a string
+;; or, with OUTPUT `json', its parsed value (objects as plists, arrays as
+;; lists, null as nil, false as :false; nil when empty or invalid), :stderr
+;; the complete standard error text and :message a description for timeouts
+;; and failures.  Both streams are read completely after exit.  The callback
+;; never runs before this function returns, runs at most once and never
+;; after `etaf-process-cancel'.  TIMEOUT seconds stops the process and
+;; settles the job as `timeout'.  ENVIRONMENT is a list of "NAME=VALUE"
+;; strings overriding `process-environment', DIRECTORY the working
+;; directory, CODING the decoding of both streams and NAME the process label.
+;; What an exit code or output field means stays with the caller.  To load
+;; a Resource or Data source, return (etaf-async (lambda (resolve reject)
+;; ...)) whose START runs the job and returns a canceller calling
+;; `etaf-process-cancel'.  Long-lived interactive processes are out of scope.
+;;
+;; Function: etaf-process-cancel (job)
+;;;###autoload (autoload 'etaf-process-cancel "etaf" nil nil)
+;; Stop JOB from `etaf-process-run' without running its callback; return
+;; non-nil when JOB had not settled yet.  Its process is deleted.
+;;
+;; Function: etaf-process-live-p (job)
+;;;###autoload (autoload 'etaf-process-live-p "etaf" nil nil)
+;; Return non-nil while JOB has neither settled nor been cancelled.
 ;;
 ;; Function: etaf-action-redefine-run (function)
 ;;;###autoload (autoload 'etaf-action-redefine-run "etaf" nil nil)
@@ -158,6 +187,60 @@
 ;; Error: etaf-animation-error
 ;; Invalid ETAF animation operation
 ;; Catch this condition with condition-case; failed calls do not return a value.
+;;
+;; Function: etaf-app-open (name view &key state on-fit on-close background foreground (cursor 'inherit) mode-line (display t) mount-options)
+;;;###autoload (autoload 'etaf-app-open "etaf" nil nil)
+;; Open VIEW as the application buffer NAME and return the buffer.
+;; An application is one named buffer showing one mounted View; this is its
+;; lifecycle entry, replacing per-application buffer setup, resize hooks and
+;; face remapping.  An open application of the same NAME closes first.  The
+;; buffer gets canvas settings (truncated lines without hscroll or a
+;; truncation glyph, zero scroll margins, no line numbers) and shows through
+;; DISPLAY: t selects it in the selected window regardless of the user's
+;; `display-buffer' rules, a function receives the buffer, nil leaves it
+;; undisplayed (useful in tests).
+;; ON-FIT, a function of the display window, runs in the buffer before VIEW
+;; mounts and again, in one reactive batch, after each settled change of
+;; that window's size or identity and after text scaling, including under a
+;; fixed viewport; transient UI borrowing lines does not run it.  Fit page
+;; sizes, row budgets or a fixed canvas there instead of in a resize hook.
+;; ON-CLOSE, a function of no arguments, runs once in the buffer when the
+;; buffer is killed, `etaf-app-close' closes it or a reopen replaces it,
+;; while VIEW is still mounted; Emacs exit is not covered, so persist state
+;; that must survive it from `kill-emacs-hook'.  BACKGROUND and FOREGROUND,
+;; each a colour string, ref, computed or zero-argument function, remap the
+;; default face so cells the View does not paint match it; reactive sources
+;; repaint when they change.  CURSOR, unless `inherit' (the default), sets
+;; `cursor-type' before mounting, which is the cursor the Runtime restores.
+;; MODE-LINE nil (the default) hides the mode line, t keeps it and another
+;; value becomes `mode-line-format'.  STATE is what `etaf-app-state' returns.
+;; MOUNT-OPTIONS, a plist or a function of the display window (nil when
+;; undisplayed) returning one, go to `etaf-mount'; a function runs in the
+;; buffer after ON-FIT, so a fixed viewport height can come from the fitted
+;; state.  When mounting fails the application closes, the buffer is killed
+;; and the error propagates.  Declare keys with
+;; the root Host's `:keys'.
+;;
+;; Function: etaf-app-close (&optional buffer-or-name)
+;;;###autoload (autoload 'etaf-app-close "etaf" nil t)
+;; Close the application in BUFFER-OR-NAME, by default the current buffer.
+;; Run its close function, unmount its View and kill the buffer; return t.
+;; A buffer without an open application signals `user-error'.  A close
+;; function error propagates after the buffer is gone; killing the buffer
+;; directly reports that error as a message instead.
+;;
+;; Function: etaf-app-state (&optional buffer-or-name)
+;;;###autoload (autoload 'etaf-app-state "etaf" nil nil)
+;; Return the STATE given to `etaf-app-open' for the open application in
+;; BUFFER-OR-NAME (default the current buffer), or nil.  Commands use it to
+;; find their application from the buffer they run in; the close function
+;; still sees it.
+;;
+;; Function: etaf-app-buffer (name)
+;;;###autoload (autoload 'etaf-app-buffer "etaf" nil nil)
+;; Return the buffer of the open application NAME, or nil.  An entry command
+;; that should reselect an open application instead of reopening it checks
+;; this first.
 ;;
 ;; Function: etaf-behavior-context-info (context)
 ;;;###autoload (autoload 'etaf-behavior-context-info "etaf" nil nil)
@@ -1044,9 +1127,14 @@
 ;; when nothing is focused or a command moved point out of the focused Host,
 ;; is inside the Host; the nearest Host binding it
 ;; wins, disabled Hosts contribute nothing, and Host keys precede the buffer's
-;; own keymaps, including application emulation maps.  Keys fall through to
-;; them when no Host binds them or a native input session is
-;; active.  A sequence such as "C-c C-u" shares its prefix with the buffer's
+;; own keymaps.  Keys fall through to them when no Host binds them or a native
+;; input session is active.  Applications declare their keys on the root Host
+;; rather than installing keymaps of their own.  A pointer event, such as a
+;; wheel turn, resolves from the Host under the pointer, so a pane can bind
+;; `<wheel-up>' for itself and an unbound wheel still scrolls natively.  RET
+;; activates a nearer enabled Host with a press handler before an enclosing
+;; Host's RET entry, so a focused control keeps activation while the root
+;; binds RET for its selection.  A sequence such as "C-c C-u" shares its prefix with the buffer's
 ;; maps; it may not start with a printing key, and one key cannot both run a
 ;; command and start a sequence anywhere in the Runtime (a render error).
 ;; Native command objects retain only weak references to their Runtime and
@@ -2180,6 +2268,8 @@
 (require 'etaf-help)
 (require 'etaf-performance)
 (require 'etaf-viewport)
+(require 'etaf-app)
+(require 'etaf-process)
 (require 'etaf-video-component)
 
 (autoload 'etaf-animation-example-open "examples/etaf-animation-example" nil t)

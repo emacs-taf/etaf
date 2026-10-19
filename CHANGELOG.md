@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added
+
+- `etaf-app-open`, `etaf-app-close`, `etaf-app-state` and `etaf-app-buffer`
+  give every application one lifecycle: a canvas buffer, a default face that
+  follows the application's theme, a fit callback that runs after each
+  settled window or text-scale change, and a close function that runs once
+  however the buffer goes away.  Applications no longer need their own
+  resize hooks, debounce timers, face remapping or kill hooks.
+
+- `etaf-process-run`, `etaf-process-cancel` and `etaf-process-live-p` run a
+  command-line backend without blocking and report one result with the exit
+  status, the complete stdout (optionally parsed as JSON) and stderr, a
+  timeout or a start failure.  A cancelled job never calls back.
+
+### Changed
+
+- A pointer event bound in `:keys`, such as `<wheel-up>`, resolves from the
+  Host under the pointer, so a pane can bind the wheel for itself.  RET
+  activates a nearer enabled Host with a press handler before an enclosing
+  Host's RET entry, so an application can bind RET on its root for the
+  selection without a dispatcher of its own.
+
 ### Fixed
 
 - A mounted View follows the input modality with the native cursor: a pointer

@@ -224,11 +224,13 @@ ref from `:on-change`, and publishing that same value into the Host is a no-op.
 Keyboard input is a scoped key layer in `etaf-keys`.  Each Runtime buffer owns
 one emulation keymap holding every event any committed Host lists in `:keys`;
 each binding is a menu-item filter that resolves at key time.  Resolution
-starts at Ebox focus (or point), moves to the innermost visible
+starts at Ebox focus (or point), or at the Host under the pointer for a
+pointer event such as a wheel turn, moves to the innermost visible
 `:focus-scope modal` node when the start lies outside it, then walks committed
 Host ancestors nearest first and stops after the first modal or
 `:key-scope local` Host.  The first
-enabled entry wins; otherwise framework defaults apply (Escape to the
+enabled entry wins, except that RET activates a nearer enabled Host with a
+press handler before an enclosing Host's RET entry; otherwise framework defaults apply (Escape to the
 nearest `:on-dismiss`, `?` to read-only help, arrows to a focused separator or
 slider's `:on-drag`), and anything else falls through.  This walk is the only
 outward key propagation; ordinary callbacks still do not bubble.  Direction
@@ -280,7 +282,45 @@ External uncertainty never implies local rollback.  Retrying reconciliation
 refreshes through the Data Source without repeating a write unless the source
 explicitly chooses to do so.
 
-## 9. Retained Host update boundaries
+## 9. Application buffers and subprocesses
+
+`etaf-app` is the lifecycle layer above one Runtime: an application is one
+named buffer showing one mounted View.  `etaf-app-open` prepares the canvas
+(truncated lines, no hscroll, zero margins, a blank truncation glyph, an
+optional mode line and cursor), remaps the default face from the
+application's theme sources through a detached watch effect, displays the
+buffer, runs the application's fit and mounts.  Its record lives in a
+buffer-local variable; a `kill-buffer-hook` at negative depth runs the close
+function before the Runtime's own unmount hook, so the View is still mounted
+while the application persists its state.  `etaf-app-close` releases the
+same record before it unmounts and kills, which makes teardown single
+whether the user kills the buffer, reopens the name or closes it.
+
+Fitting rides Ebox's viewport task instead of a resize hook per application.
+Ebox runs `ebox-display-window-change-functions` after each settled refit
+when the display window's identity or body size differs from the last one
+delivered, and skips heights lowered by a transient minibuffer or echo
+message.  `etaf-app` registers one global function there and on
+`ebox-display-change-functions` (text scaling), looks up the buffer's record
+and calls its fit in one reactive batch.  A fixed-viewport application
+refits from the same callback.
+
+The Runtime and the application are deliberately separate: a Runtime is per
+buffer and shared by everything the buffer shows, so the desktop and tests
+can mount Views without application lifecycle.  Keys stay on Hosts; an
+application's root `:keys` replaces buffer keymaps and emulation maps.
+
+`etaf-process` runs one subprocess per request for applications whose
+backends are command-line programs.  Each job owns separate stdout and stderr
+buffers, an ignoring sentinel on the stderr pipe and an optional timer.
+Settlement drains both pipes with a zero timeout after the exit event,
+because the stderr pipe can deliver after the exit; it then rechecks whether
+a timeout or cancellation finished the job while draining.  Delivery is
+idempotent and cancellation marks the job settled before deleting the
+process, so the callback runs at most once and never after a cancel.
+Protocols stay in each application's service layer.
+
+## 10. Retained Host update boundaries
 
 `etaf-runtime-update-host-content` and `etaf-runtime-update-host-contents` are
 public escape hatches for high-frequency display surfaces such as video.  They
@@ -297,7 +337,7 @@ so the next ordinary View binding agrees with the display.
 `ebox-mount-set-viewport`.  Viewport changes are Ebox layout work; ETAF does not
 recreate the View tree to resize the buffer.
 
-## 10. Invariants
+## 11. Invariants
 
 1. **Single retained ownership.** A mounted Runtime owns the application
    segments and at most one transient help segment over one retained Ebox node
@@ -321,7 +361,7 @@ recreate the View tree to resize the buffer.
 8. **Public boundary.**  Applications and catalog Components use ETAF public
    APIs only.  Ebox-prefixed calls stay inside ETAF or Ebox-owned packages.
 
-## 11. Rationale
+## 12. Rationale
 
 The retained design records dependencies when structure is created.  A state
 write follows the dependency edge to the binding that owns the affected node,
