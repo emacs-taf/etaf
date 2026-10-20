@@ -32,6 +32,10 @@
 
 ### Fixed
 
+- Checking a long list of explicitly keyed siblings for duplicate keys is
+  linear instead of quadratic.  A View that re-renders about 1,900 keyed grid
+  cells spent about 100 ms of every update in this check alone.
+
 - A mounted View follows the input modality with the native cursor: a pointer
   press hides the block it would leave behind, and the next keyboard command
   restores it, so arrows and Tab still show the position while clicking no

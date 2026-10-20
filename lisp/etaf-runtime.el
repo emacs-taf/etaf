@@ -1082,16 +1082,27 @@ other values with `equal'."
    ((etaf--component-call-p item)
     (plist-get (etaf--component-call-props item) :key))))
 
+(define-hash-table-test 'etaf--identity-key
+  #'etaf--key-match-p (lambda (key) (sxhash-equal (cdr key))))
+
 (defun etaf--check-keys (items keys)
-  "Signal when explicitly keyed ITEMS repeat one of their KEYS."
-  (let (seen)
+  "Signal when explicitly keyed ITEMS repeat one of their KEYS.
+A short list is scanned directly; a long one is indexed, so checking a
+list stays linear in its length."
+  (let (seen table (count 0))
     (cl-loop for item in items for key in keys
              when (etaf--explicit-key-p item)
-             do (if (cl-member key seen :test #'etaf--key-match-p)
-                    (signal 'etaf-renderer-error
-                            (list (format "View has duplicate sibling key: %S"
-                                          (cdr key))))
-                  (push key seen)))))
+             do (when (if table (gethash key table)
+                        (cl-member key seen :test #'etaf--key-match-p))
+                  (signal 'etaf-renderer-error
+                          (list (format "View has duplicate sibling key: %S"
+                                        (cdr key)))))
+             (cond
+              (table (puthash key t table))
+              ((< (setq count (1+ count)) 16) (push key seen))
+              (t (setq table (make-hash-table :test 'etaf--identity-key
+                                              :size (length keys)))
+                 (dolist (old (cons key seen)) (puthash old t table)))))))
 
 (defun etaf--build-items (items keys parent ctx)
   "Build segments for ITEMS with KEYS under PARENT in CTX; return them.

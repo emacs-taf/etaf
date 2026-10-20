@@ -809,6 +809,11 @@
       "purpose": "Duplicate keys signal and keep the previous committed rows."
     },
     {
+      "name": "etaf-view-rejects-duplicate-keys-in-long-lists",
+      "file": "tests/etaf-view-tests.el",
+      "purpose": "A long keyed list rejects a repeated key and keeps its committed rows, while a different node kind may reuse the key."
+    },
+    {
       "name": "etaf-view-projects-default-and-named-slots",
       "file": "tests/etaf-view-tests.el",
       "purpose": "Default and named slots project caller content; absent slots use fallback."

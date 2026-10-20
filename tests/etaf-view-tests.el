@@ -265,6 +265,28 @@
       (should-error (etaf-set-value items '(1 1)))
       (should (equal (etaf-test-lines) '("n1" "n2"))))))
 
+(ert-deftest etaf-view-rejects-duplicate-keys-in-long-lists ()
+  "A long list of keyed siblings rejects a repeated key; another tag may reuse it."
+  (let ((keys (etaf-ref (number-sequence 1 40))))
+    (etaf-test-with-mount (_runtime
+                           (etaf-view
+                             (column
+                               (expr (etaf-node
+                                      'column nil
+                                      (append
+                                       (mapcar (lambda (n)
+                                                 (etaf-node 'text (list :key n)
+                                                            (list (format "n%d" n))))
+                                               (etaf-value keys))
+                                       (list (etaf-node 'column '(:key 40)
+                                                        (list (etaf-node 'text nil '("tail")))))))))))
+      (should (= (length (etaf-test-lines)) 41))
+      (should (equal (car (last (etaf-test-lines))) "tail"))
+      (should-error (etaf-set-value keys (append (number-sequence 1 40) '(7)))
+                    :type 'etaf-renderer-error)
+      (should (= (length (etaf-test-lines)) 41))
+      (should (equal (nth 39 (etaf-test-lines)) "n40")))))
+
 (ert-deftest etaf-view-projects-default-and-named-slots ()
   "Default and named slots project caller content; absent slots use fallback."
   (let ((footer (etaf-ref t)))
