@@ -84,6 +84,21 @@ the mode line, t keeps it and another value replaces it."
   (unless (eq cursor 'inherit)
     (setq-local cursor-type cursor)))
 
+(defun etaf-app--refit-canvas (buffer window)
+  "Refit BUFFER's Runtime to WINDOW, now and after the next redisplay.
+Hiding the mode line does not resize WINDOW, so the size Emacs reports until
+the next redisplay still counts the mode line row; the second fit catches the
+row the canvas would otherwise overshoot by."
+  (when (buffer-live-p buffer)
+    (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
+      (etaf-refit runtime window))
+    (run-at-time
+     0 nil
+     (lambda ()
+       (when (and (buffer-live-p buffer) (window-live-p window))
+         (when-let* ((runtime (etaf-runtime-for-buffer buffer)))
+           (etaf-refit runtime window)))))))
+
 (defun etaf-app--fit (buffer window)
   "Run BUFFER's application fit for WINDOW in one reactive batch."
   (when-let* ((record (etaf-app--live-record buffer))
@@ -187,11 +202,22 @@ buffer is killed and the error propagates."
           (let ((window (get-buffer-window buffer t)))
             (when (and window on-fit)
               (with-current-buffer buffer (funcall on-fit window)))
-            (etaf-mount buffer view
-                        (if (functionp mount-options)
-                            (with-current-buffer buffer
-                              (funcall mount-options window))
-                          mount-options)))
+            (let ((options (if (functionp mount-options)
+                               (with-current-buffer buffer
+                                 (funcall mount-options window))
+                             mount-options)))
+              (etaf-mount buffer view options)
+              ;; Hiding the mode line gives the window one more row, but its
+              ;; cached geometry keeps the old body height until Emacs
+              ;; redisplays it, so the Runtime mounted on the larger size.  A
+              ;; canvas taller than its window scrolls as a whole, carrying
+              ;; every pane along, so refit now and once more after that
+              ;; redisplay.  A caller that pinned a viewport keeps it.
+              (when (and window
+                         (not (or (plist-member options :viewport-width)
+                                  (plist-member options :viewport-height))))
+                (with-current-buffer buffer
+                  (etaf-app--refit-canvas buffer window)))))
           (setq opened t))
       (unless opened
         (when (buffer-live-p buffer)

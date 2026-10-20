@@ -104,6 +104,22 @@
       ;; A closed application stops following its source.
       (etaf-set-value color "#303030"))))
 
+(ert-deftest etaf-app-canvas-matches-the-window-after-hiding-the-mode-line ()
+  "The canvas is the window's body, not the mode line's larger body.
+Hiding the mode line does not resize the window, so its cached body height
+still counts that row until the next redisplay; a canvas one row taller than
+the window scrolls as a whole and slides every pane at once."
+  (etaf-app-test-cleanup
+    (let ((buffer (etaf-app-open etaf-app-test-name (etaf-view (box "A"))
+                                 :mode-line nil)))
+      (accept-process-output nil 0.05)
+      (with-current-buffer buffer
+        (let ((window (get-buffer-window buffer t)))
+          (should window)
+          (should (= (cdr (etaf-runtime-viewport
+                           (etaf-runtime-for-buffer buffer)))
+                     (window-body-height window))))))))
+
 (ert-deftest etaf-app-mount-options-function-follows-the-fit ()
   "A MOUNT-OPTIONS function runs in the buffer after ON-FIT with its window."
   (etaf-app-test-cleanup

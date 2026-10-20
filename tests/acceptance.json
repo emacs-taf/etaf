@@ -1114,6 +1114,11 @@
       "purpose": "A Host without :drag-edge keeps the start, move and end phases and receives no edge gesture."
     },
     {
+      "name": "etaf-app-canvas-matches-the-window-after-hiding-the-mode-line",
+      "file": "tests/etaf-app-tests.el",
+      "purpose": "An application canvas takes the display window's body height after the mode line is hidden, so no row of the page can scroll the whole layout."
+    },
+    {
       "name": "etaf-app-mount-options-function-follows-the-fit",
       "file": "tests/etaf-app-tests.el",
       "purpose": "A MOUNT-OPTIONS function runs after ON-FIT in the application buffer with the display window, and its viewport reaches the mounted Runtime."
