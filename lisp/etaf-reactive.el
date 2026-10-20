@@ -637,14 +637,20 @@ source's test.  NAME labels diagnostics.  When CALLBACK returns a function,
 it runs before the next callback and when the watcher stops.  Return a
 zero-argument stop function.
 
-A watcher created during Component setup runs its callback in that
-Component's environment on every later run, so Context and Runtime reads
-inside the callback keep working after the first run."
+A watcher created during Component setup runs its source getter and its
+callback in that Component's environment on every later run, so Context and
+Runtime reads inside either keep working after the first run.  A callable
+SOURCE therefore reads the Component's own viewport instead of falling back
+to the Runtime canvas."
   (etaf--assert-not-rendering 'watch)
   (unless (functionp callback)
     (signal 'wrong-type-argument (list 'functionp callback)))
   (let* ((callback (etaf--effect-environment callback))
-         (getter (etaf--watch-getter source))
+         ;; The getter runs outside the Component's dynamic environment at
+         ;; flush time, so a callable SOURCE would resolve `etaf-viewport'
+         ;; against nothing and fall back to the canvas.  `etaf-computed'
+         ;; already retains the environment; keep the two paths symmetric.
+         (getter (etaf--effect-environment (etaf--watch-getter source)))
          (same-p (or test
                      (and (etaf--source-p source) (etaf--source-test source))
                      #'etaf--reactive-same-p))

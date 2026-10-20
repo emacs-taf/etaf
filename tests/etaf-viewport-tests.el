@@ -19,6 +19,22 @@
   "Wrap SEEN's reader in a viewport region that fills its parent."
   :view (etaf-viewport-region (etaf-viewport-test-reader :seen seen)))
 
+(etaf-define-component etaf-viewport-test-callable-reader (&key seen)
+  "Record the subtree's viewport through a callable watch source into SEEN.
+A callable source is read outside the Component's dynamic environment, so
+this exercises the environment `etaf-watch' must retain for its getter."
+  :setup
+  (progn
+    (etaf-watch #'etaf-viewport
+                (lambda (new _old) (setcar seen new))
+                :immediate t)
+    nil)
+  :view (text "callable reader"))
+
+(etaf-define-component etaf-viewport-test-callable-region (&key seen)
+  "Wrap SEEN's callable reader in a viewport region that fills its parent."
+  :view (etaf-viewport-region (etaf-viewport-test-callable-reader :seen seen)))
+
 (etaf-define-component etaf-viewport-test-fixed-region (&key seen height)
   "Wrap SEEN's reader in a viewport region of HEIGHT lines."
   :view (etaf-viewport-region :height (list 'lh (etaf-value height))
@@ -124,6 +140,17 @@ SOURCE is read first so a plain reference change dirties the computed."
                  (list :viewport-width 200 :viewport-height 10))
       (should (equal (car seen) (cons 200 4)))
       (etaf-set-value show nil)
+      (should (equal (car seen) (cons 200 10))))))
+
+(ert-deftest etaf-viewport-callable-source-reads-its-own-region ()
+  "A watcher with a callable source reads the enclosing region, not the canvas.
+The source is evaluated at flush time, outside the Component's dynamic
+environment; without a retained environment `etaf-viewport' answers with the
+Runtime canvas and an embedded view lays out for the whole buffer."
+  (let ((seen (cons nil nil)))
+    (etaf-test-with-mount
+        (_runtime (etaf-view (etaf-viewport-test-callable-region :seen seen))
+                  (list :viewport-width 200 :viewport-height 10))
       (should (equal (car seen) (cons 200 10))))))
 
 (ert-deftest etaf-viewport-computed-keeps-its-component-environment ()

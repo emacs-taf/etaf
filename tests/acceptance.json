@@ -889,6 +889,11 @@
       "purpose": "On a text frame the window viewport reports the cell width the mount lays out against, so surfaces can center and clamp themselves."
     },
     {
+      "name": "etaf-viewport-callable-source-reads-its-own-region",
+      "file": "tests/etaf-viewport-tests.el",
+      "purpose": "A watcher whose source is a callable reads the enclosing region, not the Runtime canvas."
+    },
+    {
       "name": "etaf-viewport-computed-keeps-its-component-environment",
       "file": "tests/etaf-viewport-tests.el",
       "purpose": "A computed created in a Component keeps resolving its own viewport region when it later runs outside rendering."
