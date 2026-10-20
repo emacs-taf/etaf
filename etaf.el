@@ -748,6 +748,9 @@
 ;; per start/move/end/cancel phase. Each phase runs in its own reactive event
 ;; batch and publishes before the next pointer event. Primary-button tracking
 ;; belongs to Ebox; when both handlers are supplied, press is keyboard-only.
+;; A Host with :drag-edge receives an extra `edge' phase while the pointer
+;; rests in the window's edge band during the drag, with :edges naming the
+;; edges; the callback owns any scrolling of its own viewport.
 ;; Generated pointer gestures publish Ebox :active state through component
 ;; styles while held; pointer activation clears it before invoking :on-press.
 ;; Explicit event dispatch and keyboard activation do not create pointer state.

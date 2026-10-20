@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- 非 nil 的 `:drag-edge` 让 Host 在已移动的拖拽停在窗口边缘带时收到 `edge`
+  手势阶段。每个阶段给出贴住的边缘，只报告意图；视口与滚动归拖拽处理器所有，
+  引擎的节奏由 `ebox-drag-edge-band` 与 `ebox-drag-edge-interval` 调整。
+
 ### Fixed
 
 - `etaf-runtime-window-viewport` 在文本 frame 上返回字符格视口而不是 nil，

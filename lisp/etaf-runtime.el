@@ -625,9 +625,9 @@ with only a reference or accessibility label remains part of its parent."
              do (push (cons (etaf--event-kind key) value) handlers))
     (nreverse handlers)))
 
-(defun etaf--activation-keymap (runtime host ref press drag lock)
+(defun etaf--activation-keymap (runtime host ref press drag lock edge)
   "Return HOST's activation keymap dispatching REF in RUNTIME."
-  (let ((key (list ref press drag lock))
+  (let ((key (list ref press drag lock edge))
         (cached (etaf--host-keymap host)))
     (if (and cached (equal (car cached) key))
         (cdr cached)
@@ -643,7 +643,8 @@ with only a reference or accessibility label remains part of its parent."
                         (let ((etaf--drag-cancel-p
                                (eq (plist-get gesture :phase) 'cancel)))
                           (etaf-dispatch-event runtime ref 'drag gesture t)))))
-                  :drag-lock-modifier lock)))
+                  :drag-lock-modifier lock
+                  :drag-edge edge)))
         (setf (etaf--host-keymap host) (cons key map))
         map))))
 
@@ -825,7 +826,8 @@ HOST and REF are non-nil for a mounted Host, which receives a keymap."
              (drag (functionp (plist-get props :on-drag)))
              (map (and runtime (or press drag) (not disabled)
                        (etaf--activation-keymap runtime host ref press drag
-                                          (plist-get props :drag-lock-modifier)))))
+                                          (plist-get props :drag-lock-modifier)
+                                          (plist-get props :drag-edge)))))
         (when map (push :keymap result) (push map result))
         (when (plist-get props :tab-index)
           (push :tab-index result) (push (plist-get props :tab-index) result))

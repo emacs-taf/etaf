@@ -90,7 +90,8 @@ lowering for its :src, :columns, :rows, :adapter and :inset properties.")
 (defconst etaf--semantic-props
   '(:class :id :role :disabled :tab-index :ref :use
     :help-echo :pointer :hover-style :hover-content :drag-lock-modifier
-    :hover-group :sticky :keys :help :focus-group :focus-scope :key-scope :region :on-direction)
+    :drag-edge :hover-group :sticky :keys :help :focus-group :focus-scope
+    :key-scope :region :on-direction)
   "ETAF Host metadata outside the Ebox style schema.")
 
 (defun etaf--aria-property-p (property)

@@ -4,6 +4,12 @@
 
 ### Added
 
+- A Host with `:drag-edge` non-nil receives `edge` gesture phases while a drag
+  that has moved rests in a window edge band.  Each phase names the touched
+  edges and reports intent only; the drag handler owns the viewport and the
+  scroll, and `ebox-drag-edge-band` / `ebox-drag-edge-interval` tune the
+  engine's cadence.
+
 - `etaf-app-open`, `etaf-app-close`, `etaf-app-state` and `etaf-app-buffer`
   give every application one lifecycle: a canvas buffer, a default face that
   follows the application's theme, a fit callback that runs after each

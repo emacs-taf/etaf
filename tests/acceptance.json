@@ -1092,6 +1092,21 @@
       "name": "etaf-process-cancel-never-calls-back",
       "file": "tests/etaf-process-tests.el",
       "purpose": "Cancelling a running or failed job returns non-nil once and suppresses its callback."
+    },
+    {
+      "name": "etaf-drag-edge-reaches-the-drag-handler",
+      "file": "tests/etaf-drag-edge-tests.el",
+      "purpose": "A Host with :drag-edge receives the engine's edge gesture through :on-drag while the pointer rests at a window edge."
+    },
+    {
+      "name": "etaf-drag-edge-without-the-property-keeps-old-phases",
+      "file": "tests/etaf-drag-edge-tests.el",
+      "purpose": "A Host without :drag-edge keeps the start, move and end phases and receives no edge gesture."
+    },
+    {
+      "name": "etaf-app-mount-options-function-follows-the-fit",
+      "file": "tests/etaf-app-tests.el",
+      "purpose": "A MOUNT-OPTIONS function runs after ON-FIT in the application buffer with the display window, and its viewport reaches the mounted Runtime."
     }
   ]
 }
