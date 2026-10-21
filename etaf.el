@@ -10,15 +10,21 @@
 
 ;;; Commentary:
 
+;; The ETAF framework: a retained view layer that compiles a declarative
+;; form into boxes, lays them out, and paints them into an Emacs buffer.
+;;
+;; `pmset' is optional: on macOS it only annotates latency records with
+;; the local power state, and its absence leaves that field unknown.
+;;
 ;; Public API
 ;;
 ;; Load this package with (require 'etaf) after adding the repository
 ;; root to load-path.
 ;; Only the interfaces listed below are supported for use by other packages.
 ;; All unlisted symbols and implementation features are internal, including
-;; names without a double hyphen. Do not require files below lisp/ from consumers.
+;; names without a double hyphen.  Do not require files below lisp/ from consumers.
 ;; This Commentary is the authoritative export list; implementations and precise
-;; docstrings remain beside their definitions. The ETAF Reference Manual contains workflows.
+;; docstrings remain beside their definitions.  The ETAF Reference Manual contains workflows.
 ;;
 ;; Macro: etaf-action-define (name arguments &rest body)
 ;;;###autoload (autoload 'etaf-action-define "etaf" nil nil 'macro)
