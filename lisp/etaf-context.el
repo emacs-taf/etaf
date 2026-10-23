@@ -258,6 +258,36 @@ directly in a quoted `((SELECTOR PROPERTY VALUE ...) ...)' form."
     value))
 
 ;;;###autoload
+;;;###autoload
+(defun etaf-appearance-provide (appearance)
+  "Provide APPEARANCE (`light' or `dark') to the current Component subtree.
+A host that renders a surface of a different appearance than its frame (a
+light panel inside a dark frame) provides it per surface; `etaf-appearance'
+reads the nearest one.  APPEARANCE may be a ref or a computed, so a host that
+switches appearance republishes the subtree without re-rendering it."
+  (unless (or (memq appearance '(light dark))
+              (etaf-ref-p appearance)
+              (etaf-computed-p appearance))
+    (signal 'etaf-context-error
+            (list (format "Appearance must be light, dark, a ref or a computed: %S"
+                          appearance))))
+  (etaf-provide 'appearance appearance))
+
+;;;###autoload
+(defun etaf-appearance ()
+  "Return the appearance inherited from the nearest host, or the frame mode.
+The value is `light' or `dark'.  A provided ref is read through `etaf-value',
+so a Component that calls this function re-renders when the host switches
+appearance."
+  (let ((value (etaf-inject 'appearance nil)))
+    (cond ((or (etaf-ref-p value) (etaf-computed-p value))
+           (let ((resolved (etaf-value value)))
+             (if (memq resolved '(light dark))
+                 resolved
+               (etaf-theme-current-mode))))
+          ((memq value '(light dark)) value)
+          (t (etaf-theme-current-mode)))))
+
 (defun etaf-theme-current-mode ()
   "Return the current frame color mode as `light' or `dark'.
 

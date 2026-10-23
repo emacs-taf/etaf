@@ -248,6 +248,23 @@
 ;; that should reselect an open application instead of reopening it checks
 ;; this first.
 ;;
+;; Function: etaf-appearance ()
+;;;###autoload (autoload 'etaf-appearance "etaf" nil nil)
+;; Return the appearance inherited from the nearest host, or the frame mode.
+;;
+;; The value is `light' or `dark'.  A host that renders a surface of a
+;; different appearance than its frame (a light panel inside a dark frame)
+;; provides it with `etaf-appearance-provide'; a provided ref is read
+;; reactively, so the Components below re-render when the host switches.
+;;
+;; Function: etaf-appearance-provide (appearance)
+;;;###autoload (autoload 'etaf-appearance-provide "etaf" nil nil)
+;; Provide APPEARANCE (`light' or `dark') to the current Component subtree.
+;;
+;; APPEARANCE may be a ref or a computed, so a host that switches appearance
+;; republishes the subtree without re-rendering it.  An invalid value signals
+;; `etaf-context-error' before anything is provided.
+;;
 ;; Function: etaf-behavior-context-info (context)
 ;;;###autoload (autoload 'etaf-behavior-context-info "etaf" nil nil)
 ;; Return CONTEXT's installation facts as a fresh plist.

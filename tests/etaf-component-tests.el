@@ -129,6 +129,11 @@
   :setup (etaf-theme-provide theme)
   :view (column (etaf-component-test-themed)))
 
+(etaf-define-component etaf-component-test-appearance-root (&key appearance)
+  "Provide APPEARANCE and render what a child reads."
+  :setup (etaf-appearance-provide appearance)
+  :view (column (expr (format "appearance:%s" (etaf-appearance)))))
+
 (etaf-define-component etaf-component-test-hover-themed ()
   "Hover with a Theme token nested in a :hover-style plist."
   :view (column (box :ref 'hoverer :class "hoverer"
@@ -259,6 +264,23 @@
       (etaf-set-value theme '(:accent "#00FF00"))
       (should (equal (etaf-test-face-attribute (etaf-test-face-at "swatch") :foreground)
                      "#00FF00")))))
+
+(ert-deftest etaf-component-appearance-follows-a-provided-ref ()
+  "A Component reads the host appearance and re-renders when it switches."
+  (let ((appearance (etaf-ref 'dark)))
+    (etaf-test-with-mount (_runtime (etaf-view (etaf-component-test-appearance-root
+                                                :appearance appearance)))
+      (should (string-match-p "appearance:dark"
+                              (buffer-substring-no-properties (point-min) (point-max))))
+      (etaf-set-value appearance 'light)
+      (should (string-match-p "appearance:light"
+                              (buffer-substring-no-properties (point-min) (point-max)))))))
+
+(ert-deftest etaf-component-rejects-an-invalid-appearance ()
+  "Only light, dark, a ref or a computed is an appearance."
+  (let ((error (should-error (etaf-appearance-provide 'sepia)
+                             :type 'etaf-context-error)))
+    (should (string-match-p "Appearance" (error-message-string error)))))
 
 (ert-deftest etaf-component-hover-style-token-resolves-from-provided-theme ()
   "A token inside :hover-style resolves to the provided Theme colour.
