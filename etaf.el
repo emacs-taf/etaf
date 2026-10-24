@@ -257,6 +257,13 @@
 ;; provides it with `etaf-appearance-provide'; a provided ref is read
 ;; reactively, so the Components below re-render when the host switches.
 ;;
+;; A palette derived from faces reads this inside its own computation, the one
+;; a Theme computed or a render holds: Ebox resolves colors while a View
+;; renders, so an application that read the faces once at mount keeps the
+;; colors of the theme that was active then.  Reading this registers the
+;; switch Emacs reports through `enable-theme-functions' and recomputes the
+;; palette from the new faces.
+;;
 ;; Function: etaf-appearance-mode (&optional override)
 ;;;###autoload (autoload 'etaf-appearance-mode "etaf" nil nil)
 ;; Return a computed appearance mode that follows the host.
