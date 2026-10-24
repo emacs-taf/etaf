@@ -32,6 +32,13 @@
 
 ### Fixed
 
+- A Theme computed that follows the frame re-derives after an Emacs theme
+  switch.  `etaf-theme-current-mode` reports the frame's mode, and a computed
+  that read it kept the mode the frame had when it first ran, so a surface
+  that followed the Emacs theme stayed on its old palette after a switch.
+  A switch now reaches each consumer once, after the enable and disable steps
+  of one switch settle.
+
 - Checking a long list of explicitly keyed siblings for duplicate keys is
   linear instead of quadratic.  A View that re-renders about 1,900 keyed grid
   cells spent about 100 ms of every update in this check alone.

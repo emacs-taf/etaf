@@ -302,6 +302,32 @@
       (should (string-match-p "mode:dark"
                               (buffer-substring-no-properties (point-min) (point-max)))))))
 
+(ert-deftest etaf-theme-mode-re-derives-after-a-theme-switch ()
+  "A Theme computed that follows the frame re-derives once per switch.
+An application palette used to keep the mode the frame had when it was first
+read, so a desktop or a game that followed the Emacs theme stayed on the old
+palette after switching."
+  (let* ((original (frame-parameter nil 'background-mode))
+         (calls 0)
+         (mode (etaf-computed (lambda () (cl-incf calls) (etaf-theme-current-mode)))))
+    (unwind-protect
+        (progn
+          (set-frame-parameter nil 'background-mode 'light)
+          (should (eq 'light (etaf-value mode)))
+          (should (= 1 calls))
+          ;; A second read is served from the cache.
+          (should (eq 'light (etaf-value mode)))
+          (should (= 1 calls))
+          (set-frame-parameter nil 'background-mode 'dark)
+          (run-hooks 'enable-theme-functions)
+          (sleep-for 0.05)
+          (should (eq 'dark (etaf-value mode)))
+          ;; One switch reaches the consumer once, not once per step.
+          (should (= 2 calls)))
+      (set-frame-parameter nil 'background-mode original)
+      (run-hooks 'enable-theme-functions)
+      (sleep-for 0.05))))
+
 (ert-deftest etaf-component-rejects-an-invalid-appearance ()
   "Only light, dark, a ref or a computed is an appearance."
   (let ((error (should-error (etaf-appearance-provide 'sepia)

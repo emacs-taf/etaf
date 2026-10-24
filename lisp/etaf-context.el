@@ -301,12 +301,38 @@ appearance."
           ((memq value '(light dark)) value)
           (t (etaf-theme-current-mode)))))
 
+(defvar etaf--theme-generation (etaf-ref 0)
+  "Counts Emacs theme switches, so appearance consumers re-derive.")
+
+(defvar etaf--theme-timer nil
+  "Pending coalesced pass after a theme switch.")
+
+(defun etaf--theme-changed (&rest _)
+  "Note that a theme switch may have changed the frame appearance.
+`enable-theme-functions' and `disable-theme-functions' report the steps of one
+switch, so the pass is coalesced after the current command instead of walking
+it once per step."
+  (when (timerp etaf--theme-timer)
+    (cancel-timer etaf--theme-timer))
+  (setq etaf--theme-timer
+        (run-at-time 0 nil
+                     (lambda ()
+                       (etaf-batch
+                        (setf (etaf-value etaf--theme-generation)
+                              (1+ (etaf-value etaf--theme-generation))))))))
+
+(add-hook 'enable-theme-functions #'etaf--theme-changed)
+(add-hook 'disable-theme-functions #'etaf--theme-changed)
+
 (defun etaf-theme-current-mode ()
   "Return the current frame color mode as `light' or `dark'.
 
 This is only the default mode for palette resolution.  An application-owned
 Theme toggle should pass its explicit mode to `etaf-theme-resolve-palette'
-instead of changing the Emacs frame."
+instead of changing the Emacs frame.  Reading the switch generation makes a
+Theme computed or a render that calls this function re-derive after a theme
+switch instead of keeping the palette the frame had when it first read it."
+  (etaf-value etaf--theme-generation)
   (if (eq (frame-parameter nil 'background-mode) 'dark) 'dark 'light))
 
 (defun etaf--theme-resolve-color (value mode)

@@ -1790,7 +1790,9 @@
 ;;
 ;; This is only the default mode for palette resolution.  An application-owned
 ;; Theme toggle should pass its explicit mode to `etaf-theme-resolve-palette'
-;; instead of changing the Emacs frame.
+;; instead of changing the Emacs frame.  The function also ties its caller to
+;; the theme-switch signal: a Theme computed that reads this value re-derives
+;; once after an Emacs theme switch instead of keeping the mode it first read.
 ;;
 ;; Function: etaf-theme-provide (theme)
 ;;;###autoload (autoload 'etaf-theme-provide "etaf" nil nil)

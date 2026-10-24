@@ -1129,6 +1129,11 @@
    "purpose": "A Component reads the host-provided appearance and re-renders when the ref switches mode."
   },
   {
+   "name": "etaf-theme-mode-re-derives-after-a-theme-switch",
+   "file": "tests/etaf-component-tests.el",
+   "purpose": "A Theme computed that follows the frame re-derives once after a theme switch."
+  },
+  {
    "name": "etaf-component-rejects-an-invalid-appearance",
    "file": "tests/etaf-component-tests.el",
    "purpose": "An appearance that is not light, dark, a ref or a computed signals etaf-context-error."
