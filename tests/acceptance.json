@@ -1142,6 +1142,21 @@
    "name": "etaf-component-mode-follows-the-host-unless-overridden",
    "file": "tests/etaf-component-tests.el",
    "purpose": "A Component mode follows the host appearance and an app override ref wins."
+  },
+  {
+   "name": "etaf-surface-host-adopts-what-the-content-declares",
+   "file": "tests/etaf-component-tests.el",
+   "purpose": "A host reads the Theme, mode cell and mode labels a mounted content declares, and writing the mode cell re-renders that content."
+  },
+  {
+   "name": "etaf-surface-declaration-needs-a-host",
+   "file": "tests/etaf-component-tests.el",
+   "purpose": "Content outside a framing host finds no surface, declares nothing and keeps its own palette."
+  },
+  {
+   "name": "etaf-surface-declare-rejects-values-it-cannot-frame",
+   "file": "tests/etaf-component-tests.el",
+   "purpose": "A surface accept only reactive Theme and mode sources and labelled modes, and rejects a value that is not a host surface."
   }
  ]
 }

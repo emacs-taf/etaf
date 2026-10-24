@@ -301,6 +301,82 @@ appearance."
           ((memq value '(light dark)) value)
           (t (etaf-theme-current-mode)))))
 
+;;;; Surface declaration
+
+(cl-defstruct (etaf-surface (:constructor etaf-surface-create))
+  "What mounted content declares about the surface it paints.
+THEME is a ref or computed holding the Theme plist the content paints with,
+MODE is a ref holding its current appearance mode, and MODES is the ordered
+alist of (MODE . LABEL) the content can switch between.  A host that frames
+the content creates it, provides it with `etaf-surface-provide' and reads the
+result; the content declares its own surface with `etaf-surface-declare'."
+  theme mode modes)
+
+(defun etaf--surface-check (surface)
+  "Require SURFACE to be a host-created ETAF surface."
+  (unless (etaf-surface-p surface)
+    (signal 'etaf-context-error
+            (list (format "Surface must come from `etaf-surface-create': %S"
+                          surface))))
+  surface)
+
+;;;###autoload
+(defun etaf-surface-provide (surface)
+  "Provide SURFACE to the current Component subtree.
+SURFACE comes from `etaf-surface-create'.  Content mounted inside reads it
+with `etaf-surface-host' and declares what it paints with
+`etaf-surface-declare', so a host paints its own chrome the way the content
+asks instead of guessing a palette.  The declaration travels downward like
+every Context value; the object itself is mutable, and the host keeps its own
+reference to read the result after the content mounts."
+  (etaf--surface-check surface)
+  (etaf-provide 'surface surface))
+
+;;;###autoload
+(defun etaf-surface-host ()
+  "Return the surface declaration of the nearest host, or nil.
+The value is the `etaf-surface' a host provided with `etaf-surface-provide'.
+It is nil in a host that does not frame the content, such as an ordinary
+application buffer, so an application declares its surface only when it is
+there."
+  (let ((value (etaf-inject 'surface nil)))
+    (when value (etaf--surface-check value))))
+
+;;;###autoload
+(cl-defun etaf-surface-declare (surface &key theme mode modes)
+  "Declare the content's own surface on host SURFACE.
+THEME is a ref or computed holding the Theme plist the content paints with,
+MODE a ref holding its current mode symbol, and MODES the ordered alist of
+(MODE . LABEL) the content can switch between; LABEL is a string.  A host
+paints its frame, title bar and border from THEME and offers MODES as its
+switch, so the content's palette and its switch remain one state: the host
+writes MODE, the content reads it, and a change on either side repaints both.
+Only the keywords given are replaced, so a content may declare its palette
+and its modes in separate calls.  An invalid value signals
+`etaf-context-error' before anything is stored."
+  (etaf--assert-not-rendering 'surface-declare)
+  (etaf--surface-check surface)
+  (when (and theme (not (or (etaf-ref-p theme) (etaf-computed-p theme))))
+    (signal 'etaf-context-error
+            (list (format "Surface theme must be a ref or a computed: %S"
+                          theme))))
+  (when (and mode (not (etaf-ref-p mode)))
+    (signal 'etaf-context-error
+            (list (format "Surface mode must be a ref: %S" mode))))
+  (when modes
+    (unless (and (proper-list-p modes)
+                 (cl-every (lambda (entry)
+                             (and (consp entry) (symbolp (car entry))
+                                  (stringp (cdr entry))))
+                           modes))
+      (signal 'etaf-context-error
+              (list (format "Surface modes must be an alist of mode and label: %S"
+                            modes)))))
+  (when theme (setf (etaf-surface-theme surface) theme))
+  (when mode (setf (etaf-surface-mode surface) mode))
+  (when modes (setf (etaf-surface-modes surface) modes))
+  surface)
+
 (defvar etaf--theme-generation (etaf-ref 0)
   "Counts Emacs theme switches, so appearance consumers re-derive.")
 

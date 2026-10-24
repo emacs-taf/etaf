@@ -1777,6 +1777,55 @@
 ;; Prefer named `:bindings' for handles used by the View and event callbacks.
 ;; Components using named bindings cannot also use this accessor.
 ;;
+;; Function: etaf-surface-provide (surface)
+;;;###autoload (autoload 'etaf-surface-provide "etaf" nil nil)
+;; Provide SURFACE (`etaf-surface-create') to the current Component subtree.
+;;
+;; A host that frames content provides the slot, and the content declares its
+;; own Theme, mode cell and mode labels on it with `etaf-surface-declare'.
+;; The host reads the result after mounting; content outside such a host gets
+;; nil from `etaf-surface-host' and keeps painting itself.
+;;
+;; Function: etaf-surface-host ()
+;;;###autoload (autoload 'etaf-surface-host "etaf" nil nil)
+;; Return the surface declaration of the nearest host, or nil.
+;;
+;; Call it from a Component `:setup' and declare only when it is non-nil, so
+;; the same View works in a floating panel and in an ordinary buffer.
+;;
+;; Function: etaf-surface-create ()
+;;;###autoload (autoload 'etaf-surface-create "etaf" nil nil)
+;; Return an empty surface declaration for a host to provide.
+;; The host provides it with `etaf-surface-provide' before rendering the
+;; content and reads `etaf-surface-theme', `etaf-surface-mode' and
+;; `etaf-surface-modes' afterwards.
+;;
+;; Function: etaf-surface-declare (surface &key theme mode modes)
+;;;###autoload (autoload 'etaf-surface-declare "etaf" nil nil)
+;; Declare the content's own surface on host SURFACE.
+;;
+;; THEME is a ref or computed holding the Theme plist the content paints
+;; with, MODE a ref holding its current mode symbol, and MODES the ordered
+;; alist of (MODE . LABEL) it can switch between.  A host paints its frame,
+;; title bar and border from THEME and offers MODES as its switch, so the
+;; content's palette and its switch stay one state: the host writes MODE, the
+;; content reads it, and a change on either side repaints both.  Only the
+;; keywords given are replaced.  An invalid value, or calling it while
+;; rendering, signals an error before anything is stored.
+;;
+;; Function: etaf-surface-theme (surface)
+;;;###autoload (autoload 'etaf-surface-theme "etaf" nil nil)
+;; Return SURFACE's Theme source (a ref or computed), or nil.
+;;
+;; Function: etaf-surface-mode (surface)
+;;;###autoload (autoload 'etaf-surface-mode "etaf" nil nil)
+;; Return SURFACE's mode ref, or nil.  A host writes it to switch the content,
+;; and the content's own switch writes the same ref.
+;;
+;; Function: etaf-surface-modes (surface)
+;;;###autoload (autoload 'etaf-surface-modes "etaf" nil nil)
+;; Return SURFACE's ordered alist of (MODE . LABEL), or nil.
+;;
 ;; Function: etaf-string-pixel-width (string)
 ;;;###autoload (autoload 'etaf-string-pixel-width "etaf" nil nil)
 ;; Return the display pixel width of STRING's first line.

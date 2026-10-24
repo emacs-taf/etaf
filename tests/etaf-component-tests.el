@@ -334,6 +334,66 @@ palette after switching."
                              :type 'etaf-context-error)))
     (should (string-match-p "Appearance" (error-message-string error)))))
 
+(etaf-define-component etaf-component-test-surface-declarer (&key standalone-log)
+  "Declare the content surface on the nearest host."
+  :bindings ((theme (etaf-ref (list :ui-bg "#101010" :ui-mode 'dark)))
+             (mode (etaf-ref 'dark)))
+  :setup (let ((surface (etaf-surface-host)))
+           (if surface
+               (etaf-surface-declare surface :theme theme :mode mode
+                                     :modes '((light . "L") (dark . "D")))
+             (when standalone-log
+               (setcar standalone-log 'standalone))))
+  :view (text (expr (format "mode:%s" (etaf-value mode)))))
+
+(etaf-define-component etaf-component-test-surface-host (&key surface)
+  "Provide SURFACE to a declarer below."
+  :setup (etaf-surface-provide surface)
+  :view (etaf-component-test-surface-declarer))
+
+(ert-deftest etaf-surface-host-adopts-what-the-content-declares ()
+  "A host reads the surface a mounted content declared.
+The host does not guess: Theme, mode cell and mode labels are the content's,
+so its chrome and the content's palette stay one state."
+  (let ((surface (etaf-surface-create)))
+    (etaf-test-with-mount (_runtime
+                           (etaf-view (etaf-component-test-surface-host
+                                       :surface surface)))
+      (should (equal '(:ui-bg "#101010" :ui-mode dark)
+                     (etaf-value (etaf-surface-theme surface))))
+      (should (eq 'dark (etaf-value (etaf-surface-mode surface))))
+      (should (equal '((light . "L") (dark . "D"))
+                     (etaf-surface-modes surface)))
+      ;; The host's own switch writes the cell the content reads.
+      (etaf-set-value (etaf-surface-mode surface) 'light)
+      (should (string-match-p
+               "mode:light"
+               (buffer-substring-no-properties (point-min) (point-max)))))))
+
+(ert-deftest etaf-surface-declaration-needs-a-host ()
+  "Without a host the content declares nothing and keeps painting itself."
+  (let ((log (list nil)))
+    (etaf-test-with-mount (_runtime
+                           (etaf-view (etaf-component-test-surface-declarer
+                                       :standalone-log log)))
+      (should (equal '(standalone) log))
+      (should (string-match-p
+               "mode:dark"
+               (buffer-substring-no-properties (point-min) (point-max)))))))
+
+(ert-deftest etaf-surface-declare-rejects-values-it-cannot-frame ()
+  "A surface declaration accepts only reactive Theme and mode sources."
+  (let ((surface (etaf-surface-create)))
+    (should-error (etaf-surface-provide 'surface) :type 'etaf-context-error)
+    (should-error (etaf-surface-declare surface :theme '(:ui-bg "#000000"))
+                  :type 'etaf-context-error)
+    (should-error (etaf-surface-declare surface :mode 'dark)
+                  :type 'etaf-context-error)
+    (should-error (etaf-surface-declare surface :modes '((light)))
+                  :type 'etaf-context-error)
+    (should-error (etaf-surface-declare surface :modes '((light . 1)))
+                  :type 'etaf-context-error)))
+
 (ert-deftest etaf-component-hover-style-token-resolves-from-provided-theme ()
   "A token inside :hover-style resolves to the provided Theme colour.
 Ebox turns the plist into a native mouse face; an unresolved token is an

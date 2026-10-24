@@ -4,6 +4,13 @@
 
 ### Added
 
+- `etaf-surface-create`, `etaf-surface-provide`, `etaf-surface-host` and
+  `etaf-surface-declare` let content that owns its palette and its light/dark
+  switch declare them to the host that frames it.  `etaf-surface-theme`,
+  `etaf-surface-mode` and `etaf-surface-modes` read the declaration back, so a
+  floating panel can paint its own chrome from the content's Theme and offer
+  the content's modes instead of keeping a second appearance state.
+
 - A Host with `:drag-edge` non-nil receives `edge` gesture phases while a drag
   that has moved rests in a window edge band.  Each phase names the touched
   edges and reports intent only; the drag handler owns the viewport and the
