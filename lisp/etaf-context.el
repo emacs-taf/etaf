@@ -259,6 +259,19 @@ directly in a quoted `((SELECTOR PROPERTY VALUE ...) ...)' form."
 
 ;;;###autoload
 ;;;###autoload
+(defun etaf-appearance-mode (&optional override)
+  "Return a computed appearance mode that follows the host.
+OVERRIDE, when non-nil, is a ref holding `light' or `dark' and wins over the
+host, which is what an application's own light/dark switch writes.  The
+computed tracks the host appearance, so a Component that reads it re-renders
+when the host switches."
+  (etaf-computed
+   (lambda ()
+     (or (and override (etaf-value override))
+         (etaf-appearance)))
+   :test #'eq))
+
+;;;###autoload
 (defun etaf-appearance-provide (appearance)
   "Provide APPEARANCE (`light' or `dark') to the current Component subtree.
 A host that renders a surface of a different appearance than its frame (a

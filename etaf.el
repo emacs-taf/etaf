@@ -257,6 +257,15 @@
 ;; provides it with `etaf-appearance-provide'; a provided ref is read
 ;; reactively, so the Components below re-render when the host switches.
 ;;
+;; Function: etaf-appearance-mode (&optional override)
+;;;###autoload (autoload 'etaf-appearance-mode "etaf" nil nil)
+;; Return a computed appearance mode that follows the host.
+;;
+;; OVERRIDE, when non-nil, is a ref holding `light' or `dark' and wins; that
+;; is what an application's own light/dark switch writes.  The computed tracks
+;; the host appearance, so a Component that reads it re-renders when the host
+;; switches.
+;;
 ;; Function: etaf-appearance-provide (appearance)
 ;;;###autoload (autoload 'etaf-appearance-provide "etaf" nil nil)
 ;; Provide APPEARANCE (`light' or `dark') to the current Component subtree.

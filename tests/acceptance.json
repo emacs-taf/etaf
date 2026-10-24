@@ -1132,6 +1132,11 @@
    "name": "etaf-component-rejects-an-invalid-appearance",
    "file": "tests/etaf-component-tests.el",
    "purpose": "An appearance that is not light, dark, a ref or a computed signals etaf-context-error."
+  },
+  {
+   "name": "etaf-component-mode-follows-the-host-unless-overridden",
+   "file": "tests/etaf-component-tests.el",
+   "purpose": "A Component mode follows the host appearance and an app override ref wins."
   }
  ]
 }

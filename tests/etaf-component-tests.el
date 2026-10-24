@@ -129,6 +129,16 @@
   :setup (etaf-theme-provide theme)
   :view (column (etaf-component-test-themed)))
 
+(etaf-define-component etaf-component-test-mode (&key override)
+  "Render the mode resolved for an OVERRIDE ref."
+  :bindings ((mode (etaf-appearance-mode override)))
+  :view (expr (format "mode:%s" (etaf-value mode))))
+
+(etaf-define-component etaf-component-test-mode-host (&key appearance override)
+  "Provide APPEARANCE to a mode reader with OVERRIDE."
+  :setup (etaf-appearance-provide appearance)
+  :view (column (etaf-component-test-mode :override override)))
+
 (etaf-define-component etaf-component-test-appearance-root (&key appearance)
   "Provide APPEARANCE and render what a child reads."
   :setup (etaf-appearance-provide appearance)
@@ -274,6 +284,22 @@
                               (buffer-substring-no-properties (point-min) (point-max))))
       (etaf-set-value appearance 'light)
       (should (string-match-p "appearance:light"
+                              (buffer-substring-no-properties (point-min) (point-max)))))))
+
+(ert-deftest etaf-component-mode-follows-the-host-unless-overridden ()
+  "The resolved mode follows the host appearance and an override wins."
+  (let ((appearance (etaf-ref 'dark))
+        (override (etaf-ref nil)))
+    (etaf-test-with-mount (_runtime
+                           (etaf-view (etaf-component-test-mode-host
+                                       :appearance appearance :override override)))
+      (should (string-match-p "mode:dark"
+                              (buffer-substring-no-properties (point-min) (point-max))))
+      (etaf-set-value appearance 'light)
+      (should (string-match-p "mode:light"
+                              (buffer-substring-no-properties (point-min) (point-max))))
+      (etaf-set-value override 'dark)
+      (should (string-match-p "mode:dark"
                               (buffer-substring-no-properties (point-min) (point-max)))))))
 
 (ert-deftest etaf-component-rejects-an-invalid-appearance ()
