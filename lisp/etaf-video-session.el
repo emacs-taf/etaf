@@ -24,18 +24,22 @@ higher.  Values below 1 are raised to 1.")
   "A headless playback session."
   spec format width height display-fps speed timer source base
   playing stepping ended finished on-frame on-state
-  audio volume audio-process presented)
+  audio volume audio-process presented
+  play-start audio-pending canvas)
 
 (defun etaf-video-session-position (session)
   "Return SESSION's current position in seconds.
-The value is the seek base plus the frames the current producer delivered,
-so a dropped display frame still advances the clock."
-  (let* ((spec (etaf-video--session-spec session))
-         (source (etaf-video--session-source session))
-         (fps (float (or (plist-get spec :fps) 25)))
-         (position (+ (etaf-video--session-base session)
-                      (/ (if source (etaf-video--source-received source) 0) fps)))
-         (duration (plist-get spec :duration)))
+While a frame is on screen the position follows the wall clock from the
+moment that frame arrived, so a slow decoder or a dropped display frame
+never lets the picture clock drift away from the audio sidecar.  Between a
+seek and the first frame, and while paused, it stays at the seek base."
+  (let* ((base (etaf-video--session-base session))
+         (start (etaf-video--session-play-start session))
+         (position (if start
+                       (+ base (* (- (float-time) start)
+                                   (etaf-video--session-speed session)))
+                     base))
+         (duration (plist-get (etaf-video--session-spec session) :duration)))
     (if duration (min position duration) position)))
 
 (defun etaf-video--session-notify (session)
@@ -50,15 +54,18 @@ so a dropped display frame still advances the clock."
     (funcall callback frame session)))
 
 (defun etaf-video--session-stop-source (session)
-  "Close SESSION's producer, keeping the position it reached."
+  "Close SESSION's producer, keeping the position it reached.
+The clock freezes here: a later producer starts again from the saved base."
   (when-let* ((source (etaf-video--session-source session)))
     (setf (etaf-video--session-base session)
-          (etaf-video-session-position session))
+          (etaf-video-session-position session)
+          (etaf-video--session-play-start session) nil)
     (etaf-video--source-close source)
     (setf (etaf-video--session-source session) nil)))
 
 (defun etaf-video--session-stop-audio (session)
-  "Terminate SESSION's audio sidecar."
+  "Terminate SESSION's audio sidecar and cancel a pending start."
+  (setf (etaf-video--session-audio-pending session) nil)
   (when-let* ((process (etaf-video--session-audio-process session)))
     (etaf-video--audio-stop process)
     (setf (etaf-video--session-audio-process session) nil)))
@@ -110,9 +117,21 @@ so a dropped display frame still advances the clock."
     (when (and source
                (or (etaf-video--session-playing session)
                    (etaf-video--session-stepping session)))
-      (setq frame (etaf-video--source-claim source)))
+      (if (etaf-video--session-canvas session)
+          ;; The canvas backend reads the fifo itself; the tick only says a
+          ;; frame is due and the presenter refreshes the canvas.
+          (setq frame t)
+        (setq frame (etaf-video--source-claim source))))
     (when frame
       (etaf-video--session-deliver session frame)
+      ;; The first presented frame starts the clock and, when the sidecar is
+      ;; pending, the audio.  Starting audio earlier lets sound run ahead of
+      ;; a picture whose decoder has not delivered its first frame yet.
+      (unless (etaf-video--session-play-start session)
+        (setf (etaf-video--session-play-start session) (float-time)))
+      (when (etaf-video--session-audio-pending session)
+        (setf (etaf-video--session-audio-pending session) nil)
+        (etaf-video--session-start-audio session))
       (when (etaf-video--session-stepping session)
         (setf (etaf-video--session-stepping session) nil
               (etaf-video--session-playing session) nil)
@@ -143,8 +162,10 @@ step flag set would make the next tick pause after one frame."
     (etaf-video--session-spawn session))
   (etaf-video--session-start-timer session)
   (setf (etaf-video--session-playing session) t
-        (etaf-video--session-stepping session) nil)
-  (etaf-video--session-start-audio session)
+        (etaf-video--session-stepping session) nil
+        (etaf-video--session-play-start session) nil
+        (etaf-video--session-audio-pending session)
+        (and (etaf-video--session-audio session) t))
   (etaf-video--session-notify session)
   t)
 
@@ -186,9 +207,12 @@ step flag set would make the next tick pause after one frame."
     (if playing
         (progn
           (etaf-video--session-stop-source session)
-          (setf (etaf-video--session-base session) target)
+          (setf (etaf-video--session-base session) target
+                (etaf-video--session-play-start session) nil
+                (etaf-video--session-audio-pending session)
+                (and (etaf-video--session-audio session) t))
           (etaf-video--session-spawn session target)
-          (etaf-video--session-start-audio session)
+          (etaf-video--session-start-timer session)
           (etaf-video--session-notify session))
       (etaf-video--session-stop-source session)
       (etaf-video--session-stop-audio session)
@@ -208,8 +232,10 @@ step flag set would make the next tick pause after one frame."
       (progn
         (let ((position (etaf-video-session-position session)))
           (etaf-video--session-stop-source session)
-          (etaf-video--session-spawn session position)
-          (etaf-video--session-start-audio session)))
+          (setf (etaf-video--session-play-start session) nil
+                (etaf-video--session-audio-pending session)
+                (and (etaf-video--session-audio session) t))
+          (etaf-video--session-spawn session position)))
     (etaf-video--session-notify session))
   t)
 
@@ -273,13 +299,14 @@ Keys are `:source', `:playing', `:position', `:duration', `:speed',
 
 (cl-defun etaf-video-session-create (source &key format width height fps
                                             speed start (audio :default) volume
-                                            on-frame on-state)
+                                            canvas on-frame on-state)
   "Create a headless playback SESSION for SOURCE and return it.
 SOURCE is nil for the built-in demo, a local file name, an HTTP(S) URL, or a
 plist accepted by the source normalizer (`:file', `:url', `:demo').
 
 FORMAT is `gray' (one byte per sample, the default), `rgb24' (three bytes per
-pixel) or `mjpeg' (one complete JPEG image per frame).  WIDTH and HEIGHT are
+pixel), `bgra' (four bytes per pixel, read from a fifo by the canvas backend)
+or `mjpeg' (one complete JPEG image per frame).  WIDTH and HEIGHT are
 the frame dimensions in the chosen format.  FPS caps the presented rate and
 defaults to `etaf-video-display-fps'; SPEED defaults to 1 and START to 0.
 
@@ -295,7 +322,7 @@ ON-STATE runs after every state change.  The session starts paused: call
          (format (or format 'gray))
          (width (or width 80))
          (height (or height 24)))
-    (unless (memq format '(gray rgb24 mjpeg))
+    (unless (memq format '(gray rgb24 bgra mjpeg))
       (user-error "Unsupported video frame format: %S" format))
     (unless (and (integerp width) (> width 0) (integerp height) (> height 0))
       (user-error "Frame size must be positive integers: %S by %S" width height))
@@ -307,6 +334,7 @@ ON-STATE runs after every state change.  The session starts paused: call
      :speed (or speed 1)
      :base (or start 0)
      :playing nil :stepping nil :ended nil :finished nil
+     :canvas (and canvas t)
      :on-frame on-frame :on-state on-state
      :audio (if (eq audio :default) (and etaf-video-audio t) (and audio t))
      :volume (or volume etaf-video-audio-volume)

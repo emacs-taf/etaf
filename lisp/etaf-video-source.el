@@ -13,6 +13,11 @@
 
 (require 'cl-lib)
 
+(declare-function etaf-video-canvas-open "etaf-video-canvas" (file))
+(declare-function etaf-video-canvas-read "etaf-video-canvas"
+                  (fd canvas bytes))
+(declare-function etaf-video-canvas-close "etaf-video-canvas" (fd))
+
 (defvar etaf-video-ffmpeg-program "ffmpeg"
   "Name or absolute path of the ffmpeg executable.
 Point it at a wrapper script to add decoder options; ETAF appends the filter
@@ -24,7 +29,8 @@ Missing metadata degrades to documented defaults instead of failing.")
 
 (cl-defstruct (etaf-video--source (:constructor etaf-video--source--make))
   "A running frame producer."
-  process pipe width height frame-size carry latest received dropped ended exit mjpeg-p)
+  process pipe width height frame-size carry latest received dropped ended exit mjpeg-p
+  fifo err canvas-fd)
 
 (defun etaf-video--probe-values (program &rest arguments)
   "Run PROGRAM with ARGUMENTS and return its key=value output as a table."
@@ -307,6 +313,9 @@ SPEED is the `-readrate' factor and START the seek position in seconds."
             ('rgb24
              (list "-vf" (format "scale=%d:%d:flags=area" width height)
                    "-f" "rawvideo" "-pix_fmt" "rgb24" "-"))
+            ('bgra
+             (list "-vf" (format "scale=%d:%d:flags=area" width height)
+                   "-f" "rawvideo" "-pix_fmt" "bgra" "-"))
             (_
              (list "-vf" (format "scale=%d:%d:flags=area" width height)
                    "-f" "rawvideo" "-pix_fmt" "gray" "-")))))
@@ -349,16 +358,56 @@ Stop and continue events leave the producer running and are ignored."
       (setf (etaf-video--source-exit source)
             (condition-case nil (process-exit-status process) (error nil))))))
 
+(defun etaf-video--source-start-fifo (spec program width height speed start)
+  "Start a BGRA producer that writes raw frames into a fifo.
+The canvas reader drains the fifo directly into the canvas pixel buffer, so
+no Emacs filter allocates one frame-sized string per produced frame."
+  (let* ((fifo (make-temp-name
+                (expand-file-name "etaf-video-" temporary-file-directory)))
+         (err (make-temp-file "etaf-video-err-" nil ".log"))
+         (pipe (generate-new-buffer " *etaf-video pipe*"))
+         (args (etaf-video--ffmpeg-arguments spec 'bgra width height speed start)))
+    (unless (eq 0 (call-process "mkfifo" nil nil nil fifo))
+      (delete-file fifo)
+      (user-error "mkfifo failed for %s" fifo))
+    (let ((process
+           (start-process-shell-command
+            "etaf-video" pipe
+            (format "%s %s > %s 2> %s"
+                    (shell-quote-argument program)
+                    (mapconcat #'shell-quote-argument args " ")
+                    (shell-quote-argument fifo)
+                    (shell-quote-argument err)))))
+      (set-process-sentinel process #'etaf-video--source-sentinel)
+      (set-process-query-on-exit-flag process nil)
+      (let ((source (etaf-video--source--make
+                     :process process :pipe pipe :fifo fifo :err err
+                     :width width :height height
+                     :frame-size (* width height 4)
+                     :carry "" :latest nil :received 0 :dropped 0
+                     :mjpeg-p nil)))
+        (process-put process 'etaf-video-source source)
+        source))))
+
 (cl-defun etaf-video--source-start (spec format width height &key speed start)
   "Start a producer for normalized SPEC, FORMAT, WIDTH and HEIGHT.
 SPEED defaults to 1 and START to 0.  Return the new source; a missing ffmpeg
-signals `user-error' before any process exists."
+signals `user-error' before any process exists.  A `bgra' producer writes
+into a fifo consumed by the canvas reader instead of an Emacs filter."
   (let* ((program (or (executable-find etaf-video-ffmpeg-program)
                       (user-error "ffmpeg is not available: %s"
-                                  etaf-video-ffmpeg-program)))
-         (mjpeg (eq format 'mjpeg))
+                                  etaf-video-ffmpeg-program))))
+    (if (eq format 'bgra)
+        (etaf-video--source-start-fifo
+         spec program width height (or speed 1) (or start 0))
+      (etaf-video--source-start-pipe spec program format width height speed start))))
+
+(cl-defun etaf-video--source-start-pipe (spec program format width height speed start)
+  "Start a producer whose stdout is read by the Emacs frame filter."
+  (let* ((mjpeg (eq format 'mjpeg))
          (frame-size (pcase format
                        ('rgb24 (* width height 3))
+                       ('bgra (* width height 4))
                        ('mjpeg 0)
                        (_ (* width height))))
          (pipe (generate-new-buffer " *etaf-video pipe*"))
@@ -381,6 +430,21 @@ signals `user-error' before any process exists."
       (process-put process 'etaf-video-source source)
       source)))
 
+(defun etaf-video--source-read-canvas (source spec)
+  "Read one BGRA frame from SOURCE into canvas SPEC.
+Return the number of bytes read, zero at the end of the stream.  The fifo is
+opened once and kept; every later call reads the next frame straight into the
+canvas pixel buffer through the native module."
+  (let ((bytes (* (etaf-video--source-width source)
+                  (etaf-video--source-height source)
+                  4)))
+    (unless (etaf-video--source-canvas-fd source)
+      (let ((fd (etaf-video-canvas-open (etaf-video--source-fifo source))))
+        (unless (and (integerp fd) (> fd 0))
+          (error "Cannot open video fifo %s" (etaf-video--source-fifo source)))
+        (setf (etaf-video--source-canvas-fd source) fd)))
+    (etaf-video-canvas-read (etaf-video--source-canvas-fd source) spec bytes)))
+
 (defun etaf-video--source-claim (source)
   "Return SOURCE's newest complete frame, clearing it, or nil.
 The frame is a unibyte string of raw pixels or one complete JPEG image."
@@ -389,9 +453,16 @@ The frame is a unibyte string of raw pixels or one complete JPEG image."
     frame))
 
 (defun etaf-video--source-close (source)
-  "Terminate SOURCE's producer and release its buffer."
+  "Terminate SOURCE's producer and release its buffer, fifo and reader."
   (let ((process (etaf-video--source-process source)))
     (when (process-live-p process) (delete-process process)))
+  (when-let* ((fd (etaf-video--source-canvas-fd source)))
+    (ignore-errors (etaf-video-canvas-close fd))
+    (setf (etaf-video--source-canvas-fd source) nil))
+  (when-let* ((fifo (etaf-video--source-fifo source)))
+    (ignore-errors (delete-file fifo)))
+  (when-let* ((err (etaf-video--source-err source)))
+    (ignore-errors (delete-file err)))
   (when (buffer-live-p (etaf-video--source-pipe source))
     (kill-buffer (etaf-video--source-pipe source))))
 
