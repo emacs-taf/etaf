@@ -1993,6 +1993,14 @@
 ;; paused.  DEVICE-PIXEL-RATIO overrides the display's device pixel ratio for
 ;; `image' frames so Retina screens stay sharp.  DISPLAY-FPS is nil (use
 ;; `etaf-video-display-fps') or a positive integer presentation-rate cap.
+;; `etaf-video-render-backend' selects how a graphical frame reaches the
+;; screen: `image' (the default) publishes one scaled JPEG per frame through
+;; the retained Host content; `canvas' reads BGRA frames into one Emacs
+;; canvas image and refreshes that buffer in place, which needs an Emacs with
+;; the `canvas' image type and `native/etaf-video-canvas' built; `auto' takes
+;; `canvas' when both are present.  A build without them silently keeps the
+;; `image' path, so an application runs unchanged on released Emacs
+;; versions.  `ascii' and `color' modes ignore this setting.
 ;; Image frames share one image across row-height slices so adjacent content
 ;; and controls below the canvas retain their normal line heights.  POSITION,
 ;; LEFT, TOP and Z-INDEX place the canvas; they are declared on the canvas node

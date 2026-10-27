@@ -39,6 +39,7 @@
 ;; Only the image mode uses these optional native display primitives.
 (declare-function image-flush "image.c" (spec &optional frame))
 (declare-function canvas-refresh "image.c" (image &optional reload-data))
+(declare-function etaf-video-canvas-close "etaf-video-canvas" (fd))
 (declare-function font-info "font.c" (name &optional frame))
 
 (defvar etaf-video-density-ramp " .:-=+*#%@"
@@ -291,16 +292,19 @@ a taller canvas is clipped by the layout anyway."
               (min height (* (window-body-height window) char-height))
             height))))
 
-(defun etaf-video--instance-pixel-frame-size (instance format)
+(defun etaf-video--instance-pixel-frame-size (instance format &optional ratio)
   "Return INSTANCE's pixel frame size for FORMAT.
 WIDTH and HEIGHT are producer pixels; SCALE maps device pixels back to
 logical pixels for display, and the last two elements are the display
-WIDTH and HEIGHT in logical pixels."
+WIDTH and HEIGHT in logical pixels.  RATIO overrides the device pixel
+ratio; a canvas producer must match the canvas buffer, which stays at
+logical resolution."
   (let* ((applied (etaf-video--instance-applied instance))
          (columns (plist-get applied :columns))
          (rows (plist-get applied :rows))
          (frame (etaf-video--instance-frame instance))
-         (ratio (or (plist-get applied :device-pixel-ratio)
+         (ratio (or ratio
+                    (plist-get applied :device-pixel-ratio)
                     (ignore-errors (frame-scale-factor frame))
                     1.0))
          (display (etaf-video--instance-display-size instance))
@@ -323,7 +327,10 @@ displayed image (nil for the raw modes)."
          (columns (plist-get applied :columns))
          (rows (plist-get applied :rows)))
     (if (eq (etaf-video--instance-effective-backend instance) 'canvas)
-        (etaf-video--instance-pixel-frame-size instance 'bgra)
+        ;; The canvas buffer is logical-resolution, so the producer must
+        ;; write exactly that many pixels; a device-resolution frame would
+        ;; overflow the canvas and crash the module.
+        (etaf-video--instance-pixel-frame-size instance 'bgra 1.0)
       (pcase (etaf-video--instance-effective-mode instance)
         ('image (etaf-video--instance-pixel-frame-size instance 'mjpeg))
         ('color (list 'rgb24 columns (* 2 rows) 1.0 nil nil))
@@ -384,7 +391,7 @@ Ebox may wrap the published descriptor in raise and slice modifiers, so
 search the whole display value instead of assuming one nesting depth."
   (cond
    ((and (consp display) (eq (car display) 'image)
-         (eq (plist-get display :type) 'canvas))
+         (eq (plist-get (cdr display) :type) 'canvas))
     display)
    ((consp display)
     (seq-some #'etaf-video--display-canvas display))
@@ -411,52 +418,64 @@ publisher kept."
                              (point-max))))
             nil))))))
 
+(defun etaf-video--make-canvas-spec (columns rows _ratio)
+  "Return a canvas image spec for COLUMNS by ROWS character cells.
+The buffer stays at logical resolution: the NS backend re-uploads every
+pixel on refresh, so a device-resolution canvas costs four times more per
+frame for no visible gain in a text host.  The :id stays stable so one Ebox
+image host can refresh the same buffer in place."
+  (let* ((frame (selected-frame))
+         (width (max 1 (* columns (frame-char-width frame))))
+         (height (max 1 (* rows (frame-char-height frame)))))
+    (list 'image :type 'canvas
+          :id (make-symbol "etaf-video-canvas")
+          :data (make-string (* width height 4) 0)
+          :data-width width :data-height height
+          :scale 1.0
+          :ascent (etaf-video--image-ascent frame))))
+
+(defun etaf-video--instance-ensure-canvas (instance)
+  "Return INSTANCE's canvas image spec, creating it for the current size.
+The spec carries a live pixel buffer that the producer writes into; its :id
+stays stable so an Ebox image host keeps one preparation across frames."
+  (let ((key (etaf-video--instance-frame-size instance))
+        (spec (etaf-video--instance-canvas-spec instance)))
+    (unless (and spec (equal key (etaf-video--instance-canvas-key instance)))
+      ;; A new spec means the old pixel buffer is gone.
+      (etaf-video--instance-canvas-fd-closed instance)
+      (setf (etaf-video--instance-canvas-key instance) key))
+    spec))
+
+(defun etaf-video--instance-canvas-fd-closed (instance)
+  "Release INSTANCE's canvas fifo reader after its spec was replaced."
+  (when-let* ((session (etaf-video--instance-session instance))
+              (source (etaf-video--session-source session))
+              (fd (etaf-video--source-canvas-fd source)))
+    (ignore-errors (etaf-video-canvas-close fd))
+    (setf (etaf-video--source-canvas-fd source) nil)))
+
 (defun etaf-video--instance-present-canvas (instance _frame)
   "Refresh INSTANCE's canvas from the frame its producer wrote into it.
 FRAME is ignored: the native reader has already copied the newest BGRA frame
-into the canvas pixel buffer, so a presented tick only refreshes.  The canvas
-is published once per size, keeping the retained Host content untouched."
-  (let ((runtime (etaf-video--instance-runtime instance)))
-    (when (and runtime (etaf-runtime-mounted-p runtime))
-      (let ((key (etaf-video--instance-frame-size instance))
-            (spec (etaf-video--instance-canvas-spec instance)))
-        (unless (and spec (equal key (etaf-video--instance-canvas-key instance)))
-          (setq spec nil)
-          (let* ((size (etaf-video--instance-frame-size instance))
-                 (bytes (* (nth 1 size) (nth 2 size) 4))
-                 (image (list 'image :type 'canvas
-                              :id (make-symbol "etaf-video-canvas")
-                              :data (make-string bytes 0)
-                              :data-width (nth 1 size)
-                              :data-height (nth 2 size)
-                              :scale (nth 3 size)
-                              :ascent (etaf-video--image-ascent
-                                       (etaf-video--instance-frame instance)))))
-            (setcar (etaf-video--instance-cell instance)
-                    (etaf-video--image-grid-text instance image))
-            (condition-case problem
-                (progn
-                  (etaf-runtime-update-host-content
-                   runtime (etaf-video--instance-ref instance)
-                   (car (etaf-video--instance-cell instance)))
-                  (setq spec (etaf-video--instance-canvas-display instance))
-                  (when spec
-                    (setf (etaf-video--instance-canvas-spec instance) spec
-                          (etaf-video--instance-canvas-key instance) key)))
-              (etaf-runtime-error
-               (etaf-video-session-destroy
-                (etaf-video--instance-session instance))
-               (message "etaf-video: %s" (error-message-string problem))))))
-        (when spec
-          (let* ((session (etaf-video--instance-session instance))
-                 (source (and session (etaf-video--session-source session)))
-                 (read (and source (etaf-video--source-fifo source)
-                            (condition-case nil
-                                (etaf-video--source-read-canvas source spec)
-                              (error 0)))))
-            (when (and read (> read 0))
-              (canvas-refresh spec)
-              (redisplay))))))))
+into the canvas pixel buffer, so a presented tick only refreshes the image
+host that Ebox prepared for the spec."
+  (let ((runtime (etaf-video--instance-runtime instance))
+        ;; Ebox publishes a copy of the spec inside the prepared raster, and
+        ;; a canvas is keyed by its spec object, so write into the copy the
+        ;; buffer actually displays.  They share one pixel string, but only
+        ;; the displayed object owns the canvas that redisplay shows.
+        (spec (or (etaf-video--instance-canvas-display instance)
+                  (etaf-video--instance-canvas-spec instance))))
+    (when (and runtime (etaf-runtime-mounted-p runtime) spec)
+      (let* ((session (etaf-video--instance-session instance))
+             (source (and session (etaf-video--session-source session)))
+             (read (and source (etaf-video--source-fifo source)
+                        (condition-case nil
+                            (etaf-video--source-read-canvas source spec)
+                          (error 0)))))
+        (when (and read (> read 0))
+          (canvas-refresh spec)
+          (redisplay))))))
 
 (defun etaf-video--instance-present-image (instance frame)
   "Map FRAME for INSTANCE's effective mode and publish it.
@@ -547,6 +566,11 @@ session starts playing; a paused session presents one frame instead."
   (etaf-video--instance-register instance)
   (setf (etaf-video--instance-applied instance)
         (etaf-video--instance-read-inputs instance))
+  (when (eq (etaf-video--instance-effective-backend instance) 'canvas)
+    (setf (etaf-video--instance-canvas-spec instance)
+          (etaf-value (plist-get (etaf-video--instance-sources instance)
+                                 :canvas)))
+    (etaf-video--instance-ensure-canvas instance))
   (etaf-video--instance-build instance 0 autoplay))
 
 (defun etaf-video--instance-unmount (instance)
@@ -690,6 +714,13 @@ video still plays itself but cannot be controlled."
    (fps-input (etaf-prop 'display-fps))
    (content-ref (etaf-local-ref 'content))
    (content-id (etaf-video--next-content-id))
+   (canvas-input (etaf-computed
+                  (lambda ()
+                    (etaf-video--make-canvas-spec
+                     (etaf-value columns-input)
+                     (etaf-value rows-input)
+                     (etaf-value ratio-input)))
+                  :name 'canvas-spec))
    (instance (etaf-video--instance--make
               :handle (or handle (make-symbol "etaf-video"))
               :ref content-ref
@@ -699,7 +730,8 @@ video still plays itself but cannot be controlled."
                              :ramp ramp-input :audio audio-input
                              :volume volume-input :speed speed-input
                              :device-pixel-ratio ratio-input
-                             :display-fps fps-input))))
+                             :display-fps fps-input
+                             :canvas canvas-input))))
 
   :setup
   (progn
@@ -731,7 +763,14 @@ video still plays itself but cannot be controlled."
        :wrap-mode 'none
        :overflow 'hidden
        :background-color "#050607"
-    (text :ref content-ref :id content-id
+    ;; A canvas is exactly one image host: Ebox's text renderer turns an
+    ;; image display inside text into an empty width placeholder, so the
+    ;; frame must be prepared as an image instead.
+    (image :if (eq (etaf-video--instance-effective-backend instance) 'canvas)
+           :src (etaf-value canvas-input)
+           :columns columns :rows rows)
+    (text :if (not (eq (etaf-video--instance-effective-backend instance) 'canvas))
+          :ref content-ref :id content-id
           (expr (etaf-video--instance-view-content instance)))))
 
 (defun etaf-video-play (handle)

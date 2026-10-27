@@ -4,6 +4,14 @@
 
 ### Added
 
+- `etaf-video-render-backend` selects how `etaf-video` puts a graphical
+  frame on screen.  `image` (the default) keeps publishing one scaled JPEG
+  per frame, `canvas` reads BGRA frames into one Emacs canvas image and
+  refreshes it in place, and `auto` prefers canvas when the Emacs build has
+  the `canvas` image type and the optional native reader is built.  A build
+  without canvas, or a native module that cannot load, silently keeps the
+  image path, so released Emacs versions behave as before.
+
 - `etaf-surface-create`, `etaf-surface-provide`, `etaf-surface-host` and
   `etaf-surface-declare` let content that owns its palette and its light/dark
   switch declare them to the host that frames it.  `etaf-surface-theme`,
