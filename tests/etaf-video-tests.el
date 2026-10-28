@@ -777,5 +777,15 @@ behind."
            :type 'user-error))
       (etaf-video-tests--cleanup name))))
 
+(ert-deftest etaf-video-tests-canvas-backend-keeps-image-without-support ()
+  "A build without the canvas image type keeps the image path.
+The backend variable only selects a preference: the capability check still
+decides, so released Emacs versions render exactly as before."
+  (skip-when (image-type-available-p 'canvas))
+  (let ((etaf-video-render-backend 'canvas)
+        (instance (etaf-video--instance--make
+                   :handle 'canvas-fallback :ref 'unused :cell (cons " " nil))))
+    (should (eq (etaf-video--instance-effective-backend instance) 'image))))
+
 (provide 'etaf-video-tests)
 ;;; etaf-video-tests.el ends here
