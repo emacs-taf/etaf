@@ -2091,6 +2091,18 @@
 ;; Display timer rate in frames per second for new video playback.
 ;; It caps the presented frame rate; values below 1 are raised to 1.
 ;;
+;; Variable: etaf-video-render-backend
+;; Rendering backend for graphical `etaf-video' playback.
+;; `image' publishes one scaled JPEG per frame through the retained Host
+;; content and works on any Emacs that can show images.  `canvas' reads BGRA
+;; frames into one Emacs canvas image and refreshes that buffer in place,
+;; so a frame costs no JPEG encode, no decode and no Host publication; it
+;; needs the `canvas' image type (Emacs 32 or a patched 31) and the built
+;; `native/etaf-video-canvas' module.  `auto' takes `canvas' when both are
+;; present.  A missing image type, an unloadable module or a non-graphical
+;; frame silently keeps the `image' path.  `ascii' and `color' modes ignore
+;; this setting.
+;;
 ;; Variable: etaf-video-ffmpeg-program
 ;; Name or absolute path of the ffmpeg executable used to decode video.
 ;;
