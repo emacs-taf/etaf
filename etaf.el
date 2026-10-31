@@ -733,8 +733,12 @@
 ;; object updates the retained instance even when its contents compare equal.
 ;; Keyed list items follow the same rule; keys retain instances, not old inputs.
 ;; Keep reactive value reads inside the View properties or expressions they
-;; update.  Use `etaf-prop' in a binding initializer for a tracked input; a plain
-;; prop variable in initialization is an initial snapshot.
+;; update.  A Component that reads a passed source, such as a ref, in its own
+;; render re-renders alone when that source changes; its parent and its
+;; siblings keep their instances, so a keyed list of block Components repaints
+;; the block whose input changed.  Use `etaf-prop' in a binding initializer for
+;; a tracked input; a plain prop variable in initialization is an initial
+;; snapshot.
 ;;
 ;; A fragment result keeps its children in the enclosing Host layout, including
 ;; projected slots and stateful children. Component retention adds no visual

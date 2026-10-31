@@ -440,6 +440,59 @@ invalid face attribute and the hover paint is lost."
       (etaf-set-value mode 'one)
       (should (equal (etaf-test-lines) '("a" "one t" "z"))))))
 
+(defvar etaf-component-test-rows-rendered nil
+  "Labels rendered by the keyed-row test Components since the last reset.")
+
+(etaf-define-component etaf-component-test-keyed-row (&key label)
+  "Record that this row rendered LABEL, then show it."
+  :render
+  (progn
+    (push label etaf-component-test-rows-rendered)
+    (etaf-view (text (expr label)))))
+
+(etaf-define-component etaf-component-test-keyed-rows (&key labels)
+  "Render LABELS, a reactive source, as one keyed row Component each.
+A row's key is its own label, so a row keeps its instance while the label
+stays in the list and only a changed or added row renders."
+  :render
+  (etaf-node 'column nil
+             (mapcar (lambda (label)
+                       (etaf-node 'etaf-component-test-keyed-row
+                                  (list :key label :label label)
+                                  nil))
+                     (etaf-value labels))))
+
+(ert-deftest etaf-component-keyed-rows-repaint-one-row ()
+  "A keyed list of Components re-renders only the row whose label changed.
+The list Component re-renders whenever its input source changes; the row
+instances are retained by key, so editing one row publishes that row's lines
+and leaves the other instances, and their Hosts, alone.  A document preview
+builds its per-block repaint on this boundary."
+  (let ((labels (etaf-ref '("alpha" "beta" "gamma"))))
+    (etaf-test-with-mount (runtime (etaf-view (etaf-component-test-keyed-rows
+                                               :labels labels)))
+      (should (equal '("alpha" "beta" "gamma") (etaf-test-lines)))
+      ;; Every row rendered once at mount.
+      (should (equal '("gamma" "beta" "alpha") etaf-component-test-rows-rendered))
+      ;; Replacing the collection with an equal one changes no row.
+      (setq etaf-component-test-rows-rendered nil)
+      (etaf-set-value labels (list "alpha" "beta" "gamma"))
+      (should-not etaf-component-test-rows-rendered)
+      ;; Changing one label re-renders that row alone.
+      (setq etaf-component-test-rows-rendered nil)
+      (etaf-set-value labels (list "alpha" "beta edited" "gamma"))
+      (should (equal '("beta edited") etaf-component-test-rows-rendered))
+      (should (equal '("alpha" "beta edited" "gamma") (etaf-test-lines)))
+      (let ((report (etaf-runtime-update-report runtime)))
+        (should (eq 'lines (plist-get report :strategy)))
+        (should (= 1 (plist-get report :edits))))
+      ;; Inserting a row keeps every unchanged row's instance.
+      (setq etaf-component-test-rows-rendered nil)
+      (etaf-set-value labels (list "delta" "alpha" "beta edited" "gamma"))
+      (should (equal '("delta") etaf-component-test-rows-rendered))
+      (should (equal '("delta" "alpha" "beta edited" "gamma")
+                     (etaf-test-lines))))))
+
 (ert-deftest etaf-component-error-boundary-handles-errors ()
   "The error boundary returns the handler's value for signaled errors."
   (should (equal (etaf-error-boundary-run (lambda () (error "boom"))

@@ -1154,6 +1154,11 @@
    "purpose": "Content outside a framing host finds no surface, declares nothing and keeps its own palette."
   },
   {
+   "name": "etaf-component-keyed-rows-repaint-one-row",
+   "file": "tests/etaf-component-tests.el",
+   "purpose": "A keyed list of Components repaints only the row whose input changed: replacing the collection with equal values renders no row, changing one label renders that row alone in one line patch, and inserting a row keeps every retained row's instance."
+  },
+  {
    "name": "etaf-surface-declare-rejects-values-it-cannot-frame",
    "file": "tests/etaf-component-tests.el",
    "purpose": "A surface accept only reactive Theme and mode sources and labelled modes, and rejects a value that is not a host surface."
