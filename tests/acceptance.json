@@ -29,6 +29,11 @@
    "purpose": "Focus movement notifies exited Hosts before entered Hosts, skips shared ancestors and exposes the accepted destination to callbacks."
   },
   {
+   "name": "etaf-keys-resolve-to-named-symbols-and-leave-this-command-a-symbol",
+   "file": "tests/etaf-keys-tests.el",
+   "purpose": "Every scoped key resolves to a named symbol that prints in a few characters, and executing one leaves this-command a symbol instead of a closure carrying the mounted Runtime."
+  },
+  {
    "name": "etaf-key-scope-native-editing-keeps-draft-before-dismissal",
    "file": "tests/etaf-key-scope-tests.el",
    "purpose": "Native editing consumes the first Escape and preserves the draft before a subsequent Escape dismisses the local layer."

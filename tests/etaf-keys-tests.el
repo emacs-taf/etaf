@@ -13,13 +13,6 @@
     (call-interactively command)
     command))
 
-(defun etaf-keys-test-press-maybe (key)
-  "Run KEY's scoped Host command when it has one and return it, else nil."
-  (let ((command (key-binding (kbd key) t)))
-    (when (and (commandp command) (not (symbolp command)))
-      (call-interactively command)
-      command)))
-
 (ert-deftest etaf-keys-return-uses-live-focus-instead-of-displaced-point ()
   "Return and explicit activation follow live focus across local boundaries."
   (let ((inside 0) (outside 0) (host 0))
@@ -213,7 +206,7 @@
                                                                   (etaf-set-value open nil))
                                                     (box :ref 'ok :tab-index 0 "ok")))))
       (etaf-focus runtime 'outside)
-      (should-not (etaf-keys-test-press-maybe "q"))
+      (should (eq (key-binding "q" t) #'ignore))
       (should (eq (key-binding "w" t) #'ignore))
       (etaf-keys-test-press "<escape>")
       (should (equal log '(dismiss)))
@@ -243,7 +236,7 @@
       (etaf-keys-test-press "M-<down>")
       (should (equal (list (etaf-value x) (etaf-value y))
                      (list (+ 10 (frame-char-width)) (+ 5 (frame-char-height)))))
-      (should-not (etaf-keys-test-press-maybe "M-S-<right>"))
+      (should-not (key-binding (kbd "M-S-<right>") t))
       (etaf-focus runtime 'grip)
       (etaf-keys-test-press "M-S-<right>")
       (should (= (etaf-value width) (+ 20 (frame-char-width))))
@@ -476,5 +469,33 @@
                 (list 'wheel-up (list (selected-window) position '(0 . 0) 0))))
           (call-interactively (key-binding [wheel-up] t))))
       (should (equal (nreverse log) '(pane root))))))
+
+(ert-deftest etaf-keys-resolve-to-named-symbols-and-leave-this-command-a-symbol ()
+  "Key commands are named symbols, so printing one never prints a Runtime."
+  (etaf-test-with-mount
+      (runtime
+       (etaf-view
+        (column :ref 'root
+                :keys (list (list "x" (lambda () (interactive)) "Run"))
+                :on-dismiss (lambda () nil)
+                (box :ref 'first :tab-index 0 "First")
+                (box :ref 'second :tab-index 0 "Second"))))
+    (etaf-focus runtime 'first)
+    (dolist (key '("x" "TAB" "<down>" "<escape>"))
+      (let ((command (key-binding (kbd key) t)))
+        (should (symbolp command))
+        (should (commandp command))
+        (should (string-prefix-p "etaf-key-" (symbol-name command)))
+        (should (< (length (format "%s" command)) 64))))
+    (set-window-buffer (selected-window) (current-buffer))
+    (let (seen)
+      (let ((hook (lambda () (push this-command seen))))
+        (add-hook 'post-command-hook hook nil t)
+        (unwind-protect
+            (execute-kbd-macro (kbd "TAB"))
+          (remove-hook 'post-command-hook hook t)))
+      (should (equal (and (car seen) (symbolp (car seen))
+                          (symbol-name (car seen)))
+                     "etaf-key-tab")))))
 
 ;;; etaf-keys-tests.el ends here

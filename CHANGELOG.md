@@ -47,6 +47,11 @@
 
 ### Fixed
 
+- Scoped key commands are named symbols instead of anonymous closures.  Emacs
+  stores the resolved command in `this-command', so a post-command hook or any
+  other code that stringifies a command no longer walks the mounted Runtime's
+  object graph; one keypress in a two-box View used to build a 4 MB string.
+
 - A Theme computed that follows the frame re-derives after an Emacs theme
   switch.  `etaf-theme-current-mode` reports the frame's mode, and a computed
   that read it kept the mode the frame had when it first ran, so a surface

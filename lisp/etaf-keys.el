@@ -370,12 +370,17 @@ Runtime or callback arguments through their lexical environment."
         ('step (etaf-drag-step runtime ref (car argument) (cdr argument)))))))
 
 (defun etaf--keys-command (runtime kind &optional ref argument)
-  "Return a KIND command without extending RUNTIME or ARGUMENT's lifetime."
+  "Return a KIND command without extending RUNTIME or ARGUMENT's lifetime.
+Expose the command as a named symbol, not the closure itself: Emacs stores the
+resolved command in `this-command', and native printing, `command-history' or a
+package that stringifies it must not walk RUNTIME's object graph."
   (let ((references (make-hash-table :test 'eq :weakness 'value :size 3)))
     (puthash 'runtime runtime references)
     (puthash 'ref ref references)
     (puthash 'argument argument references)
-    (etaf--keys-callable references kind)))
+    (let ((command (make-symbol (format "etaf-key-%s" kind))))
+      (fset command (etaf--keys-callable references kind))
+      command)))
 
 (defun etaf--keys-dismiss-ref (runtime chain)
   "Return the nearest enabled Host in CHAIN with a dismiss handler."

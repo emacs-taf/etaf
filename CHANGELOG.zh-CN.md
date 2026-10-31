@@ -10,6 +10,10 @@
 
 ### Fixed
 
+- 作用域按键命令改用带名字的符号，不再把匿名闭包放进 `this-command`。打印命令的
+  post-command 钩子不会再展开整个已挂载 Runtime 的对象图；两个 box 的视图按一次键
+  曾因此生成 4 MB 的字符串。
+
 - `etaf-runtime-window-viewport` 在文本 frame 上返回字符格视口而不是 nil，
   显示面在终端上也能像图形 frame 一样按窗口居中并限制尺寸。
 
