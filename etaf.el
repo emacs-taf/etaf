@@ -1086,6 +1086,14 @@
 ;; can map point to its row (`etaf-host-ref-position' is the inverse).
 ;; Generated references are never returned; nil means no matching Host.
 ;;
+;; Variable: etaf-cursor-follows-input-modality
+;;;###autoload (autoload 'etaf-cursor-follows-input-modality "etaf" nil nil)
+;; Whether a mounted canvas hides its cursor after a pointer press.
+;; The default follows the input modality: a press hides the cursor and the
+;; next keyboard command shows it.  An application that edits text in place
+;; sets this to nil with `setq-local', because a press there places a caret the
+;; user needs to see.
+;;
 ;; Function: etaf-projection (runtime entries)
 ;;;###autoload (autoload 'etaf-projection "etaf" nil nil)
 ;; Return the source projection of RUNTIME's painted cells.

@@ -106,21 +106,29 @@ capture the environment they must run in later.")
          (symbolp (car event))
          (string-prefix-p "mouse" (symbol-name (car event))))))
 
+(defvar etaf-cursor-follows-input-modality t
+  "Whether a mounted canvas hides its cursor after a pointer press.
+A painted page follows the input modality: a press leaves the cursor as a
+stray block, so it hides until the next keyboard command.  An application that
+edits text in place sets this to nil, because a press there really does place
+a caret the user needs to see.")
+
 (defun etaf--cursor-input-modality ()
   "Follow the input modality with the native cursor of a mounted View.
 A pointer press hides it, because the block it leaves behind is not a focus
 cue; the next keyboard command shows it again, because that is where arrows
 and Tab put the user. This only touches a cursor it hid itself, so a text
 input keeps its own caret and an application keeps the cursor it chose."
-  (if (etaf--cursor-pointer-command-p)
-      (unless etaf--cursor-hidden
-        (setq etaf--cursor-hidden t)
-        (setq-local cursor-type nil))
-    (when etaf--cursor-hidden
-      (setq etaf--cursor-hidden nil)
-      (if (and etaf--mount-cursor (car etaf--mount-cursor))
-          (setq-local cursor-type (cdr etaf--mount-cursor))
-        (kill-local-variable 'cursor-type)))))
+  (when etaf-cursor-follows-input-modality
+    (if (etaf--cursor-pointer-command-p)
+        (unless etaf--cursor-hidden
+          (setq etaf--cursor-hidden t)
+          (setq-local cursor-type nil))
+      (when etaf--cursor-hidden
+        (setq etaf--cursor-hidden nil)
+        (if (and etaf--mount-cursor (car etaf--mount-cursor))
+            (setq-local cursor-type (cdr etaf--mount-cursor))
+          (kill-local-variable 'cursor-type))))))
 
 (defvar etaf--runtimes (make-hash-table :test #'eq :weakness 'key)
   "Mounted Runtime of each buffer.")
@@ -2254,7 +2262,11 @@ provide `:viewport-width' in pixels, `:viewport-height' in lines and
         (unless etaf--mount-cursor
           (setq etaf--mount-cursor
                 (cons (local-variable-p 'cursor-type) cursor-type)))
-        (add-hook 'pre-command-hook #'etaf--cursor-input-modality nil t))
+        (add-hook 'pre-command-hook #'etaf--cursor-input-modality nil t)
+        ;; The canvas is a rendering, not a document: text typed into it would
+        ;; be overwritten by the next paint and could never reach the source.
+        ;; Ebox writes through `inhibit-read-only', so painting still works.
+        (setq buffer-read-only t))
       (etaf--keys-install runtime)
       (condition-case err
           (etaf--runtime-run-operation
