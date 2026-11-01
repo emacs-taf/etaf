@@ -200,6 +200,23 @@ semantic Host props; Ebox owns the display string, image display property,
 geometry and interaction facts.  Grid and flex Hosts map to Ebox layout nodes;
 ETAF does not duplicate layout algorithms.
 
+Some applications paint a document that lives elsewhere, and editing it in place
+needs the way back from painted cells to that source.  `etaf-projection` answers
+that as a query: given a Runtime and one `(REF . (SOURCE-START . SOURCE-END))`
+entry per Host, it returns runs of `(DISPLAY-BEG DISPLAY-END SOURCE-BEG
+SOURCE-END)` computed from the current paint.  It is not a rendering mode, so a
+rendering without source ranges pays nothing, and no answer can describe an
+older frame.
+
+A run maps one painted cell to one source character.  A range that still holds a
+block's trailing line break, or a heading's folded marker, spreads itself over
+cells that stand for no character, and every caret after it lands one character
+off.  The entries therefore measure a Host's text leaves, not its outer box,
+whose bounds also cover padding, borders and the trailing break.  Runs are
+half-open: a source offset at a run's end is that run's end position on the
+line, and a painted position in the gap between two runs names the start of the
+next one, so an edit on a blank line never reaches back into the block above.
+
 ## 7. Events, focus and input
 
 Events enter through committed Host references.  The Runtime resolves a Host ref

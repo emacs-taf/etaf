@@ -109,6 +109,10 @@ Ebox 提供：
 
 text Host 只包含一个文本 payload。ETAF 校验 payload 并保存语义 Host props；Ebox 负责 display string、image display property、几何和交互事实。Grid 与 flex Host 映射为 Ebox layout node；ETAF 不复制布局算法。
 
+有些应用绘制的文档存在别处，就地编辑需要从画布格子回到源文本。`etaf-projection` 以查询回应这个需求：给出 Runtime 与每个 Host 的 `(REF . (SOURCE-START . SOURCE-END))`，它从当前绘制返回若干 run `(DISPLAY-BEG DISPLAY-END SOURCE-BEG SOURCE-END)`。它是查询而非渲染模式，没有源区间的渲染不付出成本，答案也不会描述更早的一帧。
+
+一个 run 里一格画布对应一个源字符。区间若还带着块尾换行，或带着标题中被折叠掉的前缀，范围就摊到不代表任何字符的格子上，此后每个光标位置都偏一个字符。因此条目测量 Host 的 text 叶子，不测量外层 box，因为 box bounds 还包含 padding、border 与行尾换行。run 区间是半开的：源偏移正好落在某个 run 的末端时，它是该 run 在本行的末尾位置；两段之间的画布位置则指向下一段的开头，这样在空行上编辑不会回退到上一块。
+
 ## 7. 事件、焦点与输入
 
 事件通过已提交的 Host 引用进入。Runtime 把 Host ref 解析为保留 Ebox 节点和 handler 表，然后在 ETAF batch 内 dispatch 回调。press capture 回调沿已提交祖先 ref 运行。
