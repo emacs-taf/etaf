@@ -73,6 +73,35 @@ without asking authors to pre-split it."
             (setq consumed (+ consumed width))))
         (nreverse runs)))))
 
+(defun etaf--projection-aligned-runs (buffer node source source-start source-end)
+  "Return runs for NODE's text leaves, aligned to the source they came from.
+Each leaf paints a string, and the source holds that same string somewhere
+between SOURCE-START and SOURCE-END; searching for it in paint order locates it
+exactly.  This is what makes the mapping general: a heading that dropped its
+hashes, a bullet that became a round dot, a table cell, a wrapped paragraph all
+resolve the same way, with no rule per block kind."
+  (let ((cursor source-start)
+        (runs nil))
+    (ebox-node-walk
+     node
+     (lambda (child)
+       (when (eq (ebox-node-tag child) 'text)
+         (let ((bounds (ebox-node-bounds child t)))
+           (when (and bounds (< (car bounds) (cdr bounds)))
+             (let ((painted (with-current-buffer buffer
+                              (buffer-substring-no-properties
+                               (car bounds) (cdr bounds)))))
+               (when (and painted (not (string-empty-p (string-trim painted))))
+                 (let ((found (string-match (regexp-quote painted)
+                                            source cursor)))
+                   (when (and found (<= (+ found (length painted)) source-end))
+                     (push (list (car bounds) (cdr bounds)
+                                 found
+                                 (+ found (length painted)))
+                           runs)
+                     (setq cursor (+ found (length painted))))))))))))
+    (nreverse runs)))
+
 (defun etaf--projection-trim (runs)
   "Return RUNS ordered by painted position with overlapping tails trimmed.
 An inner Host wins the cells it shares with the Host around it."
@@ -88,7 +117,28 @@ An inner Host wins the cells it shares with the Host around it."
     (vconcat (nreverse result))))
 
 ;;;###autoload
-(defun etaf-projection (runtime entries)
+(defun etaf--projection-declared-runs (node)
+  "Return the runs NODE and its descendants declare through `:source'.
+A renderer that writes a text node knows which part of the document that text
+came from; declaring it here is what lets a projection read the mapping instead
+of inferring it from block kinds and text lengths."
+  (let ((runs nil))
+    (ebox-node-walk
+     node
+     (lambda (child)
+       (let ((declared (plist-get (ebox-node-props child) :source)))
+         (when (and (consp declared)
+                    (integerp (car declared)) (integerp (cdr declared))
+                    (< (car declared) (cdr declared)))
+           (let ((bounds (and (eq (ebox-node-tag child) 'text)
+                              (ebox-node-bounds child t))))
+             (when (and bounds (< (car bounds) (cdr bounds)))
+               (push (list (car bounds) (cdr bounds)
+                           (car declared) (cdr declared))
+                     runs)))))))
+    (nreverse runs)))
+
+(defun etaf-projection (runtime entries &optional source)
   "Return the projection of RUNTIME described by ENTRIES.
 ENTRIES is an alist of (REF . (SOURCE-START . SOURCE-END)), one per Host whose
 painted cells stand for a source range.  Return a vector of runs
@@ -99,12 +149,24 @@ entries that paint nothing, or name a range of zero length, are skipped."
     (dolist (entry entries)
       (let* ((range (cdr entry))
              (node (etaf-runtime-host-node runtime (car entry)))
+             ;; A renderer that declared its own source ranges is exact; only a
+             ;; Host that declared nothing falls back to spreading its range
+             ;; over its painted text.
+             (declared (and node (etaf--projection-declared-runs node)))
+         (aligned (and (not declared) source node
+                       (integerp (car range)) (integerp (cdr range))
+                       (< (car range) (cdr range) (length source))
+                       (etaf--projection-aligned-runs
+                        buffer node source (car range) (cdr range))))
              (bounds (and node
                           (or (etaf--projection-text-bounds node)
                               (ebox-node-bounds node t)))))
-        (when (and bounds (integerp (car range)) (integerp (cdr range))
-                   (< (car range) (cdr range)))
-          (setq runs (nconc (etaf--projection-runs buffer bounds range) runs)))))
+        (cond
+         (declared (setq runs (nconc declared runs)))
+         (aligned (setq runs (nconc aligned runs)))
+         ((and bounds (integerp (car range)) (integerp (cdr range))
+               (< (car range) (cdr range)))
+          (setq runs (nconc (etaf--projection-runs buffer bounds range) runs))))))
     (etaf--projection-trim runs)))
 
 (defun etaf--projection-find (projection start-slot end-slot position)
@@ -177,6 +239,10 @@ a marker the render folded away, maps to the start of the next run."
             (when (<= (nth 3 candidate) offset)
               (setq previous candidate))))
         (cond (edge (nth 1 edge))
+              ;; An offset one past a run is that line's break: the caret at the
+              ;; end of the text sits there, not at the start of the block below.
+              ((and previous (= offset (1+ (nth 3 previous))))
+               (nth 1 previous))
               (next (car next))
               ;; An offset past the end of the last run names the end of the
               ;; source, so its caret sits after the final painted cell.
