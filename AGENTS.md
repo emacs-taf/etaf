@@ -31,6 +31,7 @@ grouped by the theme you are chasing:
 | Cached lists with background revalidation | `etaf-list-cache` |
 | Native video sources, playback sessions and the video Component | `etaf-video-source`, `etaf-video-audio`, `etaf-video-session`, `etaf-video-component` |
 | Optional observation and recording | `etaf-observer`, `etaf-performance` |
+| Source projection of painted cells for in-place editing | `etaf-projection` |
 
 `docs/architecture.md` states concepts, ownership, data flow and invariants; it
 is not an implementation map, so do not look there for "which file". User

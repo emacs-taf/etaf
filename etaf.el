@@ -1086,6 +1086,29 @@
 ;; can map point to its row (`etaf-host-ref-position' is the inverse).
 ;; Generated references are never returned; nil means no matching Host.
 ;;
+;; Function: etaf-projection (runtime entries)
+;;;###autoload (autoload 'etaf-projection "etaf" nil nil)
+;; Return the source projection of RUNTIME's painted cells.
+;; ENTRIES is an alist of (REF . (SOURCE-START . SOURCE-END)), one per Host
+;; whose painted cells stand for a range of an application's source document.
+;; The result is a vector of runs (DISPLAY-BEG DISPLAY-END SOURCE-BEG
+;; SOURCE-END) ordered by display position, so an editor can translate a
+;; painted position into a source offset and back.  Nothing is computed until
+;; an application asks: renderings without source ranges pay no cost.  A Host
+;; whose text wraps contributes one run per painted line, its range split in
+;; proportion to the cells each line owns.
+;;
+;; Function: etaf-projection-source-offset (projection position)
+;;;###autoload (autoload 'etaf-projection-source-offset "etaf" nil nil)
+;; Return the source offset that painted POSITION stands for.
+;; A position outside every run reports the nearest run edge.
+;;
+;; Function: etaf-projection-position (projection offset)
+;;;###autoload (autoload 'etaf-projection-position "etaf" nil nil)
+;; Return the painted position where source OFFSET lives, or nil.
+;; An offset the paint skipped, such as a folded marker, maps to the start of
+;; the next run; the end of the source maps after the last painted cell.
+;;
 ;; Function: etaf-host-ref-size (runtime host-ref)
 ;;;###autoload (autoload 'etaf-host-ref-size "etaf" nil nil)
 ;; Return the committed painted border-box size as (WIDTH-PIXELS . HEIGHT-ROWS).
@@ -2396,6 +2419,7 @@
 (require 'etaf-app)
 (require 'etaf-process)
 (require 'etaf-video-component)
+(require 'etaf-projection)
 
 (autoload 'etaf-animation-example-open "examples/etaf-animation-example" nil t)
 (autoload 'etaf-retained-resize-open "examples/etaf-retained-resize" nil t)
