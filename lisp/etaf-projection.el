@@ -24,6 +24,21 @@
 (require 'ebox)
 (require 'etaf-runtime)
 
+(defun etaf--projection-text-bounds (node)
+  "Return the painted bounds of NODE's text leaves, or nil without any.
+A Host around its text also owns padding, borders and a trailing line break;
+those cells carry no source character, so using the outer box would spread the
+source range over cells that do not stand for it."
+  (let ((beg nil) (end nil))
+    (ebox-node-walk node
+                    (lambda (child)
+                      (when (eq (ebox-node-tag child) 'text)
+                        (let ((bounds (ebox-node-bounds child t)))
+                          (when bounds
+                            (setq beg (if beg (min beg (car bounds)) (car bounds)))
+                            (setq end (if end (max end (cdr bounds)) (cdr bounds))))))))
+    (and beg (cons beg end))))
+
 (defun etaf--projection-cells (buffer start end)
   "Return the painted (BEG . END) cells in BUFFER between START and END.
 Each cell is one line without its break, because a break owns no character a
@@ -84,7 +99,9 @@ entries that paint nothing, or name a range of zero length, are skipped."
     (dolist (entry entries)
       (let* ((range (cdr entry))
              (node (etaf-runtime-host-node runtime (car entry)))
-             (bounds (and node (ebox-node-bounds node t))))
+             (bounds (and node
+                          (or (etaf--projection-text-bounds node)
+                              (ebox-node-bounds node t)))))
         (when (and bounds (integerp (car range)) (integerp (cdr range))
                    (< (car range) (cdr range)))
           (setq runs (nconc (etaf--projection-runs buffer bounds range) runs)))))
@@ -104,23 +121,39 @@ entries that paint nothing, or name a range of zero length, are skipped."
 ;;;###autoload
 (defun etaf-projection-source-offset (projection position)
   "Return the source offset that painted POSITION stands for.
-A position outside every run reports the nearest run edge, so a caret after
-the last cell of a line still names a source character."
+A position just after a run is the end of that run's source, which is where a
+caret sits when it is on the line's break.  Any other position outside a run
+reports the nearest run's edge, and a position before the first run names the
+start of the source."
   (let ((run (etaf--projection-find projection 0 1 position)))
-    (if run
-        (min (nth 3 run) (+ (nth 2 run) (- position (car run))))
-      (let ((nearest nil) (first nil))
+    (cond
+     (run (min (nth 3 run) (+ (nth 2 run) (- position (car run)))))
+     (t
+      (let ((edge nil) (nearest nil) (first nil) (next nil))
         (dotimes (index (length projection))
           (let ((candidate (aref projection index)))
+            ;; The cell after a run belongs to it: that is the line's break,
+            ;; where the caret stands at the end of the text it paints.
+            (when (= position (nth 1 candidate))
+              (setq edge candidate))
             (when (and (<= (car candidate) position)
                        (or (null nearest) (> (car candidate) (car nearest))))
               (setq nearest candidate))
+            (when (and (> (car candidate) position)
+                       (or (null next) (< (car candidate) (car next))))
+              (setq next candidate))
             (when (or (null first) (< (car candidate) (car first)))
               (setq first candidate))))
-        ;; A position before the first run, such as the page margin, names the
-        ;; start of the source rather than nothing at all.
-        (cond (nearest (nth 3 nearest))
-              (first (nth 2 first)))))))
+        (cond
+         ;; A position naming a run's end is that run's last character.
+         (edge (nth 3 edge))
+         ;; A position in the gap between two runs is the source between them:
+         ;; a blank line, a paragraph break.  Naming the line that follows
+         ;; keeps an edit there from reaching back into the previous block.
+         ((and next (> (nth 2 next) (if nearest (nth 3 nearest) 0)))
+          (1- (nth 2 next)))
+         (nearest (nth 3 nearest))
+         (first (nth 2 first))))))))
 
 ;;;###autoload
 (defun etaf-projection-position (projection offset)
@@ -130,17 +163,23 @@ a marker the render folded away, maps to the start of the next run."
   (let ((run (etaf--projection-find projection 2 3 offset)))
     (if run
         (min (nth 1 run) (+ (car run) (- offset (nth 2 run))))
-      (let ((next nil) (previous nil))
+      (let ((next nil) (edge nil) (previous nil))
         (dotimes (index (length projection))
           (let ((candidate (aref projection index)))
+            ;; An offset exactly at a run's end is the cell after its text,
+            ;; which is where the caret stands at the end of that line.  It
+            ;; belongs to that run, not to the one that starts below.
+            (when (= offset (nth 3 candidate))
+              (setq edge candidate))
             (when (and (>= (nth 2 candidate) offset)
                        (or (null next) (< (nth 2 candidate) (nth 2 next))))
               (setq next candidate))
             (when (<= (nth 3 candidate) offset)
               (setq previous candidate))))
-        (cond (next (car next))
-              ;; An offset at or past the end of the last run names the end of
-              ;; the source, so its caret sits after the final painted cell.
+        (cond (edge (nth 1 edge))
+              (next (car next))
+              ;; An offset past the end of the last run names the end of the
+              ;; source, so its caret sits after the final painted cell.
               (previous (nth 1 previous)))))))
 
 (provide 'etaf-projection)
