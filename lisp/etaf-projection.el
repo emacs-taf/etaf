@@ -82,29 +82,33 @@ hashes, a bullet that became a round dot, a table cell, a wrapped paragraph all
 resolve the same way, with no rule per block kind."
   (let ((cursor source-start)
         (runs nil))
-    (ebox-node-walk
-     node
-     (lambda (child)
-       (when (eq (ebox-node-tag child) 'text)
-         (let ((bounds (ebox-node-bounds child t)))
-           (when (and bounds (< (car bounds) (cdr bounds)))
-             (let ((painted (with-current-buffer buffer
-                              (buffer-substring-no-properties
-                               (car bounds) (cdr bounds)))))
-               ;; A cell is painted padded to its column, and the padding is
-               ;; not in the source: align the text it holds, not the spaces
-               ;; that fill the column.
-               (let* ((text (string-trim painted))
-                      (lead (- (length painted) (length (string-trim-left painted)))))
-                 (unless (string-empty-p text)
-                   (let ((found (string-match (regexp-quote text) source cursor)))
-                     (when (and found (<= (+ found (length text)) source-end))
-                       (push (list (+ (car bounds) lead)
-                                   (+ (car bounds) lead (length text))
-                                   found
-                                   (+ found (length text)))
-                             runs)
-                       (setq cursor (+ found (length text)))))))))))))
+    (with-current-buffer buffer
+      (ebox-node-walk
+       node
+       (lambda (child)
+         (when (eq (ebox-node-tag child) 'text)
+           (let ((bounds (ebox-node-bounds child t)))
+             (when (and bounds (< (car bounds) (cdr bounds)))
+               (let ((painted (buffer-substring-no-properties
+                               (car bounds) (cdr bounds))))
+                 ;; A cell is painted padded to its column, and the padding is
+                 ;; not in the source: align the text it holds, not the spaces
+                 ;; that fill the column.
+                 (let* ((text (string-trim painted))
+                        (lead (- (length painted)
+                                 (length (string-trim-left painted)))))
+                   (unless (string-empty-p text)
+                     ;; A literal search is only what it costs to compare; a
+                     ;; regexp built per leaf is what made a page of 193 blocks
+                     ;; take 50 ms to map.
+                     (let ((found (string-search text source cursor)))
+                       (when (and found (<= (+ found (length text)) source-end))
+                         (push (list (+ (car bounds) lead)
+                                     (+ (car bounds) lead (length text))
+                                     found
+                                     (+ found (length text)))
+                               runs)
+                         (setq cursor (+ found (length text))))))))))))))
     (nreverse runs)))
 
 (defun etaf--projection-trim (runs)

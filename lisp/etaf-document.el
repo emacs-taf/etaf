@@ -43,7 +43,8 @@ Host reference with the source range its painted text stands for -- or is a
 function returning that list, which a page whose blocks change on repaint
 needs -- and BINDINGS holds this session's keys, shared ones plus the
 application's own."
-  buffer source entries (bindings nil) (saved nil) (dirty nil))
+  buffer source entries (bindings nil) (saved nil) (dirty nil)
+  (cached nil) (cached-tick nil) (cached-revision nil))
 
 ;;;; Reading the page
 
@@ -63,12 +64,29 @@ each time."
     (if (functionp entries) (funcall entries) entries)))
 
 (defun etaf-document-projection (document)
-  "Return DOCUMENT's painted page as source ranges, or nil without a page."
+  "Return DOCUMENT's painted page as source ranges, or nil without a page.
+The mapping is derived from the source text and the last paint, so it is kept
+until one of them changes.  A key asks for it two or three times -- where the
+caret is, where it goes, which run it stands on -- and a page of a few hundred
+blocks costs tens of milliseconds to map, which a reader feels on every arrow
+key."
   (when-let* ((buffer (etaf-document-buffer document))
               (runtime (and (buffer-live-p buffer)
-                            (etaf-runtime-for-buffer buffer))))
-    (etaf-projection runtime (etaf-document-entries-now document)
-                     (etaf-document-source-text document))))
+                            (etaf-runtime-for-buffer buffer)))
+              (source (etaf-document-source document)))
+    (let ((tick (buffer-chars-modified-tick source))
+          (revision (etaf-runtime-revision runtime)))
+      (if (and (etaf-document-cached document)
+               (eql tick (etaf-document-cached-tick document))
+               (eql revision (etaf-document-cached-revision document)))
+          (etaf-document-cached document)
+        (let ((projection (etaf-projection
+                           runtime (etaf-document-entries-now document)
+                           (etaf-document-source-text document))))
+          (setf (etaf-document-cached document) projection
+                (etaf-document-cached-tick document) tick
+                (etaf-document-cached-revision document) revision)
+          projection)))))
 
 (defun etaf-document-source-offset (document &optional position)
   "Return the source offset the painted POSITION names, by default at point."
@@ -275,11 +293,14 @@ characters, so they arrive as `self-insert-command' rather than through
     ;; These name a document position, so they run their command in the source
     ;; and bring the caret back.  The line edges are not line commands at all:
     ;; a painted run is a paragraph or a cell, and its edge is what they mean.
-    (dolist (key '("<home>" "<end>" "C-a" "C-e"))
-      (define-key map (kbd key)
-                  (if (string-match-p "home\|C-a" key)
-                      #'etaf-document-line-start
-                    #'etaf-document-line-end)))
+    ;; A key names a direction, and `(kbd "<home>")' is a vector while
+    ;; `(kbd "C-a")' is a string, so the key is paired with its command here
+    ;; instead of being recognised by its text.
+    (dolist (entry '(("<home>" . etaf-document-line-start)
+                     ("<end>" . etaf-document-line-end)
+                     ("C-a" . etaf-document-line-start)
+                     ("C-e" . etaf-document-line-end)))
+      (define-key map (kbd (car entry)) (cdr entry)))
     (dolist (entry '(("<left>" . backward-char) ("C-b" . backward-char)
                      ("<right>" . forward-char) ("C-f" . forward-char)
                      ("M-f" . forward-word) ("M-b" . backward-word)
