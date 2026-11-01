@@ -19,13 +19,15 @@
 ;; text is gone, and which characters a syntax folds away all stay in the
 ;; application, because only it knows its markup.
 ;;
-;; A key only ever changes the source.  Typing reaches the source through
-;; `self-insert-command', which is also where a system input method's finished
-;; characters arrive; deletion and newlines take the same route because the page
-;; itself is read-only.  Keys whose meaning is a document position rather than a
-;; painted cell -- `C-e', `C-a', `M-f', `M-b', the document edges -- run in the
-;; source as well, so `C-e' stops at the end of a paragraph instead of at the
-;; end of a padded screen line.
+;; A key is looked up in the source and run there, at the offset the page
+;; shows.  The page only interprets the few keys it must -- a press, and the
+;; application's own -- so `undo', `C-k', `C-y', the mark, `TAB', a prefix like
+;; `C-x C-s' and everything else behave exactly as they do in the buffer the
+;; document lives in.  Nothing here enumerates what a reader may type: a key
+;; the page does not claim belongs to the source by definition.
+;;
+;; The page also paints the source's region, because selecting text is a
+;; position in the document, not a decoration of the rendering.
 
 ;;; Code:
 
@@ -44,7 +46,8 @@ function returning that list, which a page whose blocks change on repaint
 needs -- and BINDINGS holds this session's keys, shared ones plus the
 application's own."
   buffer source entries (bindings nil) (saved nil) (dirty nil)
-  (cached nil) (cached-tick nil) (cached-revision nil))
+  (cached nil) (cached-tick nil) (cached-revision nil)
+  (caret nil) (caret-at nil) (last-command nil))
 
 ;;;; Reading the page
 
@@ -89,10 +92,20 @@ key."
           projection)))))
 
 (defun etaf-document-source-offset (document &optional position)
-  "Return the source offset the painted POSITION names, by default at point."
+  "Return the source offset the painted POSITION names, by default at point.
+The caret stands for the offset this session last placed it at, as long as it
+has not moved: a render folds markup away -- a heading's hashes, a bullet, a
+quote bar -- and those source positions have no cell of their own, so reading
+the painted cell back would answer with the nearest visible one and the next
+key would start from there instead of from where the command left the caret."
   (let ((projection (etaf-document-projection document))
-        (at (or position (point))))
-    (cond ((and (etaf-document-buffer document)
+        (at (or position (point)))
+        (caret (etaf-document-caret document)))
+    (cond ((and (null position)
+                caret
+                (eql at (etaf-document-caret-at document)))
+           caret)
+          ((and (etaf-document-buffer document)
                 (eq (current-buffer) (etaf-document-buffer document))
                 (>= at (point-max)))
            (length (or (etaf-document-source-text document) "")))
@@ -105,7 +118,12 @@ otherwise the caret a reader sees never follows the edit."
   (let ((buffer (etaf-document-buffer document))
         (projection (etaf-document-projection document)))
     (when (and (buffer-live-p buffer) projection)
+      ;; The offset is authoritative even when no cell stands for it: the
+      ;; painted caret then keeps the nearest cell while the next key still
+      ;; starts from the position the caller asked for.
+      (setf (etaf-document-caret document) offset)
       (when-let* ((position (etaf-projection-position projection offset)))
+        (setf (etaf-document-caret-at document) position)
         (with-current-buffer buffer
           (goto-char position)
           (dolist (window (get-buffer-window-list buffer nil t))
@@ -157,76 +175,110 @@ to save after every keystroke would interrupt the sentence."
 
 ;;;; Keys
 
-(defun etaf-document--run-key (document key)
-  "Run KEY at the page's caret in DOCUMENT's source, then repaint the page.
-KEY is the character the reader produced.  A system input method composes
-outside Emacs and hands over finished characters, so nothing here translates
-keys."
-  (let* ((offset (etaf-document-source-offset document))
-         (source (etaf-document-source document)))
+(defvar etaf-document-prefix-commands
+  '(universal-argument digit-argument negative-argument)
+  "Commands that only set the argument the next command receives.
+They stay part of the sequence being read, so `C-u 3 C-f' reaches the source
+as one command with its argument instead of as three keys the page swallowed.")
+
+(defface etaf-document-region-face
+  '((t :inherit region))
+  "Face of the painted cells the source has selected."
+  :group 'etaf)
+
+(defun etaf-document-forward-key ()
+  "Run the command this key names against the document the page paints.
+Every key the page does not claim itself belongs to the source: this looks the
+sequence up in the source buffer, runs it with the caret at the offset the page
+shows, and repaints.  A prefix key reads the rest of its sequence where the
+key's own maps live, so `C-x C-s' saves the document and `C-u 3 C-f' moves
+three characters, exactly as they do in the buffer the text came from."
+  (interactive)
+  (let* ((document (etaf-document--current))
+         (keys (this-command-keys-vector))
+         (source (etaf-document-source document))
+         (offset (etaf-document-source-offset document)))
     (when (and offset (buffer-live-p source))
       (with-current-buffer source
         (goto-char (1+ offset))
-        (let* ((event (if (characterp key) key (aref key 0)))
-               (last-command-event event)
-               (binding (key-binding (vector event))))
-          (if (and (commandp binding) (not (eq binding 'undefined)))
-              (condition-case nil
-                  (call-interactively binding)
-                (error (insert (string event))))
-            (insert (string event))))
-        (let ((target (1- (point))))
-          (set-buffer-modified-p nil)
-          (etaf-document-refresh document)
-          (etaf-document-goto document target))))))
+        ;; A prefix argument belongs to the sequence being read, not to the
+        ;; command loop: the page runs the whole sequence as one command.
+        (let ((prefix-arg prefix-arg)
+              (tick (buffer-chars-modified-tick))
+              (binding nil)
+              (event nil))
+          (setq keys keys
+                event (aref keys (1- (length keys)))
+                binding (key-binding keys t))
+          ;; Continue the sequence while the source wants more keys: a prefix
+          ;; key holds a keymap, and a prefix argument is a command one key long.
+          (while (cond
+                  ((and (keymapp binding) (not (eq binding 'undefined)))
+                   (setq keys (vconcat keys (vector (read-event nil nil)))
+                         event (aref keys (1- (length keys)))
+                         binding (key-binding keys t))
+                   t)
+                  ((memq binding etaf-document-prefix-commands)
+                   ;; A prefix argument applies to the key after it, so its own
+                   ;; key leaves the sequence: `C-u 3 C-f' is two arguments and
+                   ;; one command, not the binding `C-u 3'.
+                   (let ((this-command binding)
+                         (current-prefix-arg prefix-arg)
+                         (last-command-event event))
+                     (call-interactively binding))
+                   (setq keys (vector (read-event nil nil))
+                         event (aref keys 0)
+                         binding (key-binding keys t))
+                   t))
+            nil)
+          (when (and (commandp binding) (not (eq binding 'undefined)))
+            ;; The source's own command is what ran, so the record says so:
+            ;; Emacs folds a run of the same command into one undo step, and
+            ;; three typed characters have to undo together as they do in the
+            ;; buffer itself.
+            (let ((this-command binding)
+                  (last-command (etaf-document-last-command document))
+                  (current-prefix-arg prefix-arg)
+                  (last-command-event event))
+              (setf (etaf-document-last-command document) binding)
+              (call-interactively binding)))
+          ;; The page shows what the command did, so its own text decides
+          ;; whether a repaint is needed.
+          (unless (eql tick (buffer-chars-modified-tick))
+            (set-buffer-modified-p nil)
+            (etaf-document-refresh document))
+          (setq offset (1- (point))))
+        (etaf-document-goto document offset)
+        (etaf-document--paint-region document)))))
 
-(defun etaf-document--move (document command)
-  "Run COMMAND against DOCUMENT's source and put the caret where it lands.
-A key on a painted page names a position in the document, not in the rendering,
-so the caret goes to the source offset COMMAND reached."
-  (let ((offset (etaf-document-source-offset document))
+(defun etaf-document--paint-region (document)
+  "Mark the painted cells DOCUMENT's source holds selected.
+A selection is a position in the document like any other, so the page paints
+it over the cells the projection gives: what a reader marked has to look
+marked before they can cut or replace it."
+  (let ((buffer (etaf-document-buffer document))
         (source (etaf-document-source document)))
-    (when (and offset (buffer-live-p source))
-      (with-current-buffer source
-        (save-excursion
-          (goto-char (1+ offset))
-          (call-interactively command)
-          (etaf-document-goto document (1- (point))))))))
-
-(defun etaf-document-goto-edge (document &optional end)
-  "Put the caret at the source edge of the run it stands on, END or start.
-A painted run is one piece of text: a paragraph, a heading's words, a table
-cell.  Its edge is where the text a reader sees ends, which is not the line's
-end in the source -- a table cell ends at its pipe, a quote at its bar -- so
-this is the position `C-e' and `C-a' name."
-  (let ((projection (etaf-document-projection document))
-        (offset (etaf-document-source-offset document)))
-    (when (and projection offset)
-      (let ((best nil))
-        (dotimes (index (length projection))
-          (let ((run (aref projection index)))
-            ;; The run the caret stands on, or the next one when it sits just
-            ;; before it: a cell starts after the characters that frame it, and
-            ;; the caret a reader sees there belongs to that cell.
-            (when (or (and (<= (nth 2 run) offset) (<= offset (nth 3 run)))
-                      (and (null best) (> (nth 2 run) offset)))
-              (setq best run))))
-        (when best
-          (etaf-document-goto document (if end (nth 3 best) (nth 2 best))))))))
-
-(defun etaf-document-line-start ()
-  "Move the caret to the start of the painted text it stands on."
-  (interactive)
-  (etaf-document-goto-edge (etaf-document--current) nil))
-
-(defun etaf-document-line-end ()
-  "Move the caret to the end of the painted text it stands on."
-  (interactive)
-  (etaf-document-goto-edge (etaf-document--current) t))
-
-(defun etaf-document--move-command (command)
-  "Return an interactive command that runs COMMAND against the document."
-  (lambda () (interactive) (etaf-document--move (etaf-document--current) command)))
+    (when (and (buffer-live-p buffer) (buffer-live-p source))
+      (let ((range (with-current-buffer source
+                     (when (region-active-p)
+                       (cons (min (point) (mark t)) (max (point) (mark t)))))))
+        (when range
+          (let ((projection (etaf-document-projection document))
+                (beg (1- (car range)))
+                (end (1- (cdr range))))
+            (when projection
+              (with-current-buffer buffer
+                (dotimes (index (length projection))
+                  (let* ((run (aref projection index))
+                         (run-beg (nth 2 run))
+                         (run-end (nth 3 run)))
+                    (when (and (< run-beg end) (> run-end beg))
+                      (let ((from (max run-beg beg))
+                            (to (min run-end end)))
+                        (add-face-text-property
+                         (+ (car run) (- from run-beg))
+                         (+ (car run) (- to run-beg))
+                         'etaf-document-region-face t)))))))))))))
 
 (defun etaf-document--current ()
   "Return the session of the current page, or signal a `user-error'."
@@ -235,31 +287,10 @@ this is the position `C-e' and `C-a' name."
 
 ;;;;; Commands
 
-(defun etaf-document-self-insert ()
-  "Insert the character the reader produced into the document, not the page.
-A system input method composes outside Emacs and hands over finished
-characters, so they arrive as `self-insert-command' rather than through
-`input-method-function'; this is where they reach the source."
-  (interactive)
-  (etaf-document--run-key (etaf-document--current) last-command-event))
-
-(defun etaf-document-delete-backward ()
-  "Delete the document character before the caret and repaint the page."
-  (interactive)
-  (etaf-document-delete-char t))
-
-(defun etaf-document-delete-forward ()
-  "Delete the document character after the caret and repaint the page."
-  (interactive)
-  (etaf-document-delete-char nil))
-
-(defun etaf-document-newline ()
-  "Break the document line at the caret and repaint the page."
-  (interactive)
-  (etaf-document-insert "\n"))
-
 (defun etaf-document-insert (text)
-  "Insert TEXT into the document at the painted caret and repaint the page."
+  "Insert TEXT into the document at the painted caret and repaint the page.
+This is the command form of typing, for applications and scripts that hand
+over text instead of a key."
   (interactive "sInsert: ")
   (let* ((document (etaf-document--current))
          (offset (etaf-document-source-offset document)))
@@ -267,7 +298,8 @@ characters, so they arrive as `self-insert-command' rather than through
       (etaf-document--edit document offset 0 text (+ offset (length text))))))
 
 (defun etaf-document-delete-char (&optional backward)
-  "Delete one document character at the painted caret and repaint the page."
+  "Delete one document character at the painted caret and repaint the page.
+The command form of a deletion key, for applications and scripts."
   (interactive "P")
   (let* ((document (etaf-document--current))
          (offset (etaf-document-source-offset document))
@@ -280,40 +312,18 @@ characters, so they arrive as `self-insert-command' rather than through
 
 (defvar etaf-document-keymap
   (let ((map (make-sparse-keymap)))
-    ;; The page is read-only, so its own deletion and line-breaking commands
-    ;; cannot run; these run against the source instead.
-    (dolist (key '("DEL" "<backspace>"))
-      (define-key map (kbd key) #'etaf-document-delete-backward))
-    (define-key map (kbd "C-d") #'etaf-document-delete-forward)
-    (dolist (key '("RET" "<return>"))
-      (define-key map (kbd key) #'etaf-document-newline))
-    ;; A canvas normally binds these to focus navigation, because a painted
-    ;; page is an interface rather than text.  While the page accepts typing the
-    ;; caret is text, and these keys name document positions.
-    ;; These name a document position, so they run their command in the source
-    ;; and bring the caret back.  The line edges are not line commands at all:
-    ;; a painted run is a paragraph or a cell, and its edge is what they mean.
-    ;; A key names a direction, and `(kbd "<home>")' is a vector while
-    ;; `(kbd "C-a")' is a string, so the key is paired with its command here
-    ;; instead of being recognised by its text.
-    (dolist (entry '(("<home>" . etaf-document-line-start)
-                     ("<end>" . etaf-document-line-end)
-                     ("C-a" . etaf-document-line-start)
-                     ("C-e" . etaf-document-line-end)))
-      (define-key map (kbd (car entry)) (cdr entry)))
-    (dolist (entry '(("<left>" . backward-char) ("C-b" . backward-char)
-                     ("<right>" . forward-char) ("C-f" . forward-char)
-                     ("M-f" . forward-word) ("M-b" . backward-word)
-                     ("M-<" . beginning-of-buffer) ("M->" . end-of-buffer)))
-      (define-key map (kbd (car entry))
-                      (etaf-document--move-command (cdr entry))))
+    ;; A press places a caret the reader must see, so the page keeps its own
+    ;; pointer handling.  Every other key names something the document does,
+    ;; so the page forwards it: the source decides what `RET', `TAB', `C-k' or
+    ;; `C-x C-s' mean, and this list never grows into a second key map.
     (dolist (event '(down-mouse-1 drag-mouse-1 mouse-1))
       (define-key map (vector event) #'mouse-set-point))
-    (define-key map [remap self-insert-command] #'etaf-document-self-insert)
+    (define-key map [t] #'etaf-document-forward-key)
     map)
   "Keys a rendered page uses while it accepts typing.
 An application extends this with `etaf-document-keys' rather than replacing it,
-so every document page reacts the same way to the same key.")
+so every document page reacts the same way to the same key: a key the page does
+not claim runs in the source the page renders.")
 
 ;;;; Session
 
