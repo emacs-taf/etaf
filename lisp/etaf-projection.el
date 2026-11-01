@@ -109,13 +109,18 @@ the last cell of a line still names a source character."
   (let ((run (etaf--projection-find projection 0 1 position)))
     (if run
         (min (nth 3 run) (+ (nth 2 run) (- position (car run))))
-      (let ((nearest nil))
+      (let ((nearest nil) (first nil))
         (dotimes (index (length projection))
           (let ((candidate (aref projection index)))
             (when (and (<= (car candidate) position)
                        (or (null nearest) (> (car candidate) (car nearest))))
-              (setq nearest candidate))))
-        (when nearest (nth 3 nearest))))))
+              (setq nearest candidate))
+            (when (or (null first) (< (car candidate) (car first)))
+              (setq first candidate))))
+        ;; A position before the first run, such as the page margin, names the
+        ;; start of the source rather than nothing at all.
+        (cond (nearest (nth 3 nearest))
+              (first (nth 2 first)))))))
 
 ;;;###autoload
 (defun etaf-projection-position (projection offset)
@@ -134,9 +139,9 @@ a marker the render folded away, maps to the start of the next run."
             (when (<= (nth 3 candidate) offset)
               (setq previous candidate))))
         (cond (next (car next))
-              ;; The source ends where the last run ends, so a caret there
-              ;; sits after its final cell.
-              ((and previous (= offset (nth 3 previous))) (nth 1 previous)))))))
+              ;; An offset at or past the end of the last run names the end of
+              ;; the source, so its caret sits after the final painted cell.
+              (previous (nth 1 previous)))))))
 
 (provide 'etaf-projection)
 
