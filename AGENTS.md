@@ -81,6 +81,15 @@ reporting no direct caller for a binding updater is expected.
   from source, one animation input-gesture scenario fails on an input session that
   byte-compiled code keeps, which reads as a regression.
 
+## Module implementation notes
+
+- `cl-defstruct` generates one accessor function per slot, named after the slot.
+  A slot with a common name (`keymap`, `map`, `state`) therefore takes over that
+  name and replaces whatever else defined it, a `defvar` included: callers then
+  fail with `void-function` or `wrong-number-of-arguments`, and nothing in the
+  message says the name collided. Give the slot a specific name (`bindings`, not
+  `keymap`) and check every caller.
+
 ## Enforced gates
 
 - `tests/acceptance.json` must inventory exactly the maintained Lisp
