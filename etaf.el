@@ -1094,7 +1094,49 @@
 ;; sets this to nil with `setq-local', because a press there places a caret the
 ;; user needs to see.
 ;;
-;; Function: etaf-projection (runtime entries)
+;; Function: etaf-document-open (buffer &key source entries republish keymap)
+;;;###autoload (autoload 'etaf-document-open "etaf" nil nil)
+;; Make BUFFER, a mounted page, accept typing that edits SOURCE.
+;; The page keeps its rendering: a key names a position on it, the projection
+;; turns that into a source offset, the key runs there, and the page repaints
+;; from the edited source.  ENTRIES pairs a Host reference with the source range
+;; its painted text stands for, REPUBLISH is called with the new source text to
+;; redraw the page, and KEYMAP adds the application's own keys.  Return the
+;; session; `etaf-document-close' ends it and saves what was written.
+;; Typing, deletion and newlines reach the source through their own commands, so
+;; a system input method works as it does anywhere; keys whose meaning is a
+;; document position (`C-e', `M-f', the document edges) run in the source too.
+;; Signals `user-error' without a live page, a live source or a mounted runtime.
+;;
+;; Function: etaf-document-close (document)
+;;;###autoload (autoload 'etaf-document-close "etaf" nil nil)
+;; End DOCUMENT's session, return the page to navigation and save the source.
+;;
+;; Function: etaf-document-editing-p (&optional buffer)
+;;;###autoload (autoload 'etaf-document-editing-p "etaf" nil nil)
+;; Return non-nil when BUFFER, by default the current one, accepts typing.
+;;
+;; Function: etaf-document-projection (document)
+;;;###autoload (autoload 'etaf-document-projection "etaf" nil nil)
+;; Return DOCUMENT's painted page as source ranges, or nil without a page.
+;;
+;; Function: etaf-document-source-offset (document &optional position)
+;;;###autoload (autoload 'etaf-document-source-offset "etaf" nil nil)
+;; Return the source offset the painted POSITION, by default at point, names.
+;;
+;; Function: etaf-document-goto (document offset)
+;;;###autoload (autoload 'etaf-document-goto "etaf" nil nil)
+;; Put the caret on the painted cell where source OFFSET lives.
+;;
+;; Function: etaf-document-insert (text)
+;;;###autoload (autoload 'etaf-document-insert "etaf" nil t)
+;; Insert TEXT into the document at the painted caret and repaint the page.
+;;
+;; Function: etaf-document-delete-char (&optional backward)
+;;;###autoload (autoload 'etaf-document-delete-char "etaf" nil t)
+;; Delete one document character at the painted caret and repaint the page.
+;;
+;; Function: etaf-projection (runtime entries &optional source)
 ;;;###autoload (autoload 'etaf-projection "etaf" nil nil)
 ;; Return the source projection of RUNTIME's painted cells.
 ;; ENTRIES is an alist of (REF . (SOURCE-START . SOURCE-END)), one per Host
@@ -2428,6 +2470,7 @@
 (require 'etaf-process)
 (require 'etaf-video-component)
 (require 'etaf-projection)
+(require 'etaf-document)
 
 (autoload 'etaf-animation-example-open "examples/etaf-animation-example" nil t)
 (autoload 'etaf-retained-resize-open "examples/etaf-retained-resize" nil t)

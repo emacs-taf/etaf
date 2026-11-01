@@ -91,15 +91,20 @@ resolve the same way, with no rule per block kind."
              (let ((painted (with-current-buffer buffer
                               (buffer-substring-no-properties
                                (car bounds) (cdr bounds)))))
-               (when (and painted (not (string-empty-p (string-trim painted))))
-                 (let ((found (string-match (regexp-quote painted)
-                                            source cursor)))
-                   (when (and found (<= (+ found (length painted)) source-end))
-                     (push (list (car bounds) (cdr bounds)
-                                 found
-                                 (+ found (length painted)))
-                           runs)
-                     (setq cursor (+ found (length painted))))))))))))
+               ;; A cell is painted padded to its column, and the padding is
+               ;; not in the source: align the text it holds, not the spaces
+               ;; that fill the column.
+               (let* ((text (string-trim painted))
+                      (lead (- (length painted) (length (string-trim-left painted)))))
+                 (unless (string-empty-p text)
+                   (let ((found (string-match (regexp-quote text) source cursor)))
+                     (when (and found (<= (+ found (length text)) source-end))
+                       (push (list (+ (car bounds) lead)
+                                   (+ (car bounds) lead (length text))
+                                   found
+                                   (+ found (length text)))
+                             runs)
+                       (setq cursor (+ found (length text)))))))))))))
     (nreverse runs)))
 
 (defun etaf--projection-trim (runs)
@@ -209,11 +214,11 @@ start of the source."
         (cond
          ;; A position naming a run's end is that run's last character.
          (edge (nth 3 edge))
-         ;; A position in the gap between two runs is the source between them:
-         ;; a blank line, a paragraph break.  Naming the line that follows
-         ;; keeps an edit there from reaching back into the previous block.
+         ;; A position in the gap between two runs sits on the blank line that
+         ;; separates them, so it names the start of the block that follows:
+         ;; typing there begins that block instead of appending to the one above.
          ((and next (> (nth 2 next) (if nearest (nth 3 nearest) 0)))
-          (1- (nth 2 next)))
+          (nth 2 next))
          (nearest (nth 3 nearest))
          (first (nth 2 first))))))))
 

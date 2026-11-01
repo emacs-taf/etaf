@@ -1187,6 +1187,21 @@
       "name": "etaf-projection-reports-a-caret-past-the-last-cell",
       "file": "tests/etaf-projection-tests.el",
       "purpose": "A source offset at the end of the document maps after the last painted cell."
+    },
+    {
+      "name": "etaf-document-typing-edits-the-source-not-the-page",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "A typed character is written to the source the page paints, and the page repaints from it instead of holding the character."
+    },
+    {
+      "name": "etaf-document-deletion-and-newline-follow-the-caret",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "Deletion and line breaks edit the source at the painted caret, because the page itself is read-only."
+    },
+    {
+      "name": "etaf-document-close-saves-what-the-page-wrote",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "An edit made through the page reaches the file when the session ends, without prompting mid-sentence."
     }
   ]
 }
