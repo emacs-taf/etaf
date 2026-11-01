@@ -194,8 +194,23 @@ shows, and repaints.  A prefix key reads the rest of its sequence where the
 key's own maps live, so `C-x C-s' saves the document and `C-u 3 C-f' moves
 three characters, exactly as they do in the buffer the text came from."
   (interactive)
-  (let* ((document (etaf-document--current))
-         (keys (this-command-keys-vector))
+  (let ((document (gethash (current-buffer) etaf-document--sessions)))
+    (if (null document)
+        ;; A page can outlive the session that made it editable: the session
+        ;; ends while a key is in flight, or the buffer is handed back to its
+        ;; application.  The map is then a leftover, and reporting an error for
+        ;; it would answer every key the reader types.  Dropping it and handing
+        ;; the key back lets it mean what it means in this buffer.
+        (progn
+          (setq-local overriding-local-map nil)
+          (setq unread-command-events
+                (append (listify-key-sequence (this-command-keys-vector))
+                        unread-command-events)))
+      (etaf-document--forward-key document))))
+
+(defun etaf-document--forward-key (document)
+  "Run the key being read against DOCUMENT's source and repaint the page."
+  (let* ((keys (this-command-keys-vector))
          (source (etaf-document-source document))
          (offset (etaf-document-source-offset document)))
     (when (and offset (buffer-live-p source))
@@ -373,6 +388,13 @@ characters arrive as ordinary typing and need no channel of their own."
   (let ((buffer (etaf-document-buffer document))
         (source (etaf-document-source document)))
     (remhash buffer etaf-document--sessions)
+    ;; The map belongs to this session alone: a page that ended up carrying it
+    ;; after the buffer was replaced would answer every key with an error about
+    ;; a document it no longer has.
+    (dolist (other (buffer-list))
+      (with-current-buffer other
+        (when (eq overriding-local-map (etaf-document-bindings document))
+          (setq-local overriding-local-map nil))))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
         (setq-local overriding-local-map nil)

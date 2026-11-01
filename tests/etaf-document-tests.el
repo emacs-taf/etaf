@@ -144,4 +144,30 @@ the middle of writing."
 
 (provide 'etaf-document-tests)
 
+(ert-deftest etaf-document-a-closed-page-gives-the-keyboard-back ()
+  "Ending a session leaves no key map behind in its page.
+The map lives in the page buffer, so a page whose session ended elsewhere would
+otherwise answer every key with an error about a document it no longer has."
+  (let* ((source (generate-new-buffer " *etaf-document-source*"))
+         (built (etaf-document-test--page "alpha beta"))
+         (buffer (car built)))
+    (unwind-protect
+        (progn
+          (with-current-buffer source (insert "alpha beta"))
+          (let ((document (etaf-document-open
+                           buffer :source source
+                           :entries (list (cons 'first (cons 0 5)))
+                           :republish #'ignore)))
+            (should (buffer-local-value 'overriding-local-map buffer))
+            (etaf-document-close document)
+            (should-not (buffer-local-value 'overriding-local-map buffer))
+            (with-current-buffer buffer
+              ;; A key typed at a page that stopped accepting typing runs the
+              ;; buffer's own command instead of reporting an error.
+              (should (null (condition-case nil
+                                (progn (execute-kbd-macro "x") nil)
+                              (error t)))))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (when (buffer-live-p source) (kill-buffer source)))))
+
 ;;; etaf-document-tests.el ends here
