@@ -1128,6 +1128,13 @@
 ;;;###autoload (autoload 'etaf-document-goto "etaf" nil nil)
 ;; Put the caret on the painted cell where source OFFSET lives.
 ;;
+;; Function: etaf-document-settle (&optional buffer)
+;;;###autoload (autoload 'etaf-document-settle "etaf" nil nil)
+;; Make BUFFER's page show its document now, running the repaint a key defers.
+;; A page answers a key itself and repaints on the next frame, which is what
+;; keeps typing responsive; a caller about to read the page runs this first.
+;; Signals `user-error' without a live page.
+;;
 ;; Function: etaf-document-insert (text)
 ;;;###autoload (autoload 'etaf-document-insert "etaf" nil t)
 ;; Insert TEXT into the document at the painted caret and repaint the page.

@@ -98,8 +98,7 @@ has not moved: a render folds markup away -- a heading's hashes, a bullet, a
 quote bar -- and those source positions have no cell of their own, so reading
 the painted cell back would answer with the nearest visible one and the next
 key would start from there instead of from where the command left the caret."
-  (let ((projection (etaf-document-projection document))
-        (at (or position (point)))
+  (let ((at (or position (point)))
         (caret (etaf-document-caret document)))
     (cond ((and (null position)
                 caret
@@ -109,7 +108,8 @@ key would start from there instead of from where the command left the caret."
                 (eq (current-buffer) (etaf-document-buffer document))
                 (>= at (point-max)))
            (length (or (etaf-document-source-text document) "")))
-          (projection (etaf-projection-source-offset projection at)))))
+          (t (when-let* ((projection (etaf-document-projection document)))
+               (etaf-projection-source-offset projection at))))))
 
 (defun etaf-document-goto (document offset)
   "Put the caret on the painted cell where source OFFSET lives.
@@ -208,6 +208,37 @@ three characters, exactly as they do in the buffer the text came from."
                         unread-command-events)))
       (etaf-document--forward-key document))))
 
+(defvar-local etaf-document--pending nil
+  "Non-nil while this page waits for the repaint that follows a key.")
+
+(defun etaf-document--defer (document)
+  "Repaint DOCUMENT's page on the next frame instead of now.
+The page answered the key itself, so the repaint that follows the source can
+wait: one repaint covers every key pressed before it comes."
+  (let ((buffer (etaf-document-buffer document)))
+    (when (and (buffer-live-p buffer)
+               (not (buffer-local-value 'etaf-document--pending buffer)))
+      (with-current-buffer buffer (setq etaf-document--pending t))
+      (run-at-time 0 nil
+                   (lambda ()
+                     (when (buffer-live-p buffer)
+                       (with-current-buffer buffer (setq etaf-document--pending nil))
+                       (when (eq (gethash buffer etaf-document--sessions) document)
+                         (etaf-document-settle buffer))))))))
+
+(defun etaf-document-settle (&optional buffer)
+  "Make BUFFER's page, by default the current one, show its document now.
+A page repaints on the next frame after a key, which is what keeps typing
+responsive; this runs that repaint immediately, for a caller that is about to
+read the page or show it."
+  (when-let* ((document (gethash (or buffer (current-buffer)) etaf-document--sessions)))
+    (let ((target (etaf-document-buffer document)))
+      (when (buffer-live-p target)
+        (with-current-buffer target (setq etaf-document--pending nil))))
+    (etaf-document-refresh document)
+    (etaf-document-goto document (or (etaf-document-caret document) 0))
+    (etaf-document--paint-region document)))
+
 (defun etaf-document--forward-key (document)
   "Run the key being read against DOCUMENT's source and repaint the page."
   (let* ((keys (this-command-keys-vector))
@@ -257,14 +288,16 @@ three characters, exactly as they do in the buffer the text came from."
                   (last-command-event event))
               (setf (etaf-document-last-command document) binding)
               (call-interactively binding)))
-          ;; The page shows what the command did, so its own text decides
-          ;; whether a repaint is needed.
           (unless (eql tick (buffer-chars-modified-tick))
-            (set-buffer-modified-p nil)
-            (etaf-document-refresh document))
+            (set-buffer-modified-p nil))
           (setq offset (1- (point))))
-        (etaf-document-goto document offset)
-        (etaf-document--paint-region document)))))
+        ;; The page answered the key already, so the repaint that shows what
+        ;; the source did lands on the next frame.  The offset is what the next
+        ;; key starts from, even while the paint behind it is still the old one.
+        (setf (etaf-document-caret document) offset)
+        (setf (etaf-document-caret-at document)
+              (with-current-buffer (etaf-document-buffer document) (point)))
+        (etaf-document--defer document)))))
 
 (defun etaf-document--paint-region (document)
   "Mark the painted cells DOCUMENT's source holds selected.
