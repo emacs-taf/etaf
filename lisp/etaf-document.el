@@ -301,14 +301,21 @@ read the page or show it."
               (call-interactively binding)))
           (unless (eql tick (buffer-chars-modified-tick))
             (set-buffer-modified-p nil))
-          (setq offset (1- (point))))
-        ;; The page answered the key already, so the repaint that shows what
-        ;; the source did lands on the next frame.  The offset is what the next
-        ;; key starts from, even while the paint behind it is still the old one.
-        (setf (etaf-document-caret document) offset)
-        (setf (etaf-document-caret-at document)
-              (with-current-buffer (etaf-document-buffer document) (point)))
-        (etaf-document--defer document)))))
+          (setq offset (1- (point)))
+          ;; A key that changed neither the document nor the caret leaves the
+          ;; page alone.  Scrolling is such a key: placing the caret again
+          ;; would pull the window back to where it was, and the two would keep
+          ;; undoing each other.
+          (unless (and (eql tick (buffer-chars-modified-tick))
+                       (eql offset (etaf-document-caret document)))
+            ;; The page answered the key already, so the repaint that shows what
+            ;; the source did lands on the next frame.  The offset is what the
+            ;; next key starts from, even while the paint behind it is still the
+            ;; old one.
+            (setf (etaf-document-caret document) offset)
+            (setf (etaf-document-caret-at document)
+                  (with-current-buffer (etaf-document-buffer document) (point)))
+            (etaf-document--defer document)))))))
 
 (defun etaf-document--paint-region (document)
   "Mark the painted cells DOCUMENT's source holds selected.
@@ -377,6 +384,14 @@ The command form of a deletion key, for applications and scripts."
     ;; `C-x C-s' mean, and this list never grows into a second key map.
     (dolist (event '(down-mouse-1 drag-mouse-1 mouse-1))
       (define-key map (vector event) #'mouse-set-point))
+    ;; Moving the viewport is not an edit: the page scrolls itself.  Forwarding
+    ;; a wheel or `C-v' to the source would scroll the window that shows the
+    ;; page and then place the caret again, so the two would keep undoing each
+    ;; other and redisplay would never settle.
+    (dolist (event '(wheel-up wheel-down wheel-left wheel-right mouse-4 mouse-5))
+      (define-key map (vector event) #'mwheel-scroll))
+    (dolist (key '("C-v" "next")) (define-key map (kbd key) #'scroll-up-command))
+    (dolist (key '("M-v" "prior")) (define-key map (kbd key) #'scroll-down-command))
     (define-key map [t] #'etaf-document-forward-key)
     map)
   "Keys a rendered page uses while it accepts typing.

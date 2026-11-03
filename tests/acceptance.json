@@ -1207,6 +1207,11 @@
       "name": "etaf-document-a-closed-page-gives-the-keyboard-back",
       "file": "tests/etaf-document-tests.el",
       "purpose": "Ending an editing session leaves no key map in its page, so a page whose session ended does not answer every key with an error."
+    },
+    {
+      "name": "etaf-document-scrolling-a-page-is-not-an-edit",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "A viewport key (C-v) scrolls the page and never reaches the source, so scrolling cannot fight the caret placement that follows an edit."
     }
   ]
 }

@@ -170,4 +170,40 @@ otherwise answer every key with an error about a document it no longer has."
       (when (buffer-live-p buffer) (kill-buffer buffer))
       (when (buffer-live-p source) (kill-buffer source)))))
 
+(ert-deftest etaf-document-scrolling-a-page-is-not-an-edit ()
+  "A viewport key scrolls the page and leaves the document alone.
+The page claims the viewport itself: forwarding `C-v' to the source would scroll
+the window that shows the page and then place the caret again, and the two would
+keep undoing each other."
+  (let* ((text (mapconcat #'identity (make-list 60 "line of text") "\n"))
+         (source (generate-new-buffer " *etaf-document-source*"))
+         (built (etaf-document-test--page text))
+         (buffer (car built))
+         (document nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer source
+            (insert text)
+            (goto-char (point-min))
+            ;; A key the page forwards runs here, so a source binding that
+            ;; writes marks whether the page let the viewport key through.
+            (local-set-key (kbd "C-v")
+                           (lambda () (interactive) (insert "FORWARDED"))))
+          (set-window-buffer (selected-window) buffer)
+          (setq document (etaf-document-open
+                          buffer :source source
+                          :entries (lambda (&optional _)
+                                     (list (cons 'first (cons 0 12))))
+                          :republish #'ignore))
+          (with-current-buffer buffer
+            (goto-char (point-min))
+            (let ((start (window-start)))
+              (execute-kbd-macro (kbd "C-v"))
+              (should (= (length text) (with-current-buffer source (buffer-size))))
+              (should (> (window-start) start)))))
+      (when (and document (buffer-live-p buffer))
+        (with-current-buffer buffer (ignore-errors (etaf-document-close document))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (when (buffer-live-p source) (kill-buffer source)))))
+
 ;;; etaf-document-tests.el ends here
