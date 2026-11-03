@@ -47,7 +47,7 @@ needs -- and BINDINGS holds this session's keys, shared ones plus the
 application's own."
   buffer source entries (bindings nil) (saved nil) (dirty nil)
   (cached nil) (cached-tick nil) (cached-revision nil)
-  (caret nil) (caret-at nil) (last-command nil))
+  (caret nil) (caret-at nil) (last-command nil) (save-timer nil))
 
 ;;;; Reading the page
 
@@ -161,11 +161,19 @@ registered when the session opened."
   (when-let* ((republish (plist-get (etaf-document-saved document) :republish)))
     (funcall republish (etaf-document-source-text document))))
 
+(defcustom etaf-document-save-delay 2
+  "Seconds of typing pause before a page writes its source to the file.
+A page accepts typing as soon as it opens, so there is no end of an editing
+session to save at: the file follows a pause instead, and the session saves
+again when its buffer is killed."
+  :type 'number
+  :group 'etaf)
+
 (defun etaf-document-write (document start delete insert)
   "In DOCUMENT's source replace DELETE characters at START with INSERT.
 An edit made through the page is not a file edit the reader started, so the
-source is left unmodified and the session saves once, when it ends; prompting
-to save after every keystroke would interrupt the sentence."
+source is left unmodified and the file is written after a pause; prompting to
+save after every keystroke would interrupt the sentence."
   (when-let* ((source (etaf-document-source document)))
     (with-current-buffer source
       (save-excursion
@@ -174,9 +182,52 @@ to save after every keystroke would interrupt the sentence."
         (when (> (length insert) 0) (insert insert)))
       ;; The source is not left asking to be saved after every keystroke, so
       ;; the session remembers that it owes the file a write and pays it when
-      ;; it ends.
+      ;; the typing pauses.
       (set-buffer-modified-p nil)
-      (setf (etaf-document-dirty document) t))))
+      (setf (etaf-document-dirty document) t)
+      (etaf-document--schedule-save document))))
+
+(defun etaf-document--schedule-save (document)
+  "Write DOCUMENT's file once the typing pauses.
+Every edit pushes the moment back, so one write covers a burst instead of one
+write per key."
+  (when (buffer-live-p (etaf-document-source document))
+    (when-let* ((timer (etaf-document-save-timer document)))
+      (cancel-timer timer))
+    (setf (etaf-document-save-timer document)
+          (run-at-time etaf-document-save-delay nil
+                       #'etaf-document--save-idle document))))
+
+(defun etaf-document--save-idle (document)
+  "Write DOCUMENT's file if it is still owed one."
+  (setf (etaf-document-save-timer document) nil)
+  (when (and (etaf-document-dirty document)
+             (eq (gethash (etaf-document-buffer document) etaf-document--sessions)
+                 document))
+    (etaf-document--save document)))
+
+(defun etaf-document--save (document)
+  "Write DOCUMENT's source to its file, and say so when it cannot.
+A file that changed on disk since the page last read it is left alone: the
+page's text is still in its source buffer, and overwriting someone else's
+write is not the page's decision."
+  (when-let* ((source (etaf-document-source document)))
+    (when (and (buffer-live-p source) (buffer-file-name source))
+      (with-current-buffer source
+        (cond
+         ((not (verify-visited-file-modtime))
+          (message "ETAF: %s changed on disk, so the page keeps its edit unsaved"
+                   (file-name-nondirectory (buffer-file-name))))
+         (t
+          (set-buffer-modified-p t)
+          (condition-case error
+              (progn
+                (save-buffer)
+                (setf (etaf-document-dirty document) nil))
+            (error
+             (message "ETAF: could not save %s: %s"
+                      (file-name-nondirectory (buffer-file-name))
+                      (error-message-string error))))))))))
 
 (defun etaf-document--edit (document start delete insert caret)
   "Replace DELETE characters at START with INSERT and place the caret at CARET."
@@ -252,6 +303,26 @@ it: running it again would nest until the evaluation depth runs out."
         (let ((this-command binding)
               (last-command-event (aref keys (1- (length keys)))))
           (call-interactively binding))))))
+
+(defun etaf-document--page-command (document keys)
+  "Return DOCUMENT's own command for KEYS, or nil.
+The application's keys sit in the session's map beside the catch-all that
+forwards a key, so this reads the binding directly: a key the document left
+unbound reaches the page's command instead of being dropped."
+  (let ((binding (lookup-key (etaf-document-bindings document) keys)))
+    (and (commandp binding)
+         (not (eq binding #'etaf-document-forward-key))
+         binding)))
+
+(defun etaf-document--self-insert-p (keys)
+  "Return non-nil when KEYS is one printable character that can type itself.
+Control characters and DEL are left out: each of them names a command in an
+ordinary buffer, and a page that inserted one would be inventing text."
+  (and (= (length keys) 1)
+       (let ((event (aref keys 0)))
+         (and (characterp event)
+              (>= event 32)
+              (/= event 127)))))
 
 (defun etaf-document--fallback-key ()
   "Run the key being read from this buffer's own maps, once.
@@ -369,16 +440,30 @@ dropped with a quit instead of leaving the editor frozen."
                          binding (key-binding keys t))
                    t))
             nil)
-          (when (and (commandp binding) (not (eq binding 'undefined)))
+          (let ((command (cond
+                          ((and (commandp binding) (not (eq binding 'undefined)))
+                           binding)
+                          ;; A printable character the source's own maps leave
+                          ;; unbound -- a modal keymap suppressing self-insertion
+                          ;; remaps it to `undefined' -- still belongs to the
+                          ;; document: losing the first character a reader types
+                          ;; is not a state a page may inherit from its source.
+                          ((etaf-document--self-insert-p keys) #'self-insert-command)
+                          ;; A key the document has no command for may be the
+                          ;; page's own: the application hands its keys over
+                          ;; when the session opens, and they run exactly where
+                          ;; the document does not claim the sequence.
+                          (t (etaf-document--page-command document keys)))))
+            (when command
             ;; The source's own command is what ran, so the record says so:
             ;; Emacs folds a run of the same command into one undo step, and
             ;; three typed characters have to undo together as they do in the
             ;; buffer itself.
-            (let ((this-command binding)
+            (let ((this-command command)
                   (last-command (etaf-document-last-command document))
                   (current-prefix-arg prefix-arg)
                   (last-command-event event))
-              (setf (etaf-document-last-command document) binding)
+              (setf (etaf-document-last-command document) command)
               ;; The command loop runs these around a key it reads here, so a
               ;; mode that carries state from one command to the next -- a
               ;; modal editing state, the mark -- advances exactly as it does
@@ -387,10 +472,15 @@ dropped with a quit instead of leaving the editor frozen."
               ;; suppresses typing then keeps suppressing every key the page
               ;; forwards.
               (run-hooks 'pre-command-hook)
-              (call-interactively binding)
-              (run-hooks 'post-command-hook)))
+              (call-interactively command)
+              (run-hooks 'post-command-hook))))
+          ;; A forwarded command edited the source with the buffer's own
+          ;; machinery, so this is the same debt `etaf-document-write' owes:
+          ;; the file follows once the typing pauses.
           (unless (eql tick (buffer-chars-modified-tick))
-            (set-buffer-modified-p nil))
+            (set-buffer-modified-p nil)
+            (setf (etaf-document-dirty document) t)
+            (etaf-document--schedule-save document))
           (setq offset (1- (point)))
           ;; A key that changed neither the document nor the caret leaves the
           ;; page alone.  Scrolling is such a key: placing the caret again
@@ -528,6 +618,12 @@ characters arrive as ordinary typing and need no channel of their own."
                     (etaf-document-open buffer
                                         :source source :entries entries
                                         :republish republish :keymap keymap)))
+      ;; The page accepts typing as soon as it opens, so its buffer is the end
+      ;; of the session: killing it is a reader leaving, and the file gets
+      ;; what was typed without a prompt.
+      (add-hook 'kill-buffer-hook
+                (lambda () (etaf-document-close document))
+                t t)
       (setq-local overriding-local-map (etaf-document-bindings document))
       (setq-local buffer-read-only t)
       (setq-local cursor-type 'bar)
@@ -541,6 +637,9 @@ characters arrive as ordinary typing and need no channel of their own."
   (let ((buffer (etaf-document-buffer document))
         (source (etaf-document-source document)))
     (remhash buffer etaf-document--sessions)
+    (when-let* ((timer (etaf-document-save-timer document)))
+      (cancel-timer timer)
+      (setf (etaf-document-save-timer document) nil))
     ;; The map belongs to this session alone: a page that ended up carrying it
     ;; after the buffer was replaced would answer every key with an error about
     ;; a document it no longer has.
@@ -557,14 +656,8 @@ characters arrive as ordinary typing and need no channel of their own."
     ;; The page wrote through the source while it was edited, so the file gets
     ;; the text once the session ends instead of prompting mid-sentence.
     (when (and (buffer-live-p source) (etaf-document-dirty document))
-      (with-current-buffer source
-        ;; A source without a file is not something to save: it was handed over
-        ;; for editing and its owner reads it back.
-        (when (buffer-file-name)
-          (set-buffer-modified-p t)
-          (save-buffer))
-        (setf (etaf-document-dirty document) nil))))
-  document)
+      (etaf-document--save document))
+    document))
 
 (defun etaf-document-editing-p (&optional buffer)
   "Return non-nil when BUFFER, by default the current one, accepts typing."

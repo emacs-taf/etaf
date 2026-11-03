@@ -213,7 +213,159 @@ The viewport keys are the Next and Prior events; their names written inside
             (should (equal "npalpha beta"
                            (with-current-buffer source
                              (buffer-substring-no-properties (point-min) (point-max)))))
-            (should (= 2 (etaf-document-caret document)))))
+            ;; The source moved its own point as it typed, so the next key starts
+            ;; after the two letters the page forwarded.
+            (should (= 3 (with-current-buffer source (point))))))
+      (when (and document (buffer-live-p buffer))
+        (with-current-buffer buffer (ignore-errors (etaf-document-close document))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (when (buffer-live-p source) (kill-buffer source)))))
+
+(ert-deftest etaf-document-a-pause-writes-the-file ()
+  "A page writes its file once the typing pauses.
+The page accepts typing from the moment it opens, so there is no end of an
+editing session to save at: a pause in the typing is the moment, and one write
+covers a burst instead of one per key."
+  (let* ((file (make-temp-file "etaf-document-save" nil ".md"))
+         (source nil)
+         (buffer (car (etaf-document-test--page "alpha beta")))
+         (document nil)
+         (etaf-document-save-delay 0.02))
+    (unwind-protect
+        (progn
+          (with-temp-file file (insert "alpha beta"))
+          (setq source (find-file-noselect file))
+          (set-window-buffer (selected-window) buffer)
+          (setq document (etaf-document-open
+                          buffer :source source
+                          :entries (list (cons 'first (cons 0 5)))
+                          :republish #'ignore))
+          (with-current-buffer buffer
+            (goto-char (point-min))
+            ;; Typing reaches the source through the buffer's own command, which
+            ;; is the path a key takes, not through `etaf-document-insert'.
+            (execute-kbd-macro "Y")
+            (execute-kbd-macro "Z"))
+          ;; Typing does not leave the source asking to be saved, and the file
+          ;; is not written while the sentence is still being typed.
+          (should-not (buffer-modified-p source))
+          (should (equal "alpha beta"
+                         (with-temp-buffer
+                           (insert-file-contents file)
+                           (buffer-substring-no-properties (point-min) (point-max)))))
+          (sleep-for 0.3)
+          (should-not (buffer-modified-p source))
+          (should (equal "YZalpha beta"
+                         (with-temp-buffer
+                           (insert-file-contents file)
+                           (buffer-substring-no-properties (point-min) (point-max))))))
+      (when (and document (buffer-live-p buffer))
+        (with-current-buffer buffer (ignore-errors (etaf-document-close document))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (when (buffer-live-p source) (kill-buffer source))
+      (delete-file file))))
+
+(ert-deftest etaf-document-killing-the-page-saves-the-file ()
+  "Closing the page's buffer is a reader leaving, so the file gets the text.
+A page that accepted typing needs no explicit close for its edit to reach the
+file: killing the buffer is the end of the session."
+  (let* ((file (make-temp-file "etaf-document-kill" nil ".md"))
+         (source nil)
+         (buffer (car (etaf-document-test--page "alpha beta"))))
+    (unwind-protect
+        (progn
+          (with-temp-file file (insert "alpha beta"))
+          (setq source (find-file-noselect file))
+          (etaf-document-open
+           buffer :source source
+           :entries (list (cons 'first (cons 0 5)))
+           :republish #'ignore)
+          (with-current-buffer buffer
+            (goto-char (point-min))
+            (etaf-document-insert "K"))
+          (kill-buffer buffer)
+          (should (equal "Kalpha beta"
+                         (with-temp-buffer
+                           (insert-file-contents file)
+                           (buffer-substring-no-properties (point-min) (point-max))))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (when (buffer-live-p source) (kill-buffer source))
+      (delete-file file))))
+
+(ert-deftest etaf-document-a-suppressed-letter-still-types ()
+  "A printable key the source's own maps leave unbound still reaches the text.
+A modal editing state suppresses self-insertion by remapping it to `undefined'.
+A page is an editing surface, so the first character a reader types must land:
+the page types it itself instead of dropping the key."
+  (let* ((source (generate-new-buffer " *etaf-document-source*"))
+         (built (etaf-document-test--page "alpha beta"))
+         (buffer (car built))
+         (document nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer source
+            (insert "alpha beta")
+            (goto-char (point-min))
+            ;; What a control state does to ordinary typing.
+            (use-local-map (let ((map (make-sparse-keymap)))
+                             (suppress-keymap map t)
+                             map)))
+          (set-window-buffer (selected-window) buffer)
+          (setq document (etaf-document-open
+                          buffer :source source
+                          :entries (list (cons 'first (cons 0 5)))
+                          :republish #'ignore))
+          (with-current-buffer buffer
+            (goto-char (point-min))
+            (should (eq 'undefined
+                        (with-current-buffer source (key-binding "x"))))
+            (execute-kbd-macro "x"))
+          (should (equal "xalpha beta"
+                         (with-current-buffer source
+                           (buffer-substring-no-properties (point-min) (point-max))))))
+      (when (and document (buffer-live-p buffer))
+        (with-current-buffer buffer (ignore-errors (etaf-document-close document))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (when (buffer-live-p source) (kill-buffer source)))))
+
+(ert-deftest etaf-document-a-page-key-runs-where-the-document-has-none ()
+  "A key the application supplies runs when the source has no command for it.
+A page that types into a document still needs its own commands reachable.  The
+document keeps every sequence it binds, and the page answers the rest, so a
+prefix it never bound does not swallow the page's keys either."
+  (let* ((source (generate-new-buffer " *etaf-document-source*"))
+         (built (etaf-document-test--page "alpha beta"))
+         (buffer (car built))
+         (document nil)
+         (page-command-ran nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer source
+            (insert "alpha beta")
+            (goto-char (point-min)))
+          (set-window-buffer (selected-window) buffer)
+          (setq document (etaf-document-open
+                          buffer :source source
+                          :entries (list (cons 'first (cons 0 5)))
+                          :republish #'ignore
+                          :keymap (list (cons "C-c C-m t"
+                                              (lambda ()
+                                                (interactive)
+                                                (setq page-command-ran t))))))
+          (with-current-buffer buffer
+            (goto-char (point-min))
+            (execute-kbd-macro (kbd "C-c C-m t")))
+          (should page-command-ran)
+          (should (equal "alpha beta"
+                         (with-current-buffer source
+                           (buffer-substring-no-properties (point-min) (point-max)))))
+          ;; The document keeps what it does bind: an ordinary letter still
+          ;; types instead of reaching a page command.
+          (with-current-buffer buffer
+            (execute-kbd-macro "x"))
+          (should (equal "xalpha beta"
+                         (with-current-buffer source
+                           (buffer-substring-no-properties (point-min) (point-max))))))
       (when (and document (buffer-live-p buffer))
         (with-current-buffer buffer (ignore-errors (etaf-document-close document))))
       (when (buffer-live-p buffer) (kill-buffer buffer))

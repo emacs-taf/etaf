@@ -1105,8 +1105,12 @@
 ;; ENTRIES pairs a Host reference with the source range its painted text stands
 ;; for; it may be a function, called with an optional offset to answer for the
 ;; one block covering it.  REPUBLISH is called with the new source text to
-;; redraw the page, and KEYMAP adds the application's own keys.  Return the
-;; session; `etaf-document-close' ends it and saves what was written.
+;; redraw the page, and KEYMAP adds the application's own keys: a sequence the
+;; document has no command for runs the page's command, so an application keeps
+;; its keys reachable while the page types, and everything the document binds
+;; stays native.  A printable character the source's own maps leave unbound
+;; types itself, because a page is an editing surface.  Return the session;
+;; `etaf-document-close' ends it and saves what was written.
 ;; Signals `user-error' without a live page, a live source or a mounted runtime.
 ;;
 ;; Function: etaf-document-close (document)
@@ -1135,6 +1139,14 @@
 ;; A page answers a key itself and repaints on the next frame, which is what
 ;; keeps typing responsive; a caller about to read the page runs this first.
 ;; Signals `user-error' without a live page.
+;;
+;; Variable: etaf-document-save-delay
+;;;###autoload (defvar etaf-document-save-delay)
+;; Seconds of typing pause before a page writes its source to the file.
+;; A page accepts typing as soon as it opens, so there is no end of an editing
+;; session to save at: the file follows a pause, and the session saves again
+;; when its buffer is killed.  Every edit pushes the moment back, so one write
+;; covers a burst.  A file that changed on disk is left alone and reported.
 ;;
 ;; Function: etaf-document-insert (text)
 ;;;###autoload (autoload 'etaf-document-insert "etaf" nil t)

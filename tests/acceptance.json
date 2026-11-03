@@ -1214,6 +1214,26 @@
       "purpose": "A letter that begins a viewport key name still reaches the document, because the page binds the Next and Prior events and not the letters n-e-x-t."
     },
     {
+      "name": "etaf-document-a-pause-writes-the-file",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "页面打开即可打字，没有退出编辑的时机：打字停顿后自动写回文件，一次写入覆盖一串按键。"
+    },
+    {
+      "name": "etaf-document-killing-the-page-saves-the-file",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "杀掉页面 buffer 等于读者离开，未保存的编辑在这时写进文件。"
+    },
+    {
+      "name": "etaf-document-a-suppressed-letter-still-types",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "源 buffer 的键图把可打印字符映射成 undefined（模态键图的常见做法）时，页面仍然把它打进文档，不吞掉读者敲的第一个字。"
+    },
+    {
+      "name": "etaf-document-a-page-key-runs-where-the-document-has-none",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "页面在编辑时仍要能用自己的键：源 buffer 没有该序列的命令时，页面的命令执行且不动文档；源有的序列仍归源。"
+    },
+    {
       "name": "etaf-document-a-closed-page-gives-the-keyboard-back",
       "file": "tests/etaf-document-tests.el",
       "purpose": "Ending an editing session leaves no key map in its page, so a page whose session ended does not answer every key with an error."
