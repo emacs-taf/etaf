@@ -214,9 +214,17 @@ three characters, exactly as they do in the buffer the text came from."
     (etaf-document--run-buffer-key (this-command-keys-vector)))
    (t
     (let ((document (gethash (current-buffer) etaf-document--sessions)))
-      (if (null document)
-          (etaf-document--fallback-key)
-        (etaf-document--forward-key document))))))
+      (cond
+       (document (etaf-document--forward-key document))
+       ;; The page was opened once and only lost the table that held it, which
+       ;; a load of this module while it is open does: it puts itself back and
+       ;; takes the key, so the reader keeps typing into the same document.
+       ((functionp etaf-document--opener)
+        (funcall etaf-document--opener)
+        (if-let* ((rebuilt (gethash (current-buffer) etaf-document--sessions)))
+            (etaf-document--forward-key rebuilt)
+          (etaf-document--fallback-key)))
+       (t (etaf-document--fallback-key)))))))
 
 (defun etaf-document--pointer-event-p (keys)
   "Return non-nil when KEYS begins with a mouse event."
@@ -225,13 +233,25 @@ three characters, exactly as they do in the buffer the text came from."
          (or (mouse-event-p event)
              (memq (car-safe event) '(mouse-1 mouse-2 mouse-3 wheel-up wheel-down))))))
 
+(defvar etaf-document--dispatching nil
+  "Non-nil while a page runs one of its own keys.
+The page carries keys as text properties too, so looking a key up without this
+map can answer with the command that is reading it; running that would recurse
+until Emacs gives up.")
+
 (defun etaf-document--run-buffer-key (keys)
-  "Run KEYS through this buffer's own maps."
-  (let ((binding (let ((overriding-local-map nil)) (key-binding keys t))))
-    (when (commandp binding)
-      (let ((this-command binding)
-            (last-command-event (aref keys (1- (length keys)))))
-        (call-interactively binding)))))
+  "Run KEYS through this buffer's own maps, unless that names this command.
+A page's own key names this command in the map that put it there and in the text
+properties the runtime painted, so a lookup without this map still answers with
+it: running it again would nest until the evaluation depth runs out."
+  (unless etaf-document--dispatching
+    (let* ((etaf-document--dispatching t)
+           (binding (let ((overriding-local-map nil)) (key-binding keys t))))
+      (when (and (commandp binding)
+                 (not (eq binding #'etaf-document-forward-key)))
+        (let ((this-command binding)
+              (last-command-event (aref keys (1- (length keys)))))
+          (call-interactively binding))))))
 
 (defun etaf-document--fallback-key ()
   "Run the key being read from this buffer's own maps, once.
@@ -248,6 +268,13 @@ land on this same command again and loop forever."
 
 (defvar-local etaf-document--pending nil
   "Non-nil while this page waits for the repaint that follows a key.")
+
+(defvar-local etaf-document--opener nil
+  "Function that puts this page back into editing, or nil.
+A page outlives the session table that made it editable -- the module can be
+loaded again while a page stays open -- so the page keeps what it was opened
+with and can hand its keys to a document again instead of reporting an error for
+every one of them.")
 
 (defun etaf-document--defer (document)
   "Repaint DOCUMENT's page on the next frame instead of now.
@@ -485,6 +512,11 @@ characters arrive as ordinary typing and need no channel of their own."
         (define-key (etaf-document-bindings document) (kbd (car entry)) (cdr entry))))
     (puthash buffer document etaf-document--sessions)
     (with-current-buffer buffer
+      (setq-local etaf-document--opener
+                  (lambda ()
+                    (etaf-document-open buffer
+                                        :source source :entries entries
+                                        :republish republish :keymap keymap)))
       (setq-local overriding-local-map (etaf-document-bindings document))
       (setq-local buffer-read-only t)
       (setq-local cursor-type 'bar)
