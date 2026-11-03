@@ -68,12 +68,20 @@ the mode line, t keeps it and another value replaces it."
   (setq-local scroll-margin 0)
   (setq-local hscroll-margin 0)
   ;; The View owns every column it paints; a sub-cell remainder at the
-  ;; window edge must not surface as Emacs's truncation glyph.
+  ;; window edge must not surface as Emacs's truncation glyph.  The fringe
+  ;; draws the same warning as an arrow, so it goes with the glyph: the edge
+  ;; of a canvas is not a truncated file.
   (setq-local buffer-display-table
               (let ((table (copy-sequence (or standard-display-table
                                               (make-display-table)))))
                 (set-display-table-slot table 'truncation ?\s)
                 table))
+  (setq-local fringe-indicator-alist
+              (mapcar (lambda (indicator)
+                        (if (eq (car indicator) 'truncation)
+                            (cons 'truncation nil)
+                          indicator))
+                      fringe-indicator-alist))
   (when (bound-and-true-p display-line-numbers-mode)
     (display-line-numbers-mode -1))
   (cond ((null mode-line) (setq-local mode-line-format nil))
