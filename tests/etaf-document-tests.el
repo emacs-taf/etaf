@@ -170,6 +170,72 @@ otherwise answer every key with an error about a document it no longer has."
       (when (buffer-live-p buffer) (kill-buffer buffer))
       (when (buffer-live-p source) (kill-buffer source)))))
 
+(ert-deftest etaf-document-a-key-that-finds-no-session-runs-once ()
+  "A key typed at a page whose session is gone neither errors nor repeats.
+The page can carry its keys as text properties, so handing the key back to the
+command loop would deliver it to this same command again and the frame would
+never come back."
+  (let* ((source (generate-new-buffer " *etaf-document-source*"))
+         (built (etaf-document-test--page "alpha beta"))
+         (buffer (car built))
+         (document nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer source
+            (insert "alpha beta")
+            (goto-char (point-min)))
+          (set-window-buffer (selected-window) buffer)
+          (setq document (etaf-document-open
+                          buffer :source source
+                          :entries (list (cons 'first (cons 0 5)))
+                          :republish #'ignore))
+          (with-current-buffer buffer
+            ;; The session ends while the page still maps its keys, which is
+            ;; what a page outliving its session looks like.
+            (etaf-document-close document)
+            (let ((quit nil))
+              (condition-case nil
+                  (execute-kbd-macro "x")
+                (quit (setq quit t)))
+              (should-not quit)
+              (should-not (buffer-local-value 'overriding-local-map buffer))
+              (should (= 1 (point))))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (when (buffer-live-p source) (kill-buffer source)))))
+
+(ert-deftest etaf-document-a-key-loop-stops-instead-of-freezing ()
+  "A document that keeps putting the same key back stops instead of pinning Emacs.
+A loop here is not slow: it keeps redisplay from ever returning, so the page
+drops the burst and quits instead of leaving the editor frozen."
+  (let* ((source (generate-new-buffer " *etaf-document-source*"))
+         (built (etaf-document-test--page "alpha beta"))
+         (buffer (car built))
+         (document nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer source
+            (insert "alpha beta")
+            (goto-char (point-min))
+            ;; The document hands the key straight back, which is the shape a
+            ;; runaway looks like from the page's side.
+            (local-set-key (kbd "x")
+                           (lambda () (interactive) (push ?x unread-command-events))))
+          (set-window-buffer (selected-window) buffer)
+          (setq document (etaf-document-open
+                          buffer :source source
+                          :entries (list (cons 'first (cons 0 5)))
+                          :republish #'ignore))
+          (with-current-buffer buffer
+            (let ((quit nil))
+              (condition-case nil
+                  (execute-kbd-macro "x")
+                (quit (setq quit t)))
+              (should quit))))
+      (when (and document (buffer-live-p buffer))
+        (with-current-buffer buffer (ignore-errors (etaf-document-close document))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (when (buffer-live-p source) (kill-buffer source)))))
+
 (ert-deftest etaf-document-scrolling-a-page-is-not-an-edit ()
   "A viewport key scrolls the page and leaves the document alone.
 The page claims the viewport itself: forwarding `C-v' to the source would scroll

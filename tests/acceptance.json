@@ -1212,6 +1212,16 @@
       "name": "etaf-document-scrolling-a-page-is-not-an-edit",
       "file": "tests/etaf-document-tests.el",
       "purpose": "A viewport key (C-v) scrolls the page and never reaches the source, so scrolling cannot fight the caret placement that follows an edit."
+    },
+    {
+      "name": "etaf-document-a-key-that-finds-no-session-runs-once",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "A key typed at a page whose session is gone neither errors nor repeats, because the page can carry its keys as text properties and a key fed back would reach the same command forever."
+    },
+    {
+      "name": "etaf-document-a-key-loop-stops-instead-of-freezing",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "A document that keeps handing the same key back stops with a quit instead of leaving redisplay unable to return and the editor frozen."
     }
   ]
 }

@@ -207,17 +207,25 @@ three characters, exactly as they do in the buffer the text came from."
   (interactive)
   (let ((document (gethash (current-buffer) etaf-document--sessions)))
     (if (null document)
-        ;; A page can outlive the session that made it editable: the session
-        ;; ends while a key is in flight, or the buffer is handed back to its
-        ;; application.  The map is then a leftover, and reporting an error for
-        ;; it would answer every key the reader types.  Dropping it and handing
-        ;; the key back lets it mean what it means in this buffer.
-        (progn
-          (setq-local overriding-local-map nil)
-          (setq unread-command-events
-                (append (listify-key-sequence (this-command-keys-vector))
-                        unread-command-events)))
+        (etaf-document--fallback-key)
       (etaf-document--forward-key document))))
+
+(defun etaf-document--fallback-key ()
+  "Run the key being read from this buffer's own maps, once.
+A page can outlive the session that made it editable: the session ends while a
+key is in flight, or the buffer is handed back to its application.  The map is
+then a leftover, so it is dropped and the key means what it means here.  The key
+is run directly rather than fed back to the command loop: a page can carry its
+keys as text properties too, and a key put back for those maps to pick up would
+land on this same command again and loop forever."
+  (setq-local overriding-local-map nil)
+  (let* ((keys (this-command-keys-vector))
+         (binding (ignore-errors (key-binding keys))))
+    (when (and (commandp binding)
+               (not (eq binding #'etaf-document-forward-key)))
+      (let ((this-command binding)
+            (last-command-event (aref keys (1- (length keys)))))
+        (call-interactively binding)))))
 
 (defvar-local etaf-document--pending nil
   "Non-nil while this page waits for the repaint that follows a key.")
@@ -250,8 +258,35 @@ read the page or show it."
     (etaf-document-goto document (or (etaf-document-caret document) 0))
     (etaf-document--paint-region document)))
 
+(defvar etaf-document--forward-run-limit 300
+  "Keys this page forwards one after another before it assumes a loop.
+A reader types a handful of keys at a time; a page that takes hundreds within a
+second is repeating one key, and the frame would never come back.  Lowered by
+scenarios that check the guard.")
+
+(defvar etaf-document--forward-run nil
+  "Cons of the count and start time of the current run of forwarded keys.")
+
+(defun etaf-document--forward-runaway-p ()
+  "Return non-nil when this page has been forwarding the same burst forever.
+The frame cannot return while one key keeps reaching the document, so the key is
+dropped with a quit instead of leaving the editor frozen."
+  (let* ((now (float-time))
+         (run (or etaf-document--forward-run (cons 0 now))))
+    (setq run (cons (1+ (car run)) (cdr run))
+          etaf-document--forward-run run)
+    (when (and (> (car run) etaf-document--forward-run-limit)
+               (< (- now (cdr run)) 3))
+      (setq etaf-document--forward-run nil)
+      t)))
+
 (defun etaf-document--forward-key (document)
   "Run the key being read against DOCUMENT's source and repaint the page."
+  (unless (eq last-command #'etaf-document-forward-key)
+    (setq etaf-document--forward-run nil))
+  (when (etaf-document--forward-runaway-p)
+    (message "ETAF: %s stopped a runaway key" (this-command-keys-vector))
+    (keyboard-quit))
   (let* ((keys (this-command-keys-vector))
          (source (etaf-document-source document))
          (offset (etaf-document-source-offset document)))
