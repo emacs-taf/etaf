@@ -1094,68 +1094,6 @@
 ;; sets this to nil with `setq-local', because a press there places a caret the
 ;; user needs to see.
 ;;
-;; Function: etaf-document-open (buffer &key source entries republish keymap)
-;;;###autoload (autoload 'etaf-document-open "etaf" nil nil)
-;; Make BUFFER, a mounted page, accept typing that edits SOURCE.
-;; The page keeps its rendering and claims only a press: every other key is
-;; looked up in SOURCE and run there at the offset the page shows, so `undo',
-;; `kill-line', `yank', the mark, `TAB' and a prefix like `C-x C-s' mean what
-;; they mean in the buffer the text came from.  The page then repaints from the
-;; edited source on the next frame, so a key returns before it is painted.
-;; ENTRIES pairs a Host reference with the source range its painted text stands
-;; for; it may be a function, called with an optional offset to answer for the
-;; one block covering it.  REPUBLISH is called with the new source text to
-;; redraw the page, and KEYMAP adds the application's own keys: a sequence the
-;; document has no command for runs the page's command, so an application keeps
-;; its keys reachable while the page types, and everything the document binds
-;; stays native.  A printable character the source's own maps leave unbound
-;; types itself, because a page is an editing surface.  Return the session;
-;; `etaf-document-close' ends it and saves what was written.
-;; Signals `user-error' without a live page, a live source or a mounted runtime.
-;;
-;; Function: etaf-document-close (document)
-;;;###autoload (autoload 'etaf-document-close "etaf" nil nil)
-;; End DOCUMENT's session, return the page to navigation and save the source.
-;;
-;; Function: etaf-document-editing-p (&optional buffer)
-;;;###autoload (autoload 'etaf-document-editing-p "etaf" nil nil)
-;; Return non-nil when BUFFER, by default the current one, accepts typing.
-;;
-;; Function: etaf-document-projection (document &optional offset)
-;;;###autoload (autoload 'etaf-document-projection "etaf" nil nil)
-;; Return DOCUMENT's painted page as source ranges, or nil without a page.
-;;
-;; Function: etaf-document-source-offset (document &optional position)
-;;;###autoload (autoload 'etaf-document-source-offset "etaf" nil nil)
-;; Return the source offset the painted POSITION, by default at point, names.
-;;
-;; Function: etaf-document-goto (document offset)
-;;;###autoload (autoload 'etaf-document-goto "etaf" nil nil)
-;; Put the caret on the painted cell where source OFFSET lives.
-;;
-;; Function: etaf-document-settle (&optional buffer)
-;;;###autoload (autoload 'etaf-document-settle "etaf" nil nil)
-;; Make BUFFER's page show its document now, running the repaint a key defers.
-;; A page answers a key itself and repaints on the next frame, which is what
-;; keeps typing responsive; a caller about to read the page runs this first.
-;; Signals `user-error' without a live page.
-;;
-;; Variable: etaf-document-save-delay
-;;;###autoload (defvar etaf-document-save-delay)
-;; Seconds of typing pause before a page writes its source to the file.
-;; A page accepts typing as soon as it opens, so there is no end of an editing
-;; session to save at: the file follows a pause, and the session saves again
-;; when its buffer is killed.  Every edit pushes the moment back, so one write
-;; covers a burst.  A file that changed on disk is left alone and reported.
-;;
-;; Function: etaf-document-insert (text)
-;;;###autoload (autoload 'etaf-document-insert "etaf" nil t)
-;; Insert TEXT into the document at the painted caret and repaint the page.
-;;
-;; Function: etaf-document-delete-char (&optional backward)
-;;;###autoload (autoload 'etaf-document-delete-char "etaf" nil t)
-;; Delete one document character at the painted caret and repaint the page.
-;;
 ;; Function: etaf-projection (runtime entries &optional source)
 ;;;###autoload (autoload 'etaf-projection "etaf" nil nil)
 ;; Return the source projection of RUNTIME's painted cells.
@@ -2490,7 +2428,6 @@
 (require 'etaf-process)
 (require 'etaf-video-component)
 (require 'etaf-projection)
-(require 'etaf-document)
 
 (autoload 'etaf-animation-example-open "examples/etaf-animation-example" nil t)
 (autoload 'etaf-retained-resize-open "examples/etaf-retained-resize" nil t)

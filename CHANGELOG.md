@@ -2,18 +2,17 @@
 
 ## [Unreleased]
 
-### Added
+### Removed
 
-- A page that accepts typing writes its source to the file after a pause
-  (`etaf-document-save-delay`, two seconds by default) and again when the
-  page's buffer is killed, so an edit reaches the file without a save command
-  and no prompt interrupts a sentence.  A file changed by another program is
-  left alone and reported instead of overwritten.
-- A page keeps typing what the document leaves unbound: a printable character
-  whose binding the source's own maps turn into `undefined` types itself
-  instead of being dropped, and a key sequence the document has no command for
-  reaches the application's own keys, which it supplies with
-  `etaf-document-open`'s `:keymap`.
+- `etaf-document` and the commands that typed through a rendered page
+  (`etaf-document-open` and the rest of its session) are gone.  A page stays a
+  rendering: the document is edited in its own buffer, and the preview follows
+  that edit block by block.  Cell positions and source characters do not
+  correspond one to one -- folded markers, bullets, table rules, wide
+  characters and wrapping -- so editing through the painting cannot keep the
+  semantics of the buffer itself.
+
+### Added
 
 - `etaf-video-render-backend` selects how `etaf-video` puts a graphical
   frame on screen.  `image` (the default) keeps publishing one scaled JPEG
