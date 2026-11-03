@@ -379,7 +379,16 @@ dropped with a quit instead of leaving the editor frozen."
                   (current-prefix-arg prefix-arg)
                   (last-command-event event))
               (setf (etaf-document-last-command document) binding)
-              (call-interactively binding)))
+              ;; The command loop runs these around a key it reads here, so a
+              ;; mode that carries state from one command to the next -- a
+              ;; modal editing state, the mark -- advances exactly as it does
+              ;; in the buffer itself.  Without them the source stays in the
+              ;; state its last real command left behind, and a state that
+              ;; suppresses typing then keeps suppressing every key the page
+              ;; forwards.
+              (run-hooks 'pre-command-hook)
+              (call-interactively binding)
+              (run-hooks 'post-command-hook)))
           (unless (eql tick (buffer-chars-modified-tick))
             (set-buffer-modified-p nil))
           (setq offset (1- (point)))
@@ -467,9 +476,11 @@ The command form of a deletion key, for applications and scripts."
       (define-key map (vector event) #'mouse-set-point))
     ;; The viewport belongs to the page: these scroll the window that shows it
     ;; and never touch the document, whose point would then have to be placed
-    ;; again and would drag the view back.
-    (dolist (key '("C-v" "next")) (define-key map (kbd key) #'scroll-up-command))
-    (dolist (key '("M-v" "prior")) (define-key map (kbd key) #'scroll-down-command))
+    ;; again and would drag the view back.  The names are the Next and Prior
+    ;; events, not letters: `(kbd "next")' reads as the four characters
+    ;; n-e-x-t, which would turn typing those letters into a prefix key.
+    (dolist (key '("C-v" "<next>")) (define-key map (kbd key) #'scroll-up-command))
+    (dolist (key '("M-v" "<prior>")) (define-key map (kbd key) #'scroll-down-command))
     (define-key map [t] #'etaf-document-forward-key)
     map)
   "Keys a rendered page uses while it accepts typing.

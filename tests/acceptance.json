@@ -1204,6 +1204,16 @@
       "purpose": "An edit made through the page reaches the file when the session ends, without prompting mid-sentence."
     },
     {
+      "name": "etaf-document-a-forwarded-key-runs-the-sources-command-hooks",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "A forwarded key runs the source's pre- and post-command hooks around it, so a mode that carries keyboard state between commands advances exactly as it does in the buffer itself."
+    },
+    {
+      "name": "etaf-document-a-letter-is-never-a-page-key",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "A letter that begins a viewport key name still reaches the document, because the page binds the Next and Prior events and not the letters n-e-x-t."
+    },
+    {
       "name": "etaf-document-a-closed-page-gives-the-keyboard-back",
       "file": "tests/etaf-document-tests.el",
       "purpose": "Ending an editing session leaves no key map in its page, so a page whose session ended does not answer every key with an error."

@@ -144,6 +144,81 @@ the middle of writing."
 
 (provide 'etaf-document-tests)
 
+(ert-deftest etaf-document-a-forwarded-key-runs-the-sources-command-hooks ()
+  "A key the page forwards advances the source's own between-command state.
+A mode that changes its keyboard state after a command does it from
+`post-command-hook', so a page that only calls the command leaves the source in
+the state its last real key left behind; a state that suppresses typing then
+swallows every key the page forwards."
+  (let* ((source (generate-new-buffer " *etaf-document-source*"))
+         (built (etaf-document-test--page "alpha beta"))
+         (buffer (car built))
+         (document nil)
+         (seen nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer source
+            (insert "alpha beta")
+            (goto-char (point-min))
+            (add-hook 'pre-command-hook
+                      (lambda () (push (list 'pre this-command (buffer-size)) seen))
+                      t t)
+            (add-hook 'post-command-hook
+                      (lambda () (push (list 'post this-command (buffer-size)) seen))
+                      t t))
+          (set-window-buffer (selected-window) buffer)
+          (setq document (etaf-document-open
+                          buffer :source source
+                          :entries (list (cons 'first (cons 0 5)))
+                          :republish #'ignore))
+          (with-current-buffer buffer
+            (goto-char (point-min))
+            (execute-kbd-macro "x"))
+          (should (equal "xalpha beta"
+                         (with-current-buffer source
+                           (buffer-substring-no-properties (point-min) (point-max)))))
+          ;; The hook that ran first saw the document before the key, the one
+          ;; that ran last saw it after: the source ran its own command loop.
+          (should (equal '((post self-insert-command 11)
+                           (pre self-insert-command 10))
+                         seen)))
+      (when (and document (buffer-live-p buffer))
+        (with-current-buffer buffer (ignore-errors (etaf-document-close document))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (when (buffer-live-p source) (kill-buffer source)))))
+
+(ert-deftest etaf-document-a-letter-is-never-a-page-key ()
+  "Typing a letter reaches the document even when it starts a viewport key name.
+The viewport keys are the Next and Prior events; their names written inside
+`kbd' without brackets read as the letters n-e-x-t and p-r-i-o-r, which turns
+`n' and `p' into prefixes and stops two ordinary letters from ever being typed."
+  (let* ((source (generate-new-buffer " *etaf-document-source*"))
+         (built (etaf-document-test--page "alpha beta"))
+         (buffer (car built))
+         (document nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer source
+            (insert "alpha beta")
+            (goto-char (point-min)))
+          (set-window-buffer (selected-window) buffer)
+          (setq document (etaf-document-open
+                          buffer :source source
+                          :entries (list (cons 'first (cons 0 5)))
+                          :republish #'ignore))
+          (with-current-buffer buffer
+            (goto-char (point-min))
+            (dolist (letter '("n" "p"))
+              (execute-kbd-macro letter))
+            (should (equal "npalpha beta"
+                           (with-current-buffer source
+                             (buffer-substring-no-properties (point-min) (point-max)))))
+            (should (= 2 (etaf-document-caret document)))))
+      (when (and document (buffer-live-p buffer))
+        (with-current-buffer buffer (ignore-errors (etaf-document-close document))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (when (buffer-live-p source) (kill-buffer source)))))
+
 (ert-deftest etaf-document-a-closed-page-gives-the-keyboard-back ()
   "Ending a session leaves no key map behind in its page.
 The map lives in the page buffer, so a page whose session ended elsewhere would
