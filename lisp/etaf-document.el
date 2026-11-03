@@ -556,6 +556,22 @@ The command form of a deletion key, for applications and scripts."
                (< start (length (or (etaf-document-source-text document) ""))))
       (etaf-document--edit document start 1 "" start))))
 
+(defun etaf-document--complete-map (map command)
+  "Make COMMAND MAP's default binding at every level.
+A page means the same thing at every prefix: a sequence it does not bind itself
+belongs to the document.  The default has to sit at each level too, because a
+meta key is `ESC' plus a character: one binding under `ESC' -- the viewport's
+`M-v' -- turns `ESC' into a prefix here, and a prefix without a default drops
+every other `M-' sequence to the global map, which then edits the read-only
+page.  `M-DEL' and `M-x' are exactly such sequences."
+  (define-key map [t] command)
+  ;; Only the page's own sub-maps are walked: a named map belongs to whoever
+  ;; made it, and a page must not give that map a new default.
+  (map-keymap (lambda (_event binding)
+                (when (and (keymapp binding) (consp binding))
+                  (etaf-document--complete-map binding command)))
+              map))
+
 (defvar etaf-document-keymap
   (let ((map (make-sparse-keymap)))
     ;; A press places a caret the reader must see, so the page keeps its own
@@ -571,12 +587,13 @@ The command form of a deletion key, for applications and scripts."
     ;; n-e-x-t, which would turn typing those letters into a prefix key.
     (dolist (key '("C-v" "<next>")) (define-key map (kbd key) #'scroll-up-command))
     (dolist (key '("M-v" "<prior>")) (define-key map (kbd key) #'scroll-down-command))
-    (define-key map [t] #'etaf-document-forward-key)
+    (etaf-document--complete-map map #'etaf-document-forward-key)
     map)
   "Keys a rendered page uses while it accepts typing.
 An application extends this with `etaf-document-keys' rather than replacing it,
 so every document page reacts the same way to the same key: a key the page does
 not claim runs in the source the page renders.")
+
 
 ;;;; Session
 
@@ -585,6 +602,10 @@ not claim runs in the source the page renders.")
 KEYS is an alist of (KEY . COMMAND), as an application's own root keys."
   (dolist (entry keys)
     (define-key (etaf-document-bindings document) (kbd (car entry)) (cdr entry)))
+  ;; A new key can bring a new prefix with it, so the default is restated for
+  ;; every level of the map.
+  (etaf-document--complete-map (etaf-document-bindings document)
+                               #'etaf-document-forward-key)
   document)
 
 ;;;###autoload

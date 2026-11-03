@@ -1234,6 +1234,11 @@
       "purpose": "页面在编辑时仍要能用自己的键：源 buffer 没有该序列的命令时，页面的命令执行且不动文档；源有的序列仍归源。"
     },
     {
+      "name": "etaf-document-a-meta-key-reaches-the-document",
+      "file": "tests/etaf-document-tests.el",
+      "purpose": "页面上按 M-DEL 这类以 ESC 开头的序列时，执行文档自己的命令，不会落到只读页面的全局绑定上。"
+    },
+    {
       "name": "etaf-document-a-closed-page-gives-the-keyboard-back",
       "file": "tests/etaf-document-tests.el",
       "purpose": "Ending an editing session leaves no key map in its page, so a page whose session ended does not answer every key with an error."

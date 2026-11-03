@@ -371,6 +371,38 @@ prefix it never bound does not swallow the page's keys either."
       (when (buffer-live-p buffer) (kill-buffer buffer))
       (when (buffer-live-p source) (kill-buffer source)))))
 
+(ert-deftest etaf-document-a-meta-key-reaches-the-document ()
+  "A meta key on the page runs the document's command for it.
+Binding one key under `ESC' -- the page's viewport `M-v' -- makes `ESC' a
+prefix in the page's map, and a prefix without a default drops every other
+sequence that starts with `ESC' to the global map, which then edits the
+read-only page instead of the document.  `M-DEL' is one of those sequences."
+  (let* ((source (generate-new-buffer " *etaf-document-source*"))
+         (built (etaf-document-test--page "alpha beta"))
+         (buffer (car built))
+         (document nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer source
+            (insert "alpha beta")
+            (goto-char (point-min)))
+          (set-window-buffer (selected-window) buffer)
+          (setq document (etaf-document-open
+                          buffer :source source
+                          :entries (list (cons 'first (cons 0 5)))
+                          :republish #'ignore))
+          (with-current-buffer buffer
+            (etaf-document-goto document 6)
+            (etaf-document-settle buffer)
+            (execute-kbd-macro (kbd "M-DEL")))
+          (should (equal "beta"
+                         (with-current-buffer source
+                           (buffer-substring-no-properties (point-min) (point-max))))))
+      (when (and document (buffer-live-p buffer))
+        (with-current-buffer buffer (ignore-errors (etaf-document-close document))))
+      (when (buffer-live-p buffer) (kill-buffer buffer))
+      (when (buffer-live-p source) (kill-buffer source)))))
+
 (ert-deftest etaf-document-a-closed-page-gives-the-keyboard-back ()
   "Ending a session leaves no key map behind in its page.
 The map lives in the page buffer, so a page whose session ended elsewhere would
