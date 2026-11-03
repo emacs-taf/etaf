@@ -205,10 +205,33 @@ shows, and repaints.  A prefix key reads the rest of its sequence where the
 key's own maps live, so `C-x C-s' saves the document and `C-u 3 C-f' moves
 three characters, exactly as they do in the buffer the text came from."
   (interactive)
-  (let ((document (gethash (current-buffer) etaf-document--sessions)))
-    (if (null document)
-        (etaf-document--fallback-key)
-      (etaf-document--forward-key document))))
+  (cond
+   ;; A pointer event is not something the document does: it moves the viewport
+   ;; or the point on the page.  It runs the binding it has without this map,
+   ;; which is the runtime's own scroll or press handling and keeps the painted
+   ;; viewport in step with the window.
+   ((etaf-document--pointer-event-p (this-command-keys-vector))
+    (etaf-document--run-buffer-key (this-command-keys-vector)))
+   (t
+    (let ((document (gethash (current-buffer) etaf-document--sessions)))
+      (if (null document)
+          (etaf-document--fallback-key)
+        (etaf-document--forward-key document))))))
+
+(defun etaf-document--pointer-event-p (keys)
+  "Return non-nil when KEYS begins with a mouse event."
+  (and (> (length keys) 0)
+       (let ((event (aref keys 0)))
+         (or (mouse-event-p event)
+             (memq (car-safe event) '(mouse-1 mouse-2 mouse-3 wheel-up wheel-down))))))
+
+(defun etaf-document--run-buffer-key (keys)
+  "Run KEYS through this buffer's own maps."
+  (let ((binding (let ((overriding-local-map nil)) (key-binding keys t))))
+    (when (commandp binding)
+      (let ((this-command binding)
+            (last-command-event (aref keys (1- (length keys)))))
+        (call-interactively binding)))))
 
 (defun etaf-document--fallback-key ()
   "Run the key being read from this buffer's own maps, once.
@@ -219,13 +242,9 @@ is run directly rather than fed back to the command loop: a page can carry its
 keys as text properties too, and a key put back for those maps to pick up would
 land on this same command again and loop forever."
   (setq-local overriding-local-map nil)
-  (let* ((keys (this-command-keys-vector))
-         (binding (ignore-errors (key-binding keys))))
-    (when (and (commandp binding)
-               (not (eq binding #'etaf-document-forward-key)))
-      (let ((this-command binding)
-            (last-command-event (aref keys (1- (length keys)))))
-        (call-interactively binding)))))
+  (let ((binding (ignore-errors (key-binding (this-command-keys-vector)))))
+    (unless (eq binding #'etaf-document-forward-key)
+      (etaf-document--run-buffer-key (this-command-keys-vector)))))
 
 (defvar-local etaf-document--pending nil
   "Non-nil while this page waits for the repaint that follows a key.")
@@ -419,12 +438,9 @@ The command form of a deletion key, for applications and scripts."
     ;; `C-x C-s' mean, and this list never grows into a second key map.
     (dolist (event '(down-mouse-1 drag-mouse-1 mouse-1))
       (define-key map (vector event) #'mouse-set-point))
-    ;; Moving the viewport is not an edit: the page scrolls itself.  Forwarding
-    ;; a wheel or `C-v' to the source would scroll the window that shows the
-    ;; page and then place the caret again, so the two would keep undoing each
-    ;; other and redisplay would never settle.
-    (dolist (event '(wheel-up wheel-down wheel-left wheel-right mouse-4 mouse-5))
-      (define-key map (vector event) #'mwheel-scroll))
+    ;; The viewport belongs to the page: these scroll the window that shows it
+    ;; and never touch the document, whose point would then have to be placed
+    ;; again and would drag the view back.
     (dolist (key '("C-v" "next")) (define-key map (kbd key) #'scroll-up-command))
     (dolist (key '("M-v" "prior")) (define-key map (kbd key) #'scroll-down-command))
     (define-key map [t] #'etaf-document-forward-key)
