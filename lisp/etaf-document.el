@@ -57,39 +57,50 @@ application's own."
     (with-current-buffer source
       (buffer-substring-no-properties (point-min) (point-max)))))
 
-(defun etaf-document-entries-now (document)
-  "Return DOCUMENT's current source ranges.
+(defun etaf-document-entries-now (document &optional offset)
+  "Return DOCUMENT's current source ranges, or only the one answer for OFFSET.
 A page repaints after every edit, and a repaint can replace the Hosts its
 blocks live in; a list captured when the session opened would name Hosts that
 no longer exist, so a caller may hand over a function instead and have it asked
-each time."
+each time.  With OFFSET the application may answer with the one block that
+covers it, which is all a caret move needs to read."
   (let ((entries (etaf-document-entries document)))
-    (if (functionp entries) (funcall entries) entries)))
+    (if (functionp entries) (funcall entries offset) entries)))
 
-(defun etaf-document-projection (document)
+(defun etaf-document-projection (document &optional offset)
   "Return DOCUMENT's painted page as source ranges, or nil without a page.
 The mapping is derived from the source text and the last paint, so it is kept
 until one of them changes.  A key asks for it two or three times -- where the
 caret is, where it goes, which run it stands on -- and a page of a few hundred
 blocks costs tens of milliseconds to map, which a reader feels on every arrow
-key."
+key.
+
+With OFFSET the application answers for the one block that covers it, and the
+page reads only that block: a caret move lands in one block, and mapping the
+whole page for it would put the cost of the document on every key."
   (when-let* ((buffer (etaf-document-buffer document))
               (runtime (and (buffer-live-p buffer)
                             (etaf-runtime-for-buffer buffer)))
               (source (etaf-document-source document)))
     (let ((tick (buffer-chars-modified-tick source))
           (revision (etaf-runtime-revision runtime)))
-      (if (and (etaf-document-cached document)
-               (eql tick (etaf-document-cached-tick document))
-               (eql revision (etaf-document-cached-revision document)))
-          (etaf-document-cached document)
+      (cond
+       ((and (null offset)
+             (etaf-document-cached document)
+             (eql tick (etaf-document-cached-tick document))
+             (eql revision (etaf-document-cached-revision document)))
+        (etaf-document-cached document))
+       (offset
+        (etaf-projection runtime (etaf-document-entries-now document offset)
+                         (etaf-document-source-text document)))
+       (t
         (let ((projection (etaf-projection
                            runtime (etaf-document-entries-now document)
                            (etaf-document-source-text document))))
           (setf (etaf-document-cached document) projection
                 (etaf-document-cached-tick document) tick
                 (etaf-document-cached-revision document) revision)
-          projection)))))
+          projection))))))
 
 (defun etaf-document-source-offset (document &optional position)
   "Return the source offset the painted POSITION names, by default at point.
@@ -116,7 +127,7 @@ key would start from there instead of from where the command left the caret."
 A window shows its own point, so every window displaying the page moves too;
 otherwise the caret a reader sees never follows the edit."
   (let ((buffer (etaf-document-buffer document))
-        (projection (etaf-document-projection document)))
+        (projection (etaf-document-projection document offset)))
     (when (and (buffer-live-p buffer) projection)
       ;; The offset is authoritative even when no cell stands for it: the
       ;; painted caret then keeps the nearest cell while the next key still

@@ -1097,15 +1097,16 @@
 ;; Function: etaf-document-open (buffer &key source entries republish keymap)
 ;;;###autoload (autoload 'etaf-document-open "etaf" nil nil)
 ;; Make BUFFER, a mounted page, accept typing that edits SOURCE.
-;; The page keeps its rendering: a key names a position on it, the projection
-;; turns that into a source offset, the key runs there, and the page repaints
-;; from the edited source.  ENTRIES pairs a Host reference with the source range
-;; its painted text stands for, REPUBLISH is called with the new source text to
+;; The page keeps its rendering and claims only a press: every other key is
+;; looked up in SOURCE and run there at the offset the page shows, so `undo',
+;; `kill-line', `yank', the mark, `TAB' and a prefix like `C-x C-s' mean what
+;; they mean in the buffer the text came from.  The page then repaints from the
+;; edited source on the next frame, so a key returns before it is painted.
+;; ENTRIES pairs a Host reference with the source range its painted text stands
+;; for; it may be a function, called with an optional offset to answer for the
+;; one block covering it.  REPUBLISH is called with the new source text to
 ;; redraw the page, and KEYMAP adds the application's own keys.  Return the
 ;; session; `etaf-document-close' ends it and saves what was written.
-;; Typing, deletion and newlines reach the source through their own commands, so
-;; a system input method works as it does anywhere; keys whose meaning is a
-;; document position (`C-e', `M-f', the document edges) run in the source too.
 ;; Signals `user-error' without a live page, a live source or a mounted runtime.
 ;;
 ;; Function: etaf-document-close (document)
@@ -1116,7 +1117,7 @@
 ;;;###autoload (autoload 'etaf-document-editing-p "etaf" nil nil)
 ;; Return non-nil when BUFFER, by default the current one, accepts typing.
 ;;
-;; Function: etaf-document-projection (document)
+;; Function: etaf-document-projection (document &optional offset)
 ;;;###autoload (autoload 'etaf-document-projection "etaf" nil nil)
 ;; Return DOCUMENT's painted page as source ranges, or nil without a page.
 ;;
