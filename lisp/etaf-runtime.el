@@ -2274,9 +2274,15 @@ provide `:viewport-width' in pixels, `:viewport-height' in lines and
            (lambda ()
              (etaf-call-with-batch
               (lambda ()
-                (etaf--root-init root)
-                (setf (etaf--seg-live root) t)
-                (etaf--root-dirty runtime)))))
+                ;; Initialise in the buffer the View is mounted into: a
+                ;; component's `:setup' runs here, and it asks this buffer what
+                ;; window it is drawn in.  Running it in whatever buffer the
+                ;; caller happened to have current gave every mount the wrong
+                ;; answer — a player embedded in a panel recorded `*scratch*'.
+                (with-current-buffer buffer
+                  (etaf--root-init root)
+                  (setf (etaf--seg-live root) t)
+                  (etaf--root-dirty runtime))))))
         ((error quit)
          (etaf--runtime-unmount-now runtime)
          (signal (car err) (cdr err))))
@@ -2395,7 +2401,7 @@ Stateless Components are supported; stateful Components need `etaf-mount'."
 ;;;###autoload
 (defun etaf-runtime-for-buffer (buffer-or-name)
   "Return the live Runtime mounted in BUFFER-OR-NAME, or nil."
-  (let* ((buffer (get-buffer buffer-or-name))
+  (let* ((buffer (and buffer-or-name (get-buffer buffer-or-name)))
          (runtime (and buffer (gethash buffer etaf--runtimes))))
     (and runtime (etaf-runtime-mounted-p runtime) runtime)))
 
