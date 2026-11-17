@@ -305,7 +305,7 @@
     :border-color (etaf-theme-token :line))
    (".card-head" :margin-bottom (lh 0))
    (".card-title" :color (etaf-theme-token :ink) :font-weight bold)
-   (".card-kind" :color (etaf-theme-token :dim) :font-size 11)))
+   (".card-kind" :color (etaf-theme-token :dim) :font-size 0.85)))
 
 ;;;; Typewriter
 
@@ -413,7 +413,7 @@
       (text :class "morse-code" " ···---···")))
   :styles
   ((".morse" :justify-content flex-start :gap ((lh 0) (ch 2)))
-   (".lamp" :color "#FFD166" :font-weight bold :font-size 15)
+   (".lamp" :color "#FFD166" :font-weight bold :font-size 1.15)
    (".morse-code" :color (etaf-theme-token :dim))))
 
 ;;;; Snow field
@@ -476,7 +476,7 @@
       (text :class "loading-note"
             (expr (format "%3d%%" (round (* 100 (mod (etaf-value tick) 1.0))))))))
   :styles
-  ((".loading-note" :color (etaf-theme-token :dim) :font-size 11)))
+  ((".loading-note" :color (etaf-theme-token :dim) :font-size 0.85)))
 
 ;;;; Neon flicker
 
@@ -489,7 +489,7 @@
     (box :class "neon" :height '(lh 2)
       (text :color (etaf-value flicker) "◉ OPEN")))
   :styles
-  ((".neon" :font-weight bold :font-size 15)))
+  ((".neon" :font-weight bold :font-size 1.15)))
 
 ;;;; Bouncing ball
 
@@ -568,7 +568,7 @@
            (text (expr (char-to-string (aref "ETAF" index)))))))
   :styles
   ((".letters" :justify-content center :gap ((lh 0) (ch 0)))
-   (".letters text" :color "#5EEAD4" :font-weight bold :font-size 14)))
+   (".letters text" :color "#5EEAD4" :font-weight bold :font-size 1.08)))
 
 ;;;; Pendulum
 
@@ -664,7 +664,7 @@
                                              (mod (etaf-value tick) 1.0))))))
   :styles
   ((".wave" :gap ((lh 0) (ch 0)))
-   (".wave-note" :color (etaf-theme-token :dim) :font-size 11)))
+   (".wave-note" :color (etaf-theme-token :dim) :font-size 0.85)))
 
 ;;;; Plasma field
 
@@ -723,7 +723,7 @@
             (expr (char-to-string (aref etaf-animation-example-rainbow-text index))))))
   :styles
   ((".rainbow" :justify-content flex-start :gap ((lh 0) (ch 0)))
-   (".rainbow text" :font-weight bold :font-size 14)))
+   (".rainbow text" :font-weight bold :font-size 1.08)))
 
 ;;;; Native editing pad
 
@@ -993,7 +993,7 @@
    (".controls" :bgcolor (etaf-theme-token :bar)
     :padding-left (ch 1) :padding-right (px 0))
    (".controls-gap" :color (etaf-theme-token :bar))
-   (".controls-state" :color (etaf-theme-token :dim) :font-size 11)
+   (".controls-state" :color (etaf-theme-token :dim) :font-size 0.85)
    (".panels" :margin-bottom (lh 1))
    (".pad" :bgcolor (etaf-theme-token :pad)
     :border-style solid :border-width (px 1)
@@ -1001,11 +1001,11 @@
     :padding-block (lh 0) :padding-left (ch 1) :padding-right (px 0)
     :margin-bottom (lh 1))
    (".pad-title" :color (etaf-theme-token :accent) :font-weight bold)
-   (".pad-hint" :color (etaf-theme-token :dim) :font-size 11)
+   (".pad-hint" :color (etaf-theme-token :dim) :font-size 0.85)
    (".pad-text" :color (etaf-theme-token :pad-ink))
    (".footer" :bgcolor (etaf-theme-token :bar))
    (".footer-shimmer" :color "#FBBF24")
-   (".footer-note" :color (etaf-theme-token :dim) :font-size 11)))
+   (".footer-note" :color (etaf-theme-token :dim) :font-size 0.85)))
 
 (defun etaf-animation-example--fit-windows ()
   "Avoid a reserved truncation column in windows displaying this buffer."
