@@ -1187,6 +1187,16 @@
       "name": "etaf-projection-reports-a-caret-past-the-last-cell",
       "file": "tests/etaf-projection-tests.el",
       "purpose": "A source offset at the end of the document maps after the last painted cell."
+    },
+    {
+      "name": "etaf-help-panel-measures-the-canvas-face",
+      "file": "tests/etaf-help-tests.el",
+      "purpose": "The help panel sizes and centres itself in the cells the canvas draws, so a canvas font or text scale does not leave it off the centre it measured."
+    },
+    {
+      "name": "etaf-keys-drag-step-measures-the-canvas-face",
+      "file": "tests/etaf-keys-tests.el",
+      "purpose": "A keyboard drag step travels canvas cells rather than the frame's default face, so a text scale does not move a separator the wrong distance."
     }
   ]
 }

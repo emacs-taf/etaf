@@ -57,6 +57,13 @@
 
 ### Fixed
 
+- The help panel and a keyboard drag step measure in the cells the canvas
+  draws.  `ch' and `lh' resolve against the canvas's own face, while both
+  numbers came from the frame's character width, which is the same number only
+  while no text scale and no canvas font set them apart: a smaller canvas cell
+  left the panel off the centre it had computed and made a drag step travel
+  the wrong distance.
+
 - Scoped key commands are named symbols instead of anonymous closures.  Emacs
   stores the resolved command in `this-command', so a post-command hook or any
   other code that stringifies a command no longer walks the mounted Runtime's

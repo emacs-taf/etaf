@@ -296,9 +296,16 @@ The optional catalog replaces this renderer with its searchable key cards."
   (let* ((runtime (etaf-current-runtime))
          (measured (or (etaf-runtime-window-viewport runtime)
                        (etaf-runtime-viewport runtime)))
-         (viewport (cons (or (car measured) (* 80 (max 1 (frame-char-width))))
+         ;; The dialog is drawn on the canvas, so its cell is the canvas's
+         ;; face, not the frame's: a text scale or a canvas font leaves the
+         ;; frame's character width apart from the cells the panel is painted
+         ;; in, and the panel would then sit off the centre it measured.
+         (cell (or (ignore-errors
+                     (plist-get (etaf-display-metrics runtime) :char-width))
+                   (frame-char-width)))
+         (viewport (cons (or (car measured) (* 80 cell))
                          (or (cdr measured) 32)))
-         (width (max 1 (min 88 (- (/ (car viewport) (max 1 (frame-char-width))) 4))))
+         (width (max 1 (min 88 (- (/ (car viewport) (max 1 cell)) 4))))
          (height (max 6 (min 28 (- (cdr viewport) 4))))
          (fg (or (etaf-theme-value :ui-panel-fg)
                  (face-foreground 'default nil t)))
@@ -319,7 +326,7 @@ The optional catalog replaces this renderer with its searchable key cards."
            :backdrop-filter '(brightness 0.55) :role 'presentation :tab-index -1
            :on-press (lambda () (when (etaf-event-pointer-p) (funcall close))))
       (column :ref 'etaf-help-panel :position 'absolute :layer 'root :z-index 1001
-              :left (list 'px (max 0 (/ (- (car viewport) (* width (frame-char-width))) 2)))
+              :left (list 'px (max 0 (/ (- (car viewport) (* width cell)) 2)))
               :top (list 'lh (max 0 (/ (- (cdr viewport) height) 2)))
               :width (list 'ch width) :height (list 'lh height)
               :role 'dialog :aria-label "快捷键" :focus-scope 'modal

@@ -498,9 +498,13 @@ The gestures carry `:keyboard' t.  Return HOST-REF."
                    (signal 'etaf-event-error
                            (list "No committed Host reference" host-ref))))
          (window (or (get-buffer-window buffer) (selected-window)))
-         (frame (window-frame window))
-         (delta (cons (* columns (frame-char-width frame))
-                      (* rows (frame-char-height frame))))
+         ;; A drag step is that many cells of the canvas the pointer is over,
+         ;; so the pixels come from its face instead of the frame's.  With a
+         ;; text scale the two differ and the gesture would travel the wrong
+         ;; distance.
+         (metrics (etaf-display-metrics runtime))
+         (delta (cons (* columns (plist-get metrics :char-width))
+                      (* rows (plist-get metrics :line-height))))
          (base (list :event last-input-event :node node :window window
                      :buffer buffer :start (cons 0 0) :reason nil :keyboard t)))
     (etaf-dispatch-event runtime host-ref 'drag

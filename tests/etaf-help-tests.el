@@ -357,4 +357,26 @@
     (let ((mounted (etaf-runtime-for-buffer (current-buffer))))
       (should-not mounted))))
 
+(ert-deftest etaf-help-panel-measures-the-canvas-face ()
+  "The panel sizes and centres itself in the cells the canvas draws.
+The frame's own face is a different cell whenever the canvas font or a text
+scale differs from it, and a panel measured with the frame's one would sit
+off the centre it computed."
+  (etaf-test-with-mount
+      (runtime (etaf-view (box :ref 'entry :tab-index 0 "Entry")))
+    ;; The canvas reports a 10-pixel cell where the frame's face has 20, so
+    ;; the panel's column count tells which face measured it.
+    (cl-letf (((symbol-function 'ebox-display-metrics)
+               (lambda (&optional _buffer)
+                 (list :char-width 10 :line-height 18 :ascent 100)))
+              ((symbol-function 'frame-char-width) (lambda (&optional _frame) 20))
+              ((symbol-function 'frame-char-height) (lambda (&optional _frame) 40)))
+      (etaf-help runtime)
+      (let* ((viewport (car (etaf-runtime-viewport runtime)))
+             ;; Ten-pixel cells keep four of the canvas's columns free.
+             (width (max 1 (min 88 (- (/ viewport 10) 4))))
+             (box (etaf-host-ref-size runtime 'etaf-help-panel)))
+        (should box)
+        (should (= (car box) width))))))
+
 (provide 'etaf-help-tests)

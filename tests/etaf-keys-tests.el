@@ -320,6 +320,27 @@
       (should (equal log '(down up)))
       (should (eq (etaf-focused-host-ref runtime) 'second)))))
 
+(ert-deftest etaf-keys-drag-step-measures-the-canvas-face ()
+  "A keyboard drag step travels canvas cells, not the frame's own face.
+A canvas font or a text scale is a different cell from the frame's default,
+and a step measured with the frame's one moves the separator the wrong
+distance."
+  (let (gestures)
+    (etaf-test-with-mount
+        (runtime
+         (etaf-view
+          (column
+           (box :ref 'split :tab-index 0
+                :on-drag (lambda (gesture) (push gesture gestures))
+                "|"))))
+      (cl-letf (((symbol-function 'ebox-display-metrics)
+                 (lambda (&optional _buffer)
+                   (list :char-width 10 :line-height 18 :ascent 100)))
+                ((symbol-function 'frame-char-width) (lambda (&optional _frame) 20))
+                ((symbol-function 'frame-char-height) (lambda (&optional _frame) 40)))
+        (etaf-drag-step runtime 'split 3 2)
+        (should (equal (plist-get (car gestures) :delta) (cons 30 36)))))))
+
 (ert-deftest etaf-keys-arrows-cross-regions-at-their-boundary ()
   "Arrow movement stays inside a region and enters the adjacent one at its edge."
   (etaf-test-with-mount (runtime (etaf-view
