@@ -269,6 +269,16 @@ display canvas images or the buffer is not in a graphical frame."
       'canvas
     'image))
 
+(defun etaf-video--canvas-cell (runtime frame)
+  "Return the cell RUNTIME draws as (CHAR-WIDTH . LINE-HEIGHT) pixels.
+FRAME answers only when no canvas is mounted.  A video canvas states its rows
+in its own cells, so measuring them with the frame's face sizes the picture,
+the slices and the canvas spec apart from the rows they occupy."
+  (let ((metrics (and runtime (ignore-errors (etaf-display-metrics runtime)))))
+    (cons (max 1 (or (plist-get metrics :char-width) (frame-char-width frame)))
+          (max 1 (or (plist-get metrics :line-height)
+                     (frame-char-height frame))))))
+
 (defun etaf-video--instance-display-size (instance)
   "Return INSTANCE's canvas size in pixels as `(WIDTH . HEIGHT)'.
 The canvas renders at its own cell size, except that a canvas wider than
@@ -283,8 +293,9 @@ a taller canvas is clipped by the layout anyway."
          (buffer (and runtime (etaf-runtime-buffer runtime)))
          (window (and buffer (buffer-live-p buffer)
                       (get-buffer-window buffer t)))
-         (char-width (frame-char-width frame))
-         (char-height (frame-char-height frame))
+         (cell (etaf-video--canvas-cell runtime frame))
+         (char-width (car cell))
+         (char-height (cdr cell))
          (width (* columns char-width))
          (height (* rows char-height)))
     (cons (if window (min width (window-body-width window t)) width)
@@ -308,10 +319,12 @@ logical resolution."
                     (ignore-errors (frame-scale-factor frame))
                     1.0))
          (display (etaf-video--instance-display-size instance))
+         (cell (etaf-video--canvas-cell
+                (etaf-video--instance-runtime instance) frame))
          (width (if display (car display)
-                  (max 1 (* columns (frame-char-width frame)))))
+                  (max 1 (* columns (car cell)))))
          (height (if display (cdr display)
-                   (max 1 (* rows (frame-char-height frame))))))
+                   (max 1 (* rows (cdr cell))))))
     (list format
           (max 1 (round (* width ratio)))
           (max 1 (round (* height ratio)))
@@ -336,14 +349,18 @@ displayed image (nil for the raw modes)."
         ('color (list 'rgb24 columns (* 2 rows) 1.0 nil nil))
         (_ (list 'gray columns rows 1.0 nil nil))))))
 
-(defun etaf-video--image-ascent (frame)
-  "Return the image ascent percentage that keeps a row at FRAME's line height.
+(defun etaf-video--image-ascent (frame &optional line)
+  "Return the image ascent percentage that keeps a row at the canvas line.
+LINE is that line's height in pixels; it defaults to FRAME's own.
 A canvas row usually shares its buffer line with application text, and a line
 grows to the sum of the largest ascent and the largest descent it holds.  The
 default font's own ascent and descent are therefore the whole row an image
 may occupy; aligning the image to that baseline keeps the line exactly one
 character high instead of pushing the rows below the canvas off the window."
-  (let* ((height (and (numberp (frame-char-height frame)) (frame-char-height frame)))
+  (let* ((height (max 1 (or line
+                            ;; A caller with no canvas line left sits on the
+                            ;; frame's own row.
+                            (frame-char-height frame)))) ; frame metric
          (info (ignore-errors (font-info (face-font 'default frame))))
          (ascent (and (vectorp info) (> (length info) 9) (aref info 8)))
          (descent (and (vectorp info) (> (length info) 9) (aref info 9))))
@@ -362,7 +379,8 @@ place chrome under it."
   (let* ((applied (etaf-video--instance-applied instance))
          (rows (max 1 (or (plist-get applied :rows) 1)))
          (frame (etaf-video--instance-frame instance))
-         (row-height (max 1 (frame-char-height frame)))
+         (row-height (cdr (etaf-video--canvas-cell
+                           (etaf-video--instance-runtime instance) frame)))
          (display (etaf-video--instance-display-size instance))
          (width (max 1 (or (car-safe display) 1)))
          (height (max 1 (or (cdr-safe display) row-height))))
@@ -425,14 +443,19 @@ pixel on refresh, so a device-resolution canvas costs four times more per
 frame for no visible gain in a text host.  The :id stays stable so one Ebox
 image host can refresh the same buffer in place."
   (let* ((frame (selected-frame))
-         (width (max 1 (* columns (frame-char-width frame))))
-         (height (max 1 (* rows (frame-char-height frame)))))
+         (metrics (ignore-errors (etaf-display-metrics)))
+         (char-width (max 1 (or (plist-get metrics :char-width)
+                                (frame-char-width frame))))
+         (char-height (max 1 (or (plist-get metrics :line-height)
+                                 (frame-char-height frame))))
+         (width (* columns char-width))
+         (height (* rows char-height)))
     (list 'image :type 'canvas
           :id (make-symbol "etaf-video-canvas")
           :data (make-string (* width height 4) 0)
           :data-width width :data-height height
           :scale 1.0
-          :ascent (etaf-video--image-ascent frame))))
+          :ascent (etaf-video--image-ascent frame char-height))))
 
 (defun etaf-video--instance-ensure-canvas (instance)
   "Return INSTANCE's canvas image spec, creating it for the current size.
@@ -490,7 +513,9 @@ frame does not pay for an ordinary ETAF publication."
              (image (and (eq mode 'image)
                          (create-image frame 'jpeg t
                                        :ascent (etaf-video--image-ascent
-                                                (etaf-video--instance-frame instance))
+                                                (etaf-video--instance-frame instance)
+                                                (cdr (etaf-video--canvas-cell
+                                                      runtime frame)))
                                        :scale (etaf-video--instance-image-scale instance)
                                        :max-width (etaf-video--instance-image-max-width instance)
                                        :max-height (etaf-video--instance-image-max-height instance))))

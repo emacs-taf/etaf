@@ -2183,6 +2183,25 @@
 ;; Invalid ETAF View syntax
 ;; Catch this condition with condition-case; failed calls do not return a value.
 ;;
+;; Function: etaf-canvas-cell (&optional runtime)
+;;;###autoload (autoload 'etaf-canvas-cell "etaf" nil nil)
+;; Return the cell the canvas draws as (CHAR-WIDTH . LINE-HEIGHT) pixels.
+;; A canvas resolves `ch' and `lh' with this cell, so a layout that turns
+;; pixels into cells divides by it rather than by the frame's face.
+;;
+;; Function: etaf-canvas-columns (&optional runtime)
+;;;###autoload (autoload 'etaf-canvas-columns "etaf" nil nil)
+;; Return how many whole cells wide RUNTIME's canvas viewport is.
+;; A reactive read: a render that fits its layout this way reruns when the
+;; viewport or the cell changes.
+;;
+;; Function: etaf-fit-columns (available preferred minimum &optional gap)
+;;;###autoload (autoload 'etaf-fit-columns "etaf" nil nil)
+;; Return (:across N :item W :offset O) fitting AVAILABLE canvas cells.
+;; Items want PREFERRED cells and keep at least MINIMUM, GAP defaults to 3;
+;; a column is added only while every item keeps its minimum, and OFFSET is
+;; the cells to leave on one side so the remainder is symmetric.
+;;
 ;; Function: etaf-viewport ()
 ;;;###autoload (autoload 'etaf-viewport "etaf" nil nil)
 ;; Return the viewport of the current Component subtree as (PIXELS . ROWS).

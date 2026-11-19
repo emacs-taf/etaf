@@ -854,6 +854,11 @@
       "purpose": "A Component watcher reruns with its Context and Runtime still bound."
     },
     {
+      "name": "etaf-viewport-canvas-columns-follow-the-canvas-cell",
+      "file": "tests/etaf-viewport-tests.el",
+      "purpose": "A layout fitted with `etaf-canvas-columns` and `etaf-fit-columns` states the canvas's own cell, adds a column while items keep their minimum, and leaves a symmetric remainder."
+    },
+    {
       "name": "etaf-viewport-region-publishes-its-committed-size",
       "file": "tests/etaf-viewport-tests.el",
       "purpose": "Content below a region reads the region's committed box, not the mount."

@@ -114,5 +114,59 @@ viewport, so inset the content inside the region instead."
           :flex-grow 1 :flex-shrink 1 :flex-basis '(lh 0) :min-height '(lh 0)
     (slot)))
 
+;;; Fitting a layout to the canvas
+
+;; A canvas draws its `ch' and `lh' in its own cell, which a canvas font or a
+;; text scale sets apart from the frame's face.  Dividing viewport pixels by
+;; the frame's cell therefore reports fewer columns than the canvas has, and
+;; the page it lays out stops short of the region: the remainder collects on
+;; one side and grows with the window.  These two readers answer from the
+;; canvas itself, so an application never has to name the frame.
+
+;;;###autoload
+(defun etaf-canvas-cell (&optional runtime)
+  "Return the cell the canvas draws as (CHAR-WIDTH . LINE-HEIGHT) pixels.
+RUNTIME defaults to the canvas in the current buffer.  An unmounted canvas
+answers from the frame's face, the only measurement left before a mount."
+  (let ((metrics (ignore-errors (etaf-display-metrics runtime))))
+    (cons (max 1 (or (plist-get metrics :char-width) (frame-char-width)))
+          (max 1 (or (plist-get metrics :line-height) (frame-char-height))))))
+
+;;;###autoload
+(defun etaf-canvas-columns (&optional runtime)
+  "Return how many whole cells wide RUNTIME's canvas viewport is.
+A reactive read: a render that fits its layout this way reruns when the
+viewport or the cell changes."
+  (let* ((cell (etaf-canvas-cell runtime))
+         (ahead (car cell))
+         (pixels (car-safe (etaf-runtime-viewport runtime))))
+    (max 1 (floor (if (and (numberp pixels) (> pixels 0)) pixels ahead)
+                  ahead))))
+
+;;;###autoload
+(defun etaf-fit-columns (available preferred minimum &optional gap)
+  "Return a plist fitting AVAILABLE canvas cells into columns.
+Each item wants PREFERRED cells and keeps at least MINIMUM; GAP defaults to 3
+cells between items.  The result is `(:across ACROSS :item ITEM :offset
+OFFSET)`, where ACROSS is how many items a row holds, ITEM their width and
+OFFSET the cells to leave on one side so the remainder is symmetric.
+
+Columns are added only while every item keeps MINIMUM, so a wide canvas gains
+a column instead of leaving one side blank, and a canvas narrower than one
+preferred item keeps that item whole instead of shrinking it for nothing."
+  (let* ((gap (or gap 3))
+         (available (max minimum available))
+         (across (max 1 (floor (+ available gap) (+ preferred gap))))
+         (item (floor (- available (* gap (1- across))) across)))
+    (while (and (> across 1) (< item minimum))
+      (setq across (1- across)
+            item (floor (- available (* gap (1- across))) across)))
+    (list :across across
+          :item (max 1 (min preferred item))
+          :offset (max 0 (/ (- available
+                              (* across (min preferred item))
+                              (* gap (1- across)))
+                           2)))))
+
 (provide 'etaf-viewport)
 ;;; etaf-viewport.el ends here

@@ -191,5 +191,31 @@ center and clamp itself instead of guessing a pixel width."
                                  (window-body-height window)))))
         (set-window-buffer window original)))))
 
+(ert-deftest etaf-viewport-canvas-columns-follow-the-canvas-cell ()
+  "The canvas reports its own cells, not the frame's face.
+A ten-pixel canvas in a frame whose face is twenty pixels wide holds forty
+columns in 400 pixels; dividing by the frame's cell would report twenty and
+lay the page out at half the width it has."
+  (etaf-test-with-mount (runtime (etaf-view (box :ref 'entry "Entry")))
+    (cl-letf (((symbol-function 'ebox-display-metrics)
+               (lambda (&optional _buffer)
+                 (list :char-width 10 :line-height 18 :ascent 100)))
+              ((symbol-function 'frame-char-width) (lambda (&optional _frame) 20))
+              ((symbol-function 'frame-char-height) (lambda (&optional _frame) 40)))
+      (etaf-runtime-refit runtime 400 20)
+      (should (equal (etaf-canvas-cell runtime) (cons 10 18)))
+      (should (= (etaf-canvas-columns runtime) 40))
+      ;; A hundred and ninety-three canvas cells hold four 42-cell items with
+      ;; three cells between them, and leave the remainder on both sides.
+      (should (equal (etaf-fit-columns 193 42 30)
+                     '(:across 4 :item 42 :offset 8)))
+      ;; One more column only when every item still clears its minimum.
+      (should (equal (etaf-fit-columns 240 42 30)
+                     '(:across 5 :item 42 :offset 9)))
+      (should (equal (etaf-fit-columns 100 42 30)
+                     '(:across 2 :item 42 :offset 6)))
+      (should (equal (etaf-fit-columns 40 42 30)
+                     '(:across 1 :item 40 :offset 0))))))
+
 (provide 'etaf-viewport-tests)
 ;;; etaf-viewport-tests.el ends here
