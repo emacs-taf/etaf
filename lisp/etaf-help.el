@@ -300,9 +300,8 @@ The optional catalog replaces this renderer with its searchable key cards."
          ;; face, not the frame's: a text scale or a canvas font leaves the
          ;; frame's character width apart from the cells the panel is painted
          ;; in, and the panel would then sit off the centre it measured.
-         (cell (or (ignore-errors
-                     (plist-get (etaf-display-metrics runtime) :char-width))
-                   (frame-char-width)))
+         (metrics (ignore-errors (etaf-display-metrics runtime)))
+         (cell (or (plist-get metrics :char-width) (frame-char-width)))
          (viewport (cons (or (car measured) (* 80 cell))
                          (or (cdr measured) 32)))
          (width (max 1 (min 88 (- (/ (car viewport) (max 1 cell)) 4))))
