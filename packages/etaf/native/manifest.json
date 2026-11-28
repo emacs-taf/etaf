@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "package": "etaf",
+  "modules": [
+    {
+      "name": "etaf-video-mpv",
+      "version": "2",
+      "description": "Cross-platform libmpv native GPU video playback module",
+      "platforms": {
+        "darwin-arm64": {
+          "file": "etaf-video-mpv-v2-darwin-arm64.dylib",
+          "urls": [
+            "https://etaf.top/native/etaf/2/etaf-video-mpv-v2-darwin-arm64.dylib",
+            "https://github.com/emacs-taf/etaf/releases/download/native-v2/etaf-video-mpv-v2-darwin-arm64.dylib"
+          ],
+          "sha256": "9a766cd15fd2570229785015474f29022e05f9c1a869e3814fee2bd9e8a644ec",
+          "size": 93960
+        },
+        "darwin-x86_64": {
+          "file": "etaf-video-mpv-v2-darwin-x86_64.dylib",
+          "urls": [
+            "https://etaf.top/native/etaf/2/etaf-video-mpv-v2-darwin-x86_64.dylib",
+            "https://github.com/emacs-taf/etaf/releases/download/native-v2/etaf-video-mpv-v2-darwin-x86_64.dylib"
+          ],
+          "sha256": "421862ea291c7d5c77cb652ebc02c48fb71c39e35b42fc3ba7839677ddf87e21",
+          "size": 54496
+        },
+        "linux-arm64": {
+          "file": "etaf-video-mpv-v2-linux-arm64.so",
+          "urls": [
+            "https://etaf.top/native/etaf/2/etaf-video-mpv-v2-linux-arm64.so",
+            "https://github.com/emacs-taf/etaf/releases/download/native-v2/etaf-video-mpv-v2-linux-arm64.so"
+          ],
+          "sha256": "9f7c7a7d133e49713698d8fa8d8122429557f9f35e997cd87093350d6398afb3",
+          "size": 77104
+        },
+        "linux-x86_64": {
+          "file": "etaf-video-mpv-v2-linux-x86_64.so",
+          "urls": [
+            "https://etaf.top/native/etaf/2/etaf-video-mpv-v2-linux-x86_64.so",
+            "https://github.com/emacs-taf/etaf/releases/download/native-v2/etaf-video-mpv-v2-linux-x86_64.so"
+          ],
+          "sha256": "517aa9eaa3f234bbe44d004b29a5662c2b51afec768b2ebedc2dcdcafd9cf080",
+          "size": 62792
+        },
+        "windows-x86_64": {
+          "file": "etaf-video-mpv-v2-windows-x86_64.dll",
+          "urls": [
+            "https://etaf.top/native/etaf/2/etaf-video-mpv-v2-windows-x86_64.dll",
+            "https://github.com/emacs-taf/etaf/releases/download/native-v2/etaf-video-mpv-v2-windows-x86_64.dll"
+          ],
+          "sha256": "2a6aabcbf515ac02729e994e1026cab0499cffd1962e43af0ef7b3aeefa01a93",
+          "size": 148712,
+          "libraries": [
+            {
+              "name": "libmpv-2.dll",
+              "file": "libmpv-2-v2-windows-x86_64.dll",
+              "urls": [
+                "https://etaf.top/native/etaf/2/libmpv-2-v2-windows-x86_64.dll",
+                "https://github.com/emacs-taf/etaf/releases/download/native-v2/libmpv-2-v2-windows-x86_64.dll"
+              ],
+              "sha256": "88504ee5560942a955405e99dfb5971368e4cf851321f36565bf2a667271db1b",
+              "size": 121789952
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
